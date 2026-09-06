@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: theme("colors.surface.plane");
+  color: theme("colors.ink.primary");
+  letter-spacing: -0.005em;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.018em;
+}
+
+@layer components {
+  .card {
+    @apply bg-surface rounded-xl border border-line-hairline shadow-card p-5;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+      transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
+      focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-hover;
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface text-ink-primary border border-line-hairline hover:bg-surface-plane;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-line-hairline bg-surface px-3 py-2 text-sm text-ink-primary
+      transition-shadow placeholder:text-ink-muted
+      focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15;
+  }
+
+  .label {
+    @apply block text-xs font-medium text-ink-secondary mb-1;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+/* --- Печать: складской лист всегда укладывается в одну страницу A4 --- */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  /*
+   * Обёртка ровно в размер печатной области: документ уже ужат под неё
+   * скриптом, а overflow:hidden гарантирует, что из-за пары лишних пикселей
+   * не вылезет пустая вторая страница.
+   */
+  .doc-frame {
+    height: 194mm;
+    overflow: hidden !important;
+    /* space-y родителя добавляет отступ даже после скрытых блоков — обнуляем,
+       иначе лишние 16px выталкивают пустую вторую страницу */
+    margin: 0 !important;
+  }
+
+  /*
+   * Документ свёрстан в фиксированных пикселях печатной области, а --print-scale
+   * рассчитывается в компоненте по фактической высоте: так лист гарантированно
+   * влезает целиком, сколько бы ни было заявок.
+   */
+  .doc {
+    transform: scale(var(--print-scale, 1));
+    transform-origin: top left;
+    break-inside: avoid;
+  }
+
+  .doc * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

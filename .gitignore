@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+.env
+.env.local
+*.log
+.DS_Store
+tsconfig.tsbuildinfo
+
+# служебные файлы Claude (в репозиторий не идут)
+_claude-*.txt
+_temp/
+check.bat
+install-git.bat
+install-gh.bat
+login-github.bat
