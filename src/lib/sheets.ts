@@ -212,4 +212,22 @@ export async function updateWhere(
   return false;
 }
 
+/**
+ * Стирает все строки данных вкладки, оставляя строку заголовков.
+ *
+ * Значения именно СТИРАЮТСЯ, а строки не удаляются: так не съезжают ссылки и
+ * форматирование, а `readTable()` пустые строки и так пропускает. Следующая
+ * запись через appendRows снова начнётся со второй строки.
+ */
+export async function clearDataRows(tabName: string): Promise<number> {
+  const sheets = getSheetsClient();
+  const before = await readTable(tabName);
+  if (before.rows.length === 0) return 0;
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: getSpreadsheetId(),
+    range: `${tabName}!A2:ZZ`,
+  });
+  return before.rows.length;
+}
+
 export { SHEET_TABS };
