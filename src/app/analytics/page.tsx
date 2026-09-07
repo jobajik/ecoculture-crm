@@ -1,5 +1,7 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { getAnalyticsSummary } from "@/lib/analytics";
-import { FLOWER_TYPE_LABELS } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, farmLabel } from "@/lib/constants";
 import StatTile from "@/components/StatTile";
 import StorageStatusBadge from "@/components/StorageStatusBadge";
 import StockByVarietyChart from "@/components/charts/StockByVarietyChart";
@@ -15,12 +17,20 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AnalyticsPage() {
-  const summary = await getAnalyticsSummary();
+  const session = await getServerSession(authOptions);
+  // Зав. складом видит аналитику только по своему производству.
+  const farm = session?.user?.role === "warehouse" ? session.user.farm ?? null : null;
+  const summary = await getAnalyticsSummary(farm);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Аналитика</h1>
+        <div>
+          <h1 className="text-xl font-semibold">Аналитика</h1>
+          {farm && (
+            <p className="text-sm text-ink-secondary">Только ваше производство — {farmLabel(farm)}</p>
+          )}
+        </div>
         <span className="text-xs text-ink-muted">
           Обновлено {new Date(summary.generatedAt).toLocaleString("ru-RU")}
         </span>

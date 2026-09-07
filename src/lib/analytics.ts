@@ -5,6 +5,7 @@ import { listWriteoffs } from "./repo/writeoffs";
 import { listPriceHistory } from "./repo/priceHistory";
 import { getSettings } from "./repo/settings";
 import { computeBatchStorageInfo } from "./shelfLife";
+import { getFarmFor } from "./constants";
 import type { OrderWithItems } from "./types";
 
 export interface StockByVarietyRow {
@@ -189,14 +190,59 @@ function computeWriteoffSummary(
   };
 }
 
-export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
-  const [orders, batches, writeoffs, priceHistory, settings] = await Promise.all([
-    listOrdersWithItems(),
-    listBatches(),
-    listWriteoffs(),
-    listPriceHistory(),
-    getSettings(),
-  ]);
+/**
+ * Сводная аналитика. `farmFilter` ограничивает всё производством: зав. складом
+ * не должен видеть чужой цветок ни в остатках, ни в продажах, ни в ценах.
+ * Фильтруем на входе — тогда все расчёты ниже автоматически считаются по своему.
+ */
+export async function getAnalyticsSummary(
+  farmFilter?: string | null,
+  /** Для тестов: подставить данные вместо чтения из Google-таблицы. */
+  injected?: {
+    orders: OrderWithItems[];
+    batches: Awaited<ReturnType<typeof listBatches>>;
+    writeoffs: Awaited<ReturnType<typeof listWriteoffs>>;
+    priceHistory: Awaited<ReturnType<typeof listPriceHistory>>;
+    settings: Awaited<ReturnType<typeof getSettings>>;
+  }
+): Promise<AnalyticsSummary> {
+  const [allOrders, allBatches, allWriteoffs, allPriceHistory, settings] = injected
+    ? [injected.orders, injected.batches, injected.writeoffs, injected.priceHistory, injected.settings]
+    : await Promise.all([
+        listOrdersWithItems(),
+        listBatches(),
+        listWriteoffs(),
+        listPriceHistory(),
+        getSettings(),
+      ]);
+
+  const mine = (flowerType: string) => !farmFilter || getFarmFor(flowerType) === farmFilter;
+
+  const batches = allBatches.filter((b) => mine(b.flowerType));
+  const priceHistory = allPriceHistory.filter((p) => mine(p.flowerType));
+
+  // В заявке оставляем только свои позиции; заявки, где своего цветка нет, выпадают.
+  const orders = farmFilter
+    ? allOrders
+        .map((o) => {
+          const items = o.items.filter((i) => mine(i.flowerType));
+          return {
+            ...o,
+            items,
+            totalAmount: items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
+          };
+        })
+        .filter((o) => o.items.length > 0)
+    : allOrders;
+
+  // Списание привязано к партии — берём тип цветка оттуда.
+  const batchTypeById = new Map(allBatches.map((b) => [b.batchId, b.flowerType]));
+  const writeoffs = farmFilter
+    ? allWriteoffs.filter((w) => {
+        const type = batchTypeById.get(w.batchId);
+        return type ? mine(type) : false;
+      })
+    : allWriteoffs;
 
   const activeBatches = batches.filter((b) => b.quantityRemaining > 0);
   const storageInfos = activeBatches.map((b) => computeBatchStorageInfo(b, settings));
@@ -252,6 +298,6 @@ export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
     },
     sales: computeSales(orders),
     priceDynamics,
-    writeoffs: computeWriteoffSummary(writeoffs, batches),
+    writeoffs: computeWriteoffSummary(writeoffs, allBatches),
   };
 }
