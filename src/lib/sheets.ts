@@ -168,6 +168,32 @@ export async function updateRow(
   });
 }
 
+/**
+ * Перезаписывает несколько строк ОДНИМ запросом к Google.
+ *
+ * Нужно там, где человек правит сразу много ячеек — план отгрузок по девяти
+ * направлениям или ростовку по двум десяткам сортов. Построчный updateRow там
+ * означал бы сотню запросов подряд: это и медленно, и упирается в лимит
+ * Google Sheets API (60 запросов в минуту на пользователя).
+ */
+export async function updateRows(
+  tabName: string,
+  updates: { rowNumber: number; record: Record<string, unknown> }[]
+): Promise<void> {
+  if (updates.length === 0) return;
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: updates.map((u) => ({
+        range: `${tabName}!A${u.rowNumber}`,
+        values: [recordToRow(tabName, u.record)],
+      })),
+    },
+  });
+}
+
 /** Находит первую запись, для которой predicate(record) истинен, и обновляет её через updater. Возвращает true, если запись найдена и обновлена. */
 export async function updateWhere(
   tabName: string,

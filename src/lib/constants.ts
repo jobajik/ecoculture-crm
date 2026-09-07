@@ -12,6 +12,8 @@ export const SHEET_TABS = {
   PRICE_HISTORY: "PriceHistory",
   VARIETIES: "Varieties",
   PLANS: "Plans",
+  SHIPMENT_PLANS: "ShipmentPlans",
+  HARVEST_FORECAST: "HarvestForecast",
   SETTINGS: "Settings",
 } as const;
 
@@ -80,6 +82,29 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_TABS.PRICE_HISTORY]: ["Date", "FlowerType", "Variety", "Grade", "Price"],
   [SHEET_TABS.VARIETIES]: ["FlowerType", "Variety", "Active"],
   [SHEET_TABS.PLANS]: ["Period", "ManagerEmail", "TargetAmount", "TargetStems"],
+  // План отгрузок РОПа: одна строка — одно направление и один цветок в месяце.
+  // Ключ строки — Period + Direction + FlowerType: при повторном сохранении
+  // строка не дублируется, а переписывается.
+  [SHEET_TABS.SHIPMENT_PLANS]: [
+    "Period",
+    "Direction",
+    "FlowerType",
+    "TargetStems",
+    "TargetAmount",
+    "UpdatedAt",
+    "UpdatedByEmail",
+  ],
+  // Прогноз срезки агронома: одна строка — сорт одной градации в месяце.
+  // Ключ — Period + FlowerType + Variety + Grade.
+  [SHEET_TABS.HARVEST_FORECAST]: [
+    "Period",
+    "FlowerType",
+    "Variety",
+    "Grade",
+    "TargetStems",
+    "UpdatedAt",
+    "UpdatedByEmail",
+  ],
   [SHEET_TABS.SETTINGS]: ["Key", "Value"],
 };
 
@@ -88,6 +113,8 @@ export const ROLES = {
   MANAGER: "manager",
   WAREHOUSE: "warehouse",
   ACCOUNTANT: "accountant",
+  SALES_HEAD: "sales_head",
+  AGRONOMIST: "agronomist",
 } as const;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
@@ -96,7 +123,19 @@ export const ROLE_LABELS: Record<string, string> = {
   manager: "Менеджер",
   warehouse: "Зав. склад",
   accountant: "Бухгалтер",
+  sales_head: "Руководитель отдела продаж",
+  agronomist: "Агроном",
 };
+
+/**
+ * Роли, у которых колонка Farm в таблице Users имеет смысл: они работают по
+ * одному производству. У остальных ролей она не влияет ни на что.
+ */
+export const FARM_BOUND_ROLES: string[] = [ROLES.WAREHOUSE, ROLES.AGRONOMIST];
+
+export function isFarmBoundRole(role: string | null | undefined): boolean {
+  return !!role && FARM_BOUND_ROLES.includes(role);
+}
 
 // ---------------------------------------------------------------------------
 // Готовность заявки к сборке — те самые «две зелёные галочки»:
@@ -286,6 +325,112 @@ export function getGradesFor(flowerType: string): readonly string[] {
 export function formatGrade(grade: string): string {
   if (!grade) return "—";
   return /^\d+$/.test(grade) ? `${grade} см` : grade;
+}
+
+// ---------------------------------------------------------------------------
+// Направления отгрузки. По ним руководитель отдела продаж ставит месячный план:
+// сколько стеблей и на какую сумму планируется отгрузить в каждое.
+//
+// Список ведётся здесь, а не в таблице, намеренно: направлений мало, они
+// меняются раз в год, а фиксированный список не даёт наплодить «Астана»,
+// «астана» и «Астана ' » — иначе план развалится на три несводимые строки.
+// Чтобы добавить направление, допишите строку В КОНЕЦ списка: уже сохранённые
+// планы хранятся по названию, поэтому переименование старого направления
+// «потеряет» его цифры, а добавление нового ничего не ломает.
+// ---------------------------------------------------------------------------
+
+export const SHIPMENT_DIRECTIONS = [
+  "Астана",
+  "Караганда",
+  "Семей",
+  "Усть-Каменогорск",
+  "Киргизия",
+  "Магазины-ритейл",
+  "Пожарка",
+  "РФ",
+  "Другие",
+] as const;
+export type ShipmentDirection = (typeof SHIPMENT_DIRECTIONS)[number];
+
+// ---------------------------------------------------------------------------
+// Высшая категория выхода.
+//
+// Агроном планирует ростовку — сколько стеблей какой длины (у розы и эустомы)
+// или какой категории (у хризантемы) он рассчитывает срезать. Из этой ростовки
+// система сама считает выход высшей категории: доля стеблей, попавших в
+// перечисленные ниже градации.
+//
+// У хризантемы «высшая» — это прямо названная категория. У розы категории нет,
+// её роль играет длина: чем длиннее стебель, тем выше сорт и цена, поэтому
+// высшей считаем 70 см и длиннее. Если в хозяйстве принята другая граница —
+// поменяйте список здесь, пересчёт по всем месяцам произойдёт сам.
+// ---------------------------------------------------------------------------
+
+export const TOP_GRADES_BY_FLOWER_TYPE: Record<string, string[]> = {
+  rose: ["70", "80", "90", "100"],
+  chrysanthemum: ["Высшая"],
+  eustoma: ["Стандарт"],
+};
+
+export function isTopGrade(flowerType: string, grade: string): boolean {
+  return (TOP_GRADES_BY_FLOWER_TYPE[flowerType] ?? []).includes(grade);
+}
+
+/** Человеческая подпись «что считается высшей категорией» — для интерфейса. */
+export function topGradeHint(flowerType: string): string {
+  const grades = TOP_GRADES_BY_FLOWER_TYPE[flowerType] ?? [];
+  if (grades.length === 0) return "не задано";
+  return grades.map(formatGrade).join(", ");
+}
+
+// ---------------------------------------------------------------------------
+// Период планирования — месяц в виде «2026-09». И планы продаж, и план
+// отгрузок, и прогноз срезки живут в одном формате, чтобы их можно было
+// класть рядом в один отчёт.
+// ---------------------------------------------------------------------------
+
+const MONTH_NAMES = [
+  "январь",
+  "февраль",
+  "март",
+  "апрель",
+  "май",
+  "июнь",
+  "июль",
+  "август",
+  "сентябрь",
+  "октябрь",
+  "ноябрь",
+  "декабрь",
+];
+
+/** «2026-09» → «сентябрь 2026». */
+export function periodLabel(period: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!match) return period;
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return period;
+  return `${MONTH_NAMES[month - 1]} ${match[1]}`;
+}
+
+/** Месяц указанной даты в формате «2026-09» (по местному времени, не UTC). */
+export function periodOf(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Сдвиг месяца: periodShift("2026-01", -1) === "2025-12". */
+export function periodShift(period: string, months: number): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!match) return period;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1 + months, 1);
+  return periodOf(date);
+}
+
+export function isValidPeriod(period: string): boolean {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!match) return false;
+  const month = Number(match[2]);
+  return month >= 1 && month <= 12;
 }
 
 export const ORDER_STATUSES = {

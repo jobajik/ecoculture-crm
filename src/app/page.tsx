@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { authOptions } from "@/lib/auth";
 import { getStockSnapshot } from "@/lib/stock";
-import { farmLabel, flowerTypesForFarm } from "@/lib/constants";
+import { farmLabel, flowerTypesForFarm, isFarmBoundRole } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,9 @@ export default async function HomePage() {
   if (!session) redirect("/login");
 
   const role = session.user?.role ?? "manager";
-  const farm = role === "warehouse" ? session.user?.farm ?? null : null;
+  // Зав. складом и агроном привязаны к производству — им и остатки показываем
+  // только по своему цветку. Остальные роли видят всё.
+  const farm = isFarmBoundRole(role) ? session.user?.farm ?? null : null;
   const snapshot = await getStockSnapshot(new Date(), undefined, farm);
 
   // На главной — только разделы, по одному на область работы. Подстраницы
@@ -53,8 +55,25 @@ export default async function HomePage() {
       href: "/sales",
       title: "Продажи",
       desc: "Рейтинг менеджеров и бонусы, план и факт, продажи за день",
-      show: role === "manager" || role === "admin",
+      show: role === "manager" || role === "sales_head" || role === "admin",
       emoji: "🏆",
+    },
+    {
+      href: "/plans",
+      title: "Планы",
+      desc:
+        role === "admin"
+          ? "План продаж по менеджерам, план отгрузок по направлениям, прогноз срезки"
+          : "План продаж по менеджерам и план отгрузок по направлениям на месяц",
+      show: role === "sales_head" || role === "admin",
+      emoji: "🎯",
+    },
+    {
+      href: "/forecast",
+      title: "Прогноз срезки",
+      desc: "Ростовка на месяц по сортам и выход высшей категории",
+      show: role === "agronomist",
+      emoji: "🌱",
     },
     {
       href: "/analytics",

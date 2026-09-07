@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import clsx from "clsx";
-import { ROLE_LABELS, farmLabel } from "@/lib/constants";
+import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
 
 // В шапке — только разделы, по одному пункту на область работы. Всё, что внутри
 // раздела, живёт во вкладках на самой странице (SectionTabs). Иначе у админа
@@ -13,7 +13,11 @@ import { ROLE_LABELS, farmLabel } from "@/lib/constants";
 const LINKS: { href: string; label: string; roles?: string[] }[] = [
   { href: "/", label: "Главная" },
   { href: "/orders", label: "Заявки" },
-  { href: "/sales", label: "Продажи", roles: ["manager", "admin"] },
+  { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
+  { href: "/plans", label: "Планы", roles: ["sales_head", "admin"] },
+  // У администратора прогноз срезки живёт вкладкой внутри «Планов» — иначе
+  // верхнее меню снова разрастается до девяти пунктов.
+  { href: "/forecast", label: "Прогноз срезки", roles: ["agronomist"] },
   { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },
   { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
   { href: "/analytics", label: "Аналитика" },
@@ -78,9 +82,10 @@ export default function Nav() {
             <div className="text-sm font-medium">{session.user?.name}</div>
             <div className="text-xs text-ink-muted">
               {ROLE_LABELS[role] ?? role}
-              {/* Производство показываем только зав. складом: у остальных ролей
-                  колонка Farm не влияет ни на что, и подпись только путала бы. */}
-              {role === "warehouse" && session.user?.farm && ` · ${farmLabel(session.user.farm)}`}
+              {/* Производство показываем только тем, кто к нему привязан
+                  (зав. складом и агроному): у остальных ролей колонка Farm
+                  не влияет ни на что, и подпись только путала бы. */}
+              {isFarmBoundRole(role) && session.user?.farm && ` · ${farmLabel(session.user.farm)}`}
             </div>
           </div>
           <span

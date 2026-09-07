@@ -1,4 +1,4 @@
-import { readTable, rowToRecord, SHEET_TABS } from "../sheets";
+import { appendRows, readTable, rowToRecord, updateRows, SHEET_TABS } from "../sheets";
 
 /**
  * Планы продаж. Ведутся на вкладке Plans в Google-таблице:
@@ -44,4 +44,44 @@ export async function getPlansForPeriod(period: string): Promise<Map<string, Pla
     if (plan.period === period) map.set(plan.managerEmail, plan);
   }
   return map;
+}
+
+/**
+ * Сохраняет планы менеджеров: строка на месяц и менеджера. Существующую строку
+ * переписываем, новую дописываем — чтобы правка плана не плодила дубли, из
+ * которых потом непонятно, какой план настоящий.
+ */
+export async function savePlans(
+  inputs: PlanRow[]
+): Promise<{ updated: number; created: number }> {
+  if (inputs.length === 0) return { updated: 0, created: 0 };
+
+  const table = await readTable(SHEET_TABS.PLANS);
+  const rowByKey = new Map<string, number>();
+  table.rows.forEach((row, idx) => {
+    const record = rowToRecord(SHEET_TABS.PLANS, row);
+    const key = `${(record.Period || "").trim()}|${(record.ManagerEmail || "").trim().toLowerCase()}`;
+    if (!rowByKey.has(key)) rowByKey.set(key, table.rowNumbers[idx]);
+  });
+
+  const updates: { rowNumber: number; record: Record<string, unknown> }[] = [];
+  const creates: Record<string, unknown>[] = [];
+
+  for (const input of inputs) {
+    const email = input.managerEmail.trim().toLowerCase();
+    const record = {
+      Period: input.period,
+      ManagerEmail: email,
+      TargetAmount: input.targetAmount,
+      TargetStems: input.targetStems,
+    };
+    const rowNumber = rowByKey.get(`${input.period}|${email}`);
+    if (rowNumber) updates.push({ rowNumber, record });
+    else creates.push(record);
+  }
+
+  await updateRows(SHEET_TABS.PLANS, updates);
+  await appendRows(SHEET_TABS.PLANS, creates);
+
+  return { updated: updates.length, created: creates.length };
 }
