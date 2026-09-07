@@ -2,14 +2,30 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { FARM_ORDER, FLOWER_TYPE_LABELS, FLOWER_TYPES_BY_FARM, farmLabel, formatGrade } from "@/lib/constants";
-import type { StockGradeRow, StockSnapshot, StockVarietyCard } from "@/lib/stock";
+import {
+  FLOWER_TYPE_LABELS_PLURAL,
+  FLOWER_TYPES_BY_FARM,
+  FARM_ORDER,
+  farmLabel,
+  formatGrade,
+  getFarmFor,
+} from "@/lib/constants";
+import type { StockSnapshot, StockVarietyCard } from "@/lib/stock";
 import type { StorageStatus } from "@/lib/shelfLife";
 
 const REFRESH_MS = 45_000;
 
-/** Порядок секций на витрине. */
-const FLOWER_TYPE_ORDER = ["rose", "chrysanthemum", "eustoma"];
+/** Порядок колонок на витрине: роза, хризантема, эустома. */
+const COLUMNS = ["rose", "chrysanthemum", "eustoma"];
+
+// Статус — это состояние, а не категория, поэтому цвет резервный и всегда
+// сопровождается словами: на печати и при дальтонизме цвет не читается.
+const STATUS_LABEL: Record<StorageStatus, string> = {
+  ok: "в порядке",
+  warning: "скоро истечёт",
+  critical: "просрочено",
+  depleted: "закончилось",
+};
 
 const STATUS_TEXT: Record<StorageStatus, string> = {
   ok: "text-status-good",
@@ -25,11 +41,18 @@ const STATUS_BAR: Record<StorageStatus, string> = {
   depleted: "bg-ink-muted",
 };
 
-const STATUS_RING: Record<StorageStatus, string> = {
-  ok: "border-line-hairline",
-  warning: "border-status-warning/50",
-  critical: "border-status-critical/50",
-  depleted: "border-line-hairline",
+const STATUS_DOT: Record<StorageStatus, string> = {
+  ok: "bg-status-good",
+  warning: "bg-status-warning",
+  critical: "bg-status-critical",
+  depleted: "bg-ink-muted",
+};
+
+const STATUS_ORDER: Record<StorageStatus, number> = {
+  critical: 0,
+  warning: 1,
+  ok: 2,
+  depleted: 3,
 };
 
 function dayWord(days: number) {
@@ -50,6 +73,19 @@ function relativeTime(iso: string, now: number) {
   return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
+interface DetailRow {
+  key: string;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  quantity: number;
+  oldestDays: number;
+  newestDays: number;
+  maxDays: number;
+  status: StorageStatus;
+  batches: number;
+}
+
 export default function StockBoard({ initial }: { initial: StockSnapshot }) {
   const [snapshot, setSnapshot] = useState<StockSnapshot>(initial);
   const [loading, setLoading] = useState(false);
@@ -62,8 +98,7 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
     try {
       const res = await fetch("/api/stock", { cache: "no-store" });
       if (!res.ok) throw new Error("Не удалось обновить остатки");
-      const data = (await res.json()) as StockSnapshot;
-      setSnapshot(data);
+      setSnapshot((await res.json()) as StockSnapshot);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка обновления");
@@ -73,7 +108,6 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
     }
   }, []);
 
-  // Автообновление + обновление при возврате на вкладку.
   useEffect(() => {
     const interval = setInterval(refresh, REFRESH_MS);
     const onFocus = () => refresh();
@@ -84,271 +118,284 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
     };
   }, [refresh]);
 
-  // Отдельный таймер, чтобы надпись «обновлено N назад» шла сама.
   useEffect(() => {
     const t = setInterval(() => setTick(Date.now()), 10_000);
     return () => clearInterval(t);
   }, []);
 
-  const visibleVarieties = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return snapshot.varieties.filter(
-      (v) => !query || v.variety.toLowerCase().includes(query)
-    );
-  }, [snapshot.varieties, search]);
-
-  /** Раскладываем карточки по типам цветка — каждый тип показывается своей секцией. */
-  const byType = useMemo(() => {
-    const map = new Map<string, StockVarietyCard[]>();
-    for (const card of visibleVarieties) {
-      const list = map.get(card.flowerType) ?? [];
+  /** Колонки — по одной на тип цветка, всегда все три, чтобы вид не «прыгал». */
+  const columns = useMemo(() => {
+    const byType = new Map<string, StockVarietyCard[]>();
+    for (const card of snapshot.varieties) {
+      const list = byType.get(card.flowerType) ?? [];
       list.push(card);
-      map.set(card.flowerType, list);
+      byType.set(card.flowerType, list);
     }
-    return map;
-  }, [visibleVarieties]);
+    return COLUMNS.map((type) => {
+      const cards = (byType.get(type) ?? []).sort((a, b) => b.totalQuantity - a.totalQuantity);
+      return {
+        type,
+        farm: getFarmFor(type),
+        cards,
+        total: cards.reduce((s, c) => s + c.totalQuantity, 0),
+        batches: cards.reduce((s, c) => s + c.grades.reduce((x, g) => x + g.batches, 0), 0),
+        worst: cards.reduce<StorageStatus>(
+          (worst, c) => (STATUS_ORDER[c.status] < STATUS_ORDER[worst] ? c.status : worst),
+          "ok"
+        ),
+      };
+    });
+  }, [snapshot.varieties]);
+
+  /** Нижний список — плоская таблица «сорт + длина», сначала самое срочное. */
+  const details = useMemo(() => {
+    const rows: DetailRow[] = [];
+    for (const card of snapshot.varieties) {
+      for (const g of card.grades) {
+        rows.push({
+          key: `${card.key}:${g.grade}`,
+          flowerType: card.flowerType,
+          variety: card.variety,
+          grade: g.grade,
+          quantity: g.quantity,
+          oldestDays: g.oldestDays,
+          newestDays: g.newestDays,
+          maxDays: g.maxDays,
+          status: g.status,
+          batches: g.batches,
+        });
+      }
+    }
+    const q = search.trim().toLowerCase();
+    return rows
+      .filter((r) => !q || r.variety.toLowerCase().includes(q))
+      .sort(
+        (a, b) =>
+          STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+          b.oldestDays / Math.max(1, b.maxDays) - a.oldestDays / Math.max(1, a.maxDays) ||
+          b.quantity - a.quantity
+      );
+  }, [snapshot.varieties, search]);
 
   const atRisk = snapshot.warningStems + snapshot.criticalStems;
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            Остатки на складе
-            <span className="relative flex h-2 w-2" title="Обновляется автоматически">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-status-good opacity-60 animate-ping" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-status-good" />
-            </span>
-          </h2>
-          <p className="text-sm text-ink-muted">
-            {loading ? "Обновляю…" : `Обновлено ${relativeTime(snapshot.generatedAt, tick)}`}
-            {error && <span className="text-status-critical"> · {error}</span>}
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          Остатки на складе
+          <span className="relative flex h-2 w-2" title="Обновляется автоматически">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-status-good opacity-60 animate-ping" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-status-good" />
+          </span>
+        </h2>
+        <div className="flex items-center gap-3 text-sm text-ink-muted">
+          <span>{loading ? "Обновляю…" : `Обновлено ${relativeTime(snapshot.generatedAt, tick)}`}</span>
+          {error && <span className="text-status-critical">{error}</span>}
+          <button onClick={refresh} disabled={loading} className="btn-secondary !py-1 !px-2.5 text-xs">
+            ↻
+          </button>
         </div>
-        <button onClick={refresh} disabled={loading} className="btn-secondary !py-1.5">
-          ↻ Обновить
-        </button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile
-          label="Всего на складе"
-          value={snapshot.totalStems.toLocaleString("ru-RU")}
-          unit="шт"
-          sub={`${snapshot.varietyCount} сортов · ${snapshot.totalBatches} партий`}
-        />
-        <Tile
-          label="Средний возраст"
-          value={snapshot.avgAgeDays.toFixed(1)}
-          unit={dayWord(Math.round(snapshot.avgAgeDays))}
-          sub="взвешенный по количеству"
-        />
-        <Tile
-          label="Требует внимания"
-          value={snapshot.warningStems.toLocaleString("ru-RU")}
-          unit="шт"
-          sub="подходит к концу срока"
-          tone={snapshot.warningStems > 0 ? "warning" : "ok"}
-        />
-        <Tile
-          label="Просрочено"
-          value={snapshot.criticalStems.toLocaleString("ru-RU")}
-          unit="шт"
-          sub="срок хранения вышел"
-          tone={snapshot.criticalStems > 0 ? "critical" : "ok"}
-        />
+      {/* Сводка одной строкой вместо четырёх крупных плиток */}
+      <div className="card !py-3 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
+        <span>
+          <b className="text-xl tabular-nums">{snapshot.totalStems.toLocaleString("ru-RU")}</b>
+          <span className="text-ink-secondary"> шт. всего</span>
+        </span>
+        <span className="text-ink-secondary">
+          {snapshot.varietyCount} сортов · {snapshot.totalBatches} партий
+        </span>
+        <span className="text-ink-secondary">
+          средний возраст{" "}
+          <b className="text-ink-primary tabular-nums">{snapshot.avgAgeDays.toFixed(1)}</b>{" "}
+          {dayWord(Math.round(snapshot.avgAgeDays))}
+        </span>
+        {snapshot.warningStems > 0 && (
+          <span className={STATUS_TEXT.warning}>
+            <b className="tabular-nums">{snapshot.warningStems.toLocaleString("ru-RU")}</b> шт. скоро
+            истекут
+          </span>
+        )}
+        {snapshot.criticalStems > 0 && (
+          <span className={STATUS_TEXT.critical}>
+            <b className="tabular-nums">{snapshot.criticalStems.toLocaleString("ru-RU")}</b> шт.
+            просрочено
+          </span>
+        )}
+        {atRisk === 0 && snapshot.totalStems > 0 && (
+          <span className={STATUS_TEXT.ok}>весь цветок в сроке</span>
+        )}
       </div>
 
-      {snapshot.urgent.length > 0 && (
-        <div className="card border-status-warning/40">
-          <h3 className="font-medium mb-1">Продать в первую очередь</h3>
-          <p className="text-xs text-ink-muted mb-3">
-            {atRisk.toLocaleString("ru-RU")} шт. в партиях, которые дольше всего лежат на складе
-          </p>
-          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
-            {snapshot.urgent.map((row) => (
-              <div key={row.batchId} className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="truncate">
-                  <span className="text-ink-muted">{FLOWER_TYPE_LABELS[row.flowerType]}</span>{" "}
-                  <b>{row.variety}</b>{" "}
-                  <span className="text-ink-secondary">{formatGrade(row.grade)}</span>
-                </span>
-                <span className="flex items-baseline gap-3 shrink-0 tabular-nums">
-                  <span className="text-ink-secondary">{row.quantity.toLocaleString("ru-RU")} шт.</span>
-                  <span className={clsx("font-medium", STATUS_TEXT[row.status])}>
-                    {row.daysInStorage} / {row.maxDays} дн.
-                  </span>
-                </span>
+      {/* Три колонки: роза · хризантема · эустома */}
+      <div className="grid md:grid-cols-3 gap-3">
+        {columns.map((col) => (
+          <div key={col.type} className="card !p-4">
+            <div className="flex items-baseline justify-between gap-2 pb-2 mb-2 border-b border-line-hairline">
+              <div className="min-w-0">
+                <h3 className="font-semibold">{FLOWER_TYPE_LABELS_PLURAL[col.type] ?? col.type}</h3>
+                <div className="text-[11px] text-ink-muted truncate">{farmLabel(col.farm)}</div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              <div className="text-right shrink-0">
+                <div className="text-xl font-semibold tabular-nums leading-none">
+                  {col.total.toLocaleString("ru-RU")}
+                </div>
+                <div className="text-[11px] text-ink-muted">шт.</div>
+              </div>
+            </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          className="input !w-auto flex-1 min-w-[200px] !py-1.5"
-          placeholder="Поиск по сорту"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+            {col.cards.length === 0 ? (
+              <p className="text-sm text-ink-muted py-2">Нет на складе</p>
+            ) : (
+              <>
+                <ul className="space-y-1.5">
+                  {col.cards.map((card) => (
+                    <li key={card.key} className="flex items-baseline gap-2 text-sm">
+                      <span
+                        className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[card.status])}
+                        title={STATUS_LABEL[card.status]}
+                      />
+                      <span className="truncate flex-1" title={card.variety}>
+                        {card.variety}
+                      </span>
+                      <span className="tabular-nums font-medium shrink-0">
+                        {card.totalQuantity.toLocaleString("ru-RU")}
+                      </span>
+                      <span
+                        className={clsx("text-[11px] tabular-nums shrink-0 w-12 text-right", STATUS_TEXT[card.status])}
+                        title={`Самая старая партия: ${card.oldestDays} дн.`}
+                      >
+                        {card.oldestDays} дн.
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
+                  {col.cards.length} {col.cards.length === 1 ? "сорт" : col.cards.length < 5 ? "сорта" : "сортов"} ·{" "}
+                  {col.batches} партий
+                  {col.worst !== "ok" && (
+                    <span className={clsx(" · ", STATUS_TEXT[col.worst])}>{STATUS_LABEL[col.worst]}</span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ))}
       </div>
 
+      {/* Подробный список — сначала то, что горит */}
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h3 className="font-medium">
+            Подробно по позициям
+            <span className="text-sm font-normal text-ink-muted"> — сверху то, что нужно продать раньше</span>
+          </h3>
+          <input
+            className="input !w-auto !py-1.5 min-w-[180px]"
+            placeholder="Поиск по сорту"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="card !p-0 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                <th className="px-4 py-2.5 font-medium">Цветок</th>
+                <th className="px-4 py-2.5 font-medium">Сорт</th>
+                <th className="px-4 py-2.5 font-medium">Длина / кат.</th>
+                <th className="px-4 py-2.5 font-medium text-right">Осталось</th>
+                <th className="px-4 py-2.5 font-medium text-right">Лежит</th>
+                <th className="px-4 py-2.5 font-medium w-40">Срок хранения</th>
+              </tr>
+            </thead>
+            <tbody>
+              {details.map((r) => {
+                const fill = r.maxDays > 0 ? Math.min(100, (r.oldestDays / r.maxDays) * 100) : 0;
+                const spread = r.oldestDays !== r.newestDays;
+                return (
+                  <tr
+                    key={r.key}
+                    className={clsx(
+                      "border-b border-line-hairline last:border-0 hover:bg-surface-plane",
+                      r.status === "critical" && "bg-status-critical/5"
+                    )}
+                  >
+                    <td className="px-4 py-2 text-ink-secondary whitespace-nowrap">
+                      {FLOWER_TYPE_LABELS_PLURAL[r.flowerType] ?? r.flowerType}
+                    </td>
+                    <td className="px-4 py-2 font-medium">{r.variety}</td>
+                    <td className="px-4 py-2 text-ink-secondary whitespace-nowrap">
+                      {formatGrade(r.grade)}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums font-medium whitespace-nowrap">
+                      {r.quantity.toLocaleString("ru-RU")}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap text-ink-secondary">
+                      {spread ? `${r.newestDays}–${r.oldestDays}` : r.oldestDays} {dayWord(r.oldestDays)}
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 flex-1 rounded-full bg-surface-plane overflow-hidden min-w-[48px]">
+                          <div
+                            className={clsx("h-full rounded-full", STATUS_BAR[r.status])}
+                            style={{ width: `${Math.max(4, fill)}%` }}
+                          />
+                        </div>
+                        <span
+                          className={clsx("text-[11px] whitespace-nowrap tabular-nums", STATUS_TEXT[r.status])}
+                        >
+                          {r.oldestDays}/{r.maxDays}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {details.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
+                    {snapshot.totalStems === 0
+                      ? "На складе пусто. Как только зав. складом оформит приёмку, остатки появятся здесь."
+                      : "По этому сорту ничего не нашлось."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-xs text-ink-muted mt-2">
+          «Лежит» — дней с даты срезки. «Срок хранения» — сколько прошло из положенного:{" "}
+          <span className={STATUS_TEXT.warning}>жёлтый — скоро истечёт</span>,{" "}
+          <span className={STATUS_TEXT.critical}>красный — просрочено</span>.
+        </p>
+      </div>
+
+      {/* Разбивка по производствам — только когда видно оба */}
       {snapshot.byFarm.length > 1 && (
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-secondary">
           {FARM_ORDER.filter((f) => snapshot.byFarm.some((x) => x.farm === f)).map((f) => {
             const row = snapshot.byFarm.find((x) => x.farm === f)!;
             return (
-              <div key={f} className="card !p-4 flex items-baseline justify-between">
-                <div>
-                  <div className="font-medium">{farmLabel(f)}</div>
-                  <div className="text-xs text-ink-muted">
-                    {FLOWER_TYPES_BY_FARM[f]?.map((t) => FLOWER_TYPE_LABELS[t]).join(" · ")}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xl font-semibold tabular-nums">
-                    {row.quantity.toLocaleString("ru-RU")}
-                  </div>
-                  <div className="text-xs text-ink-muted">шт. · {row.batches} партий</div>
-                </div>
-              </div>
+              <span key={f}>
+                {farmLabel(f)}{" "}
+                <b className="text-ink-primary tabular-nums">
+                  {row.quantity.toLocaleString("ru-RU")}
+                </b>{" "}
+                шт.
+                <span className="text-ink-muted">
+                  {" "}
+                  ({FLOWER_TYPES_BY_FARM[f]?.map((t) => FLOWER_TYPE_LABELS_PLURAL[t]).join(", ")})
+                </span>
+              </span>
             );
           })}
-        </div>
-      )}
-
-      {snapshot.totalStems === 0 ? (
-        <div className="card text-center py-10">
-          <div className="text-2xl mb-2">📦</div>
-          <p className="font-medium">На складе пока пусто</p>
-          <p className="text-sm text-ink-secondary mt-1">
-            Как только зав. складом оформит приёмку с производства, остатки появятся здесь.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {FLOWER_TYPE_ORDER.filter((type) => byType.get(type)?.length).map((type) => {
-            const cards = byType.get(type) ?? [];
-            const typeTotal = cards.reduce((sum, c) => sum + c.totalQuantity, 0);
-            const farmOfType = cards[0]?.farm;
-            return (
-              <div key={type}>
-                <div className="flex items-baseline justify-between gap-3 mb-2 pb-2 border-b border-line-hairline">
-                  <h3 className="font-semibold">
-                    {FLOWER_TYPE_LABELS[type] ?? type}
-                    {farmOfType && (
-                      <span className="text-ink-muted font-normal text-sm"> · {farmLabel(farmOfType)}</span>
-                    )}
-                  </h3>
-                  <span className="text-sm text-ink-secondary tabular-nums">
-                    {typeTotal.toLocaleString("ru-RU")} шт. · {cards.length}{" "}
-                    {cards.length === 1 ? "сорт" : cards.length < 5 ? "сорта" : "сортов"}
-                  </span>
-                </div>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {cards.map((card) => (
-                    <VarietyCard key={card.key} card={card} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-
-          {visibleVarieties.length === 0 && (
-            <div className="card text-center py-8">
-              <p className="font-medium">Ничего не найдено</p>
-              <p className="text-sm text-ink-secondary mt-1">Попробуйте изменить строку поиска.</p>
-            </div>
-          )}
         </div>
       )}
     </section>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  unit,
-  sub,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  unit?: string;
-  sub?: string;
-  tone?: "default" | "ok" | "warning" | "critical";
-}) {
-  const toneClass =
-    tone === "warning"
-      ? "text-[#8a5a00]"
-      : tone === "critical"
-      ? "text-status-critical"
-      : tone === "ok"
-      ? "text-ink-primary"
-      : "text-ink-primary";
-
-  return (
-    <div className="card !p-4">
-      <div className="text-xs text-ink-secondary mb-1">{label}</div>
-      <div className={clsx("text-2xl font-semibold tabular-nums", toneClass)}>
-        {value}
-        {unit && <span className="text-sm font-normal text-ink-muted ml-1">{unit}</span>}
-      </div>
-      {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
-    </div>
-  );
-}
-
-function VarietyCard({ card }: { card: StockVarietyCard }) {
-  return (
-    <div className={clsx("card !p-4 border", STATUS_RING[card.status])}>
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="min-w-0">
-          <div className="font-medium truncate">{card.variety}</div>
-          <div className="text-xs text-ink-muted">{FLOWER_TYPE_LABELS[card.flowerType]}</div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="font-semibold tabular-nums">{card.totalQuantity.toLocaleString("ru-RU")}</div>
-          <div className="text-xs text-ink-muted">шт.</div>
-        </div>
-      </div>
-
-      <div className="space-y-2.5">
-        {card.grades.map((g) => (
-          <GradeRow key={g.grade} row={g} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function GradeRow({ row }: { row: StockGradeRow }) {
-  const fill = row.maxDays > 0 ? Math.min(100, (row.oldestDays / row.maxDays) * 100) : 0;
-  const spread = row.oldestDays !== row.newestDays;
-
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="text-ink-primary">{formatGrade(row.grade)}</span>
-        <span className="flex items-baseline gap-2 tabular-nums">
-          <span className="font-medium">{row.quantity.toLocaleString("ru-RU")}</span>
-          <span className={clsx("text-xs", STATUS_TEXT[row.status])}>
-            {spread ? `${row.newestDays}–${row.oldestDays}` : row.oldestDays} {dayWord(row.oldestDays)}
-          </span>
-        </span>
-      </div>
-      <div
-        className="mt-1 h-1.5 rounded-full bg-surface-plane overflow-hidden"
-        title={`Самая старая партия: ${row.oldestDays} из ${row.maxDays} дней срока хранения`}
-      >
-        <div
-          className={clsx("h-full rounded-full transition-all", STATUS_BAR[row.status])}
-          style={{ width: `${Math.max(4, fill)}%` }}
-        />
-      </div>
-    </div>
   );
 }
