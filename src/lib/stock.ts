@@ -44,6 +44,53 @@ export interface UrgentBatchRow {
   location: string;
 }
 
+/**
+ * Диапазоны по времени хранения. Границы одинаковые для всех цветков — это
+ * вопрос «сколько дней лежит», а не «сколько ему осталось»: владелец смотрит на
+ * склад целиком. А вот цвет внутри диапазона у каждого свой, потому что роза на
+ * восьмой день уже просрочена, а хризантема ещё свежая (сроки хранения — на
+ * вкладке Settings). Поэтому в одном диапазоне могут стоять и зелёный, и
+ * красный сорт, и это не ошибка.
+ */
+export const AGE_BUCKETS = [
+  { key: "1-3", label: "1–3 дня", minDays: 0, maxDays: 3 },
+  { key: "4-7", label: "4–7 дней", minDays: 4, maxDays: 7 },
+  { key: "8-13", label: "8–13 дней", minDays: 8, maxDays: 13 },
+  { key: "14+", label: "14 дней и больше", minDays: 14, maxDays: Infinity },
+] as const;
+
+export function ageBucketKeyOf(daysInStorage: number): string {
+  const bucket = AGE_BUCKETS.find((b) => daysInStorage >= b.minDays && daysInStorage <= b.maxDays);
+  return (bucket ?? AGE_BUCKETS[AGE_BUCKETS.length - 1]).key;
+}
+
+/** Строка внутри диапазона: сорт целиком, без длин — так просил владелец. */
+export interface AgeBucketVariety {
+  flowerType: string;
+  variety: string;
+  quantity: number;
+  batches: number;
+  /** Самая старая партия сорта внутри этого диапазона. */
+  oldestDays: number;
+  maxDays: number;
+  status: StorageStatus;
+}
+
+export interface AgeBucketRow {
+  key: string;
+  label: string;
+  minDays: number;
+  /** Infinity у последнего диапазона. */
+  maxDays: number;
+  quantity: number;
+  batches: number;
+  /** Доля от всего склада, 0…1. */
+  share: number;
+  /** Худший статус внутри диапазона — им и подсвечивается плитка. */
+  status: StorageStatus;
+  varieties: AgeBucketVariety[];
+}
+
 export interface StockSnapshot {
   generatedAt: string;
   totalStems: number;
@@ -56,6 +103,8 @@ export interface StockSnapshot {
   byFarm: { farm: string; quantity: number; batches: number }[];
   varieties: StockVarietyCard[];
   urgent: UrgentBatchRow[];
+  /** Разбивка по времени хранения: 1–3, 4–7, 8–13, 14+ дней. */
+  ageBuckets: AgeBucketRow[];
 }
 
 /** Самый «тревожный» из двух статусов — им и красим карточку целиком. */
@@ -159,6 +208,50 @@ export async function getStockSnapshot(
     }))
     .sort((a, b) => b.totalQuantity - a.totalQuantity);
 
+  // --- Диапазоны по времени хранения ---------------------------------------
+  // Считаем по партиям, а складываем по сортам: длины здесь не нужны, вопрос
+  // стоит «сколько цветка какого сорта пролежало столько-то дней».
+  const bucketMap = new Map<string, Map<string, AgeBucketVariety>>();
+  for (const bucket of AGE_BUCKETS) bucketMap.set(bucket.key, new Map());
+
+  for (const info of active) {
+    const b = info.batch;
+    const rows = bucketMap.get(ageBucketKeyOf(info.daysInStorage))!;
+    const key = `${b.flowerType}:${b.variety.trim().toLowerCase()}`;
+    const row = rows.get(key) ?? {
+      flowerType: b.flowerType,
+      variety: b.variety,
+      quantity: 0,
+      batches: 0,
+      oldestDays: info.daysInStorage,
+      maxDays: info.maxDays,
+      status: info.status,
+    };
+    row.quantity += b.quantityRemaining;
+    row.batches += 1;
+    row.oldestDays = Math.max(row.oldestDays, info.daysInStorage);
+    row.status = worseStatus(row.status, info.status);
+    rows.set(key, row);
+  }
+
+  const ageBuckets: AgeBucketRow[] = AGE_BUCKETS.map((bucket) => {
+    const varieties = Array.from(bucketMap.get(bucket.key)!.values()).sort(
+      (a, b) => b.quantity - a.quantity || a.variety.localeCompare(b.variety, "ru")
+    );
+    const quantity = varieties.reduce((s, v) => s + v.quantity, 0);
+    return {
+      key: bucket.key,
+      label: bucket.label,
+      minDays: bucket.minDays,
+      maxDays: bucket.maxDays,
+      quantity,
+      batches: varieties.reduce((s, v) => s + v.batches, 0),
+      share: totalStems > 0 ? quantity / totalStems : 0,
+      status: varieties.reduce<StorageStatus>((worst, v) => worseStatus(worst, v.status), "ok"),
+      varieties,
+    };
+  });
+
   const urgent: UrgentBatchRow[] = active
     .filter((i) => i.status === "warning" || i.status === "critical")
     .sort((a, b) => b.percentUsed - a.percentUsed)
@@ -191,5 +284,6 @@ export async function getStockSnapshot(
       .sort((a, b) => b.quantity - a.quantity),
     varieties,
     urgent,
+    ageBuckets,
   };
 }

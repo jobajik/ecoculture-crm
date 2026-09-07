@@ -10,7 +10,7 @@ import {
   formatGrade,
   getFarmFor,
 } from "@/lib/constants";
-import type { StockSnapshot, StockVarietyCard } from "@/lib/stock";
+import type { AgeBucketRow, StockSnapshot, StockVarietyCard } from "@/lib/stock";
 import type { StorageStatus } from "@/lib/shelfLife";
 
 const REFRESH_MS = 45_000;
@@ -46,6 +46,14 @@ const STATUS_DOT: Record<StorageStatus, string> = {
   warning: "bg-status-warning",
   critical: "bg-status-critical",
   depleted: "bg-ink-muted",
+};
+
+/** Мягкая подсветка блока: цвет фона и рамки под статус. */
+const STATUS_TINT: Record<StorageStatus, string> = {
+  ok: "border-line-hairline",
+  warning: "border-status-warning/40 bg-status-warning/[0.07]",
+  critical: "border-status-critical/40 bg-status-critical/[0.07]",
+  depleted: "border-line-hairline",
 };
 
 const STATUS_ORDER: Record<StorageStatus, number> = {
@@ -219,8 +227,18 @@ export default function StockBoard({
         </div>
       </div>
 
-      {/* Сводка одной строкой вместо четырёх крупных плиток */}
-      <div className="card !py-3 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
+      {/* Сводка одной строкой вместо четырёх крупных плиток. Подсвечивается
+          целиком, когда на складе есть что-то на грани или просроченное. */}
+      <div
+        className={clsx(
+          "card !py-3 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm border",
+          snapshot.criticalStems > 0
+            ? STATUS_TINT.critical
+            : snapshot.warningStems > 0
+              ? STATUS_TINT.warning
+              : "border-line-hairline"
+        )}
+      >
         <span>
           <b className="text-xl tabular-nums">{snapshot.totalStems.toLocaleString("ru-RU")}</b>
           <span className="text-ink-secondary"> шт. всего</span>
@@ -235,13 +253,23 @@ export default function StockBoard({
           {dayWord(Math.round(snapshot.avgAgeDays))}
         </span>
         {snapshot.warningStems > 0 && (
-          <span className={STATUS_TEXT.warning}>
+          <span
+            className={clsx(
+              "rounded-full px-2.5 py-1 bg-status-warning/15 font-medium",
+              STATUS_TEXT.warning
+            )}
+          >
             <b className="tabular-nums">{snapshot.warningStems.toLocaleString("ru-RU")}</b> шт. скоро
             истекут
           </span>
         )}
         {snapshot.criticalStems > 0 && (
-          <span className={STATUS_TEXT.critical}>
+          <span
+            className={clsx(
+              "rounded-full px-2.5 py-1 bg-status-critical/15 font-medium",
+              STATUS_TEXT.critical
+            )}
+          >
             <b className="tabular-nums">{snapshot.criticalStems.toLocaleString("ru-RU")}</b> шт.
             просрочено
           </span>
@@ -279,7 +307,14 @@ export default function StockBoard({
               <>
                 <ul className="space-y-1.5">
                   {col.cards.map((card) => (
-                    <li key={card.key} className="flex items-baseline gap-2 text-sm">
+                    <li
+                      key={card.key}
+                      className={clsx(
+                        "flex items-baseline gap-2 text-sm rounded-md -mx-1 px-1 py-0.5",
+                        card.status === "critical" && "bg-status-critical/10",
+                        card.status === "warning" && "bg-status-warning/10"
+                      )}
+                    >
                       <span
                         className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[card.status])}
                         title={STATUS_LABEL[card.status]}
@@ -310,6 +345,29 @@ export default function StockBoard({
             )}
           </div>
         ))}
+      </div>
+
+      {/* Сколько дней лежит — диапазонами. Отвечает на вопрос «что залежалось»
+          быстрее, чем таблица: цифра крупная, сорта под ней. */}
+      <div>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+          <h3 className="font-medium">
+            Сколько дней лежит
+            <span className="text-sm font-normal text-ink-muted">
+              {" "}
+              — от даты срезки, по сортам
+            </span>
+          </h3>
+          <span className="text-xs text-ink-muted">
+            Цвет — по сроку хранения своего цветка: роза 7 дней, хризантема 18, эустома 10
+          </span>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {snapshot.ageBuckets.map((bucket) => (
+            <AgeBucketCard key={bucket.key} bucket={bucket} total={snapshot.totalStems} />
+          ))}
+        </div>
       </div>
 
       {/* Подробный список — сначала то, что горит */}
@@ -348,7 +406,8 @@ export default function StockBoard({
                     key={r.key}
                     className={clsx(
                       "border-b border-line-hairline last:border-0 hover:bg-surface-plane",
-                      r.status === "critical" && "bg-status-critical/5"
+                      r.status === "critical" && "bg-status-critical/5",
+                      r.status === "warning" && "bg-status-warning/5"
                     )}
                   >
                     <td className="px-4 py-2 text-ink-secondary whitespace-nowrap">
@@ -361,8 +420,19 @@ export default function StockBoard({
                     <td className="px-4 py-2 text-right tabular-nums font-medium whitespace-nowrap">
                       {r.quantity.toLocaleString("ru-RU")}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap text-ink-secondary">
-                      {spread ? `${r.newestDays}–${r.oldestDays}` : r.oldestDays} {dayWord(r.oldestDays)}
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <span
+                        className={clsx(
+                          "inline-block rounded-full px-2 py-0.5 tabular-nums text-xs font-medium",
+                          r.status === "critical" && "bg-status-critical/15",
+                          r.status === "warning" && "bg-status-warning/15",
+                          r.status === "ok" && "bg-status-good/10",
+                          STATUS_TEXT[r.status]
+                        )}
+                      >
+                        {spread ? `${r.newestDays}–${r.oldestDays}` : r.oldestDays}{" "}
+                        {dayWord(r.oldestDays)}
+                      </span>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-2">
@@ -424,5 +494,82 @@ export default function StockBoard({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Плитка одного диапазона хранения. Внутри — сорта, без длин: на этот вопрос
+ * («что залежалось») длина ответа не добавляет, а строк добавляет втрое.
+ */
+function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number }) {
+  const empty = bucket.quantity === 0;
+  const percent = Math.round(bucket.share * 100);
+
+  return (
+    <div
+      className={clsx(
+        "card !p-4 border",
+        empty ? "border-line-hairline opacity-60" : STATUS_TINT[bucket.status]
+      )}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <h4 className="font-medium">{bucket.label}</h4>
+        {!empty && bucket.status !== "ok" && (
+          <span className={clsx("text-[11px] font-medium", STATUS_TEXT[bucket.status])}>
+            {STATUS_LABEL[bucket.status]}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-1.5 flex items-baseline gap-1.5">
+        <span className="text-2xl font-semibold tabular-nums leading-none">
+          {bucket.quantity.toLocaleString("ru-RU")}
+        </span>
+        <span className="text-sm text-ink-secondary">шт.</span>
+        {!empty && (
+          <span className="text-xs text-ink-muted ml-auto tabular-nums">{percent}%</span>
+        )}
+      </div>
+
+      {/* Полоса доли: сколько склада приходится на этот диапазон */}
+      <div className="h-1.5 rounded-full bg-surface-plane overflow-hidden mt-2">
+        <div
+          className={clsx("h-full rounded-full", STATUS_BAR[empty ? "depleted" : bucket.status])}
+          style={{ width: `${total > 0 ? Math.max(empty ? 0 : 3, bucket.share * 100) : 0}%` }}
+        />
+      </div>
+
+      {empty ? (
+        <p className="text-sm text-ink-muted mt-3">Ничего нет</p>
+      ) : (
+        <>
+          <ul className="mt-3 space-y-1.5">
+            {bucket.varieties.map((v) => (
+              <li
+                key={`${v.flowerType}:${v.variety}`}
+                className="flex items-baseline gap-2 text-sm"
+              >
+                <span
+                  className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[v.status])}
+                  title={`${FLOWER_TYPE_LABELS_PLURAL[v.flowerType] ?? v.flowerType} · ${
+                    STATUS_LABEL[v.status]
+                  }`}
+                />
+                <span className="truncate flex-1" title={v.variety}>
+                  {v.variety}
+                </span>
+                <span className="tabular-nums font-medium shrink-0">
+                  {v.quantity.toLocaleString("ru-RU")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
+            {bucket.varieties.length} {varietyWord(bucket.varieties.length)} · {bucket.batches}{" "}
+            {batchWord(bucket.batches)}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
