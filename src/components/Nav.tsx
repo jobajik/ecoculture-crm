@@ -76,7 +76,9 @@ export default function Nav() {
             <div className="text-sm font-medium">{session.user?.name}</div>
             <div className="text-xs text-ink-muted">
               {ROLE_LABELS[role] ?? role}
-              {session.user?.farm && ` · ${farmLabel(session.user.farm)}`}
+              {/* Производство показываем только зав. складом: у остальных ролей
+                  колонка Farm не влияет ни на что, и подпись только путала бы. */}
+              {role === "warehouse" && session.user?.farm && ` · ${farmLabel(session.user.farm)}`}
             </div>
           </div>
           <span
