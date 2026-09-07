@@ -2,12 +2,16 @@ import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere 
 import { generateId } from "../id";
 import type { FlowerType } from "../constants";
 import type { Batch } from "../types";
+import { toIsoDate } from "../sheetDate";
 
 function toBatch(record: Record<string, string>): Batch {
   return {
     batchId: record.BatchID,
     receivedAt: record.ReceivedAt,
-    harvestDate: record.HarvestDate,
+    // Дату приводим к «ГГГГ-ММ-ДД» на входе, а не в местах использования: от неё
+    // считаются и срок хранения, и порядок списания FIFO (сортировка строк).
+    // Таблица может вернуть её как «03.09.2026» — см. src/lib/sheetDate.ts.
+    harvestDate: toIsoDate(record.HarvestDate) || record.HarvestDate,
     flowerType: (record.FlowerType || "rose") as FlowerType,
     variety: record.Variety || "",
     grade: record.Grade || "",

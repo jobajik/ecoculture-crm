@@ -1,0 +1,83 @@
+/*
+ * Проверка разбора дат из Google-таблицы.
+ *
+ * Повод конкретный: таблица отдаёт значения так, как они отображаются. Ячейка с
+ * датным форматом вернёт «03.09.2026» вместо «2026-09-03», и тогда
+ * `new Date(...)` даёт Invalid Date — срок хранения становится нулём, а FIFO
+ * сортирует даты как строки. На боевых данных так «помолодели» 12 705 стеблей.
+ *
+ * Запуск: npx tsx scripts/check-sheet-date.ts
+ */
+import { toIsoDate } from "../src/lib/sheetDate";
+import { daysBetween, computeBatchStorageInfo } from "../src/lib/shelfLife";
+
+let fails = 0;
+function check(label: string, actual: unknown, expected: unknown) {
+  const ok = JSON.stringify(actual) === JSON.stringify(expected);
+  if (!ok) fails++;
+  console.log(
+    `${ok ? "OK  " : "FAIL"} ${label}: ${JSON.stringify(actual)}${
+      ok ? "" : ` (ждали ${JSON.stringify(expected)})`
+    }`
+  );
+}
+
+// --- Как приходит из таблицы ------------------------------------------------
+check("ISO как есть", toIsoDate("2026-09-03"), "2026-09-03");
+check("ISO со временем", toIsoDate("2026-09-03T08:00:00"), "2026-09-03");
+check("русский формат", toIsoDate("03.09.2026"), "2026-09-03");
+check("русский без нулей", toIsoDate("3.9.2026"), "2026-09-03");
+check("через слэш", toIsoDate("03/09/2026"), "2026-09-03");
+check("через дефис", toIsoDate("03-09-2026"), "2026-09-03");
+check("двузначный год", toIsoDate("03.09.26"), "2026-09-03");
+check("объект Date", toIsoDate(new Date(2026, 8, 3)), "2026-09-03");
+check("пробелы по краям", toIsoDate("  2026-09-03  "), "2026-09-03");
+
+// --- Чего быть не должно ----------------------------------------------------
+check("пусто остаётся пустым", toIsoDate(""), "");
+check("мусор не превращается в дату", toIsoDate("позавчера"), "");
+check("31 февраля отвергается", toIsoDate("31.02.2026"), "");
+check("13-й месяц отвергается", toIsoDate("2026-13-01"), "");
+check("null не ломает", toIsoDate(null), "");
+
+// Главное: русский формат и ISO должны давать ОДИН И ТОТ ЖЕ день.
+check(
+  "оба формата — один день",
+  toIsoDate("03.09.2026") === toIsoDate("2026-09-03"),
+  true
+);
+
+// --- Срок хранения ----------------------------------------------------------
+const NOW = new Date("2026-09-07T12:00:00");
+check("четыре дня от ISO", daysBetween("2026-09-03", NOW), 4);
+check("четыре дня от русской даты", daysBetween(toIsoDate("03.09.2026"), NOW), 4);
+check("сегодня — ноль дней", daysBetween("2026-09-07", NOW), 0);
+
+// Без приведения роза, срезанная 4 дня назад, показывалась бы свежей — вот
+// ровно этот случай.
+const settings = {
+  shelfLifeDays: { rose: 7, chrysanthemum: 18, eustoma: 10 },
+  warningThreshold: 0.7,
+} as never as Parameters<typeof computeBatchStorageInfo>[1];
+const batch = {
+  batchId: "B1",
+  receivedAt: "",
+  harvestDate: toIsoDate("03.09.2026"),
+  flowerType: "rose",
+  variety: "Prestige",
+  grade: "40",
+  quantityIn: 100,
+  quantityRemaining: 100,
+  location: "",
+  receivedByEmail: "",
+} as never as Parameters<typeof computeBatchStorageInfo>[0];
+check("партия знает свой возраст", computeBatchStorageInfo(batch, settings, NOW).daysInStorage, 4);
+
+// --- FIFO: сортировка строк ------------------------------------------------
+// Строковое сравнение «03.09.2026» < «02.10.2026» дало бы неверный порядок,
+// после приведения к ISO порядок правильный.
+const dates = ["05.10.2026", "03.09.2026", "2026-09-30"].map(toIsoDate).sort();
+check("порядок списания правильный", dates, ["2026-09-03", "2026-09-30", "2026-10-05"]);
+
+console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
+process.exit(fails === 0 ? 0 : 1);

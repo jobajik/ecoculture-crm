@@ -221,11 +221,40 @@ export async function updateWhere(
  */
 export async function clearDataRows(tabName: string): Promise<number> {
   const sheets = getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
   const before = await readTable(tabName);
   if (before.rows.length === 0) return 0;
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: getSpreadsheetId(),
-    range: `${tabName}!A2:ZZ`,
+
+  // Строки именно УДАЛЯЮТСЯ, а не очищаются. Очистка значений оставляет формат
+  // ячеек, а формат меняет то, что таблица потом отдаёт при чтении: в ячейке с
+  // датным форматом «2026-09-03» вернётся как «03.09.2026». На этом уже
+  // погорели — четыре строки старых данных испортили дату у новых, и роза
+  // четырёхдневной давности показывалась свежей.
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const sheetId = meta.data.sheets?.find((s) => s.properties?.title === tabName)?.properties
+    ?.sheetId;
+
+  if (sheetId === undefined || sheetId === null) {
+    // Лист не нашёлся — лучше очистить значения, чем не сделать ничего.
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${tabName}!A2:ZZ`,
+    });
+    return before.rows.length;
+  }
+
+  const lastRow = Math.max(...before.rowNumbers);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: lastRow },
+          },
+        },
+      ],
+    },
   });
   return before.rows.length;
 }
