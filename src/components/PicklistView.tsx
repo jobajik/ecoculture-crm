@@ -187,6 +187,14 @@ export default function PicklistView({
                   </b>{" "}
                   шт.
                 </span>
+                {picklist.notReadyOrders > 0 && (
+                  <span className="whitespace-nowrap text-status-critical">
+                    <b>
+                      ✗ не готовы: {picklist.notReadyOrders} на{" "}
+                      {picklist.notReadyStems.toLocaleString("ru-RU")} шт.
+                    </b>
+                  </span>
+                )}
                 {picklist.shortageStems > 0 && (
                   <span className="whitespace-nowrap">
                     <b className="underline decoration-2 underline-offset-2">
@@ -237,7 +245,7 @@ export default function PicklistView({
                 </tr>
 
                 {/* Клиенты: имена вертикально — колонка остаётся узкой, имя читается целиком */}
-                <tr className="border-b-2 border-ink-primary align-bottom">
+                <tr className="align-bottom">
                   <th className="py-1 text-left font-semibold align-bottom">№</th>
                   <th className="py-1 text-left font-semibold align-bottom">Сорт</th>
                   <th className="py-1 text-left font-semibold align-bottom">Длина</th>
@@ -265,6 +273,38 @@ export default function PicklistView({
                   <th className="py-1 text-right font-bold align-bottom">ВСЕГО</th>
                   <th className="py-1 text-right font-semibold text-ink-secondary align-bottom">Склад</th>
                   <th className="py-1 text-center font-semibold align-bottom">Собр.</th>
+                </tr>
+
+                {/* Готовность: две галочки = менеджер согласовал и бухгалтер увидел оплату */}
+                <tr className="border-b-2 border-ink-primary">
+                  <th
+                    colSpan={3}
+                    className="pb-0.5 text-left text-[9px] uppercase tracking-wider text-ink-secondary font-semibold"
+                  >
+                    Готов к сборке
+                  </th>
+                  {clients.map((c) => (
+                    <th
+                      key={c.orderId}
+                      className={clsx(
+                        "pb-0.5 text-center text-[11px] leading-none font-bold",
+                        c.readyToCollect ? "text-status-good" : "text-status-critical"
+                      )}
+                      title={
+                        c.readyToCollect
+                          ? "Согласовано менеджером и оплачено"
+                          : [
+                              c.managerConfirmed ? null : "менеджер не подтвердил",
+                              c.paid ? null : "не оплачено",
+                            ]
+                              .filter(Boolean)
+                              .join(", ")
+                      }
+                    >
+                      {c.readyToCollect ? "✓✓" : "✗"}
+                    </th>
+                  ))}
+                  <th colSpan={3}></th>
                 </tr>
               </thead>
 

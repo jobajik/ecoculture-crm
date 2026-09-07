@@ -6,6 +6,7 @@ import { getOrderById } from "@/lib/repo/orders";
 import { listShipments } from "@/lib/repo/shipments";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
+import ReadyChecks from "@/components/ReadyChecks";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,18 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       <p className="text-sm text-ink-muted mb-6">
         Создана {new Date(order.createdAt).toLocaleString("ru-RU")} · менеджер {order.managerEmail}
       </p>
+
+      <ReadyChecks
+        orderId={order.orderId}
+        managerConfirmed={order.managerConfirmed}
+        paid={order.paid}
+        paidAt={order.paidAt}
+        paymentMethod={order.paymentMethod}
+        canConfirm={
+          role === "admin" ||
+          (role === "manager" && order.managerEmail === session?.user?.email?.toLowerCase())
+        }
+      />
 
       <div className="card grid sm:grid-cols-2 gap-4 mb-6">
         <div>

@@ -4,23 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import clsx from "clsx";
-import { farmLabel } from "@/lib/constants";
+import { ROLE_LABELS, farmLabel } from "@/lib/constants";
 
 const LINKS: { href: string; label: string; roles?: string[] }[] = [
   { href: "/", label: "Главная" },
   { href: "/orders", label: "Заявки" },
+  { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },
+  { href: "/finance/debts", label: "Долги", roles: ["accountant", "admin"] },
+  { href: "/finance/report", label: "Отчёт", roles: ["accountant", "admin"] },
   { href: "/sales/day", label: "День", roles: ["manager", "admin"] },
   { href: "/sales", label: "Продажи", roles: ["manager", "admin"] },
   { href: "/warehouse", label: "Склад" },
   { href: "/analytics", label: "Аналитика" },
   { href: "/admin", label: "Настройки", roles: ["admin"] },
 ];
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Администратор",
-  warehouse: "Зав. склад",
-  manager: "Менеджер",
-};
 
 export default function Nav() {
   const { data: session } = useSession();

@@ -4,6 +4,12 @@ import { ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants"
 import type { Order, OrderItem, OrderWithItems } from "../types";
 import { addPriceHistoryEntry } from "./priceHistory";
 
+/** Пустая ячейка = «нет». Отмеченной считается только явная TRUE/ДА/1. */
+function toFlag(value: string | undefined): boolean {
+  const v = (value ?? "").toString().trim().toUpperCase();
+  return v === "TRUE" || v === "ДА" || v === "1" || v === "YES";
+}
+
 function toOrder(record: Record<string, string>): Order {
   return {
     orderId: record.OrderID,
@@ -14,6 +20,12 @@ function toOrder(record: Record<string, string>): Order {
     deliveryDate: record.DeliveryDate || "",
     status: (record.Status || ORDER_STATUSES.NEW) as OrderStatus,
     notes: record.Notes || "",
+    managerConfirmed: toFlag(record.ManagerConfirmed),
+    managerConfirmedAt: record.ManagerConfirmedAt || "",
+    paid: toFlag(record.Paid),
+    paidAt: record.PaidAt || "",
+    paymentMethod: record.PaymentMethod || "",
+    accountantEmail: (record.AccountantEmail || "").toLowerCase(),
   };
 }
 
@@ -83,6 +95,12 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     DeliveryDate: input.deliveryDate,
     Status: ORDER_STATUSES.NEW,
     Notes: input.notes ?? "",
+    ManagerConfirmed: "FALSE",
+    ManagerConfirmedAt: "",
+    Paid: "FALSE",
+    PaidAt: "",
+    PaymentMethod: "",
+    AccountantEmail: "",
   });
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -125,6 +143,43 @@ export async function updateOrderNotes(orderId: string, notes: string): Promise<
     SHEET_TABS.ORDERS,
     (record) => record.OrderID === orderId,
     () => ({ Notes: notes })
+  );
+}
+
+/**
+ * Отмечает оплату заявки (вторая «зелёная галочка»). Оплата только целиком —
+ * частичных сумм в системе нет, поэтому хранится флаг, а не остаток.
+ */
+export async function setOrderPaid(
+  orderId: string,
+  paid: boolean,
+  accountantEmail: string,
+  paymentMethod = ""
+): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () =>
+      paid
+        ? {
+            Paid: "TRUE",
+            PaidAt: new Date().toISOString(),
+            PaymentMethod: paymentMethod,
+            AccountantEmail: accountantEmail,
+          }
+        : { Paid: "FALSE", PaidAt: "", PaymentMethod: "", AccountantEmail: accountantEmail }
+  );
+}
+
+/** Первая «зелёная галочка»: менеджер согласовал заявку с клиентом окончательно. */
+export async function setOrderManagerConfirmed(orderId: string, confirmed: boolean): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () =>
+      confirmed
+        ? { ManagerConfirmed: "TRUE", ManagerConfirmedAt: new Date().toISOString() }
+        : { ManagerConfirmed: "FALSE", ManagerConfirmedAt: "" }
   );
 }
 

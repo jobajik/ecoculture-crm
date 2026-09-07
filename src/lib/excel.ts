@@ -395,6 +395,196 @@ export async function buildBatchesTemplate(
 }
 
 // ---------------------------------------------------------------------------
+// Отчёт бухгалтера: сводка за период, разбивки и полный список заявок с
+// отметками об оплате, плюс отдельный лист по долгам.
+// ---------------------------------------------------------------------------
+
+export async function buildFinanceReportWorkbook(snapshot: {
+  period: string;
+  periodLabel: string;
+  from: string;
+  to: string;
+  totals: {
+    amount: number;
+    paidAmount: number;
+    unpaidAmount: number;
+    orders: number;
+    paidOrders: number;
+    collectPercent: number;
+    avgOrder: number;
+  };
+  byMethod: { method: string; amount: number; orders: number }[];
+  byManager: { managerName: string; amount: number; paidAmount: number; orders: number }[];
+  orders: {
+    createdDate: string;
+    deliveryDate: string;
+    clientName: string;
+    clientPhone: string;
+    managerName: string;
+    amount: number;
+    stems: number;
+    managerConfirmed: boolean;
+    paid: boolean;
+    paymentMethod: string;
+    positions: string;
+  }[];
+  debts: {
+    clientName: string;
+    clientPhone: string;
+    managerName: string;
+    orders: number;
+    amount: number;
+    oldestDays: number;
+    overdue: boolean;
+  }[];
+  debtTotal: number;
+}): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Ecoculture-CRM";
+
+  const HEADER_FILL = "FFF1F3EF";
+  const MONEY = '# ##0" ₸"';
+  const periodTitle =
+    snapshot.period === "day" ? "День" : snapshot.period === "week" ? "Неделя" : "Месяц";
+
+  const styleHeader = (row: ExcelJS.Row) => {
+    row.font = { bold: true };
+    row.eachCell((cell) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+      cell.border = { bottom: { style: "thin" } };
+    });
+  };
+
+  // ---------- Лист 1: сводка ----------
+  const summary = workbook.addWorksheet("Сводка", {
+    pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  summary.columns = [{ width: 34 }, { width: 20 }, { width: 14 }, { width: 14 }];
+
+  summary.addRow([`ОТЧЁТ ПО ОПЛАТАМ — ${periodTitle}`]).font = { bold: true, size: 14 };
+  summary.addRow([snapshot.periodLabel]).font = { color: { argb: "FF666666" } };
+  summary.addRow([`Период: ${snapshot.from} — ${snapshot.to}`]).font = { color: { argb: "FF666666" } };
+  summary.addRow([]);
+
+  const t = snapshot.totals;
+  const facts: [string, number | string][] = [
+    ["Оформлено заявок", t.orders],
+    ["Сумма заявок", t.amount],
+    ["Оплачено", t.paidAmount],
+    ["Ждём оплату", t.unpaidAmount],
+    ["Оплаченных заявок", t.paidOrders],
+    ["Собираемость", `${t.collectPercent.toFixed(0)}%`],
+    ["Средний чек", t.avgOrder],
+    ["Долг по всей базе", snapshot.debtTotal],
+  ];
+  for (const [label, value] of facts) {
+    const row = summary.addRow([label, value]);
+    if (typeof value === "number" && label !== "Оформлено заявок" && label !== "Оплаченных заявок") {
+      row.getCell(2).numFmt = MONEY;
+    }
+    row.getCell(1).font = { bold: true };
+  }
+
+  if (snapshot.byMethod.length > 0) {
+    summary.addRow([]);
+    summary.addRow(["ПО СПОСОБАМ ОПЛАТЫ"]).font = { bold: true, size: 12 };
+    styleHeader(summary.addRow(["Способ", "Сумма", "Заявок"]));
+    for (const m of snapshot.byMethod) {
+      const row = summary.addRow([m.method, m.amount, m.orders]);
+      row.getCell(2).numFmt = MONEY;
+    }
+  }
+
+  if (snapshot.byManager.length > 0) {
+    summary.addRow([]);
+    summary.addRow(["ПО МЕНЕДЖЕРАМ"]).font = { bold: true, size: 12 };
+    styleHeader(summary.addRow(["Менеджер", "Оформлено", "Оплачено", "Заявок"]));
+    for (const m of snapshot.byManager) {
+      const row = summary.addRow([m.managerName, m.amount, m.paidAmount, m.orders]);
+      row.getCell(2).numFmt = MONEY;
+      row.getCell(3).numFmt = MONEY;
+    }
+  }
+
+  // ---------- Лист 2: заявки ----------
+  const orders = workbook.addWorksheet("Заявки", {
+    pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  orders.columns = [
+    { width: 12 },
+    { width: 12 },
+    { width: 24 },
+    { width: 16 },
+    { width: 18 },
+    { width: 14 },
+    { width: 10 },
+    { width: 12 },
+    { width: 12 },
+    { width: 16 },
+    { width: 40 },
+  ];
+  styleHeader(
+    orders.addRow([
+      "Оформлена",
+      "Доставка",
+      "Клиент",
+      "Телефон",
+      "Менеджер",
+      "Сумма",
+      "Шт.",
+      "Подтв.",
+      "Оплачено",
+      "Способ",
+      "Состав",
+    ])
+  );
+  for (const o of snapshot.orders) {
+    const row = orders.addRow([
+      o.createdDate,
+      o.deliveryDate || "—",
+      o.clientName,
+      o.clientPhone,
+      o.managerName,
+      o.amount,
+      o.stems,
+      o.managerConfirmed ? "да" : "нет",
+      o.paid ? "да" : "нет",
+      o.paymentMethod || "—",
+      o.positions,
+    ]);
+    row.getCell(6).numFmt = MONEY;
+    if (!o.paid) {
+      row.getCell(9).font = { bold: true, color: { argb: "FFC00000" } };
+    }
+  }
+  orders.addRow([]);
+  const totalRow = orders.addRow(["", "", "ИТОГО", "", "", snapshot.totals.amount]);
+  totalRow.font = { bold: true };
+  totalRow.getCell(6).numFmt = MONEY;
+
+  // ---------- Лист 3: долги ----------
+  const debts = workbook.addWorksheet("Долги", {
+    pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  debts.columns = [{ width: 28 }, { width: 18 }, { width: 20 }, { width: 10 }, { width: 16 }, { width: 12 }];
+  styleHeader(debts.addRow(["Клиент", "Телефон", "Менеджер", "Заявок", "Сумма", "Дней"]));
+  for (const d of snapshot.debts) {
+    const row = debts.addRow([d.clientName, d.clientPhone || "—", d.managerName, d.orders, d.amount, d.oldestDays]);
+    row.getCell(5).numFmt = MONEY;
+    if (d.overdue) {
+      row.getCell(6).font = { bold: true, color: { argb: "FFC00000" } };
+    }
+  }
+  debts.addRow([]);
+  const debtTotalRow = debts.addRow(["ИТОГО ДОЛГ", "", "", "", snapshot.debtTotal]);
+  debtTotalRow.font = { bold: true };
+  debtTotalRow.getCell(5).numFmt = MONEY;
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+// ---------------------------------------------------------------------------
 // Выгрузка сводной заявки склада на день в .xlsx — тот же документ, что и на
 // печать, но в файле: можно отправить в мессенджер или сохранить в архив.
 // ---------------------------------------------------------------------------

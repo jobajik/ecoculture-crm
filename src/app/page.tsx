@@ -47,6 +47,27 @@ export default async function HomePage() {
       emoji: "🖨",
     },
     {
+      href: "/finance",
+      title: "Оплаты",
+      desc: "Заявки менеджеров и отметка об оплате: две галочки — заявку можно собирать",
+      show: role === "accountant" || role === "admin",
+      emoji: "💳",
+    },
+    {
+      href: "/finance/debts",
+      title: "Долги",
+      desc: "Кто не оплатил, на какую сумму и сколько дней долг висит",
+      show: role === "accountant" || role === "admin",
+      emoji: "⏳",
+    },
+    {
+      href: "/finance/report",
+      title: "Отчёт по оплатам",
+      desc: "Продажи и оплаты за день, неделю, месяц — с выгрузкой в Excel",
+      show: role === "accountant" || role === "admin",
+      emoji: "🧾",
+    },
+    {
       href: "/sales/day",
       title: "Продажи за день",
       desc: "Кто сколько продал сегодня, каких цветов, в какое время — в реальном времени",

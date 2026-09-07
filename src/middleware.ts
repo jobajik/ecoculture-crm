@@ -5,7 +5,8 @@ import { NextResponse } from "next/server";
 const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   { prefix: "/orders/new", roles: ["manager", "admin"] },
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
-  { prefix: "/sales", roles: ["manager", "admin"] },
+  { prefix: "/finance", roles: ["accountant", "admin"] },
+  { prefix: "/sales", roles: ["manager", "admin", "accountant"] },
   { prefix: "/admin", roles: ["admin"] },
 ];
 
@@ -38,6 +39,7 @@ export const config = {
   matcher: [
     "/orders/:path*",
     "/sales/:path*",
+    "/finance/:path*",
     "/warehouse/:path*",
     "/analytics/:path*",
     "/admin/:path*",

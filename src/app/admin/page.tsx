@@ -1,14 +1,14 @@
 import { listUsers } from "@/lib/repo/users";
 import { getSettings } from "@/lib/repo/settings";
-import { FARM_ORDER, FLOWER_TYPE_LABELS, FLOWER_TYPES_BY_FARM, farmLabel } from "@/lib/constants";
+import {
+  FARM_ORDER,
+  FLOWER_TYPE_LABELS,
+  FLOWER_TYPES_BY_FARM,
+  ROLE_LABELS,
+  farmLabel,
+} from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Администратор",
-  manager: "Менеджер",
-  warehouse: "Зав. склад",
-};
 
 export default async function AdminPage() {
   const [users, settings] = await Promise.all([listUsers(), getSettings()]);
@@ -23,9 +23,10 @@ export default async function AdminPage() {
           Список сотрудников и их роли хранятся на вкладке <b>Users</b> вашей Google-таблицы. Чтобы
           добавить сотрудника, дать или забрать доступ — отредактируйте эту вкладку напрямую: добавьте
           строку с его Google-почтой, именем, ролью (<code>admin</code> / <code>manager</code> /{" "}
-          <code>warehouse</code>), <code>TRUE</code> в колонке Active и производством в последней
-          колонке <b>Farm</b> (<code>rose_farm</code> или <code>esentai</code> — заполняется только
-          для зав. складом). Изменения применяются сразу при следующем входе сотрудника.
+          <code>warehouse</code> / <code>accountant</code>), <code>TRUE</code> в колонке Active и
+          производством в последней колонке <b>Farm</b> (<code>rose_farm</code> или{" "}
+          <code>esentai</code> — заполняется только для зав. складом). Изменения применяются сразу
+          при следующем входе сотрудника.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

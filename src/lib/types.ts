@@ -18,6 +18,15 @@ export interface Order {
   deliveryDate: string;
   status: OrderStatus;
   notes: string;
+  /** Первая «зелёная галочка»: менеджер окончательно согласовал заявку с клиентом. */
+  managerConfirmed: boolean;
+  managerConfirmedAt: string;
+  /** Вторая «зелёная галочка»: бухгалтер увидел деньги. Оплата только целиком. */
+  paid: boolean;
+  paidAt: string;
+  paymentMethod: string;
+  /** Кто из бухгалтеров отметил оплату. */
+  accountantEmail: string;
 }
 
 export interface OrderItem {

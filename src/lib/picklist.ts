@@ -35,6 +35,10 @@ export interface PicklistOrder {
   managerEmail: string;
   status: string;
   notes: string;
+  /** Две «зелёные галочки»: менеджер согласовал и бухгалтер увидел деньги. */
+  managerConfirmed: boolean;
+  paid: boolean;
+  readyToCollect: boolean;
   totalStems: number;
   totalAmount: number;
   items: { flowerType: string; variety: string; grade: string; quantity: number; shipped: number }[];
@@ -50,6 +54,9 @@ export interface Picklist {
   totalStems: number;
   totalAmount: number;
   shortageStems: number;
+  /** Сколько заявок дня ещё не готовы к сборке (нет обеих галочек). */
+  notReadyOrders: number;
+  notReadyStems: number;
   lines: PicklistLine[];
   orders: PicklistOrder[];
   /** Заявки без даты доставки — чтобы они не потерялись. */
@@ -104,6 +111,9 @@ export async function getPicklist(
     managerEmail: order.managerEmail,
     status: order.status,
     notes: order.notes,
+    managerConfirmed: order.managerConfirmed,
+    paid: order.paid,
+    readyToCollect: order.managerConfirmed && order.paid,
     totalStems: order.items
       .filter((i) => belongsToFarm(i.flowerType))
       .reduce((sum, i) => sum + i.quantity, 0),
@@ -180,6 +190,10 @@ export async function getPicklist(
     totalOrders: picklistOrders.length,
     totalStems: lines.reduce((sum, l) => sum + l.quantity, 0),
     totalAmount: picklistOrders.reduce((sum, o) => sum + o.totalAmount, 0),
+    notReadyOrders: picklistOrders.filter((o) => !o.readyToCollect).length,
+    notReadyStems: picklistOrders
+      .filter((o) => !o.readyToCollect)
+      .reduce((sum, o) => sum + o.totalStems, 0),
     shortageStems,
     lines,
     orders: picklistOrders,

@@ -19,6 +19,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   // Farm стоит последней колонкой намеренно: так в уже работающей таблице
   // существующие строки не «съезжают» при добавлении производств.
   [SHEET_TABS.USERS]: ["Email", "Name", "Role", "Active", "Farm"],
+  // Колонки оплаты стоят в конце — как и Farm, чтобы уже заполненные строки
+  // не «съезжали» при добавлении (см. CLAUDE.md, раздел «Грабли»).
   [SHEET_TABS.ORDERS]: [
     "OrderID",
     "CreatedAt",
@@ -28,6 +30,12 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "DeliveryDate",
     "Status",
     "Notes",
+    "ManagerConfirmed",
+    "ManagerConfirmedAt",
+    "Paid",
+    "PaidAt",
+    "PaymentMethod",
+    "AccountantEmail",
   ],
   [SHEET_TABS.ORDER_ITEMS]: [
     "OrderID",
@@ -79,8 +87,28 @@ export const ROLES = {
   ADMIN: "admin",
   MANAGER: "manager",
   WAREHOUSE: "warehouse",
+  ACCOUNTANT: "accountant",
 } as const;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
+
+export const ROLE_LABELS: Record<string, string> = {
+  admin: "Администратор",
+  manager: "Менеджер",
+  warehouse: "Зав. склад",
+  accountant: "Бухгалтер",
+};
+
+// ---------------------------------------------------------------------------
+// Готовность заявки к сборке — те самые «две зелёные галочки»:
+// менеджер окончательно согласовал заявку с клиентом, бухгалтер увидел деньги.
+// Склад собирает такие заявки в первую очередь; неоплаченные видны, но помечены.
+// ---------------------------------------------------------------------------
+
+export const PAYMENT_METHODS = ["Каспи", "Перевод", "Наличные", "Безнал (счёт)"] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/** Через сколько дней после даты доставки долг считается просроченным. */
+export const DEBT_OVERDUE_DAYS = 3;
 
 export const FLOWER_TYPES = {
   ROSE: "rose",
