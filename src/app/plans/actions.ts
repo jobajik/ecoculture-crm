@@ -10,7 +10,7 @@ import {
 } from "@/lib/repo/shipmentPlans";
 import {
   FLOWER_TYPE_LABELS,
-  SHIPMENT_DIRECTIONS,
+  isKnownDirection,
   isValidPeriod,
 } from "@/lib/constants";
 
@@ -74,7 +74,7 @@ export async function saveShipmentPlansAction(period: string, rows: ShipmentPlan
   const cleaned: ShipmentPlanInput[] = rows.map((row) => {
     const direction = (row.direction || "").trim();
     const flowerType = (row.flowerType || "").trim();
-    if (!SHIPMENT_DIRECTIONS.includes(direction as never)) {
+    if (!isKnownDirection(direction)) {
       throw new Error(`Неизвестное направление: ${direction || "(пусто)"}`);
     }
     if (!FLOWER_TYPE_LABELS[flowerType]) {

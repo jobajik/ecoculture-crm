@@ -339,18 +339,41 @@ export function formatGrade(grade: string): string {
 // «потеряет» его цифры, а добавление нового ничего не ломает.
 // ---------------------------------------------------------------------------
 
-export const SHIPMENT_DIRECTIONS = [
-  "Астана",
-  "Караганда",
-  "Семей",
-  "Усть-Каменогорск",
-  "Киргизия",
-  "Магазины-ритейл",
-  "Пожарка",
-  "РФ",
-  "Другие",
+/**
+ * Направления сгруппированы по смыслу: внутренние регионы, экспорт, пожарка и
+ * остальное. Группа — это не украшение интерфейса: по ней считаются подытоги,
+ * и распределять остаток срезки удобно сразу на блок, а не тыкать в каждое
+ * направление отдельно.
+ *
+ * Плоский список направлений выводится отсюда же (SHIPMENT_DIRECTIONS), чтобы
+ * список и группировка не могли разойтись: направление, забытое в группе,
+ * просто перестало бы существовать.
+ */
+export const DIRECTION_GROUPS = [
+  {
+    key: "regions",
+    label: "Регионы Казахстана",
+    directions: ["Астана", "Караганда", "Семей", "Усть-Каменогорск"],
+  },
+  { key: "export", label: "Экспорт", directions: ["Киргизия", "РФ"] },
+  { key: "fire", label: "Пожарка", directions: ["Пожарка"] },
+  { key: "retail", label: "Ритейл и прочее", directions: ["Магазины-ритейл", "Другие"] },
 ] as const;
-export type ShipmentDirection = (typeof SHIPMENT_DIRECTIONS)[number];
+
+export type DirectionGroupKey = (typeof DIRECTION_GROUPS)[number]["key"];
+
+export const SHIPMENT_DIRECTIONS: string[] = DIRECTION_GROUPS.flatMap((g) => [...g.directions]);
+
+export function isKnownDirection(value: string): boolean {
+  return SHIPMENT_DIRECTIONS.includes(value);
+}
+
+/** В какой блок входит направление. */
+export function groupOfDirection(direction: string): (typeof DIRECTION_GROUPS)[number] | null {
+  return (
+    DIRECTION_GROUPS.find((g) => (g.directions as readonly string[]).includes(direction)) ?? null
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Высшая категория выхода.

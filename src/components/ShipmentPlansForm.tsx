@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { saveShipmentPlansAction } from "@/app/plans/actions";
 import {
+  DIRECTION_GROUPS,
   FLOWER_TYPE_LABELS_PLURAL,
   SHIPMENT_DIRECTIONS,
   farmLabel,
@@ -174,30 +175,56 @@ export default function ShipmentPlansForm({
             </tr>
           </thead>
           <tbody>
-            {SHIPMENT_DIRECTIONS.map((direction) => {
-              const cell = get(direction, active);
+            {DIRECTION_GROUPS.map((group) => {
+              // Подытог блока: он и есть тот срез, которым мыслят на планёрке —
+              // «сколько уходит по регионам» и «сколько на экспорт».
+              const groupTotals = group.directions.reduce(
+                (acc, direction) => {
+                  const cell = get(direction, active);
+                  return { stems: acc.stems + cell.stems, amount: acc.amount + cell.amount };
+                },
+                { stems: 0, amount: 0 }
+              );
               return (
-                <tr key={direction} className="border-b border-line-hairline last:border-0">
-                  <td className="px-4 py-2 font-medium">{direction}</td>
-                  <td className="px-4 py-2">
-                    <NumberCell
-                      value={cell.stems}
-                      onChange={(v) => update(direction, active, { stems: v })}
-                      disabled={saving}
-                      suffix="шт"
-                      ariaLabel={`${direction}, стеблей`}
-                    />
-                  </td>
-                  <td className="px-4 py-2">
-                    <NumberCell
-                      value={cell.amount}
-                      onChange={(v) => update(direction, active, { amount: v })}
-                      disabled={saving}
-                      suffix="₸"
-                      ariaLabel={`${direction}, сумма`}
-                    />
-                  </td>
-                </tr>
+                <Fragment key={group.key}>
+                  <tr className="bg-surface-plane/60">
+                    <td className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                      {group.label}
+                    </td>
+                    <td className="px-4 pt-3 pb-1 text-right text-xs text-ink-muted tabular-nums">
+                      {groupTotals.stems ? `${groupTotals.stems.toLocaleString("ru-RU")} шт` : ""}
+                    </td>
+                    <td className="px-4 pt-3 pb-1 text-right text-xs text-ink-muted tabular-nums">
+                      {groupTotals.amount ? `${groupTotals.amount.toLocaleString("ru-RU")} ₸` : ""}
+                    </td>
+                  </tr>
+                  {group.directions.map((direction) => {
+                    const cell = get(direction, active);
+                    return (
+                      <tr key={direction} className="border-b border-line-hairline last:border-0">
+                        <td className="px-4 py-2 pl-6 font-medium">{direction}</td>
+                        <td className="px-4 py-2">
+                          <NumberCell
+                            value={cell.stems}
+                            onChange={(v) => update(direction, active, { stems: v })}
+                            disabled={saving}
+                            suffix="шт"
+                            ariaLabel={`${direction}, стеблей`}
+                          />
+                        </td>
+                        <td className="px-4 py-2">
+                          <NumberCell
+                            value={cell.amount}
+                            onChange={(v) => update(direction, active, { amount: v })}
+                            disabled={saving}
+                            suffix="₸"
+                            ariaLabel={`${direction}, сумма`}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
               );
             })}
           </tbody>

@@ -12,6 +12,7 @@ export function plansTabsFor(role: string | null | undefined) {
   const tabs = [
     { href: "/plans", label: "Планы менеджеров" },
     { href: "/plans/shipments", label: "План отгрузок" },
+    { href: "/plans/balance", label: "Баланс" },
   ];
   if (role === ROLES.ADMIN) tabs.push({ href: "/forecast", label: "Прогноз срезки" });
   return tabs;
