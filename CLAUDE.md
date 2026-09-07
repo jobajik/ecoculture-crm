@@ -83,7 +83,28 @@ domain». В `Data Access` должны быть зарегистрирован�
 Если открылся выбор аккаунта и экран согласия — со стороны Google всё в порядке; если 400 — дело в
 настройках проекта, а не в коде.
 
-**1.7. Проверяйте доставку файлов обратным чтением.**
+**1.7. Основной адрес — с `www`, и спорить с этим нельзя.**
+Vercel отдаёт с `crm-ecoculture.kz` **постоянную** (308) переадресацию на
+`www.crm-ecoculture.kz`. Это его собственная настройка домена, из кода она не отменяется.
+
+Уже ломалось: в `next.config.js` было правило «www → без www», навстречу вercel'ному
+«без www → www». Получилось бесконечное кольцо, сайт открывался белым экраном на обоих адресах.
+
+Правило: канонический адрес — `https://www.crm-ecoculture.kz`. В `OLD_HOSTS` в
+`next.config.js` держать только `ecoculture-crm.vercel.app`. Адрес без www туда добавлять
+**нельзя** — снова будет кольцо.
+
+Адрес прописан в трёх местах, и менять его надо во всех трёх сразу:
+1. `SITE` в `next.config.js`;
+2. `NEXTAUTH_URL` на Vercel (скрипт `set-url.mjs`, запускается через `deploy2.bat`);
+3. Google Cloud → Clients → Web client 1: Authorized JavaScript origins и Authorized redirect
+   URIs (`<адрес>/api/auth/callback/google`), плюс Authorized domains на странице Branding.
+
+Быстрая проверка после смены адреса — `diag.bat` в папке проекта: показывает заголовки ответа
+всех трёх адресов. Правильно так: без www → 308 на www; www → 307 на `/login`; старый
+`ecoculture-crm.vercel.app` → 307 на www.
+
+**1.8. Проверяйте доставку файлов обратным чтением.**
 Отправка файла на компьютер владельца может отчитаться «записано», а на диске останется старая
 версия. Так уже терялось важное исправление. После записи — считать файл обратно и убедиться, что
 содержимое то самое.
@@ -99,7 +120,7 @@ domain». В `Data Access` должны быть зарегистрирован�
 | База данных | Google Таблица (никакой СУБД) |
 | Хостинг | Vercel, автодеплой из GitHub |
 | Код | github.com/jobajik/ecoculture-crm (публичный) |
-| Сайт | https://ecoculture-crm.vercel.app |
+| Сайт | **https://www.crm-ecoculture.kz** (домен куплен на hoster.kz) |
 
 Таблица: `1E58sSIT78AThAUtbENqxtc6_cUy6Aq-d2xfAT08yD9w`
 
@@ -237,8 +258,8 @@ src/
 `GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_OAUTH_REFRESH_TOKEN`.
 `.env.local` в репозиторий не коммитится никогда.
 
-**Новый домен** требует двух правок в Google Cloud → Credentials → Web client 1: добавить домен в
-Authorized JavaScript origins и `<домен>/api/auth/callback/google` в Authorized redirect URIs.
+**Смена домена** описана в граблях 1.7: три места (`next.config.js`, `NEXTAUTH_URL` на Vercel,
+Google Cloud) и проверка через `diag.bat`.
 
 ---
 
