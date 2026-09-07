@@ -6,15 +6,15 @@ import { signOut, useSession } from "next-auth/react";
 import clsx from "clsx";
 import { ROLE_LABELS, farmLabel } from "@/lib/constants";
 
+// В шапке — только разделы, по одному пункту на область работы. Всё, что внутри
+// раздела, живёт во вкладках на самой странице (SectionTabs). Иначе у админа
+// набегало десять пунктов и меню переставало читаться.
 const LINKS: { href: string; label: string; roles?: string[] }[] = [
   { href: "/", label: "Главная" },
   { href: "/orders", label: "Заявки" },
-  { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },
-  { href: "/finance/debts", label: "Долги", roles: ["accountant", "admin"] },
-  { href: "/finance/report", label: "Отчёт", roles: ["accountant", "admin"] },
-  { href: "/sales/day", label: "День", roles: ["manager", "admin"] },
   { href: "/sales", label: "Продажи", roles: ["manager", "admin"] },
-  { href: "/warehouse", label: "Склад" },
+  { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },
+  { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
   { href: "/analytics", label: "Аналитика" },
   { href: "/admin", label: "Настройки", roles: ["admin"] },
 ];
@@ -26,9 +26,7 @@ export default function Nav() {
 
   if (!session) return null;
 
-  const links = LINKS.filter((l) => !l.roles || l.roles.includes(role)).filter(
-    (l) => l.href !== "/warehouse" || role === "warehouse" || role === "admin"
-  );
+  const links = LINKS.filter((l) => !l.roles || l.roles.includes(role));
 
   const initials = (session.user?.name ?? "?")
     .split(" ")
@@ -48,12 +46,8 @@ export default function Nav() {
 
         <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto">
           {links.map((l) => {
-            const active =
-              l.href === "/"
-                ? pathname === "/"
-                : l.href === "/sales"
-                ? pathname === "/sales"
-                : pathname.startsWith(l.href);
+            // Раздел подсвечен, пока мы внутри него — включая вкладки.
+            const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
             return (
               <Link
                 key={l.href}

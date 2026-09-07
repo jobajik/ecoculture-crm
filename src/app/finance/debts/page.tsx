@@ -1,6 +1,8 @@
-import Link from "next/link";
 import { getFinanceSnapshot } from "@/lib/finance";
 import { DEBT_OVERDUE_DAYS } from "@/lib/constants";
+
+import SectionTabs from "@/components/SectionTabs";
+import { FINANCE_TABS } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,18 +27,15 @@ export default async function DebtsPage() {
 
   return (
     <div className="space-y-5 max-w-4xl">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Долги</h1>
-          <p className="text-sm text-ink-secondary">
-            Неоплаченные заявки по клиентам. Возраст считается от даты доставки; после{" "}
-            {DEBT_OVERDUE_DAYS} дней долг помечается как просроченный.
-          </p>
-        </div>
-        <Link href="/finance" className="btn-secondary !py-1.5">
-          К оплатам
-        </Link>
+      <div>
+        <h1 className="text-xl font-semibold">Долги</h1>
+        <p className="text-sm text-ink-secondary">
+          Неоплаченные заявки по клиентам. Возраст считается от даты доставки; после{" "}
+          {DEBT_OVERDUE_DAYS} дней долг помечается как просроченный.
+        </p>
       </div>
+
+      <SectionTabs tabs={FINANCE_TABS} />
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="card !p-4">

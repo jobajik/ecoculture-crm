@@ -6,6 +6,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { farmLabel, getFarmFor } from "@/lib/constants";
 
+import SectionTabs from "@/components/SectionTabs";
+import { WAREHOUSE_TABS } from "../tabs";
+
 export const dynamic = "force-dynamic";
 
 export default async function BatchesPage() {
@@ -22,9 +25,13 @@ export default async function BatchesPage() {
       <h1 className="text-xl font-semibold mb-1">
         Партии на складе{farm ? ` · ${farmLabel(farm)}` : ""}
       </h1>
-      <p className="text-ink-secondary mb-4">
+      <p className="text-ink-secondary mb-3">
         Срок хранения считается от даты сбора. Партии ближе к концу срока показаны жёлтым, просроченные — красным.
       </p>
+
+      <div className="mb-4">
+        <SectionTabs tabs={WAREHOUSE_TABS} />
+      </div>
       <BatchesList infos={infos} />
     </div>
   );

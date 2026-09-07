@@ -4,6 +4,9 @@ import { getPicklist } from "@/lib/picklist";
 import PicklistView from "@/components/PicklistView";
 import { FARM_ORDER } from "@/lib/constants";
 
+import SectionTabs from "@/components/SectionTabs";
+import { WAREHOUSE_TABS } from "../tabs";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -34,5 +37,12 @@ export default async function PicklistPage({
 
   const picklist = await getPicklist(date, new Date(), undefined, farm);
 
-  return <PicklistView picklist={picklist} canSwitchFarm={isAdmin} />;
+  return (
+    <div>
+      <div className="mb-4">
+        <SectionTabs tabs={WAREHOUSE_TABS} />
+      </div>
+      <PicklistView picklist={picklist} canSwitchFarm={isAdmin} />
+    </div>
+  );
 }

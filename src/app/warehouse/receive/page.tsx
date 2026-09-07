@@ -5,6 +5,9 @@ import { listVarietiesByType } from "@/lib/repo/varieties";
 import { authOptions } from "@/lib/auth";
 import { farmLabel, flowerTypesForFarm } from "@/lib/constants";
 
+import SectionTabs from "@/components/SectionTabs";
+import { WAREHOUSE_TABS } from "../tabs";
+
 export const dynamic = "force-dynamic";
 
 export default async function ReceivePage() {
@@ -26,6 +29,8 @@ export default async function ReceivePage() {
           по ней считается срок хранения.
         </p>
       </div>
+
+      <SectionTabs tabs={WAREHOUSE_TABS} />
 
       <BatchImportForm />
 

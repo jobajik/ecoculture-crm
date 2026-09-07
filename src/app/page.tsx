@@ -17,69 +17,43 @@ export default async function HomePage() {
   const farm = role === "warehouse" ? session.user?.farm ?? null : null;
   const snapshot = await getStockSnapshot(new Date(), undefined, farm);
 
+  // На главной — только разделы, по одному на область работы. Подстраницы
+  // открываются вкладками внутри раздела, чтобы не заваливать человека выбором.
   const cards = [
     {
       href: "/orders/new",
       title: "Принять заявку",
-      desc: "Оформить заявку клиента: сорт, длина или категория, количество, цена, дата доставки",
+      desc: "Оформить заявку клиента: сорт, длина, количество, цена, дата доставки",
       show: role === "manager" || role === "admin",
       emoji: "📝",
     },
     {
       href: "/orders",
-      title: "Все заявки",
-      desc: "Список заявок со статусами: новая, в работе, готова к отгрузке, отгружена",
+      title: "Заявки",
+      desc: "Все заявки со статусами и отметками готовности",
       show: true,
       emoji: "📋",
     },
     {
       href: "/warehouse",
-      title: "Склад: отгрузка",
-      desc: "Заявки к отгрузке, приёмка партий с производства, списание",
+      title: "Склад",
+      desc: "Отгрузка, заявка на день для сборки, приёмка с производства, партии",
       show: role === "warehouse" || role === "admin",
       emoji: "📦",
     },
     {
-      href: "/warehouse/picklist",
-      title: "Заявка на день",
-      desc: "Сводный лист для сборки заказов: что набрать со склада и как разложить по клиентам",
-      show: role === "warehouse" || role === "admin",
-      emoji: "🖨",
-    },
-    {
       href: "/finance",
       title: "Оплаты",
-      desc: "Заявки менеджеров и отметка об оплате: две галочки — заявку можно собирать",
+      desc: "Отметка оплат, долги клиентов и отчёт с выгрузкой в Excel",
       show: role === "accountant" || role === "admin",
       emoji: "💳",
     },
     {
-      href: "/finance/debts",
-      title: "Долги",
-      desc: "Кто не оплатил, на какую сумму и сколько дней долг висит",
-      show: role === "accountant" || role === "admin",
-      emoji: "⏳",
-    },
-    {
-      href: "/finance/report",
-      title: "Отчёт по оплатам",
-      desc: "Продажи и оплаты за день, неделю, месяц — с выгрузкой в Excel",
-      show: role === "accountant" || role === "admin",
-      emoji: "🧾",
-    },
-    {
-      href: "/sales/day",
-      title: "Продажи за день",
-      desc: "Кто сколько продал сегодня, каких цветов, в какое время — в реальном времени",
-      show: role === "manager" || role === "admin",
-      emoji: "⚡",
-    },
-    {
       href: "/sales",
-      title: "Продажи менеджеров",
-      desc: "План и факт по каждому менеджеру: за день, за месяц, выполнение плана",
+      title: "Продажи",
+      desc: "Рейтинг менеджеров и бонусы, план и факт, продажи за день",
       show: role === "manager" || role === "admin",
-      emoji: "🎯",
+      emoji: "🏆",
     },
     {
       href: "/analytics",
@@ -91,7 +65,7 @@ export default async function HomePage() {
     {
       href: "/admin",
       title: "Настройки",
-      desc: "Сотрудники, роли, сроки хранения по типам цветка",
+      desc: "Сотрудники, роли, производства, сроки хранения",
       show: role === "admin",
       emoji: "⚙️",
     },

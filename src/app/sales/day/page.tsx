@@ -1,6 +1,8 @@
-import Link from "next/link";
 import { getDailySalesSnapshot } from "@/lib/dailySales";
 import DailySalesDashboard from "@/components/DailySalesDashboard";
+
+import SectionTabs from "@/components/SectionTabs";
+import { SALES_TABS } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,17 +16,14 @@ export default async function DailySalesPage({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Продажи за день</h1>
-          <p className="text-ink-secondary">
-            Кто сколько продал, каких цветов и в какое время. Обновляется автоматически.
-          </p>
-        </div>
-        <Link href="/sales" className="btn-secondary">
-          План на месяц →
-        </Link>
+      <div>
+        <h1 className="text-xl font-semibold">Продажи за день</h1>
+        <p className="text-sm text-ink-secondary">
+          Кто сколько продал, каких цветов и в какое время. Обновляется автоматически.
+        </p>
       </div>
+
+      <SectionTabs tabs={SALES_TABS} />
 
       <DailySalesDashboard initial={snapshot} />
     </div>

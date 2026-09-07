@@ -1,7 +1,9 @@
-import Link from "next/link";
 import { getFinanceSnapshot, type FinancePeriod } from "@/lib/finance";
 import { farmLabel } from "@/lib/constants";
 import FinanceReport from "@/components/FinanceReport";
+
+import SectionTabs from "@/components/SectionTabs";
+import { FINANCE_TABS } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,17 +22,14 @@ export default async function FinanceReportPage({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Отчёт по продажам и оплатам</h1>
-          <p className="text-sm text-ink-secondary">
-            За день, неделю или месяц. Выгружается в Excel одной кнопкой.
-          </p>
-        </div>
-        <Link href="/finance" className="btn-secondary !py-1.5">
-          К оплатам
-        </Link>
+      <div>
+        <h1 className="text-xl font-semibold">Отчёт по продажам и оплатам</h1>
+        <p className="text-sm text-ink-secondary">
+          За день, неделю или месяц. Выгружается в Excel одной кнопкой.
+        </p>
       </div>
+
+      <SectionTabs tabs={FINANCE_TABS} />
 
       <FinanceReport snapshot={snapshot} farms={farms} />
     </div>

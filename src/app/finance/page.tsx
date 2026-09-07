@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot, type FinancePeriod } from "@/lib/finance";
 import FinanceBoard from "@/components/FinanceBoard";
+import SectionTabs from "@/components/SectionTabs";
+import { FINANCE_TABS } from "./tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -53,14 +55,10 @@ export default async function FinancePage({
               </Link>
             ))}
           </div>
-          <Link href="/finance/debts" className="btn-secondary !py-1.5">
-            Долги
-          </Link>
-          <Link href="/finance/report" className="btn-secondary !py-1.5">
-            Отчёт
-          </Link>
         </div>
       </div>
+
+      <SectionTabs tabs={FINANCE_TABS} />
 
       <p className="text-sm text-ink-muted">{snapshot.periodLabel}</p>
 

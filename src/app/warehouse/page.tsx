@@ -8,6 +8,9 @@ import { FLOWER_TYPE_LABELS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+import SectionTabs from "@/components/SectionTabs";
+import { WAREHOUSE_TABS } from "./tabs";
+
 export const dynamic = "force-dynamic";
 
 export default async function WarehousePage() {
@@ -46,11 +49,16 @@ export default async function WarehousePage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">Склад</h1>
-          {farm && <p className="text-sm text-ink-secondary">Производство: {farmLabel(farm)}</p>}
-        </div>
+      <div className="mb-3">
+        <h1 className="text-xl font-semibold">Склад</h1>
+        {farm && <p className="text-sm text-ink-secondary">Производство: {farmLabel(farm)}</p>}
+      </div>
+
+      <div className="mb-4">
+        <SectionTabs tabs={WAREHOUSE_TABS} />
+      </div>
+
+      <div className="flex items-center justify-end mb-4 flex-wrap gap-2">
         <div className="flex gap-2">
           <Link href="/warehouse/picklist" className="btn-secondary">
             Заявка на день (печать)
