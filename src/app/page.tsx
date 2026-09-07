@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { authOptions } from "@/lib/auth";
 import { getStockSnapshot } from "@/lib/stock";
 import { farmLabel, flowerTypesForFarm } from "@/lib/constants";
@@ -73,14 +74,25 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold">
-          Добро пожаловать, {session.user?.name?.split(" ")[0]}
-        </h1>
-        <p className="text-ink-secondary">
-          Что сейчас лежит на складе и сколько дней с момента срезки
-          {farm && <> — производство {farmLabel(farm)}</>}.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">
+            Добро пожаловать, {session.user?.name?.split(" ")[0]}
+          </h1>
+          <p className="text-ink-secondary">
+            Что сейчас лежит на складе и сколько дней с момента срезки
+            {farm && <> — производство {farmLabel(farm)}</>}.
+          </p>
+        </div>
+        {/* Логотип компании — только на широком экране, чтобы не съедать место на телефоне. */}
+        <Image
+          src="/logo.png"
+          alt="Eco Culture"
+          width={1020}
+          height={593}
+          priority
+          className="hidden sm:block w-32 h-auto shrink-0"
+        />
       </div>
 
       <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />

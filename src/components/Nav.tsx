@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import clsx from "clsx";
@@ -37,10 +38,17 @@ export default function Nav() {
   return (
     <header className="sticky top-0 z-30 border-b border-line-hairline bg-surface/85 backdrop-blur">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-4">
+        {/* Фирменный знак вместо буквы «E»: логотип лежит в public/logo-mark.png
+            (соцветие без надписи — в шапке надпись дублировала бы название). */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
-          <span className="grid place-content-center w-7 h-7 rounded-lg bg-accent text-white text-sm font-bold">
-            E
-          </span>
+          <Image
+            src="/logo-mark.png"
+            alt="Eco Culture"
+            width={28}
+            height={28}
+            priority
+            className="w-7 h-7 object-contain"
+          />
           <span className="font-semibold tracking-tight hidden sm:inline">Ecoculture-CRM</span>
         </Link>
 

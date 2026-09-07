@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
@@ -11,14 +12,18 @@ function LoginContent() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-plane px-4">
       <div className="w-full max-w-sm">
-        <div className="flex items-center gap-2.5 mb-6">
-          <span className="grid place-content-center w-9 h-9 rounded-xl bg-accent text-white font-bold">
-            E
-          </span>
-          <div className="leading-tight">
-            <div className="font-semibold tracking-tight">Ecoculture-CRM</div>
-            <div className="text-xs text-ink-muted">Заявки, склад и продажи</div>
-          </div>
+        {/* На входе логотип показываем целиком — это первое, что видит сотрудник. */}
+        <div className="text-center mb-6">
+          <Image
+            src="/logo.png"
+            alt="Eco Culture"
+            width={1020}
+            height={593}
+            priority
+            className="w-44 h-auto mx-auto"
+          />
+          <div className="mt-3 font-semibold tracking-tight">Ecoculture-CRM</div>
+          <div className="text-xs text-ink-muted">Заявки, склад и продажи</div>
         </div>
 
         <div className="card">
