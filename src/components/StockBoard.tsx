@@ -55,13 +55,23 @@ const STATUS_ORDER: Record<StorageStatus, number> = {
   depleted: 3,
 };
 
-function dayWord(days: number) {
-  const n = Math.abs(days) % 100;
-  const n1 = n % 10;
-  if (n > 10 && n < 20) return "дней";
-  if (n1 > 1 && n1 < 5) return "дня";
-  if (n1 === 1) return "день";
-  return "дней";
+/** Русское склонение: 1 день, 2 дня, 5 дней. */
+function plural(n: number, one: string, few: string, many: string) {
+  const t = Math.abs(n) % 100;
+  const o = t % 10;
+  if (t > 10 && t < 20) return many;
+  if (o > 1 && o < 5) return few;
+  if (o === 1) return one;
+  return many;
+}
+
+const dayWord = (n: number) => plural(n, "день", "дня", "дней");
+const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сортов");
+const batchWord = (n: number) => plural(n, "партия", "партии", "партий");
+
+/** 1.0 -> «1», 1.4 -> «1.4» — лишний ноль в тексте мешает читать. */
+function neatNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function relativeTime(iso: string, now: number) {
@@ -205,11 +215,12 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
           <span className="text-ink-secondary"> шт. всего</span>
         </span>
         <span className="text-ink-secondary">
-          {snapshot.varietyCount} сортов · {snapshot.totalBatches} партий
+          {snapshot.varietyCount} {varietyWord(snapshot.varietyCount)} · {snapshot.totalBatches}{" "}
+          {batchWord(snapshot.totalBatches)}
         </span>
         <span className="text-ink-secondary">
           средний возраст{" "}
-          <b className="text-ink-primary tabular-nums">{snapshot.avgAgeDays.toFixed(1)}</b>{" "}
+          <b className="text-ink-primary tabular-nums">{neatNumber(snapshot.avgAgeDays)}</b>{" "}
           {dayWord(Math.round(snapshot.avgAgeDays))}
         </span>
         {snapshot.warningStems > 0 && (
@@ -273,8 +284,8 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
                   ))}
                 </ul>
                 <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
-                  {col.cards.length} {col.cards.length === 1 ? "сорт" : col.cards.length < 5 ? "сорта" : "сортов"} ·{" "}
-                  {col.batches} партий
+                  {col.cards.length} {varietyWord(col.cards.length)} · {col.batches}{" "}
+                  {batchWord(col.batches)}
                   {col.worst !== "ok" && (
                     <span className={clsx(" · ", STATUS_TEXT[col.worst])}>{STATUS_LABEL[col.worst]}</span>
                   )}
