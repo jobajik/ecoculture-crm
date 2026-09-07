@@ -1,6 +1,6 @@
 /* Изоляция производств: зав. складом не должен видеть чужой цветок нигде. */
 import { getAnalyticsSummary } from "../src/lib/analytics";
-import { getFarmFor } from "../src/lib/constants";
+import { getFarmFor, flowerTypesForFarm } from "../src/lib/constants";
 
 // Заявка со смешанным составом — самый опасный случай: её видят оба склада,
 // но каждый должен видеть только свои позиции и свою сумму.
@@ -140,6 +140,21 @@ async function main() {
   const aAll = await getAnalyticsSummary(null, inj());
   check("аналитика админа: оба типа", [...new Set(aAll.stockByVariety.map((v) => v.flowerType))].sort(), ["chrysanthemum", "rose"]);
   check("аналитика: части = целое", aEsentai.sales.totalRevenue + aRose.sales.totalRevenue, aAll.sales.totalRevenue);
+
+  // --- Колонки на главной: чужой цветок не должен даже присутствовать ---
+  const COLUMN_ORDER = ["rose", "chrysanthemum", "eustoma"];
+  const columnsFor = (farm: string | null) => {
+    const allowed = flowerTypesForFarm(farm);
+    return COLUMN_ORDER.filter((t) => allowed.includes(t));
+  };
+  check("главная у Дианы (esentai): колонки", columnsFor("esentai"), ["chrysanthemum"]);
+  check("главная у Разии (rose_farm): колонки", columnsFor("rose_farm"), ["rose", "eustoma"]);
+  check("главная у админа: все три", columnsFor(null), ["rose", "chrysanthemum", "eustoma"]);
+  check(
+    "у Дианы нет ни розы, ни эустомы",
+    columnsFor("esentai").some((t) => t === "rose" || t === "eustoma"),
+    false
+  );
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

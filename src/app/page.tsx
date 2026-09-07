@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import { getStockSnapshot } from "@/lib/stock";
-import { farmLabel } from "@/lib/constants";
+import { farmLabel, flowerTypesForFarm } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +83,7 @@ export default async function HomePage() {
         </p>
       </div>
 
-      <StockBoard initial={snapshot} />
+      <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />
 
       <div>
         <h2 className="text-lg font-semibold mb-3">Разделы</h2>

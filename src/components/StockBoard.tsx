@@ -16,7 +16,7 @@ import type { StorageStatus } from "@/lib/shelfLife";
 const REFRESH_MS = 45_000;
 
 /** Порядок колонок на витрине: роза, хризантема, эустома. */
-const COLUMNS = ["rose", "chrysanthemum", "eustoma"];
+const COLUMN_ORDER = ["rose", "chrysanthemum", "eustoma"];
 
 // Статус — это состояние, а не категория, поэтому цвет резервный и всегда
 // сопровождается словами: на печати и при дальтонизме цвет не читается.
@@ -96,7 +96,17 @@ interface DetailRow {
   batches: number;
 }
 
-export default function StockBoard({ initial }: { initial: StockSnapshot }) {
+export default function StockBoard({
+  initial,
+  allowedTypes,
+}: {
+  initial: StockSnapshot;
+  /**
+   * Какие типы цветка показывать колонками. Зав. складом получает только свои —
+   * пустая колонка «Розы» на её экране это тоже чужая информация и лишний шум.
+   */
+  allowedTypes?: string[];
+}) {
   const [snapshot, setSnapshot] = useState<StockSnapshot>(initial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +151,8 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
       list.push(card);
       byType.set(card.flowerType, list);
     }
-    return COLUMNS.map((type) => {
+    const visible = COLUMN_ORDER.filter((t) => !allowedTypes || allowedTypes.includes(t));
+    return visible.map((type) => {
       const cards = (byType.get(type) ?? []).sort((a, b) => b.totalQuantity - a.totalQuantity);
       return {
         type,
@@ -155,7 +166,7 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
         ),
       };
     });
-  }, [snapshot.varieties]);
+  }, [snapshot.varieties, allowedTypes]);
 
   /** Нижний список — плоская таблица «сорт + длина», сначала самое срочное. */
   const details = useMemo(() => {
@@ -241,7 +252,12 @@ export default function StockBoard({ initial }: { initial: StockSnapshot }) {
       </div>
 
       {/* Три колонки: роза · хризантема · эустома */}
-      <div className="grid md:grid-cols-3 gap-3">
+      <div
+        className={clsx(
+          "grid gap-3",
+          columns.length >= 3 ? "md:grid-cols-3" : columns.length === 2 ? "md:grid-cols-2" : ""
+        )}
+      >
         {columns.map((col) => (
           <div key={col.type} className="card !p-4">
             <div className="flex items-baseline justify-between gap-2 pb-2 mb-2 border-b border-line-hairline">
