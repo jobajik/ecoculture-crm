@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ORDER_STATUS_LABELS, FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { OrderWithItems } from "@/lib/types";
 import OrderStatusBadge from "./OrderStatusBadge";
+import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 
 export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
   const [status, setStatus] = useState<string>("all");
@@ -21,6 +22,14 @@ export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
       return true;
     });
   }, [orders, status, search]);
+
+  // Заявок со временем накопится много. Показываем начало списка, остальное по
+  // кнопке; при поиске и фильтре по статусу показываем всё найденное — там
+  // список человек сузил сам.
+  const [expanded, setExpanded] = useState(false);
+  const narrowed = status !== "all" || search.trim().length > 0;
+  const shown = expanded || narrowed ? filtered : filtered.slice(0, COLLAPSED_TABLE_SIZE);
+  const hidden = filtered.length - shown.length;
 
   return (
     <div>
@@ -55,7 +64,7 @@ export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((o) => (
+            {shown.map((o) => (
               <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
                 <td className="px-4 py-3">
                   <Link href={`/orders/${o.orderId}`} className="text-series-1 font-medium">
@@ -91,6 +100,20 @@ export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
           </tbody>
         </table>
       </div>
+
+      {(hidden > 0 || (expanded && !narrowed)) && (
+        <div className="mt-2 flex items-center gap-3">
+          <MoreToggle
+            expanded={expanded}
+            hidden={hidden}
+            onToggle={() => setExpanded((v) => !v)}
+            what="заявок"
+          />
+          <span className="text-xs text-ink-muted">
+            всего заявок: {filtered.length.toLocaleString("ru-RU")}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { setPaidAction } from "@/app/finance/actions";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import type { FinanceOrderRow, FinanceSnapshot } from "@/lib/finance";
+import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 
 type Filter = "all" | "unpaid" | "paid" | "ready";
 
@@ -54,6 +55,13 @@ export default function FinanceBoard({
       return true;
     });
   }, [snapshot.orders, filter, search]);
+
+  // Список заявок бухгалтера длинный. Показываем начало, остальное по кнопке; с
+  // фильтром или поиском — всё найденное, там человек сузил список сам.
+  const [expandedRows, setExpandedRows] = useState(false);
+  const narrowed = filter !== "all" || search.trim().length > 0;
+  const shownRows = expandedRows || narrowed ? rows : rows.slice(0, COLLAPSED_TABLE_SIZE);
+  const hiddenRows = rows.length - shownRows.length;
 
   function togglePaid(row: FinanceOrderRow) {
     if (!canEdit) return;
@@ -166,7 +174,7 @@ export default function FinanceBoard({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {shownRows.map((r) => (
               <tr
                 key={r.orderId}
                 className={clsx(
@@ -226,6 +234,20 @@ export default function FinanceBoard({
           </tbody>
         </table>
       </div>
+
+      {(hiddenRows > 0 || (expandedRows && !narrowed)) && (
+        <div className="mt-2 flex items-center gap-3">
+          <MoreToggle
+            expanded={expandedRows}
+            hidden={hiddenRows}
+            onToggle={() => setExpandedRows((v) => !v)}
+            what="заявок"
+          />
+          <span className="text-xs text-ink-muted">
+            всего заявок: {rows.length.toLocaleString("ru-RU")}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

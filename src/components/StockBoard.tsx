@@ -10,6 +10,7 @@ import {
   formatGrade,
   getFarmFor,
 } from "@/lib/constants";
+import MoreToggle, { COLLAPSED_LIST_SIZE, COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import type { AgeBucketRow, StockSnapshot, StockVarietyCard } from "@/lib/stock";
 import type { StorageStatus } from "@/lib/shelfLife";
 
@@ -208,6 +209,15 @@ export default function StockBoard({
 
   const atRisk = snapshot.warningStems + snapshot.criticalStems;
 
+  // Таблица показывает только начало списка: в ней бывает больше сотни строк, а
+  // отвечает она на вопрос «что продать раньше» — ответ в первых строках.
+  // Поиск при этом работает по всем: сузили запрос — увидели всё найденное.
+  const [tableExpanded, setTableExpanded] = useState(false);
+  const searching = search.trim().length > 0;
+  const visibleDetails =
+    tableExpanded || searching ? details : details.slice(0, COLLAPSED_TABLE_SIZE);
+  const hiddenDetails = details.length - visibleDetails.length;
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -301,48 +311,7 @@ export default function StockBoard({
               </div>
             </div>
 
-            {col.cards.length === 0 ? (
-              <p className="text-sm text-ink-muted py-2">Нет на складе</p>
-            ) : (
-              <>
-                <ul className="space-y-1.5">
-                  {col.cards.map((card) => (
-                    <li
-                      key={card.key}
-                      className={clsx(
-                        "flex items-baseline gap-2 text-sm rounded-md -mx-1 px-1 py-0.5",
-                        card.status === "critical" && "bg-status-critical/10",
-                        card.status === "warning" && "bg-status-warning/10"
-                      )}
-                    >
-                      <span
-                        className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[card.status])}
-                        title={STATUS_LABEL[card.status]}
-                      />
-                      <span className="truncate flex-1" title={card.variety}>
-                        {card.variety}
-                      </span>
-                      <span className="tabular-nums font-medium shrink-0">
-                        {card.totalQuantity.toLocaleString("ru-RU")}
-                      </span>
-                      <span
-                        className={clsx("text-[11px] tabular-nums shrink-0 w-12 text-right", STATUS_TEXT[card.status])}
-                        title={`Самая старая партия: ${card.oldestDays} дн.`}
-                      >
-                        {card.oldestDays} дн.
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
-                  {col.cards.length} {varietyWord(col.cards.length)} · {col.batches}{" "}
-                  {batchWord(col.batches)}
-                  {col.worst !== "ok" && (
-                    <span className={clsx(" · ", STATUS_TEXT[col.worst])}>{STATUS_LABEL[col.worst]}</span>
-                  )}
-                </div>
-              </>
-            )}
+            <FlowerColumnList cards={col.cards} batches={col.batches} worst={col.worst} />
           </div>
         ))}
       </div>
@@ -398,7 +367,7 @@ export default function StockBoard({
               </tr>
             </thead>
             <tbody>
-              {details.map((r) => {
+              {visibleDetails.map((r) => {
                 const fill = r.maxDays > 0 ? Math.min(100, (r.oldestDays / r.maxDays) * 100) : 0;
                 const spread = r.oldestDays !== r.newestDays;
                 return (
@@ -465,6 +434,20 @@ export default function StockBoard({
           </table>
         </div>
 
+        {hiddenDetails > 0 || tableExpanded ? (
+          <div className="mt-2 flex items-center gap-3">
+            <MoreToggle
+              expanded={tableExpanded && !searching}
+              hidden={hiddenDetails}
+              onToggle={() => setTableExpanded((v) => !v)}
+              what="позиций"
+            />
+            <span className="text-xs text-ink-muted">
+              всего позиций: {details.length.toLocaleString("ru-RU")}
+            </span>
+          </div>
+        ) : null}
+
         <p className="text-xs text-ink-muted mt-2">
           «Лежит» — дней с даты срезки. «Срок хранения» — сколько прошло из положенного:{" "}
           <span className={STATUS_TEXT.warning}>жёлтый — скоро истечёт</span>,{" "}
@@ -502,8 +485,11 @@ export default function StockBoard({
  * («что залежалось») длина ответа не добавляет, а строк добавляет втрое.
  */
 function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number }) {
+  const [expanded, setExpanded] = useState(false);
   const empty = bucket.quantity === 0;
   const percent = Math.round(bucket.share * 100);
+  const shown = expanded ? bucket.varieties : bucket.varieties.slice(0, COLLAPSED_LIST_SIZE);
+  const hidden = bucket.varieties.length - shown.length;
 
   return (
     <div
@@ -544,7 +530,7 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
       ) : (
         <>
           <ul className="mt-3 space-y-1.5">
-            {bucket.varieties.map((v) => (
+            {shown.map((v) => (
               <li
                 key={`${v.flowerType}:${v.variety}`}
                 className="flex items-baseline gap-2 text-sm"
@@ -564,6 +550,13 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
               </li>
             ))}
           </ul>
+          <MoreToggle
+            expanded={expanded}
+            hidden={hidden}
+            onToggle={() => setExpanded((v) => !v)}
+            what="сортов"
+            className="mt-2"
+          />
           <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
             {bucket.varieties.length} {varietyWord(bucket.varieties.length)} · {bucket.batches}{" "}
             {batchWord(bucket.batches)}
@@ -571,5 +564,81 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Список сортов внутри колонки цветка. Свёрнут до пяти строк: роз в хозяйстве
+ * шестнадцать сортов, и полный список забивает экран ещё до того, как владелец
+ * дойдёт до диапазонов хранения ниже.
+ */
+function FlowerColumnList({
+  cards,
+  batches,
+  worst,
+}: {
+  cards: StockVarietyCard[];
+  batches: number;
+  worst: StorageStatus;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (cards.length === 0) {
+    return <p className="text-sm text-ink-muted py-2">Нет на складе</p>;
+  }
+
+  const shown = expanded ? cards : cards.slice(0, COLLAPSED_LIST_SIZE);
+  const hidden = cards.length - shown.length;
+
+  return (
+    <>
+      <ul className="space-y-1.5">
+        {shown.map((card) => (
+          <li
+            key={card.key}
+            className={clsx(
+              "flex items-baseline gap-2 text-sm rounded-md -mx-1 px-1 py-0.5",
+              card.status === "critical" && "bg-status-critical/10",
+              card.status === "warning" && "bg-status-warning/10"
+            )}
+          >
+            <span
+              className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[card.status])}
+              title={STATUS_LABEL[card.status]}
+            />
+            <span className="truncate flex-1" title={card.variety}>
+              {card.variety}
+            </span>
+            <span className="tabular-nums font-medium shrink-0">
+              {card.totalQuantity.toLocaleString("ru-RU")}
+            </span>
+            <span
+              className={clsx(
+                "text-[11px] tabular-nums shrink-0 w-12 text-right",
+                STATUS_TEXT[card.status]
+              )}
+              title={`Самая старая партия: ${card.oldestDays} дн.`}
+            >
+              {card.oldestDays} дн.
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <MoreToggle
+        expanded={expanded}
+        hidden={hidden}
+        onToggle={() => setExpanded((v) => !v)}
+        what="сортов"
+        className="mt-2"
+      />
+
+      <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
+        {cards.length} {varietyWord(cards.length)} · {batches} {batchWord(batches)}
+        {worst !== "ok" && (
+          <span className={clsx(" · ", STATUS_TEXT[worst])}>{STATUS_LABEL[worst]}</span>
+        )}
+      </div>
+    </>
   );
 }

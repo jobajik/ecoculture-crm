@@ -6,16 +6,24 @@ import { createWriteoffAction } from "@/app/warehouse/actions";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import type { BatchStorageInfo } from "@/lib/shelfLife";
 import StorageStatusBadge from "./StorageStatusBadge";
+import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 
 export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
   const router = useRouter();
   const [openBatchId, setOpenBatchId] = useState<string | null>(null);
   const [onlyActive, setOnlyActive] = useState(true);
 
+  const [expanded, setExpanded] = useState(false);
+
   const visible = useMemo(
     () => infos.filter((i) => (onlyActive ? i.batch.quantityRemaining > 0 : true)),
     [infos, onlyActive]
   );
+
+  // Партий на складе бывает под две сотни. Показываем начало списка (он уже
+  // отсортирован — сверху то, что дольше лежит), остальное по кнопке.
+  const shown = expanded ? visible : visible.slice(0, COLLAPSED_TABLE_SIZE);
+  const hidden = visible.length - shown.length;
 
   return (
     <div>
@@ -38,7 +46,7 @@ export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((info) => (
+            {shown.map((info) => (
               <BatchRow
                 key={info.batch.batchId}
                 info={info}
@@ -62,6 +70,20 @@ export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
           </tbody>
         </table>
       </div>
+
+      {(hidden > 0 || expanded) && (
+        <div className="mt-2 flex items-center gap-3">
+          <MoreToggle
+            expanded={expanded}
+            hidden={hidden}
+            onToggle={() => setExpanded((v) => !v)}
+            what="партий"
+          />
+          <span className="text-xs text-ink-muted">
+            всего партий: {visible.length.toLocaleString("ru-RU")}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
