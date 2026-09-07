@@ -1,18 +1,19 @@
 /**
- * Ключ ячейки прогноза срезки: неделя + цветок + сорт + градация.
+ * Ключи ячеек прогноза срезки.
  *
- * Файл отдельный НЕ случайно. Функция нужна и странице (сервер), и сетке ввода
- * (браузер). Если держать её в компоненте с «use client», сервер получит не
+ * Файл отдельный НЕ случайно. Функции нужны и странице (сервер), и сеткам ввода
+ * (браузер). Если держать их в компоненте с «use client», сервер получит не
  * функцию, а заглушку-ссылку на клиентский модуль, и вызов упадёт с
- * «TypeError: x is not a function» — причём только когда в прогнозе появятся
- * данные, потому что на пустом месяце цикл просто не выполняется. Так уже
- * ломалось; см. CLAUDE.md, раздел «Грабли».
+ * «TypeError: x is not a function». Так уже ломалось дважды; см. CLAUDE.md,
+ * грабли 1.8, и проверку `scripts/check-client-imports.ts`.
  */
-export function forecastCellKey(
-  week: string,
-  flowerType: string,
-  variety: string,
-  grade: string
-): string {
-  return `${week}|${flowerType}|${variety}|${grade}`;
+
+/** Ячейка «сорт × неделя». */
+export function forecastCellKey(week: string, flowerType: string, variety: string): string {
+  return `${week}|${flowerType}|${variety}`;
+}
+
+/** Ячейка ростовки «градация × неделя» — на весь цветок. */
+export function mixCellKey(week: string, flowerType: string, grade: string): string {
+  return `${week}|${flowerType}|${grade}`;
 }

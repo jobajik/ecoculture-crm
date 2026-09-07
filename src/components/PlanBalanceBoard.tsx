@@ -27,8 +27,10 @@ import WeekTabs from "./WeekTabs";
 export interface BalanceInput {
   flowerType: string;
   week: string;
-  /** Прогноз срезки за эту неделю: градация → стебли. */
+  /** Ростовка за эту неделю: градация → стебли (на весь цветок). */
   forecastByGrade: Record<string, number>;
+  /** Прогноз по сортам за эту неделю, сумма. Это и есть общий итог срезки. */
+  varietyStems: number;
   /** План отгрузок за эту неделю: направление → стебли и сумма. */
   planByDirection: Record<string, DirectionPlan>;
 }
@@ -85,7 +87,7 @@ export default function PlanBalanceBoard({
     () =>
       inputs.map((i) => ({
         week: i.week,
-        ...buildFlowerBalance(i.flowerType, i.forecastByGrade, i.planByDirection),
+        ...buildFlowerBalance(i.flowerType, i.forecastByGrade, i.planByDirection, i.varietyStems),
       })),
     [inputs]
   );
@@ -109,7 +111,12 @@ export default function PlanBalanceBoard({
   /** Баланс после предложенного распределения — чтобы показать, что получится. */
   const draftBalance = useMemo(() => {
     if (!current || !activeDraft) return null;
-    return buildFlowerBalance(current.flowerType, current.forecastByGrade, activeDraft);
+    return buildFlowerBalance(
+      current.flowerType,
+      current.forecastByGrade,
+      activeDraft,
+      current.varietyStems
+    );
   }, [current, activeDraft]);
 
   if (inputs.length === 0 || !current || !balance) {

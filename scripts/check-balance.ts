@@ -127,6 +127,25 @@ check(
   1
 );
 
+// Итог срезки берётся по сортам, выход высшей — по ростовке. Это два счёта
+// одного урожая, и если агроном заполнил оба, общий итог должен идти от сортов.
+const bySorts = buildFlowerBalance(
+  "rose",
+  { "60": 8000, "80": 4000, Уценка: 1000 },
+  plan,
+  12_500
+);
+check("итог берётся по сортам", bySorts.forecastStems, 12_500);
+check("высшая всё равно из ростовки", bySorts.forecastTopStems, 4_000);
+check("остаток считается от сортов", bySorts.diff, 2_500);
+
+const mixOnly = buildFlowerBalance("rose", { "60": 8000, "80": 4000, Уценка: 1000 }, plan, 0);
+check("сортов нет — считаем по ростовке", mixOnly.forecastStems, 13_000);
+
+const sortsOnly = buildFlowerBalance("rose", {}, plan, 9_000);
+check("ростовки нет — итог всё равно есть", sortsOnly.forecastStems, 9_000);
+check("ростовки нет — высшая ноль", sortsOnly.forecastTopStems, 0);
+
 const emptyBalance = buildFlowerBalance("rose", {}, {});
 check("пустой месяц: без деления на ноль", emptyBalance.groups.every((g) => g.share === 0), true);
 check("пустой месяц: остаток ноль", emptyBalance.diff, 0);

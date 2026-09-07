@@ -14,6 +14,7 @@ export const SHEET_TABS = {
   PLANS: "Plans",
   SHIPMENT_PLANS: "ShipmentPlans",
   HARVEST_FORECAST: "HarvestForecast",
+  HARVEST_MIX: "HarvestMix",
   SETTINGS: "Settings",
 } as const;
 
@@ -94,12 +95,28 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "UpdatedAt",
     "UpdatedByEmail",
   ],
-  // Прогноз срезки агронома: одна строка — сорт одной градации в месяце.
-  // Ключ — Period + FlowerType + Variety + Grade.
+  // Прогноз срезки по сортам: одна строка — сорт в неделю.
+  // Ключ — Period + FlowerType + Variety.
+  //
+  // Колонка Grade осталась от прежней версии, где прогноз вёлся сразу с
+  // разбивкой по длинам. Сейчас она НЕ используется и пишется пустой: длины
+  // переехали на отдельную вкладку HarvestMix, потому что ростовку планируют
+  // на весь цветок целиком, а не на каждый сорт. Колонку не удаляем — данные
+  // читаются по позиции, и её удаление сдвинуло бы всё правее (грабли 1.1).
   [SHEET_TABS.HARVEST_FORECAST]: [
     "Period",
     "FlowerType",
     "Variety",
+    "Grade",
+    "TargetStems",
+    "UpdatedAt",
+    "UpdatedByEmail",
+  ],
+  // Ростовка: одна строка — градация в неделю, на весь цветок.
+  // Ключ — Period + FlowerType + Grade.
+  [SHEET_TABS.HARVEST_MIX]: [
+    "Period",
+    "FlowerType",
     "Grade",
     "TargetStems",
     "UpdatedAt",

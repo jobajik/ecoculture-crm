@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getShipmentPlansForMonth, shipmentPlanKey } from "@/lib/repo/shipmentPlans";
 import { getForecastForMonth } from "@/lib/repo/harvestForecast";
+import { getMixForMonth } from "@/lib/repo/harvestMix";
 import {
   FLOWER_TYPES,
   ROLES,
@@ -38,9 +39,10 @@ export default async function BalancePage({
 
   const weeks = weeksOfMonth(month);
 
-  const [plans, forecast] = await Promise.all([
+  const [plans, forecast, mix] = await Promise.all([
     getShipmentPlansForMonth(month),
     getForecastForMonth(month),
+    getMixForMonth(month),
   ]);
 
   // По записи на каждую пару «цветок + неделя»: баланс считается понедельно,
@@ -58,18 +60,26 @@ export default async function BalancePage({
         };
       }
 
+      // Ростовка — для выхода высшей категории, сорта — для общего итога.
       const forecastByGrade: Record<string, number> = {};
-      for (const row of forecast.values()) {
+      for (const row of mix.values()) {
         if (row.flowerType !== flowerType || row.period !== week.code) continue;
         forecastByGrade[row.grade] = (forecastByGrade[row.grade] ?? 0) + row.targetStems;
       }
 
-      inputs.push({ flowerType, week: week.code, forecastByGrade, planByDirection });
+      let varietyStems = 0;
+      for (const row of forecast.values()) {
+        if (row.flowerType !== flowerType || row.period !== week.code) continue;
+        varietyStems += row.targetStems;
+      }
+
+      inputs.push({ flowerType, week: week.code, forecastByGrade, varietyStems, planByDirection });
     }
   }
 
   const nothingYet = inputs.every(
     (i) =>
+      i.varietyStems === 0 &&
       Object.values(i.forecastByGrade).every((v) => !v) &&
       Object.values(i.planByDirection).every((p) => !p.stems && !p.amount)
   );

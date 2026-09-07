@@ -56,17 +56,28 @@ export function pricePerStem(plan: DirectionPlan): number {
 
 export function buildFlowerBalance(
   flowerType: string,
-  /** Прогноз срезки: градация → количество. */
+  /** Ростовка: градация → количество. На весь цветок, вкладка HarvestMix. */
   forecastByGrade: Record<string, number>,
   /** План отгрузок: направление → стебли и сумма. */
-  planByDirection: Record<string, DirectionPlan>
+  planByDirection: Record<string, DirectionPlan>,
+  /**
+   * Сумма прогноза по сортам (вкладка HarvestForecast). Это два счёта одного и
+   * того же урожая: сорта отвечают «сколько даст каждый сорт», ростовка — «какая
+   * получится длина». Общий итог берём по сортам, потому что агроном считает
+   * именно так; ростовка нужна для выхода высшей категории.
+   *
+   * Если сорта не заполнены, а ростовка есть — считаем по ростовке: показать
+   * ноль там, где цифры уже внесены, было бы хуже, чем взять их с другой стороны.
+   */
+  varietyStems?: number
 ): FlowerBalance {
-  let forecastStems = 0;
+  let mixStems = 0;
   let forecastTopStems = 0;
   for (const [grade, stems] of Object.entries(forecastByGrade)) {
-    forecastStems += stems;
+    mixStems += stems;
     if (isTopGrade(flowerType, grade)) forecastTopStems += stems;
   }
+  const forecastStems = varietyStems && varietyStems > 0 ? varietyStems : mixStems;
 
   let plannedStems = 0;
   let plannedAmount = 0;

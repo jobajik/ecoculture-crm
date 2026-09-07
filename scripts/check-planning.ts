@@ -20,6 +20,7 @@ import {
 } from "../src/lib/constants";
 import { shipmentPlanKey } from "../src/lib/repo/shipmentPlans";
 import { forecastKey } from "../src/lib/repo/harvestForecast";
+import { mixKey } from "../src/lib/repo/harvestMix";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -132,11 +133,21 @@ check("другой цветок не задет", table.find((r) => r.key === k
 check("другой месяц — отдельная строка", table.find((r) => r.key === k3)?.value, 900);
 check("ключи месяцев различаются", k1 === k3, false);
 
-const f1 = forecastKey("2026-09", "rose", "Freedom", "60");
-const f2 = forecastKey("2026-09", "rose", "Freedom", "80");
-const f3 = forecastKey("2026-09", "rose", "Explorer", "60");
-check("ключ прогноза различает длину", f1 === f2, false);
+// Прогноз по сортам: ключ «неделя + цветок + сорт», длины в нём нет — ростовка
+// живёт отдельной вкладкой и считается на весь цветок.
+const f1 = forecastKey("2026-09-W1", "rose", "Freedom");
+const f2 = forecastKey("2026-09-W2", "rose", "Freedom");
+const f3 = forecastKey("2026-09-W1", "rose", "Explorer");
+check("ключ прогноза различает неделю", f1 === f2, false);
 check("ключ прогноза различает сорт", f1 === f3, false);
+
+// Ростовка: ключ «неделя + цветок + градация», сорта в нём нет.
+const m1 = mixKey("2026-09-W1", "rose", "60");
+const m2 = mixKey("2026-09-W1", "rose", "80");
+const m3 = mixKey("2026-09-W2", "rose", "60");
+check("ключ ростовки различает длину", m1 === m2, false);
+check("ключ ростовки различает неделю", m1 === m3, false);
+check("ключи прогноза и ростовки не пересекаются", f1 === m1, false);
 
 let forecastTable: FakeRow[] = [];
 forecastTable = upsert(forecastTable, f1, 500);
@@ -163,7 +174,7 @@ for (const flowerType of ["rose", "chrysanthemum", "eustoma"]) {
 check("подпись высшей для розы", topGradeHint("rose"), "70 см, 80 см, 90 см, 100 см");
 check("подпись высшей для хризантемы", topGradeHint("chrysanthemum"), "Высшая");
 
-// Считаем ростовку так же, как ForecastGrid.
+// Считаем ростовку так же, как ForecastBoard.
 const rostovka: Record<string, number> = { "50": 1000, "60": 3000, "70": 2000, "80": 4000 };
 const total = Object.values(rostovka).reduce((s, v) => s + v, 0);
 const top = Object.entries(rostovka)

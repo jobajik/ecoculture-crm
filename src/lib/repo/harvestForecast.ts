@@ -2,28 +2,32 @@ import { appendRows, readTable, rowToRecord, updateRows, SHEET_TABS } from "../s
 import { monthOfWeek } from "../constants";
 
 /**
- * Прогноз срезки. Ведётся агрономами на вкладке HarvestForecast:
+ * Прогноз срезки. Ведётся агрономами и состоит из ДВУХ независимых частей:
  *
- *   Period       FlowerType  Variety   Grade  TargetStems  UpdatedAt  UpdatedByEmail
- *   2026-09-W1   rose        Freedom   60     3000         ...        agro@company.kz
- *   2026-09-W2   rose        Freedom   60     4000         ...        agro@company.kz
+ * 1. По сортам (вкладка HarvestForecast): сколько стеблей даст каждый сорт
+ *    в каждую неделю.
  *
- * Period — код недели («2026-09-W1»): прогноз ведётся понедельно, месяц
- * получается суммой своих недель.
+ *      Period       FlowerType  Variety   Grade  TargetStems  UpdatedAt  ...
+ *      2026-09-W1   rose        Freedom          3000         ...
+ *      2026-09-W2   rose        Freedom          4000         ...
  *
- * Одна строка — один сорт одной градации в неделю. Ключ строки —
- * Period + FlowerType + Variety + Grade, поэтому агроном может править свой
- * прогноз сколько угодно раз: строка переписывается, а не дублируется.
+ * 2. Ростовка (вкладка HarvestMix, файл harvestMix.ts): как весь урожай этого
+ *    цветка распределится по длинам — на весь цветок целиком, а НЕ по каждому
+ *    сорту отдельно.
  *
- * Градация здесь та же, что на складе: у розы и эустомы это длина, у хризантемы
- * категория. Именно поэтому план и факт потом сходятся сорт в сорт — считать
- * ничего не нужно, разрез один и тот же.
+ * Почему врозь. Агроном знает, сколько даст сорт, и отдельно знает, какая
+ * ростовка получится по теплице в целом. Требовать ростовку по каждому сорту —
+ * значит требовать цифры, которых у него нет: он придумает их, и прогноз станет
+ * хуже, а не точнее. Поэтому сорта и ростовка живут раздельно, а сходимость их
+ * сумм показывается в интерфейсе как подсказка.
+ *
+ * Колонка Grade здесь осталась от прежней версии и не используется — см.
+ * комментарий в SHEET_HEADERS (удалять нельзя, данные читаются по позиции).
  */
 export interface HarvestForecastRow {
   period: string;
   flowerType: string;
   variety: string;
-  grade: string;
   targetStems: number;
   updatedAt: string;
   updatedByEmail: string;
@@ -33,7 +37,6 @@ export interface HarvestForecastInput {
   period: string;
   flowerType: string;
   variety: string;
-  grade: string;
   targetStems: number;
 }
 
@@ -45,39 +48,52 @@ function toNumber(raw: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-export function forecastKey(
-  period: string,
-  flowerType: string,
-  variety: string,
-  grade: string
-): string {
-  return `${period}|${flowerType}|${variety}|${grade}`;
+export function forecastKey(period: string, flowerType: string, variety: string): string {
+  return `${period}|${flowerType}|${variety}`;
 }
 
 export async function listHarvestForecast(): Promise<HarvestForecastRow[]> {
   try {
     const table = await readTable(SHEET_TABS.HARVEST_FORECAST);
-    return table.rows
-      .map((row) => {
-        const record = rowToRecord(SHEET_TABS.HARVEST_FORECAST, row);
-        return {
-          period: (record.Period || "").trim(),
-          flowerType: (record.FlowerType || "").trim(),
-          variety: (record.Variety || "").trim(),
-          grade: (record.Grade || "").trim(),
-          targetStems: toNumber(record.TargetStems),
+    const merged = new Map<string, HarvestForecastRow>();
+
+    for (const row of table.rows) {
+      const record = rowToRecord(SHEET_TABS.HARVEST_FORECAST, row);
+      const period = (record.Period || "").trim();
+      const flowerType = (record.FlowerType || "").trim();
+      const variety = (record.Variety || "").trim();
+      if (!period || !flowerType || !variety) continue;
+
+      // Строки старого формата (сорт × длина) складываем в один итог по сорту:
+      // так прогноз, введённый до разделения, не пропадает.
+      const key = forecastKey(period, flowerType, variety);
+      const existing = merged.get(key);
+      const stems = toNumber(record.TargetStems);
+      if (existing) {
+        existing.targetStems += stems;
+        if ((record.UpdatedAt || "") > existing.updatedAt) {
+          existing.updatedAt = (record.UpdatedAt || "").trim();
+        }
+      } else {
+        merged.set(key, {
+          period,
+          flowerType,
+          variety,
+          targetStems: stems,
           updatedAt: (record.UpdatedAt || "").trim(),
           updatedByEmail: (record.UpdatedByEmail || "").trim().toLowerCase(),
-        };
-      })
-      .filter((f) => f.period && f.flowerType && f.variety && f.grade);
+        });
+      }
+    }
+
+    return Array.from(merged.values());
   } catch {
     return [];
   }
 }
 
 /**
- * Прогноз за месяц. Если передан flowerTypes — вернём только эти типы цветка:
+ * Прогноз за неделю. Если передан flowerTypes — вернём только эти типы цветка:
  * так агроном не видит и не может случайно затереть чужое производство.
  */
 export async function getForecastForPeriod(
@@ -89,7 +105,7 @@ export async function getForecastForPeriod(
   for (const row of rows) {
     if (row.period !== period) continue;
     if (flowerTypes && !flowerTypes.includes(row.flowerType)) continue;
-    map.set(forecastKey(row.period, row.flowerType, row.variety, row.grade), row);
+    map.set(forecastKey(row.period, row.flowerType, row.variety), row);
   }
   return map;
 }
@@ -104,12 +120,12 @@ export async function getForecastForMonth(
   for (const row of rows) {
     if (monthOfWeek(row.period) !== month) continue;
     if (flowerTypes && !flowerTypes.includes(row.flowerType)) continue;
-    map.set(forecastKey(row.period, row.flowerType, row.variety, row.grade), row);
+    map.set(forecastKey(row.period, row.flowerType, row.variety), row);
   }
   return map;
 }
 
-/** Записывает прогноз: что было — переписывает, чего не было — дописывает. */
+/** Записывает прогноз по сортам: что было — переписывает, чего не было — дописывает. */
 export async function saveHarvestForecast(
   inputs: HarvestForecastInput[],
   updatedByEmail: string
@@ -123,8 +139,7 @@ export async function saveHarvestForecast(
     const key = forecastKey(
       (record.Period || "").trim(),
       (record.FlowerType || "").trim(),
-      (record.Variety || "").trim(),
-      (record.Grade || "").trim()
+      (record.Variety || "").trim()
     );
     if (!rowByKey.has(key)) rowByKey.set(key, table.rowNumbers[idx]);
   });
@@ -138,14 +153,12 @@ export async function saveHarvestForecast(
       Period: input.period,
       FlowerType: input.flowerType,
       Variety: input.variety,
-      Grade: input.grade,
+      Grade: "", // не используется, см. комментарий выше
       TargetStems: input.targetStems,
       UpdatedAt: updatedAt,
       UpdatedByEmail: updatedByEmail,
     };
-    const rowNumber = rowByKey.get(
-      forecastKey(input.period, input.flowerType, input.variety, input.grade)
-    );
+    const rowNumber = rowByKey.get(forecastKey(input.period, input.flowerType, input.variety));
     if (rowNumber) updates.push({ rowNumber, record });
     else creates.push(record);
   }

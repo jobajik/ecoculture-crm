@@ -753,61 +753,77 @@ export async function buildPicklistWorkbook(picklist: {
 // ---------------------------------------------------------------------------
 // Прогноз срезки агронома: загрузка из Excel и шаблон.
 //
-// Файл устроен «широко»: строки — сорта, колонки — ростовка (длины у розы и
-// эустомы, категории у хризантемы), в ячейках количество к срезу. Так агроном и
-// думает: строкой по сорту, а не отдельной записью на каждую длину. В плоском
-// виде «сорт, длина, количество» одна мысль разваливалась на десять строк, и
-// заполнять это было мучением.
+// Файл состоит из ДВУХ таблиц на каждый цветок, и это отражает то, как агроном
+// на самом деле думает:
 //
-// Лист на каждый цветок: у розы, хризантемы и эустомы разные градации, в одну
-// таблицу они не сводятся.
+//   «Сорта»   — строки: сорта, колонки: недели, в ячейках количество к срезу.
+//   «Ростовка» — строки: длины (у хризантемы категории), колонки: недели,
+//                в ячейках количество — НА ВЕСЬ ЦВЕТОК, а не по сортам.
 //
-// Колонка «Неделя» — номер недели месяца (1, 2, 3…). Если её нет или она пустая,
-// строка попадёт в ту неделю, которая выбрана на странице.
+// Почему ростовка отдельно, а не колонками у каждого сорта: агроном знает
+// урожайность сорта и знает ростовку по теплице в целом, но не знает ростовку
+// каждого сорта в отдельности. Требовать её — значит получать выдуманные цифры.
 //
-// Старый построчный формат (Тип цветка / Сорт / Длина / Количество) тоже
-// понимается: у кого-то мог остаться прежний шаблон.
+// Неделя — это колонка («Неделя 1»…«Неделя 5»), номер недели месяца. Месяц
+// выбирается на странице, в файле его нет: иначе агроном, копируя прошлый файл,
+// регулярно затирал бы не тот месяц.
 // ---------------------------------------------------------------------------
 
-const FORECAST_COLUMN_ALIASES: Record<string, string[]> = {
-  flowerType: ["тип цветка", "тип", "культура", "flowertype", "type"],
-  variety: ["сорт", "variety", "название сорта"],
-  grade: [
-    "длина / категория",
-    "длина/категория",
-    "длина",
-    "категория",
-    "ростовка",
-    "grade",
-    "length",
-  ],
-  stems: ["количество, шт", "количество", "кол-во", "прогноз, шт", "прогноз", "quantity", "шт"],
-  week: ["неделя", "нед", "week"],
-};
-
-export interface ParsedForecastRow {
-  rowNumber: number;
-  /** Название листа — чтобы в предпросмотре было видно, откуда строка. */
+export interface ParsedVarietyRow {
   sheet: string;
+  rowNumber: number;
   flowerType: FlowerType;
   variety: string;
-  grade: string;
-  stems: number;
-  /** Код недели («2026-09-W2»). */
   week: string;
+  stems: number;
+  error?: string;
+}
+
+export interface ParsedMixRow {
+  sheet: string;
+  rowNumber: number;
+  flowerType: FlowerType;
+  grade: string;
+  week: string;
+  stems: number;
   error?: string;
 }
 
 export interface ForecastParseResult {
-  rows: ParsedForecastRow[];
+  varieties: ParsedVarietyRow[];
+  mix: ParsedMixRow[];
   validCount: number;
   errorCount: number;
   fatalError?: string;
 }
 
-/** Ищет тип цветка в названии листа: «Розы», «Хризантемы», «Эустома». */
+const VARIETY_HEADERS = ["сорт", "сорта", "variety"];
+const MIX_HEADERS = [
+  "длина",
+  "длина / категория",
+  "длина/категория",
+  "категория",
+  "ростовка",
+  "grade",
+];
+
+/** «Неделя 3» → 3. Понимает «Нед. 3», «Неделя3», «3». */
+function weekNumberFromHeader(header: string): number | null {
+  const cleaned = header.trim().toLowerCase();
+  if (!cleaned) return null;
+  const match = /^(?:нед(?:еля|\.)?\s*|week\s*)?(\d{1,2})$/.exec(cleaned);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return n >= 1 && n <= 6 ? n : null;
+}
+
+/** Тип цветка по названию листа: «Розы — сорта», «Хризантемы (ростовка)». */
 function flowerTypeFromSheetName(name: string): FlowerType | null {
-  return detectFlowerType(name);
+  const value = name.trim().toLowerCase();
+  if (value.startsWith("роз")) return FLOWER_TYPES.ROSE;
+  if (value.startsWith("хриз")) return FLOWER_TYPES.CHRYSANTHEMUM;
+  if (value.startsWith("эустом") || value.startsWith("евстом")) return FLOWER_TYPES.EUSTOMA;
+  return null;
 }
 
 export async function parseForecastWorkbook(
@@ -816,16 +832,15 @@ export async function parseForecastWorkbook(
   /** Типы цветка, которые агроному разрешено планировать. */
   allowedTypes: string[] = [],
   /** Месяц («2026-09») — из него собираются коды недель. */
-  month = "",
-  /** Неделя по умолчанию, если в файле нет колонки «Неделя». */
-  defaultWeek = ""
+  month = ""
 ): Promise<ForecastParseResult> {
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(buffer);
   } catch {
     return {
-      rows: [],
+      varieties: [],
+      mix: [],
       validCount: 0,
       errorCount: 0,
       fatalError: "Не удалось прочитать файл. Нужен файл Excel в формате .xlsx.",
@@ -833,205 +848,170 @@ export async function parseForecastWorkbook(
   }
 
   const weeks = month ? weeksOfMonth(month) : [];
-  const rows: ParsedForecastRow[] = [];
+  const varieties: ParsedVarietyRow[] = [];
+  const mix: ParsedMixRow[] = [];
   let sawAnyTable = false;
 
   for (const sheet of workbook.worksheets) {
-    // Лист с пояснениями пропускаем молча.
     if (normalizeHeader(sheet.name).startsWith("как заполнять")) continue;
 
     const sheetType = flowerTypeFromSheetName(sheet.name);
 
-    // --- Ищем шапку: сначала широкую (сорт + колонки градаций) ---
+    // Ищем шапку: первая колонка — «Сорт» или «Длина», дальше колонки-недели.
     let headerRow = 0;
-    let varietyCol = 0;
-    let weekCol = 0;
-    let typeCol = 0;
-    let gradeCols: { col: number; grade: string }[] = [];
-    const longCols: Record<string, number> = {};
+    let firstCol = 0;
+    let kind: "variety" | "mix" | null = null;
+    const weekCols: { col: number; index: number }[] = [];
 
     for (let r = 1; r <= Math.min(10, sheet.rowCount); r++) {
       const row = sheet.getRow(r);
-      const found: Record<string, number> = {};
-      const grades: { col: number; grade: string }[] = [];
+      let foundFirst = 0;
+      let foundKind: "variety" | "mix" | null = null;
+      const cols: { col: number; index: number }[] = [];
 
       row.eachCell((cell, colNumber) => {
         const header = normalizeHeader(cellText(cell));
         if (!header) return;
-        for (const [field, aliases] of Object.entries(FORECAST_COLUMN_ALIASES)) {
-          if (found[field] === undefined && aliases.includes(header)) found[field] = colNumber;
+        if (!foundKind && VARIETY_HEADERS.includes(header)) {
+          foundKind = "variety";
+          foundFirst = colNumber;
+          return;
         }
-        // Заголовок-градация: пробуем распознать по типу листа, а если тип листа
-        // неизвестен — по любому из разрешённых типов.
-        const candidates = sheetType
-          ? [sheetType]
-          : ((allowedTypes.length > 0
-              ? allowedTypes
-              : [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA]) as FlowerType[]);
-        for (const type of candidates) {
-          const normalized = normalizeGrade(cellText(cell), type);
-          if (normalized) {
-            grades.push({ col: colNumber, grade: normalized });
-            break;
-          }
+        if (!foundKind && MIX_HEADERS.includes(header)) {
+          foundKind = "mix";
+          foundFirst = colNumber;
+          return;
         }
+        const weekIndex = weekNumberFromHeader(header);
+        if (weekIndex) cols.push({ col: colNumber, index: weekIndex });
       });
 
-      // Широкая шапка: есть «Сорт» и хотя бы две колонки-градации.
-      if (found.variety !== undefined && grades.length >= 2) {
+      if (foundKind && cols.length > 0) {
         headerRow = r;
-        varietyCol = found.variety;
-        weekCol = found.week ?? 0;
-        typeCol = found.flowerType ?? 0;
-        gradeCols = grades;
-        break;
-      }
-      // Старая построчная шапка.
-      if (found.variety !== undefined && found.stems !== undefined) {
-        headerRow = r;
-        varietyCol = found.variety;
-        weekCol = found.week ?? 0;
-        typeCol = found.flowerType ?? 0;
-        Object.assign(longCols, found);
+        firstCol = foundFirst;
+        kind = foundKind;
+        weekCols.push(...cols);
         break;
       }
     }
 
-    if (!headerRow) continue;
+    if (!headerRow || !kind) continue;
     sawAnyTable = true;
 
     for (let r = headerRow + 1; r <= sheet.rowCount; r++) {
       const row = sheet.getRow(r);
-      const rawVariety = cellText(row.getCell(varietyCol));
-      const rawType = typeCol ? cellText(row.getCell(typeCol)) : "";
-      const rawWeek = weekCol ? cellText(row.getCell(weekCol)) : "";
+      const label = cellText(row.getCell(firstCol));
+      const anyValue = weekCols.some(({ col }) => cellText(row.getCell(col)));
+      if (!label && !anyValue) continue;
 
-      // Тип цветка: из колонки, иначе из названия листа.
-      const flowerType = detectFlowerType(rawType) ?? sheetType;
-
-      // Неделя: номер из колонки, иначе выбранная на странице.
-      let week = defaultWeek;
-      let weekError = "";
-      if (rawWeek) {
-        const index = Number(rawWeek.replace(/[^\d]/g, ""));
-        const found = weeks.find((w) => w.index === index);
-        if (found) week = found.code;
-        else weekError = `неделя «${rawWeek}» не из этого месяца (есть 1…${weeks.length})`;
-      }
-
-      const cells: { grade: string; raw: string }[] =
-        gradeCols.length > 0
-          ? gradeCols.map((g) => ({ grade: g.grade, raw: cellText(row.getCell(g.col)) }))
-          : [
-              {
-                grade: longCols.grade ? cellText(row.getCell(longCols.grade)) : "",
-                raw: longCols.stems ? cellText(row.getCell(longCols.stems)) : "",
-              },
-            ];
-
-      const hasAnything = rawVariety || cells.some((c) => c.raw);
-      if (!hasAnything) continue;
-
-      for (const cell of cells) {
-        // В широком виде пустая ячейка — это «ничего не жду», её пропускаем.
-        // Иначе один сорт давал бы десять строк, из которых девять пустые.
-        if (gradeCols.length > 0 && !cell.raw) continue;
+      for (const { col, index } of weekCols) {
+        const raw = cellText(row.getCell(col));
+        // Пустая ячейка — «ничего не жду», её пропускаем: иначе один сорт давал
+        // бы пять строк, из которых четыре пустые.
+        if (!raw) continue;
 
         const errors: string[] = [];
-        if (weekError) errors.push(weekError);
 
-        if (!flowerType) {
+        const week = weeks.find((w) => w.index === index);
+        if (!week) {
+          errors.push(`недели ${index} в этом месяце нет (есть 1…${weeks.length})`);
+        }
+
+        if (!sheetType) {
           errors.push(
-            `не понял тип цветка: назовите лист «${FLOWER_TYPE_LABELS.rose}», ` +
-              `«${FLOWER_TYPE_LABELS.chrysanthemum}» или «${FLOWER_TYPE_LABELS.eustoma}» ` +
-              "либо добавьте колонку «Тип цветка»"
+            "не понял тип цветка: назовите лист «Розы», «Хризантемы» или «Эустома»"
           );
-        } else if (allowedTypes.length > 0 && !allowedTypes.includes(flowerType)) {
+        } else if (allowedTypes.length > 0 && !allowedTypes.includes(sheetType)) {
           errors.push(
-            `${FLOWER_TYPE_LABELS[flowerType]} — не ваше производство ` +
-              `(${farmLabel(getFarmFor(flowerType))}), эту строку загрузить нельзя`
+            `${FLOWER_TYPE_LABELS[sheetType]} — не ваше производство ` +
+              `(${farmLabel(getFarmFor(sheetType))}), эту строку загрузить нельзя`
           );
         }
 
-        let variety = rawVariety;
-        if (!rawVariety) {
-          errors.push("не указан сорт");
-        } else if (flowerType) {
-          const known = varietyCatalog[flowerType] ?? [];
-          if (known.length > 0) {
-            const match = known.find(
-              (v) => v.toLowerCase() === rawVariety.trim().replace(/\s+/g, " ").toLowerCase()
-            );
-            if (match) variety = match;
-            else {
-              errors.push(
-                `сорт «${rawVariety}» не найден в справочнике. ` +
-                  "Новый сорт добавляется на вкладке Varieties в таблице"
+        const stems = Number(raw.replace(/\s/g, "").replace(",", "."));
+        if (Number.isNaN(stems) || stems < 0) {
+          errors.push(`количество «${raw}» — не число (ноль допустим, минус нет)`);
+        }
+
+        const common = {
+          sheet: sheet.name,
+          rowNumber: r,
+          flowerType: sheetType ?? FLOWER_TYPES.ROSE,
+          week: week?.code ?? "",
+          stems: Number.isNaN(stems) ? 0 : Math.round(stems),
+        };
+
+        if (kind === "variety") {
+          let variety = label;
+          if (!label) errors.push("не указан сорт");
+          else if (sheetType) {
+            const known = varietyCatalog[sheetType] ?? [];
+            if (known.length > 0) {
+              const match = known.find(
+                (v) => v.toLowerCase() === label.trim().replace(/\s+/g, " ").toLowerCase()
               );
+              if (match) variety = match;
+              else {
+                errors.push(
+                  `сорт «${label}» не найден в справочнике. ` +
+                    "Новый сорт добавляется на вкладке Varieties в таблице"
+                );
+              }
             }
           }
-        }
-
-        let grade = "";
-        if (flowerType) {
-          const normalized = normalizeGrade(cell.grade, flowerType);
-          if (!normalized) {
-            errors.push(
-              `${GRADE_LABELS[flowerType].toLowerCase()} «${cell.grade || "пусто"}» не из списка ` +
-                `(допустимо: ${getGradesFor(flowerType).join(", ")})`
-            );
-          } else {
-            grade = normalized;
+          varieties.push({
+            ...common,
+            variety,
+            error: errors.length > 0 ? errors.join("; ") : undefined,
+          });
+        } else {
+          let grade = "";
+          if (!label) errors.push("не указана длина/категория");
+          else if (sheetType) {
+            const normalized = normalizeGrade(label, sheetType);
+            if (!normalized) {
+              errors.push(
+                `${GRADE_LABELS[sheetType].toLowerCase()} «${label}» не из списка ` +
+                  `(допустимо: ${getGradesFor(sheetType).join(", ")})`
+              );
+            } else {
+              grade = normalized;
+            }
           }
+          mix.push({
+            ...common,
+            grade,
+            error: errors.length > 0 ? errors.join("; ") : undefined,
+          });
         }
-
-        // Ноль допустим: так агроном убирает позицию, которую больше не ждёт.
-        const stems = Number(cell.raw.replace(/\s/g, "").replace(",", "."));
-        if (!cell.raw) errors.push("не указано количество");
-        else if (Number.isNaN(stems) || stems < 0) {
-          errors.push(`количество «${cell.raw}» — не число (ноль допустим, минус нет)`);
-        }
-
-        if (!week) errors.push("не удалось определить неделю");
-
-        rows.push({
-          rowNumber: r,
-          sheet: sheet.name,
-          flowerType: flowerType ?? FLOWER_TYPES.ROSE,
-          variety,
-          grade,
-          stems: Number.isNaN(stems) ? 0 : Math.round(stems),
-          week,
-          error: errors.length > 0 ? errors.join("; ") : undefined,
-        });
       }
     }
   }
 
   if (!sawAnyTable) {
     return {
-      rows: [],
+      varieties: [],
+      mix: [],
       validCount: 0,
       errorCount: 0,
       fatalError:
-        "Не нашёл таблицу с данными. Нужна колонка «Сорт» и колонки с длинами (или категориями) — " +
-        "проще всего скачать шаблон и заполнить его.",
+        "Не нашёл таблицу с данными. Нужна первая колонка «Сорт» (или «Длина») и колонки " +
+        "«Неделя 1», «Неделя 2»… — проще всего скачать шаблон и заполнить его.",
     };
   }
 
+  const all = [...varieties, ...mix];
   return {
-    rows,
-    validCount: rows.filter((r) => !r.error).length,
-    errorCount: rows.filter((r) => r.error).length,
+    varieties,
+    mix,
+    validCount: all.filter((r) => !r.error).length,
+    errorCount: all.filter((r) => r.error).length,
   };
 }
 
 /**
- * Шаблон прогноза срезки: лист на каждый цветок, строки — сорта, колонки —
- * ростовка, в ячейках количество к срезу.
- *
- * Каждый сорт повторяется столько раз, сколько в месяце недель: колонка
- * «Неделя» отделяет их друг от друга. Так весь месяц заполняется одним файлом.
+ * Шаблон прогноза: на каждый цветок два листа — «сорта» и «ростовка».
+ * Строки — сорта (или длины), колонки — недели месяца, в ячейках количество.
  */
 export async function buildForecastTemplate(
   varietyCatalog: Record<string, string[]> = {},
@@ -1043,31 +1023,36 @@ export async function buildForecastTemplate(
     : [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA]) as FlowerType[];
 
   const weeks = weeksOfMonth(month);
+  const weekColumns = weeks.map((w) => ({
+    header: `Неделя ${w.index}`,
+    key: `w${w.index}`,
+    width: 12,
+  }));
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Ecoculture-CRM";
 
   for (const type of allowedTypes) {
-    const grades = getGradesFor(type);
-    const sheet = workbook.addWorksheet(FLOWER_TYPE_LABELS_PLURAL[type] ?? FLOWER_TYPE_LABELS[type]);
+    const plural = FLOWER_TYPE_LABELS_PLURAL[type] ?? FLOWER_TYPE_LABELS[type];
 
-    sheet.columns = [
-      { header: "Сорт", key: "variety", width: 24 },
-      { header: "Неделя", key: "week", width: 9 },
-      ...grades.map((grade) => ({ header: formatGrade(grade), key: grade, width: 12 })),
+    const bySort = workbook.addWorksheet(`${plural} — сорта`);
+    bySort.columns = [{ header: "Сорт", key: "label", width: 26 }, ...weekColumns];
+    bySort.getRow(1).font = { bold: true };
+    bySort.getRow(1).alignment = { horizontal: "center", vertical: "middle" };
+    bySort.getColumn(1).alignment = { horizontal: "left" };
+    bySort.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+    for (const variety of varietyCatalog[type] ?? []) bySort.addRow({ label: variety });
+
+    const byMix = workbook.addWorksheet(`${plural} — ростовка`);
+    byMix.columns = [
+      { header: GRADE_LABELS[type] ?? "Длина", key: "label", width: 26 },
+      ...weekColumns,
     ];
-    sheet.getRow(1).font = { bold: true };
-    sheet.getRow(1).alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    sheet.getColumn(1).alignment = { horizontal: "left" };
-    sheet.views = [{ state: "frozen", xSplit: 2, ySplit: 1 }];
-
-    for (const variety of varietyCatalog[type] ?? []) {
-      for (const week of weeks) {
-        const row: Record<string, unknown> = { variety, week: week.index };
-        for (const grade of grades) row[grade] = null;
-        sheet.addRow(row);
-      }
-    }
+    byMix.getRow(1).font = { bold: true };
+    byMix.getRow(1).alignment = { horizontal: "center", vertical: "middle" };
+    byMix.getColumn(1).alignment = { horizontal: "left" };
+    byMix.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+    for (const grade of getGradesFor(type)) byMix.addRow({ label: formatGrade(grade) });
   }
 
   const notes = workbook.addWorksheet("Как заполнять");
@@ -1075,23 +1060,28 @@ export async function buildForecastTemplate(
   const lines = [
     `Прогноз срезки на ${periodLabel(month)}${farm ? ` — ${farmLabel(farm)}` : ""}`,
     "",
-    "1. Лист на каждый цветок. Строки — сорта, колонки — ростовка (длины, у хризантемы",
-    "   категории), в ячейках количество стеблей к срезу.",
-    "2. Колонка «Неделя» — номер недели месяца:",
-    ...weeks.map((w) => `      ${w.index} — ${w.label} (${w.days} дн.)`),
-    "3. Заполняйте только те ячейки, где ждёте срезку. Пустые пропускаются —",
-    "   удалять строки не обязательно.",
-    "4. Ноль означает «этой позиции не будет»: так убирается то, что вносили раньше.",
-    "5. Порядок колонок менять можно — система смотрит на заголовки. Лишние колонки",
-    "   игнорируются.",
+    "На каждый цветок два листа.",
+    "",
+    "Лист «сорта»: строки — сорта, колонки — недели, в ячейках количество стеблей",
+    "к срезу. Это ответ на вопрос «сколько даст каждый сорт».",
+    "",
+    "Лист «ростовка»: строки — длины (у хризантемы категории), колонки — недели.",
+    "Это ответ на вопрос «какая ростовка получится по цветку в целом» — цифры на",
+    "весь цветок, а не по каждому сорту.",
+    "",
+    "Суммы двух листов за неделю должны примерно совпадать: и там и там это один",
+    "и тот же урожай, посчитанный с разных сторон. Система покажет расхождение,",
+    "но загрузить даст в любом случае — прогноз есть прогноз.",
+    "",
+    "Недели этого месяца:",
+    ...weeks.map((w) => `      Неделя ${w.index} — ${w.label} (${w.days} дн.)`),
+    "",
+    "Заполняйте только те ячейки, где ждёте срезку. Пустые пропускаются.",
+    "Ноль означает «этой позиции не будет»: так убирается то, что вносили раньше.",
+    "Порядок колонок менять можно — система смотрит на заголовки.",
     "",
     "Что считается высшей категорией выхода:",
     ...allowedTypes.map((t) => `   ${FLOWER_TYPE_LABELS[t]}: ${topGradeHint(t)}.`),
-    "",
-    "Сорта:",
-    ...allowedTypes.map(
-      (t) => `   ${FLOWER_TYPE_LABELS[t]}: ${(varietyCatalog[t] ?? []).join(", ")}.`
-    ),
     "",
     "Новый сорт добавляется на вкладке Varieties в самой Google-таблице CRM.",
   ];

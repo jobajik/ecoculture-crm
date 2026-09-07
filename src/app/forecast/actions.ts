@@ -7,8 +7,14 @@ import {
   saveHarvestForecast,
   type HarvestForecastInput,
 } from "@/lib/repo/harvestForecast";
+import { saveHarvestMix, type HarvestMixInput } from "@/lib/repo/harvestMix";
 import { listVarietiesByType } from "@/lib/repo/varieties";
-import { parseForecastWorkbook, type ForecastParseResult, type ParsedForecastRow } from "@/lib/excel";
+import {
+  parseForecastWorkbook,
+  type ForecastParseResult,
+  type ParsedMixRow,
+  type ParsedVarietyRow,
+} from "@/lib/excel";
 import {
   FLOWER_TYPE_LABELS,
   ROLES,
@@ -51,9 +57,18 @@ function assertOwnFlowerType(farm: string | null, flowerType: string) {
   }
 }
 
+function cleanStems(value: unknown, what: string): number {
+  const stems = Number(value);
+  if (!Number.isFinite(stems) || stems < 0) {
+    throw new Error(`${what}: количество не может быть отрицательным`);
+  }
+  if (stems > 100_000_000) throw new Error(`${what}: слишком большое количество`);
+  return Math.round(stems);
+}
+
+/** Прогноз по сортам: сорт × неделя. */
 export async function saveForecastAction(period: string, rows: HarvestForecastInput[]) {
   const { email, farm } = await requireAgronomist();
-  // period — код недели: прогноз ведётся понедельно.
   if (!isValidWeekCode(period)) throw new Error("Неверная неделя");
 
   const catalog = await listVarietiesByType();
@@ -61,29 +76,53 @@ export async function saveForecastAction(period: string, rows: HarvestForecastIn
   const cleaned: HarvestForecastInput[] = rows.map((row) => {
     const flowerType = (row.flowerType || "").trim();
     const variety = (row.variety || "").trim();
-    const grade = (row.grade || "").trim();
 
     assertOwnFlowerType(farm, flowerType);
-
     if (!(catalog[flowerType] ?? []).includes(variety)) {
       throw new Error(`Сорт «${variety}» не найден в справочнике`);
     }
-    if (!getGradesFor(flowerType).includes(grade)) {
-      throw new Error(`Недопустимая длина/категория: «${grade}»`);
-    }
 
-    const stems = Number(row.targetStems);
-    if (!Number.isFinite(stems) || stems < 0) {
-      throw new Error(`${variety} ${grade}: количество не может быть отрицательным`);
-    }
-    if (stems > 100_000_000) throw new Error(`${variety} ${grade}: слишком большое количество`);
-
-    return { period, flowerType, variety, grade, targetStems: Math.round(stems) };
+    return {
+      period,
+      flowerType,
+      variety,
+      targetStems: cleanStems(row.targetStems, variety),
+    };
   });
 
   const result = await saveHarvestForecast(cleaned, email);
 
   revalidatePath("/forecast");
+  revalidatePath("/plans/balance");
+  return result;
+}
+
+/** Ростовка: градация × неделя, на весь цветок. */
+export async function saveMixAction(period: string, rows: HarvestMixInput[]) {
+  const { email, farm } = await requireAgronomist();
+  if (!isValidWeekCode(period)) throw new Error("Неверная неделя");
+
+  const cleaned: HarvestMixInput[] = rows.map((row) => {
+    const flowerType = (row.flowerType || "").trim();
+    const grade = (row.grade || "").trim();
+
+    assertOwnFlowerType(farm, flowerType);
+    if (!getGradesFor(flowerType).includes(grade)) {
+      throw new Error(`Недопустимая длина/категория: «${grade}»`);
+    }
+
+    return {
+      period,
+      flowerType,
+      grade,
+      targetStems: cleanStems(row.targetStems, grade),
+    };
+  });
+
+  const result = await saveHarvestMix(cleaned, email);
+
+  revalidatePath("/forecast");
+  revalidatePath("/plans/balance");
   return result;
 }
 
@@ -96,50 +135,79 @@ export async function parseForecastFileAction(formData: FormData): Promise<Forec
 
   const file = formData.get("file");
   if (!file || typeof file === "string") {
-    return { rows: [], validCount: 0, errorCount: 0, fatalError: "Файл не получен" };
+    return {
+      varieties: [],
+      mix: [],
+      validCount: 0,
+      errorCount: 0,
+      fatalError: "Файл не получен",
+    };
   }
 
   const month = String(formData.get("month") ?? "");
-  const defaultWeek = String(formData.get("defaultWeek") ?? "");
   if (!isValidPeriod(month)) {
-    return { rows: [], validCount: 0, errorCount: 0, fatalError: "Не понял, за какой месяц файл" };
+    return {
+      varieties: [],
+      mix: [],
+      validCount: 0,
+      errorCount: 0,
+      fatalError: "Не понял, за какой месяц файл",
+    };
   }
 
   const catalog = await listVarietiesByType();
   const buffer = await (file as File).arrayBuffer();
-  return parseForecastWorkbook(
-    buffer,
-    catalog,
-    flowerTypesForFarm(farm),
-    month,
-    isValidWeekCode(defaultWeek) ? defaultWeek : ""
-  );
+  return parseForecastWorkbook(buffer, catalog, flowerTypesForFarm(farm), month);
 }
 
 /**
- * Записывает разобранные строки файла. Неделю каждая строка несёт сама: в файле
- * может быть сразу весь месяц, поэтому пишем по неделям, группируя вызовы.
+ * Записывает разобранные строки файла. Неделю каждая строка несёт сама (в файле
+ * весь месяц), поэтому пишем по неделям, группируя вызовы.
  */
-export async function importForecastAction(rows: ParsedForecastRow[]) {
-  const valid = rows.filter((r) => !r.error && r.variety && r.grade && r.week);
-  if (valid.length === 0) return { updated: 0, created: 0, totalStems: 0 };
-
-  const byWeek = new Map<string, ParsedForecastRow[]>();
-  for (const row of valid) {
-    const list = byWeek.get(row.week) ?? [];
-    list.push(row);
-    byWeek.set(row.week, list);
-  }
+export async function importForecastAction(
+  varieties: ParsedVarietyRow[],
+  mix: ParsedMixRow[]
+) {
+  const goodVarieties = varieties.filter((r) => !r.error && r.variety && r.week);
+  const goodMix = mix.filter((r) => !r.error && r.grade && r.week);
 
   let updated = 0;
   let created = 0;
-  for (const [week, items] of byWeek) {
+  let totalStems = 0;
+
+  const varietyByWeek = new Map<string, ParsedVarietyRow[]>();
+  for (const row of goodVarieties) {
+    const list = varietyByWeek.get(row.week) ?? [];
+    list.push(row);
+    varietyByWeek.set(row.week, list);
+  }
+  for (const [week, items] of varietyByWeek) {
     const result = await saveForecastAction(
       week,
       items.map((r) => ({
         period: week,
         flowerType: r.flowerType,
         variety: r.variety,
+        targetStems: r.stems,
+      }))
+    );
+    updated += result.updated;
+    created += result.created;
+    totalStems += items.reduce((s, r) => s + r.stems, 0);
+  }
+
+  const mixByWeek = new Map<string, ParsedMixRow[]>();
+  for (const row of goodMix) {
+    const list = mixByWeek.get(row.week) ?? [];
+    list.push(row);
+    mixByWeek.set(row.week, list);
+  }
+  for (const [week, items] of mixByWeek) {
+    const result = await saveMixAction(
+      week,
+      items.map((r) => ({
+        period: week,
+        flowerType: r.flowerType,
         grade: r.grade,
         targetStems: r.stems,
       }))
@@ -148,5 +216,5 @@ export async function importForecastAction(rows: ParsedForecastRow[]) {
     created += result.created;
   }
 
-  return { updated, created, totalStems: valid.reduce((sum, r) => sum + r.stems, 0) };
+  return { updated, created, totalStems };
 }

@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getForecastForMonth } from "@/lib/repo/harvestForecast";
+import { getMixForMonth } from "@/lib/repo/harvestMix";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import {
   FLOWER_TYPES,
@@ -14,8 +15,8 @@ import {
 } from "@/lib/constants";
 import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
-import ForecastGrid from "@/components/ForecastGrid";
-import { forecastCellKey } from "@/lib/forecastCell";
+import ForecastBoard from "@/components/ForecastBoard";
+import { forecastCellKey, mixCellKey } from "@/lib/forecastCell";
 import ForecastImportForm from "@/components/ForecastImportForm";
 import { plansTabsFor } from "../plans/tabs";
 
@@ -46,21 +47,29 @@ export default async function ForecastPage({
 
   const weeks = weeksOfMonth(month);
 
-  const [varieties, saved] = await Promise.all([
+  const [varieties, savedVarieties, savedMix] = await Promise.all([
     listVarietiesByType(),
     getForecastForMonth(month, allowedTypes),
+    getMixForMonth(month, allowedTypes),
   ]);
 
-  const initial: Record<string, number> = {};
-  for (const row of saved.values()) {
-    initial[forecastCellKey(row.period, row.flowerType, row.variety, row.grade)] = row.targetStems;
+  const initialVarieties: Record<string, number> = {};
+  for (const row of savedVarieties.values()) {
+    initialVarieties[forecastCellKey(row.period, row.flowerType, row.variety)] = row.targetStems;
   }
 
-  const filledWeeks = weeks.filter((w) =>
-    Array.from(saved.values()).some((r) => r.period === w.code && r.targetStems > 0)
+  const initialMix: Record<string, number> = {};
+  for (const row of savedMix.values()) {
+    initialMix[mixCellKey(row.period, row.flowerType, row.grade)] = row.targetStems;
+  }
+
+  const filledWeeks = weeks.filter(
+    (w) =>
+      Array.from(savedVarieties.values()).some((r) => r.period === w.code && r.targetStems > 0) ||
+      Array.from(savedMix.values()).some((r) => r.period === w.code && r.targetStems > 0)
   ).length;
 
-  const lastUpdate = Array.from(saved.values())
+  const lastUpdate = [...savedVarieties.values(), ...savedMix.values()]
     .map((r) => r.updatedAt)
     .filter(Boolean)
     .sort()
@@ -73,8 +82,8 @@ export default async function ForecastPage({
           Прогноз срезки{farm ? ` · ${farmLabel(farm)}` : ""}
         </h1>
         <p className="text-sm text-ink-secondary">
-          Сколько стеблей какой длины вы рассчитываете срезать — по неделям. Прогноз можно править
-          сколько угодно раз: цифры переписываются, а не копятся.
+          Сколько даст каждый сорт и какая получится ростовка — по неделям месяца. Прогноз можно
+          править сколько угодно раз: цифры переписываются, а не копятся.
         </p>
       </div>
 
@@ -92,22 +101,17 @@ export default async function ForecastPage({
         </p>
       </div>
 
-      <ForecastImportForm key={`import-${month}`} month={month} weeks={weeks} />
+      <ForecastImportForm key={`import-${month}`} month={month} />
 
-      <div>
-        <h2 className="font-medium mb-1">Ростовка по сортам</h2>
-        <p className="text-sm text-ink-secondary mb-3">
-          Можно заполнить прямо здесь — или загрузить файлом выше, а тут поправить.
-        </p>
-        <ForecastGrid
-          key={month}
-          month={month}
-          weeks={weeks}
-          flowerTypes={allowedTypes}
-          varieties={varieties}
-          initial={initial}
-        />
-      </div>
+      <ForecastBoard
+        key={month}
+        month={month}
+        weeks={weeks}
+        flowerTypes={allowedTypes}
+        varieties={varieties}
+        initialVarieties={initialVarieties}
+        initialMix={initialMix}
+      />
     </div>
   );
 }
