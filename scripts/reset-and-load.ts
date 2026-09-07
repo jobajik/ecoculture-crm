@@ -15,8 +15,16 @@
  *
  * Запуск: npx tsx scripts/reset-and-load.ts
  */
+import * as dotenv from "dotenv";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
+// Ключи доступа лежат в .env.local и подтягиваются до первого обращения к
+// таблице — как в setup-sheet.ts. Без этой пары строк скрипт падает с
+// «Не настроен доступ к Google Sheets», хотя ключи на месте.
+dotenv.config({ path: ".env.local" });
+dotenv.config();
+
 import {
   appendRows,
   clearDataRows,
