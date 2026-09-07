@@ -1,13 +1,17 @@
 import { appendRows, readTable, rowToRecord, updateRows, SHEET_TABS } from "../sheets";
+import { monthOfWeek } from "../constants";
 
 /**
  * Прогноз срезки. Ведётся агрономами на вкладке HarvestForecast:
  *
- *   Period   FlowerType  Variety   Grade    TargetStems  UpdatedAt  UpdatedByEmail
- *   2026-09  rose        Freedom   60       12000        ...        agro@company.kz
- *   2026-09  rose        Freedom   80       4000         ...        agro@company.kz
+ *   Period       FlowerType  Variety   Grade  TargetStems  UpdatedAt  UpdatedByEmail
+ *   2026-09-W1   rose        Freedom   60     3000         ...        agro@company.kz
+ *   2026-09-W2   rose        Freedom   60     4000         ...        agro@company.kz
  *
- * Одна строка — один сорт одной градации в месяце. Ключ строки —
+ * Period — код недели («2026-09-W1»): прогноз ведётся понедельно, месяц
+ * получается суммой своих недель.
+ *
+ * Одна строка — один сорт одной градации в неделю. Ключ строки —
  * Period + FlowerType + Variety + Grade, поэтому агроном может править свой
  * прогноз сколько угодно раз: строка переписывается, а не дублируется.
  *
@@ -84,6 +88,21 @@ export async function getForecastForPeriod(
   const map = new Map<string, HarvestForecastRow>();
   for (const row of rows) {
     if (row.period !== period) continue;
+    if (flowerTypes && !flowerTypes.includes(row.flowerType)) continue;
+    map.set(forecastKey(row.period, row.flowerType, row.variety, row.grade), row);
+  }
+  return map;
+}
+
+/** Все недели месяца разом — страница работает с месяцем целиком. */
+export async function getForecastForMonth(
+  month: string,
+  flowerTypes?: string[]
+): Promise<Map<string, HarvestForecastRow>> {
+  const rows = await listHarvestForecast();
+  const map = new Map<string, HarvestForecastRow>();
+  for (const row of rows) {
+    if (monthOfWeek(row.period) !== month) continue;
     if (flowerTypes && !flowerTypes.includes(row.flowerType)) continue;
     map.set(forecastKey(row.period, row.flowerType, row.variety, row.grade), row);
   }

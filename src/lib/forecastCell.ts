@@ -1,6 +1,5 @@
 /**
- * Ключ ячейки прогноза срезки: цветок + сорт + градация (месяц не входит —
- * он один на всю страницу).
+ * Ключ ячейки прогноза срезки: неделя + цветок + сорт + градация.
  *
  * Файл отдельный НЕ случайно. Функция нужна и странице (сервер), и сетке ввода
  * (браузер). Если держать её в компоненте с «use client», сервер получит не
@@ -9,6 +8,11 @@
  * данные, потому что на пустом месяце цикл просто не выполняется. Так уже
  * ломалось; см. CLAUDE.md, раздел «Грабли».
  */
-export function forecastCellKey(flowerType: string, variety: string, grade: string): string {
-  return `${flowerType}|${variety}|${grade}`;
+export function forecastCellKey(
+  week: string,
+  flowerType: string,
+  variety: string,
+  grade: string
+): string {
+  return `${week}|${flowerType}|${variety}|${grade}`;
 }

@@ -11,6 +11,8 @@ import {
   farmLabel,
   getFarmFor,
   periodLabel,
+  weekLabel,
+  type PlanWeek,
 } from "@/lib/constants";
 import {
   buildFlowerBalance,
@@ -20,12 +22,14 @@ import {
   type DirectionPlan,
   type DistributeMode,
 } from "@/lib/planBalance";
+import WeekTabs from "./WeekTabs";
 
 export interface BalanceInput {
   flowerType: string;
-  /** Прогноз срезки: градация → стебли. */
+  week: string;
+  /** Прогноз срезки за эту неделю: градация → стебли. */
   forecastByGrade: Record<string, number>;
-  /** План отгрузок: направление → стебли и сумма. */
+  /** План отгрузок за эту неделю: направление → стебли и сумма. */
   planByDirection: Record<string, DirectionPlan>;
 }
 
@@ -43,14 +47,20 @@ function fmt(n: number) {
  * девять строк, и увидеть их до записи важнее, чем сэкономить один клик.
  */
 export default function PlanBalanceBoard({
-  period,
+  month,
+  weeks,
+  flowerTypes,
   inputs,
 }: {
-  period: string;
+  month: string;
+  weeks: PlanWeek[];
+  flowerTypes: string[];
+  /** По одной записи на цветок и неделю. */
   inputs: BalanceInput[];
 }) {
   const router = useRouter();
-  const [active, setActive] = useState(inputs[0]?.flowerType ?? "");
+  const [active, setActive] = useState(flowerTypes[0] ?? "");
+  const [activeWeek, setActiveWeek] = useState(weeks[0]?.code ?? "");
   const [mode, setMode] = useState<DistributeMode>("proportional");
   const [scope, setScope] = useState<string | null>(null);
   /** Предложенный план по цветку — пока не сохранён. */
@@ -59,26 +69,42 @@ export default function PlanBalanceBoard({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  const [seenPeriod, setSeenPeriod] = useState(period);
-  if (seenPeriod !== period) {
-    setSeenPeriod(period);
+  const [seenMonth, setSeenMonth] = useState(month);
+  if (seenMonth !== month) {
+    setSeenMonth(month);
     setDraft({});
+    setActiveWeek(weeks[0]?.code ?? "");
     setSaved(null);
     setError(null);
   }
 
-  const current = inputs.find((i) => i.flowerType === active);
+  const current = inputs.find((i) => i.flowerType === active && i.week === activeWeek);
 
+  /** Баланс каждой пары «цветок + неделя». */
   const balances = useMemo(
     () =>
-      inputs.map((i) =>
-        buildFlowerBalance(i.flowerType, i.forecastByGrade, i.planByDirection)
-      ),
+      inputs.map((i) => ({
+        week: i.week,
+        ...buildFlowerBalance(i.flowerType, i.forecastByGrade, i.planByDirection),
+      })),
     [inputs]
   );
 
-  const balance = balances.find((b) => b.flowerType === active);
-  const activeDraft = draft[active];
+  /** Итог по цветку за месяц — сумма его недель. */
+  const monthByFlower = useMemo(() => {
+    const map: Record<string, { forecast: number; planned: number; diff: number }> = {};
+    for (const flowerType of flowerTypes) {
+      const own = balances.filter((b) => b.flowerType === flowerType);
+      const forecast = own.reduce((s, b) => s + b.forecastStems, 0);
+      const planned = own.reduce((s, b) => s + b.plannedStems, 0);
+      map[flowerType] = { forecast, planned, diff: forecast - planned };
+    }
+    return map;
+  }, [balances, flowerTypes]);
+
+  const balance = balances.find((b) => b.flowerType === active && b.week === activeWeek);
+  const draftKey = `${active}|${activeWeek}`;
+  const activeDraft = draft[draftKey];
 
   /** Баланс после предложенного распределения — чтобы показать, что получится. */
   const draftBalance = useMemo(() => {
@@ -91,7 +117,7 @@ export default function PlanBalanceBoard({
   }
 
   function propose(next: Record<string, DirectionPlan>) {
-    setDraft((prev) => ({ ...prev, [active]: next }));
+    setDraft((prev) => ({ ...prev, [draftKey]: next }));
     setSaved(null);
     setError(null);
   }
@@ -124,7 +150,7 @@ export default function PlanBalanceBoard({
   function handleReset() {
     setDraft((prev) => {
       const copy = { ...prev };
-      delete copy[active];
+      delete copy[draftKey];
       return copy;
     });
     setSaved(null);
@@ -140,14 +166,14 @@ export default function PlanBalanceBoard({
         const now = activeDraft[d] ?? { direction: d, stems: 0, amount: 0 };
         return was.stems !== now.stems || was.amount !== now.amount;
       }).map((d) => ({
-        period,
+        period: activeWeek,
         direction: d,
         flowerType: active,
         targetStems: activeDraft[d]?.stems ?? 0,
         targetAmount: activeDraft[d]?.amount ?? 0,
       }));
 
-      await saveShipmentPlansAction(period, rows);
+      await saveShipmentPlansAction(activeWeek, rows);
       setSaved(`План обновлён: строк ${rows.length}`);
       handleReset();
       router.refresh();
@@ -164,12 +190,13 @@ export default function PlanBalanceBoard({
 
   return (
     <div className="space-y-4">
-      {/* Переключатель цветка со сводкой прямо на кнопке: видно, где беда, не заходя внутрь. */}
+      {/* Переключатель цветка со сводкой за месяц: видно, где беда, не заходя внутрь. */}
       <div className="flex flex-wrap gap-2">
-        {balances.map((b) => {
-          const isActive = b.flowerType === active;
+        {flowerTypes.map((flowerType) => {
+          const b = monthByFlower[flowerType] ?? { forecast: 0, planned: 0, diff: 0 };
+          const isActive = flowerType === active;
           const state =
-            b.forecastStems === 0 && b.plannedStems === 0
+            b.forecast === 0 && b.planned === 0
               ? "пусто"
               : b.diff > 0
                 ? `остаток ${fmt(b.diff)}`
@@ -178,9 +205,9 @@ export default function PlanBalanceBoard({
                   : "сходится";
           return (
             <button
-              key={b.flowerType}
+              key={flowerType}
               type="button"
-              onClick={() => setActive(b.flowerType)}
+              onClick={() => setActive(flowerType)}
               className={clsx(
                 "rounded-xl border px-4 py-2.5 text-left transition-colors",
                 isActive
@@ -189,7 +216,7 @@ export default function PlanBalanceBoard({
               )}
             >
               <div className={clsx("text-sm font-medium", isActive && "text-accent")}>
-                {FLOWER_TYPE_LABELS_PLURAL[b.flowerType] ?? b.flowerType}
+                {FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType}
               </div>
               <div
                 className={clsx(
@@ -197,16 +224,34 @@ export default function PlanBalanceBoard({
                   b.diff < 0 ? "text-status-critical" : "text-ink-muted"
                 )}
               >
-                {state}
+                {state} · за месяц
               </div>
             </button>
           );
         })}
       </div>
 
+      {/* Недели: под каждой — её собственное расхождение. Так сразу видно,
+          в какой именно неделе не сходится, а не «где-то в месяце». */}
+      <WeekTabs
+        weeks={weeks}
+        active={activeWeek}
+        onSelect={setActiveWeek}
+        disabled={saving}
+        summary={(week) => {
+          const b = balances.find((x) => x.flowerType === active && x.week === week.code);
+          if (!b || (b.forecastStems === 0 && b.plannedStems === 0)) return { text: "пусто" };
+          if (b.diff === 0) return { text: "сходится" };
+          return {
+            text: b.diff > 0 ? `остаток ${fmt(b.diff)}` : `не хватит ${fmt(-b.diff)}`,
+            warn: b.diff < 0,
+          };
+        }}
+      />
+
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="card !py-3">
-          <div className="label !mb-0.5">Прогноз срезки</div>
+          <div className="label !mb-0.5">Прогноз срезки · {weekLabel(activeWeek)}</div>
           <div className="text-lg font-semibold tabular-nums">
             {fmt(shown.forecastStems)} <span className="text-sm font-normal">шт</span>
           </div>
@@ -333,7 +378,12 @@ export default function PlanBalanceBoard({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Направление</th>
+              <th className="px-4 py-3 font-medium">
+                Направление
+                <span className="ml-2 text-xs font-normal text-ink-muted">
+                  {weekLabel(activeWeek)}
+                </span>
+              </th>
               <th className="px-4 py-3 font-medium text-right">Сейчас, шт</th>
               {activeDraft && <th className="px-4 py-3 font-medium text-right">Станет, шт</th>}
               <th className="px-4 py-3 font-medium text-right">Доля</th>
@@ -444,6 +494,88 @@ export default function PlanBalanceBoard({
         </table>
       </div>
 
+      {/* Месяц по неделям: ради этой таблицы понедельное планирование и нужно —
+          видно, в какой неделе перекос, и что сумма недель складывается в месяц. */}
+      <div className="card !p-0 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+              <th className="px-4 py-3 font-medium">
+                Месяц по неделям · {FLOWER_TYPE_LABELS_PLURAL[active] ?? active}
+              </th>
+              <th className="px-4 py-3 font-medium text-right">Срезка</th>
+              <th className="px-4 py-3 font-medium text-right">План отгрузок</th>
+              <th className="px-4 py-3 font-medium text-right">Разница</th>
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map((week) => {
+              const b = balances.find((x) => x.flowerType === active && x.week === week.code);
+              const forecast = b?.forecastStems ?? 0;
+              const planned = b?.plannedStems ?? 0;
+              const diff = forecast - planned;
+              return (
+                <tr
+                  key={week.code}
+                  className={clsx(
+                    "border-b border-line-hairline last:border-0 cursor-pointer hover:bg-surface-plane",
+                    week.code === activeWeek && "bg-accent-soft/40"
+                  )}
+                  onClick={() => setActiveWeek(week.code)}
+                >
+                  <td className="px-4 py-2">
+                    Неделя {week.index}
+                    <span className="ml-2 text-xs text-ink-muted">{week.label}</span>
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {forecast ? fmt(forecast) : "—"}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {planned ? fmt(planned) : "—"}
+                  </td>
+                  <td
+                    className={clsx(
+                      "px-4 py-2 text-right tabular-nums font-medium",
+                      diff < 0 && "text-status-critical",
+                      diff > 0 && "text-status-warning"
+                    )}
+                  >
+                    {forecast === 0 && planned === 0
+                      ? "—"
+                      : diff === 0
+                        ? "0"
+                        : `${diff > 0 ? "+" : "−"}${fmt(Math.abs(diff))}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="bg-surface-plane">
+              <td className="px-4 py-3 font-medium capitalize">{periodLabel(month)}</td>
+              <td className="px-4 py-3 text-right font-semibold tabular-nums">
+                {fmt(monthByFlower[active]?.forecast ?? 0)}
+              </td>
+              <td className="px-4 py-3 text-right font-semibold tabular-nums">
+                {fmt(monthByFlower[active]?.planned ?? 0)}
+              </td>
+              <td
+                className={clsx(
+                  "px-4 py-3 text-right font-semibold tabular-nums",
+                  (monthByFlower[active]?.diff ?? 0) < 0 && "text-status-critical",
+                  (monthByFlower[active]?.diff ?? 0) > 0 && "text-status-warning"
+                )}
+              >
+                {(() => {
+                  const d = monthByFlower[active]?.diff ?? 0;
+                  return d === 0 ? "0" : `${d > 0 ? "+" : "−"}${fmt(Math.abs(d))}`;
+                })()}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
       {error && (
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
           {error}
@@ -456,7 +588,7 @@ export default function PlanBalanceBoard({
       {activeDraft && (
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={handleSave} disabled={saving} className="btn-primary disabled:opacity-50">
-            {saving ? "Сохраняю…" : `Записать в план на ${periodLabel(period)}`}
+            {saving ? "Сохраняю…" : `Записать в план на ${weekLabel(activeWeek)}`}
           </button>
           <button onClick={handleReset} disabled={saving} className="btn-secondary">
             Отменить предложение

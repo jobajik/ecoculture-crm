@@ -456,6 +456,141 @@ export function isValidPeriod(period: string): boolean {
   return month >= 1 && month <= 12;
 }
 
+// ---------------------------------------------------------------------------
+// Недели внутри месяца.
+//
+// План отгрузок и прогноз срезки ведутся по неделям — так точнее, чем одной
+// цифрой на месяц. Но месяц при этом остаётся главной единицей: он и в отчётах,
+// и в планах менеджеров, и в разговоре.
+//
+// Поэтому неделя здесь — не «ISO-неделя года», а отрезок ВНУТРИ месяца:
+// начинается с понедельника, но обрезается границами месяца. Первая и последняя
+// недели могут быть короче семи дней — и это честно, потому что оставшиеся дни
+// принадлежат соседнему месяцу.
+//
+// Плата за такой выбор — короткие недели по краям. Выигрыш важнее: сумма недель
+// ТОЧНО равна месяцу. Возьми мы обычные ISO-недели, неделя на стыке месяцев
+// попадала бы в оба сразу, и «план на сентябрь» перестал бы сходиться с суммой
+// своих недель — а это ровно то, ради чего всё и затевалось.
+//
+// Код недели: «2026-09-W1». Месяц из него всегда восстанавливается.
+// ---------------------------------------------------------------------------
+
+export interface PlanWeek {
+  /** «2026-09-W1» */
+  code: string;
+  /** 1…5 */
+  index: number;
+  /** ISO-дата первого дня, «2026-09-01» */
+  from: string;
+  /** ISO-дата последнего дня */
+  to: string;
+  /** «1–6 сентября» */
+  label: string;
+  /** «1–6» — для узких колонок */
+  shortLabel: string;
+  /** Сколько дней в этой неделе (у крайних бывает меньше семи). */
+  days: number;
+}
+
+const MONTH_NAMES_GENITIVE = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+];
+
+function isoDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+}
+
+/** Разбивает месяц на недели: с понедельника, но не выходя за границы месяца. */
+export function weeksOfMonth(period: string): PlanWeek[] {
+  if (!isValidPeriod(period)) return [];
+  const [yearStr, monthStr] = period.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+
+  // День 0 следующего месяца — это последний день текущего; так же корректно
+  // отрабатывает февраль високосного года, без отдельной проверки.
+  const lastDay = new Date(year, month, 0).getDate();
+
+  const weeks: PlanWeek[] = [];
+  let dayFrom = 1;
+  let index = 1;
+
+  while (dayFrom <= lastDay) {
+    const cursor = new Date(year, month - 1, dayFrom);
+    // getDay(): 0 — воскресенье. Приводим к понедельнику как нулю.
+    const weekday = (cursor.getDay() + 6) % 7;
+    const dayTo = Math.min(dayFrom + (6 - weekday), lastDay);
+
+    weeks.push({
+      code: `${period}-W${index}`,
+      index,
+      from: isoDate(new Date(year, month - 1, dayFrom)),
+      to: isoDate(new Date(year, month - 1, dayTo)),
+      label:
+        dayFrom === dayTo
+          ? `${dayFrom} ${MONTH_NAMES_GENITIVE[month - 1]}`
+          : `${dayFrom}–${dayTo} ${MONTH_NAMES_GENITIVE[month - 1]}`,
+      shortLabel: dayFrom === dayTo ? `${dayFrom}` : `${dayFrom}–${dayTo}`,
+      days: dayTo - dayFrom + 1,
+    });
+
+    dayFrom = dayTo + 1;
+    index++;
+  }
+
+  return weeks;
+}
+
+export function isValidWeekCode(code: string): boolean {
+  const match = /^(\d{4}-\d{2})-W(\d)$/.exec(code);
+  if (!match) return false;
+  const weeks = weeksOfMonth(match[1]);
+  const index = Number(match[2]);
+  return index >= 1 && index <= weeks.length;
+}
+
+/** «2026-09-W3» → «2026-09». Для месячной строки возвращает её саму. */
+export function monthOfWeek(code: string): string {
+  const match = /^(\d{4}-\d{2})(?:-W\d)?$/.exec(code);
+  return match ? match[1] : "";
+}
+
+export function weekIndexOf(code: string): number {
+  const match = /-W(\d)$/.exec(code);
+  return match ? Number(match[1]) : 0;
+}
+
+/** Неделя, в которую попадает дата (для «текущей недели» по умолчанию). */
+export function weekOfDate(date: Date): string {
+  const period = periodOf(date);
+  const day = date.getDate();
+  const week = weeksOfMonth(period).find(
+    (w) => day >= Number(w.from.slice(-2)) && day <= Number(w.to.slice(-2))
+  );
+  return week?.code ?? `${period}-W1`;
+}
+
+/** «2026-09-W1» → «1–6 сентября». */
+export function weekLabel(code: string): string {
+  const period = monthOfWeek(code);
+  const week = weeksOfMonth(period).find((w) => w.code === code);
+  return week ? week.label : code;
+}
+
 export const ORDER_STATUSES = {
   NEW: "new",
   IN_PROGRESS: "in_progress",

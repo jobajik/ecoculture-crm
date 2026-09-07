@@ -12,6 +12,7 @@ import {
   FLOWER_TYPE_LABELS,
   isKnownDirection,
   isValidPeriod,
+  isValidWeekCode,
 } from "@/lib/constants";
 
 /**
@@ -69,7 +70,8 @@ export async function saveManagerPlansAction(period: string, rows: PlanRow[]) {
 
 export async function saveShipmentPlansAction(period: string, rows: ShipmentPlanInput[]) {
   const email = await requireSalesHead();
-  if (!isValidPeriod(period)) throw new Error("Неверный месяц");
+  // Здесь period — код недели («2026-09-W1»), а не месяц: план ведётся понедельно.
+  if (!isValidWeekCode(period)) throw new Error("Неверная неделя");
 
   const cleaned: ShipmentPlanInput[] = rows.map((row) => {
     const direction = (row.direction || "").trim();
@@ -93,5 +95,6 @@ export async function saveShipmentPlansAction(period: string, rows: ShipmentPlan
   const result = await saveShipmentPlans(cleaned, email);
 
   revalidatePath("/plans/shipments");
+  revalidatePath("/plans/balance");
   return result;
 }

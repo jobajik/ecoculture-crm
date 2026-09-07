@@ -17,6 +17,7 @@ import {
   getFarmFor,
   getGradesFor,
   isValidPeriod,
+  isValidWeekCode,
 } from "@/lib/constants";
 
 /**
@@ -52,7 +53,8 @@ function assertOwnFlowerType(farm: string | null, flowerType: string) {
 
 export async function saveForecastAction(period: string, rows: HarvestForecastInput[]) {
   const { email, farm } = await requireAgronomist();
-  if (!isValidPeriod(period)) throw new Error("Неверный месяц");
+  // period — код недели: прогноз ведётся понедельно.
+  if (!isValidWeekCode(period)) throw new Error("Неверная неделя");
 
   const catalog = await listVarietiesByType();
 
@@ -97,26 +99,54 @@ export async function parseForecastFileAction(formData: FormData): Promise<Forec
     return { rows: [], validCount: 0, errorCount: 0, fatalError: "Файл не получен" };
   }
 
+  const month = String(formData.get("month") ?? "");
+  const defaultWeek = String(formData.get("defaultWeek") ?? "");
+  if (!isValidPeriod(month)) {
+    return { rows: [], validCount: 0, errorCount: 0, fatalError: "Не понял, за какой месяц файл" };
+  }
+
   const catalog = await listVarietiesByType();
   const buffer = await (file as File).arrayBuffer();
-  return parseForecastWorkbook(buffer, catalog, flowerTypesForFarm(farm));
+  return parseForecastWorkbook(
+    buffer,
+    catalog,
+    flowerTypesForFarm(farm),
+    month,
+    isValidWeekCode(defaultWeek) ? defaultWeek : ""
+  );
 }
 
-/** Записывает разобранные строки файла в прогноз выбранного месяца. */
-export async function importForecastAction(period: string, rows: ParsedForecastRow[]) {
-  const valid = rows.filter((r) => !r.error && r.variety && r.grade);
+/**
+ * Записывает разобранные строки файла. Неделю каждая строка несёт сама: в файле
+ * может быть сразу весь месяц, поэтому пишем по неделям, группируя вызовы.
+ */
+export async function importForecastAction(rows: ParsedForecastRow[]) {
+  const valid = rows.filter((r) => !r.error && r.variety && r.grade && r.week);
   if (valid.length === 0) return { updated: 0, created: 0, totalStems: 0 };
 
-  const result = await saveForecastAction(
-    period,
-    valid.map((r) => ({
-      period,
-      flowerType: r.flowerType,
-      variety: r.variety,
-      grade: r.grade,
-      targetStems: r.stems,
-    }))
-  );
+  const byWeek = new Map<string, ParsedForecastRow[]>();
+  for (const row of valid) {
+    const list = byWeek.get(row.week) ?? [];
+    list.push(row);
+    byWeek.set(row.week, list);
+  }
 
-  return { ...result, totalStems: valid.reduce((sum, r) => sum + r.stems, 0) };
+  let updated = 0;
+  let created = 0;
+  for (const [week, items] of byWeek) {
+    const result = await saveForecastAction(
+      week,
+      items.map((r) => ({
+        period: week,
+        flowerType: r.flowerType,
+        variety: r.variety,
+        grade: r.grade,
+        targetStems: r.stems,
+      }))
+    );
+    updated += result.updated;
+    created += result.created;
+  }
+
+  return { updated, created, totalStems: valid.reduce((sum, r) => sum + r.stems, 0) };
 }

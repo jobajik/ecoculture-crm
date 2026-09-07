@@ -12,9 +12,12 @@ import {
   isTopGrade,
   periodLabel,
   topGradeHint,
+  weekLabel,
+  type PlanWeek,
 } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
 import { forecastCellKey } from "@/lib/forecastCell";
+import WeekTabs from "./WeekTabs";
 
 /**
  * Ростовка: сорта по строкам, длины (у хризантемы — категории) по колонкам.
@@ -25,33 +28,37 @@ import { forecastCellKey } from "@/lib/forecastCell";
  * длина, количество» эта же мысль разваливается на десять несвязанных строк.
  */
 export default function ForecastGrid({
-  period,
+  month,
+  weeks,
   flowerTypes,
   varieties,
   initial,
   readOnly,
 }: {
-  period: string;
+  month: string;
+  weeks: PlanWeek[];
   flowerTypes: string[];
   /** Сорта по типам цветка. */
   varieties: Record<string, string[]>;
-  /** Ключ — «цветок|сорт|градация». */
+  /** Ключ — «неделя|цветок|сорт|градация». */
   initial: Record<string, number>;
   readOnly?: boolean;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, number>>(initial);
   const [active, setActive] = useState(flowerTypes[0] ?? "");
+  const [activeWeek, setActiveWeek] = useState(weeks[0]?.code ?? "");
   const [filter, setFilter] = useState("");
   const [onlyFilled, setOnlyFilled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  const [seenPeriod, setSeenPeriod] = useState(period);
-  if (seenPeriod !== period) {
-    setSeenPeriod(period);
+  const [seenMonth, setSeenMonth] = useState(month);
+  if (seenMonth !== month) {
+    setSeenMonth(month);
     setValues(initial);
+    setActiveWeek(weeks[0]?.code ?? "");
     setSaved(null);
     setError(null);
   }
@@ -67,50 +74,82 @@ export default function ForecastGrid({
     return allVarieties.filter((variety) => {
       if (needle && !variety.toLowerCase().includes(needle)) return false;
       if (onlyFilled) {
-        const has = grades.some((g) => (values[forecastCellKey(active, variety, g)] ?? 0) > 0);
+        const has = grades.some((g) => (values[forecastCellKey(activeWeek, active, variety, g)] ?? 0) > 0);
         if (!has) return false;
       }
       return true;
     });
-  }, [allVarieties, filter, onlyFilled, grades, values, active]);
+  }, [allVarieties, filter, onlyFilled, grades, values, active, activeWeek]);
 
+  /** Изменённые ячейки по всем неделям и цветкам сразу. */
   const changed = useMemo(() => {
-    const result: { flowerType: string; variety: string; grade: string; stems: number }[] = [];
-    for (const flowerType of flowerTypes) {
-      for (const variety of varieties[flowerType] ?? []) {
-        for (const grade of getGradesFor(flowerType)) {
-          const key = forecastCellKey(flowerType, variety, grade);
-          const now = values[key] ?? 0;
-          const was = initial[key] ?? 0;
-          if (now !== was) result.push({ flowerType, variety, grade, stems: now });
+    const result: {
+      week: string;
+      flowerType: string;
+      variety: string;
+      grade: string;
+      stems: number;
+    }[] = [];
+    for (const week of weeks) {
+      for (const flowerType of flowerTypes) {
+        for (const variety of varieties[flowerType] ?? []) {
+          for (const grade of getGradesFor(flowerType)) {
+            const key = forecastCellKey(week.code, flowerType, variety, grade);
+            const now = values[key] ?? 0;
+            const was = initial[key] ?? 0;
+            if (now !== was) {
+              result.push({ week: week.code, flowerType, variety, grade, stems: now });
+            }
+          }
         }
       }
     }
     return result;
-  }, [values, initial, flowerTypes, varieties]);
+  }, [values, initial, weeks, flowerTypes, varieties]);
 
-  /** Итоги по активному цветку: всего и сколько из этого высшей категории. */
+  /** Итоги по активному цветку: за выбранную неделю и за месяц целиком. */
   const totals = useMemo(() => {
-    let total = 0;
-    let top = 0;
-    const byGrade: Record<string, number> = {};
-    for (const variety of allVarieties) {
-      for (const grade of grades) {
-        const value = values[forecastCellKey(active, variety, grade)] ?? 0;
-        total += value;
-        byGrade[grade] = (byGrade[grade] ?? 0) + value;
-        if (isTopGrade(active, grade)) top += value;
+    const forWeek = (week: string) => {
+      let total = 0;
+      let top = 0;
+      const byGrade: Record<string, number> = {};
+      for (const variety of allVarieties) {
+        for (const grade of grades) {
+          const value = values[forecastCellKey(week, active, variety, grade)] ?? 0;
+          total += value;
+          byGrade[grade] = (byGrade[grade] ?? 0) + value;
+          if (isTopGrade(active, grade)) top += value;
+        }
       }
+      return { total, top, byGrade, share: total > 0 ? top / total : 0 };
+    };
+
+    const week = forWeek(activeWeek);
+    const byWeek: Record<string, number> = {};
+    let monthTotal = 0;
+    let monthTop = 0;
+    for (const w of weeks) {
+      const t = forWeek(w.code);
+      byWeek[w.code] = t.total;
+      monthTotal += t.total;
+      monthTop += t.top;
     }
-    return { total, top, byGrade, share: total > 0 ? top / total : 0 };
-  }, [values, allVarieties, grades, active]);
+
+    return {
+      ...week,
+      byWeek,
+      monthTotal,
+      monthTop,
+      monthShare: monthTotal > 0 ? monthTop / monthTotal : 0,
+    };
+  }, [values, allVarieties, grades, active, activeWeek, weeks]);
 
   function rowTotal(variety: string): number {
-    return grades.reduce((sum, g) => sum + (values[forecastCellKey(active, variety, g)] ?? 0), 0);
+    return grades.reduce((sum, g) => sum + (values[forecastCellKey(activeWeek, active, variety, g)] ?? 0), 0);
   }
 
   function setCell(variety: string, grade: string, raw: string) {
-    const key = forecastCellKey(active, variety, grade);
+    const key = forecastCellKey(activeWeek, active, variety, grade);
     setValues((prev) => ({ ...prev, [key]: parseNumber(raw) }));
     setSaved(null);
   }
@@ -120,16 +159,26 @@ export default function ForecastGrid({
     setSaving(true);
     setError(null);
     try {
-      await saveForecastAction(
-        period,
-        changed.map((c) => ({
-          period,
-          flowerType: c.flowerType,
-          variety: c.variety,
-          grade: c.grade,
-          targetStems: c.stems,
-        }))
-      );
+      // Сохраняем по неделям: одна неделя — один вызов, чтобы серверная
+      // проверка недели оставалась простой и однозначной.
+      const byWeek = new Map<string, typeof changed>();
+      for (const item of changed) {
+        const list = byWeek.get(item.week) ?? [];
+        list.push(item);
+        byWeek.set(item.week, list);
+      }
+      for (const [week, items] of byWeek) {
+        await saveForecastAction(
+          week,
+          items.map((c) => ({
+            period: week,
+            flowerType: c.flowerType,
+            variety: c.variety,
+            grade: c.grade,
+            targetStems: c.stems,
+          }))
+        );
+      }
       setSaved(`Сохранено позиций: ${changed.length}`);
       router.refresh();
     } catch (err) {
@@ -170,11 +219,25 @@ export default function ForecastGrid({
         </div>
       )}
 
+      <WeekTabs
+        weeks={weeks}
+        active={activeWeek}
+        onSelect={setActiveWeek}
+        disabled={saving}
+        summary={(week) => {
+          const value = totals.byWeek[week.code] ?? 0;
+          return { text: value ? `${value.toLocaleString("ru-RU")} шт` : "пусто" };
+        }}
+      />
+
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="card !py-3">
-          <div className="label !mb-0.5">Всего по прогнозу</div>
+          <div className="label !mb-0.5">За неделю {weekLabel(activeWeek)}</div>
           <div className="text-lg font-semibold tabular-nums">
             {totals.total.toLocaleString("ru-RU")} <span className="text-sm font-normal">шт</span>
+          </div>
+          <div className="text-xs text-ink-muted mt-0.5">
+            за месяц {totals.monthTotal.toLocaleString("ru-RU")} шт
           </div>
         </div>
         <div className="card !py-3">
@@ -182,13 +245,20 @@ export default function ForecastGrid({
           <div className="text-lg font-semibold tabular-nums">
             {totals.top.toLocaleString("ru-RU")} <span className="text-sm font-normal">шт</span>
           </div>
+          <div className="text-xs text-ink-muted mt-0.5">
+            за месяц {totals.monthTop.toLocaleString("ru-RU")} шт
+          </div>
         </div>
         <div className="card !py-3">
           <div className="label !mb-0.5">Выход высшей</div>
           <div className="text-lg font-semibold tabular-nums">
             {totals.total > 0 ? `${(totals.share * 100).toFixed(1).replace(".", ",")} %` : "—"}
           </div>
-          <div className="text-xs text-ink-muted mt-0.5">высшая — {topGradeHint(active)}</div>
+          <div className="text-xs text-ink-muted mt-0.5">
+            {totals.monthTotal > 0
+              ? `за месяц ${(totals.monthShare * 100).toFixed(1).replace(".", ",")} %`
+              : `высшая — ${topGradeHint(active)}`}
+          </div>
         </div>
       </div>
 
@@ -252,7 +322,7 @@ export default function ForecastGrid({
                     {variety}
                   </td>
                   {grades.map((grade) => {
-                    const value = values[forecastCellKey(active, variety, grade)] ?? 0;
+                    const value = values[forecastCellKey(activeWeek, active, variety, grade)] ?? 0;
                     return (
                       <td key={grade} className="px-1 py-1.5">
                         <input
@@ -314,8 +384,8 @@ export default function ForecastGrid({
       </div>
 
       <p className="text-xs text-ink-muted">
-        Итог по длинам — это и есть ростовка на {periodLabel(period)}. Колонки высшей категории
-        подсвечены.
+        Итог по длинам — это и есть ростовка за неделю {weekLabel(activeWeek)}. Колонки высшей
+        категории подсвечены. Итог за месяц — сумма всех недель.
       </p>
 
       {error && (
@@ -334,10 +404,12 @@ export default function ForecastGrid({
             disabled={saving || changed.length === 0}
             className="btn-primary disabled:opacity-50"
           >
-            {saving ? "Сохраняю…" : `Сохранить прогноз на ${periodLabel(period)}`}
+            {saving ? "Сохраняю…" : `Сохранить прогноз на ${periodLabel(month)}`}
           </button>
           <span className="text-sm text-ink-muted">
-            {changed.length === 0 ? "Изменений нет" : `Изменено позиций: ${changed.length}`}
+            {changed.length === 0
+              ? "Изменений нет"
+              : `Изменено позиций: ${changed.length} (по всем неделям)`}
           </span>
         </div>
       )}

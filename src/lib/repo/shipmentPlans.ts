@@ -1,12 +1,17 @@
 import { appendRows, readTable, rowToRecord, updateRows, SHEET_TABS } from "../sheets";
+import { monthOfWeek } from "../constants";
 
 /**
  * План отгрузок по направлениям. Ведётся руководителем отдела продаж на вкладке
  * ShipmentPlans:
  *
- *   Period   Direction   FlowerType      TargetStems  TargetAmount  UpdatedAt  UpdatedByEmail
- *   2026-09  Астана      rose            12000        6000000       ...        rop@company.kz
- *   2026-09  Астана      chrysanthemum   4000         1200000       ...        rop@company.kz
+ *   Period       Direction  FlowerType     TargetStems  TargetAmount  UpdatedAt  UpdatedByEmail
+ *   2026-09-W1   Астана     rose           3000         1500000       ...        rop@company.kz
+ *   2026-09-W2   Астана     rose           4000         2000000       ...        rop@company.kz
+ *
+ * Period — код недели («2026-09-W1»), а не месяц: план ведётся понедельно.
+ * Месяц из кода всегда восстанавливается (monthOfWeek), поэтому месячный итог —
+ * это просто сумма своих недель, без пересчётов.
  *
  * Ключ строки — Period + Direction + FlowerType. При повторном сохранении
  * строка переписывается, а не дублируется: иначе за полгода правок вкладка
@@ -77,6 +82,22 @@ export async function getShipmentPlansForPeriod(
     if (plan.period === period) {
       map.set(shipmentPlanKey(plan.period, plan.direction, plan.flowerType), plan);
     }
+  }
+  return map;
+}
+
+/**
+ * Все недели месяца разом. Страницы работают с месяцем целиком: человек
+ * переключает недели, не перезагружая данные, и сразу видит итог за месяц.
+ */
+export async function getShipmentPlansForMonth(
+  month: string
+): Promise<Map<string, ShipmentPlanRow>> {
+  const plans = await listShipmentPlans();
+  const map = new Map<string, ShipmentPlanRow>();
+  for (const plan of plans) {
+    if (monthOfWeek(plan.period) !== month) continue;
+    map.set(shipmentPlanKey(plan.period, plan.direction, plan.flowerType), plan);
   }
   return map;
 }

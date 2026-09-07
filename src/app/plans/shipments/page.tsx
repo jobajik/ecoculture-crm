@@ -1,17 +1,19 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
-import { getShipmentPlansForPeriod, shipmentPlanKey } from "@/lib/repo/shipmentPlans";
+import { getShipmentPlansForMonth, shipmentPlanKey } from "@/lib/repo/shipmentPlans";
 import {
   FLOWER_TYPES,
   ROLES,
   SHIPMENT_DIRECTIONS,
   isValidPeriod,
   periodOf,
+  weeksOfMonth,
 } from "@/lib/constants";
 import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
 import ShipmentPlansForm, { type ShipmentPlanCell } from "@/components/ShipmentPlansForm";
+import { planCellKey } from "@/lib/planCell";
 import { plansTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -29,49 +31,59 @@ export default async function ShipmentPlansPage({
   const role = session?.user?.role;
   if (role !== ROLES.SALES_HEAD && role !== ROLES.ADMIN) redirect("/");
 
-  const period =
+  const month =
     searchParams.period && isValidPeriod(searchParams.period)
       ? searchParams.period
       : periodOf(new Date());
 
-  const saved = await getShipmentPlansForPeriod(period);
+  const weeks = weeksOfMonth(month);
+  const saved = await getShipmentPlansForMonth(month);
 
   const initial: Record<string, ShipmentPlanCell> = {};
-  for (const direction of SHIPMENT_DIRECTIONS) {
-    for (const flowerType of FLOWER_ORDER) {
-      const row = saved.get(shipmentPlanKey(period, direction, flowerType));
-      initial[`${direction}|${flowerType}`] = {
-        stems: row?.targetStems ?? 0,
-        amount: row?.targetAmount ?? 0,
-      };
+  for (const week of weeks) {
+    for (const direction of SHIPMENT_DIRECTIONS) {
+      for (const flowerType of FLOWER_ORDER) {
+        const row = saved.get(shipmentPlanKey(week.code, direction, flowerType));
+        initial[planCellKey(week.code, direction, flowerType)] = {
+          stems: row?.targetStems ?? 0,
+          amount: row?.targetAmount ?? 0,
+        };
+      }
     }
   }
 
-  const filled = Array.from(saved.values()).filter((r) => r.targetStems || r.targetAmount).length;
+  const filledWeeks = weeks.filter((w) =>
+    Array.from(saved.values()).some(
+      (r) => r.period === w.code && (r.targetStems > 0 || r.targetAmount > 0)
+    )
+  ).length;
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Планы</h1>
         <p className="text-sm text-ink-secondary">
-          Сколько планируется отгрузить в каждое направление за месяц — в стеблях и в деньгах.
-          План ставится по каждому цветку отдельно: так его можно сопоставить с прогнозом срезки
-          агрономов и заранее увидеть, чего не хватит.
+          Сколько планируется отгрузить в каждое направление — по неделям. Месяц складывается из
+          своих недель, поэтому итог всегда сходится. План ставится по каждому цветку отдельно: так
+          его можно сопоставить с прогнозом срезки агрономов.
         </p>
       </div>
 
       <SectionTabs tabs={plansTabsFor(role)} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <PeriodPicker period={period} />
+        <PeriodPicker period={month} />
         <p className="text-sm text-ink-muted">
-          {filled > 0 ? `Заполнено строк: ${filled}` : "Месяц ещё не заполнен"}
+          {filledWeeks > 0
+            ? `Заполнено недель: ${filledWeeks} из ${weeks.length}`
+            : "Месяц ещё не заполнен"}
         </p>
       </div>
 
       <ShipmentPlansForm
-        key={period}
-        period={period}
+        key={month}
+        month={month}
+        weeks={weeks}
         flowerTypes={FLOWER_ORDER as unknown as string[]}
         initial={initial}
       />

@@ -3,7 +3,13 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { importForecastAction, parseForecastFileAction } from "@/app/forecast/actions";
-import { FLOWER_TYPE_LABELS, formatGrade, periodLabel } from "@/lib/constants";
+import {
+  FLOWER_TYPE_LABELS,
+  formatGrade,
+  periodLabel,
+  weekLabel,
+  type PlanWeek,
+} from "@/lib/constants";
 import type { ForecastParseResult, ParsedForecastRow } from "@/lib/excel";
 
 /**
@@ -11,9 +17,17 @@ import type { ForecastParseResult, ParsedForecastRow } from "@/lib/excel";
  * только по кнопке записываем: неверно понятый файл, молча ушедший в таблицу, —
  * худший вид ошибки, потому что о нём узнают через месяц.
  */
-export default function ForecastImportForm({ period }: { period: string }) {
+export default function ForecastImportForm({
+  month,
+  weeks,
+}: {
+  month: string;
+  weeks: PlanWeek[];
+}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Неделя по умолчанию — для строк, где в файле не проставлена колонка «Неделя».
+  const [defaultWeek, setDefaultWeek] = useState(weeks[0]?.code ?? "");
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -32,6 +46,8 @@ export default function ForecastImportForm({ period }: { period: string }) {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("month", month);
+      formData.append("defaultWeek", defaultWeek);
       setResult(await parseForecastFileAction(formData));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
@@ -45,10 +61,7 @@ export default function ForecastImportForm({ period }: { period: string }) {
     setError(null);
     setImporting(true);
     try {
-      const summary = await importForecastAction(
-        period,
-        result.rows.filter((r) => !r.error)
-      );
+      const summary = await importForecastAction(result.rows.filter((r) => !r.error));
       setDone(summary);
       setResult(null);
       setFileName(null);
@@ -75,13 +88,37 @@ export default function ForecastImportForm({ period }: { period: string }) {
         <div>
           <h2 className="font-medium">Загрузка из Excel</h2>
           <p className="text-sm text-ink-secondary mt-0.5">
-            Файл загрузится в выбранный месяц — <b className="capitalize">{periodLabel(period)}</b>.
-            Позиции, которых в файле нет, останутся как были.
+            В файле лист на каждый цветок: строки — сорта, колонки — ростовка, в ячейках
+            количество. Неделя берётся из колонки «Неделя»; строки без неё попадут в неделю,
+            выбранную ниже. Загружается в{" "}
+            <b className="capitalize">{periodLabel(month)}</b>; позиции, которых в файле нет,
+            останутся как были.
           </p>
         </div>
-        <a href={`/api/forecast/template?period=${period}`} className="btn-secondary !py-1.5">
+        <a href={`/api/forecast/template?period=${month}`} className="btn-secondary !py-1.5">
           ↓ Скачать шаблон
         </a>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="label" htmlFor="forecast-default-week">
+            Если в файле нет колонки «Неделя»
+          </label>
+          <select
+            id="forecast-default-week"
+            className="input w-64"
+            value={defaultWeek}
+            onChange={(e) => setDefaultWeek(e.target.value)}
+            disabled={parsing || importing}
+          >
+            {weeks.map((w) => (
+              <option key={w.code} value={w.code}>
+                Неделя {w.index} · {w.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <input
@@ -133,19 +170,20 @@ export default function ForecastImportForm({ period }: { period: string }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline bg-surface-plane">
-                  <th className="px-3 py-2 font-medium">Строка</th>
+                  <th className="px-3 py-2 font-medium">Лист · строка</th>
+                  <th className="px-3 py-2 font-medium">Неделя</th>
                   <th className="px-3 py-2 font-medium">Тип / сорт</th>
                   <th className="px-3 py-2 font-medium">Длина / категория</th>
                   <th className="px-3 py-2 font-medium">Кол-во</th>
                 </tr>
               </thead>
               <tbody>
-                {result.rows.map((row) => (
-                  <PreviewRow key={row.rowNumber} row={row} />
+                {result.rows.map((row, i) => (
+                  <PreviewRow key={`${row.sheet}-${row.rowNumber}-${row.grade}-${i}`} row={row} />
                 ))}
                 {result.rows.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-ink-muted">
+                    <td colSpan={5} className="px-3 py-6 text-center text-ink-muted">
                       В файле не нашлось ни одной строки с данными
                     </td>
                   </tr>
@@ -183,7 +221,10 @@ function PreviewRow({ row }: { row: ParsedForecastRow }) {
   return (
     <>
       <tr className="border-b border-line-hairline last:border-0">
-        <td className="px-3 py-2 text-ink-muted">{row.rowNumber}</td>
+        <td className="px-3 py-2 text-ink-muted whitespace-nowrap">
+          {row.sheet} · {row.rowNumber}
+        </td>
+        <td className="px-3 py-2 whitespace-nowrap">{row.week ? weekLabel(row.week) : "—"}</td>
         <td className="px-3 py-2">
           {FLOWER_TYPE_LABELS[row.flowerType]} {row.variety}
         </td>
@@ -192,7 +233,7 @@ function PreviewRow({ row }: { row: ParsedForecastRow }) {
       </tr>
       {row.error && (
         <tr className="border-b border-line-hairline last:border-0">
-          <td colSpan={4} className="px-3 pb-2 text-xs text-status-critical">
+          <td colSpan={5} className="px-3 pb-2 text-xs text-status-critical">
             ⛔ {row.error}
           </td>
         </tr>
