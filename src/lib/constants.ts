@@ -338,7 +338,21 @@ export const DEFAULT_VARIETIES: Record<string, string[]> = {
     "Мини-микс кустовые",
     "Мини-микс пионовидные",
   ],
-  chrysanthemum: ["Altaj", "Ассортимент"],
+  // Сорта хризантемы из ассортиментного листа хозяйства. Часть сейчас с нулевым
+  // остатком — держим в справочнике всё равно: склад выбирает сорт из списка, и
+  // отсутствие сорта заставило бы вписывать его руками с ошибками.
+  chrysanthemum: [
+    "Altaj",
+    "Altay yellow",
+    "Bacardy",
+    "Bigoudi Purple",
+    "Bigoudi Red",
+    "Топспин",
+    "Chik",
+    "Карма пинк",
+    "Ламира ред",
+    "Ассортимент",
+  ],
   eustoma: ["Alissa White", "Alissa Pink", "Corelli Pink"],
 };
 

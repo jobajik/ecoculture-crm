@@ -33,7 +33,12 @@ import {
   SHEET_TABS,
 } from "../src/lib/sheets";
 import { createBatches } from "../src/lib/repo/batches";
-import { getGradesFor, FLOWER_TYPE_LABELS, type FlowerType } from "../src/lib/constants";
+import {
+  getGradesFor,
+  DEFAULT_VARIETIES,
+  FLOWER_TYPE_LABELS,
+  type FlowerType,
+} from "../src/lib/constants";
 
 interface ImportRow {
   harvestDate: string;
@@ -108,11 +113,20 @@ async function main() {
   );
   const toAdd: Record<string, unknown>[] = [];
   const seen = new Set<string>();
-  for (const row of rows) {
-    const key = `${row.flowerType}|${row.variety.toLowerCase()}`;
+  const wanted: { flowerType: string; variety: string }[] = [
+    // Сначала всё из справочника по умолчанию: склад выбирает сорт из списка, и
+    // сорт с нулевым остатком в списке всё равно нужен.
+    ...Object.entries(DEFAULT_VARIETIES).flatMap(([flowerType, list]) =>
+      list.map((variety) => ({ flowerType, variety }))
+    ),
+    // Потом то, что пришло с данными.
+    ...rows.map((row) => ({ flowerType: row.flowerType, variety: row.variety })),
+  ];
+  for (const item of wanted) {
+    const key = `${item.flowerType}|${item.variety.toLowerCase()}`;
     if (known.has(key) || seen.has(key)) continue;
     seen.add(key);
-    toAdd.push({ FlowerType: row.flowerType, Variety: row.variety, Active: "TRUE" });
+    toAdd.push({ FlowerType: item.flowerType, Variety: item.variety, Active: "TRUE" });
   }
   if (toAdd.length > 0) {
     await appendRows(SHEET_TABS.VARIETIES, toAdd);
