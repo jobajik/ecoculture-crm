@@ -15,3 +15,6 @@ install-git.bat
 install-gh.bat
 login-github.bat
 push-to-github.bat
+
+.vercel
+.env*
