@@ -29,6 +29,31 @@ const nextConfig = {
       permanent: false,
     }));
   },
+  async headers() {
+    // Защитные заголовки. Главный здесь — Strict-Transport-Security: он говорит
+    // браузеру «этот сайт открывать только по https, и поддомены тоже».
+    // После первого захода браузер сам подставляет https, даже если человек
+    // набрал адрес без него, — и подменить страницу по дороге уже нельзя.
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          // Запрещаем открывать CRM внутри чужого сайта в рамке — так подделывают
+          // страницы входа.
+          { key: "X-Frame-Options", value: "DENY" },
+          // Браузер не должен «угадывать» тип файла вопреки заголовку.
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // При переходе на сторонний сайт не отдаём адрес страницы, с которой
+          // ушли: в нём бывают номера заявок.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+    ];
+  },
   experimental: {
     serverActions: {
       // Файлы приёмки из теплицы — небольшие, но запас не мешает.
