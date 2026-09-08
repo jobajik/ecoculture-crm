@@ -2,7 +2,9 @@ import { getDailySalesSnapshot } from "@/lib/dailySales";
 import DailySalesDashboard from "@/components/DailySalesDashboard";
 
 import SectionTabs from "@/components/SectionTabs";
-import { SALES_TABS } from "../tabs";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { salesTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,6 +14,8 @@ export default async function DailySalesPage({
 }: {
   searchParams: { date?: string };
 }) {
+  const session = await getServerSession(authOptions);
+  const role = session?.user?.role;
   const snapshot = await getDailySalesSnapshot(searchParams.date);
 
   return (
@@ -23,7 +27,7 @@ export default async function DailySalesPage({
         </p>
       </div>
 
-      <SectionTabs tabs={SALES_TABS} />
+      <SectionTabs tabs={salesTabsFor(role)} />
 
       <DailySalesDashboard initial={snapshot} />
     </div>

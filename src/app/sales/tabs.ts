@@ -7,12 +7,16 @@ export const SALES_TABS = [
 ];
 
 /**
- * Прайс видят все, кто работает с продажами; бухгалтеру он тоже не помешает,
- * но рейтинг и бонусы ему не нужны — поэтому список зависит от роли.
+ * Прайс-лист заводит РОП, поэтому у него и у администратора вкладка живёт в
+ * разделе «Планы» и здесь не дублируется: один и тот же пункт в двух разделах
+ * заставляет каждый раз вспоминать, где он «настоящий».
+ *
+ * Менеджеру прайс нужен на просмотр — он по нему продаёт, — и для него вкладка
+ * остаётся тут. Остальные вкладки одинаковы у всех.
  */
-export function salesTabsFor(role: string) {
-  if (role === "sales_head") {
-    return SALES_TABS.filter((t) => t.href !== "/sales/day");
+export function salesTabsFor(role: string | null | undefined) {
+  if (role === "sales_head" || role === "admin") {
+    return SALES_TABS.filter((t) => t.href !== "/prices");
   }
   return SALES_TABS;
 }

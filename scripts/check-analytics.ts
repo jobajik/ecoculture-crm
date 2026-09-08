@@ -155,6 +155,39 @@ async function main() {
   // продано на 250 000. Хризантема в расчёт не входит — её в прайсе нет.
   check("по прайсу заявки стоили бы", s.listRevenue, 300_000);
   check("скидка к прайсу", Math.round(s.discountPercent!), 17);
+  check("разница в деньгах", s.discountMoney, 50_000);
+  // 250 000 из 400 000 выручки вообще сравнимы с прайсом: хризантемы в прайсе
+  // нет, и молчать об этом нельзя — иначе «скидка 17 %» выглядит как приговор
+  // всем продажам, а посчитана по двум третям.
+  check("сравнимо с прайсом", Math.round(s.pricedRevenuePercent!), 63);
+  check("прайс последний раз меняли", s.priceListLastChange, daysAgo(60));
+  check("возраст прайса в днях", s.priceListAgeDays, 60);
+
+  // Отклонение по позициям: строка одна — роза 60, других цен в прайсе нет.
+  check("отклонение по позициям: строк", s.priceDeviation.length, 1);
+  check("отклонение по позициям: что за строка", s.priceDeviation[0].key, "rose:60");
+  check("отклонение по позициям: стебли", s.priceDeviation[0].stems, 1500);
+  check("отклонение по позициям: по прайсу", s.priceDeviation[0].listRevenue, 300_000);
+  check("отклонение по позициям: факт", s.priceDeviation[0].revenue, 250_000);
+  check(
+    "отклонение по позициям: процент",
+    Math.round(s.priceDeviation[0].discountPercent!),
+    17
+  );
+
+  // По менеджерам: m1 продал ровно по прайсу, m2 — вдвое дешевле. Именно этого
+  // разреза и просил владелец: «менеджер может договориться, но бенчмарк
+  // показывает отклонение».
+  const m1 = s.managers.find((m) => m.managerEmail === "m1@x.kz")!;
+  const m2 = s.managers.find((m) => m.managerEmail === "m2@x.kz")!;
+  check("менеджер по прайсу — отклонения нет", Math.round(m1.discountPercent!), 0);
+  check("менеджер со скидкой", Math.round(m2.discountPercent!), 50);
+  check("менеджер: сколько стоило бы по прайсу", m2.listRevenue, 100_000);
+  check(
+    "непрайсовые позиции в отклонение менеджера не идут",
+    m1.listRevenue,
+    200_000
+  );
 
   // --- Приёмка и списание --------------------------------------------------
   check("принято за период", s.receivedStems.value, 10_000);
@@ -326,6 +359,9 @@ async function main() {
   check("пусто: без деления на ноль", empty.revenue.value, 0);
   check("пусто: изменения не выдумываются", empty.revenue.changePercent, null);
   check("пусто: скидки нет", empty.discountPercent, null);
+  check("пусто: отклонение по позициям пустое", empty.priceDeviation.length, 0);
+  check("пусто: прайса нет — возраст неизвестен", empty.priceListAgeDays, null);
+  check("пусто: сравнивать с прайсом нечего", empty.pricedRevenuePercent, null);
   check("пусто: запас неизвестен", empty.coverDays, null);
   check("пусто: списание неизвестно", empty.writeoffPercent, null);
   check("пусто: таблицы пустые", [empty.byFlower.length, empty.byGrade.length, empty.clientRows.length], [0, 0, 0]);

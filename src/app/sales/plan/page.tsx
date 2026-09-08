@@ -1,7 +1,9 @@
 import { getSalesSnapshot } from "@/lib/salesAnalytics";
 import SalesDashboard from "@/components/SalesDashboard";
 import SectionTabs from "@/components/SectionTabs";
-import { SALES_TABS } from "../tabs";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { salesTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,6 +13,8 @@ export default async function SalesPlanPage({
 }: {
   searchParams: { period?: string };
 }) {
+  const session = await getServerSession(authOptions);
+  const role = session?.user?.role;
   const snapshot = await getSalesSnapshot(searchParams.period);
 
   return (
@@ -23,7 +27,7 @@ export default async function SalesPlanPage({
         </p>
       </div>
 
-      <SectionTabs tabs={SALES_TABS} />
+      <SectionTabs tabs={salesTabsFor(role)} />
 
       <SalesDashboard initial={snapshot} />
     </div>

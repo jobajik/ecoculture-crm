@@ -4,7 +4,7 @@ import { getLeaderboard } from "@/lib/leaderboard";
 import type { FinancePeriod } from "@/lib/finance";
 import Leaderboard from "@/components/Leaderboard";
 import SectionTabs from "@/components/SectionTabs";
-import { SALES_TABS } from "./tabs";
+import { salesTabsFor } from "./tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,6 +15,7 @@ export default async function SalesPage({
   searchParams: { period?: string; date?: string };
 }) {
   const session = await getServerSession(authOptions);
+  const role = session?.user?.role;
   const period = (["day", "week", "month"] as const).includes(searchParams.period as FinancePeriod)
     ? (searchParams.period as FinancePeriod)
     : "month";
@@ -30,7 +31,7 @@ export default async function SalesPage({
         </p>
       </div>
 
-      <SectionTabs tabs={SALES_TABS} />
+      <SectionTabs tabs={salesTabsFor(role)} />
 
       <Leaderboard snapshot={snapshot} currentEmail={session?.user?.email?.toLowerCase() ?? ""} />
     </div>

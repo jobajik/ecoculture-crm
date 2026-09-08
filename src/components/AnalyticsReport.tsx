@@ -204,16 +204,71 @@ const SECTIONS: Section[] = [
         pick: (s) => s.fillRatePercent,
         tone: (v) => toneHigherBetter(v, BENCHMARKS.fillRatePercent),
       },
+    ],
+  },
+  {
+    // Отдельный раздел, а не строчка в продажах: владелец прямо попросил
+    // бенчмарк по отклонению от заданной цены. Менять цену в заявке менеджеру
+    // можно — но видно, насколько и кто.
+    title: "Прайс и отклонение от него",
+    emptyText:
+      "Сравнивать не с чем: либо за период не продавали, либо у проданных позиций нет цены в прайсе.",
+    rows: [
       {
         key: "discount",
-        label: "Скидка к прайсу",
-        hint: `Насколько дешевле прайса продали. Ориентир — до ${BENCHMARKS.discountPercent.good} %`,
+        label: "Отклонение от прайса",
+        hint: `Насколько дешевле заданной цены продали. Сравнивается с прайсом, который действовал в день заявки. Ориентир — до ${BENCHMARKS.discountPercent.good} %`,
         kind: "percent",
         pick: (s) => s.discountPercent,
         // Отрицательная «скидка» означает, что продали дороже прайса. Показывать
         // «−1,7 %» бессмысленно: человек читает это как ошибку.
-        format: (v) => (v < 0 ? `нет, выше прайса на ${dec(Math.abs(v))} %` : `${dec(v)} %`),
+        format: (v) =>
+          Math.abs(v) < 0.05
+            ? "ровно по прайсу"
+            : v < 0
+              ? `нет, выше прайса на ${dec(Math.abs(v))} %`
+              : `${dec(v)} %`,
         tone: (v) => toneLowerBetter(v, BENCHMARKS.discountPercent),
+        betterUp: false,
+      },
+      {
+        key: "discountMoney",
+        label: "Разница в деньгах",
+        hint: "Сколько недобрали (или добрали) относительно прайса за период",
+        kind: "money",
+        pick: (s) => (s.listRevenue > 0 ? s.discountMoney : null),
+        // Округление до тысяч легко даёт «−0 ₸», а это читается как ошибка.
+        format: (v) =>
+          Math.round(v) === 0
+            ? "как в прайсе"
+            : v < 0
+              ? `+${money(Math.abs(v))} сверх прайса`
+              : `−${money(v)} к прайсу`,
+        betterUp: false,
+      },
+      {
+        key: "listRevenue",
+        label: "Стоило бы по прайсу",
+        hint: "Во что оценивались бы заявки по заданной цене. Только позиции, у которых цена в прайсе есть",
+        kind: "money",
+        pick: (s) => s.listRevenue,
+        splitBar: true,
+      },
+      {
+        key: "priced",
+        label: "Сравнимо с прайсом",
+        hint: `Какая доля выручки вообще имеет цену в прайсе. Ориентир — от ${BENCHMARKS.pricedRevenuePercent.good} %: иначе отклонение считается по части продаж`,
+        kind: "percent",
+        pick: (s) => s.pricedRevenuePercent,
+        tone: (v) => toneHigherBetter(v, BENCHMARKS.pricedRevenuePercent),
+      },
+      {
+        key: "priceAge",
+        label: "Прайс не меняли",
+        hint: `Дней с последней правки цены. Ориентир — до ${BENCHMARKS.priceListAgeDays.good} дн.: старый прайс перестаёт быть ориентиром`,
+        kind: "daysInt",
+        pick: (s) => s.priceListAgeDays,
+        tone: (v) => toneLowerBetter(v, BENCHMARKS.priceListAgeDays),
         betterUp: false,
       },
     ],
@@ -666,6 +721,34 @@ function Collapsible<T>({
   );
 }
 
+/**
+ * Отклонение факта от прайса одной ячейкой.
+ *
+ * Минус здесь означает «продали ДОРОЖЕ прайса», и это хорошо — но «−3 %» глаз
+ * читает как провал. Поэтому знак не показывается, а пишется словом.
+ */
+function Deviation({ percent, compact }: { percent: number | null; compact?: boolean }) {
+  if (percent === null) return <span className="text-ink-muted">—</span>;
+  if (Math.abs(percent) < 0.05) return <span className={TONE_TEXT.good}>по прайсу</span>;
+  const above = percent < 0;
+  const tone = above ? "good" : toneLowerBetter(percent, BENCHMARKS.discountPercent);
+  // В узкой колонке фраза переносится на три строки и таблица разъезжается,
+  // поэтому там знак со стрелкой, а полное объяснение — в подсказке.
+  const text = compact
+    ? `${above ? "↑" : "↓"} ${dec(Math.abs(percent))} %`
+    : above
+      ? `выше прайса на ${dec(Math.abs(percent))} %`
+      : `−${dec(percent)} %`;
+  return (
+    <span
+      className={clsx(TONE_TEXT[tone], "whitespace-nowrap")}
+      title={above ? "Продавали дороже прайса" : "Продавали дешевле прайса"}
+    >
+      {text}
+    </span>
+  );
+}
+
 function Details({
   all,
   byFarm,
@@ -836,6 +919,43 @@ function Details({
             </Block>
           )}
 
+          {all.priceDeviation.length > 0 && (
+            <Block
+              title="Отклонение от прайса"
+              hint={`По ${gradePhrase}: во что позиция оценивалась по прайсу и за сколько ушла на самом деле. Ориентир — до ${BENCHMARKS.discountPercent.good} %`}
+            >
+              <Collapsible
+                rows={all.priceDeviation}
+                what={gradeWord}
+                head={
+                  <>
+                    <th className="px-4 py-2 font-medium">{gradeColumn}</th>
+                    <th className="px-3 py-2 font-medium text-right">Стеблей</th>
+                    <th className="px-3 py-2 font-medium text-right">По прайсу</th>
+                    <th className="px-3 py-2 font-medium text-right">Продали</th>
+                    <th className="px-3 py-2 font-medium text-right">Отклонение</th>
+                  </>
+                }
+                render={(p) => (
+                  <tr key={p.key} className="border-b border-line-hairline last:border-0">
+                    <td className="px-4 py-2">
+                      {!single && <span className="text-ink-muted">{flowerName(p.flowerType)} </span>}
+                      <span className="font-medium">{formatGrade(p.grade)}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{nf(p.stems)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-ink-secondary">
+                      {money(p.listRevenue)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{money(p.revenue)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <Deviation percent={p.discountPercent} />
+                    </td>
+                  </tr>
+                )}
+              />
+            </Block>
+          )}
+
           <div className="grid gap-6 lg:grid-cols-2">
             {all.topVarieties.length > 0 && (
               <Block title="Сорта по выручке" hint="Изменение — к предыдущим 30 дням">
@@ -924,7 +1044,10 @@ function Details({
 
           <div className="grid gap-6 lg:grid-cols-2">
             {all.managers.length > 0 && (
-              <Block title="Менеджеры" hint="Собрано — сколько из оформленного уже оплачено">
+              <Block
+                title="Менеджеры"
+                hint="Собрано — сколько из оформленного оплачено. К прайсу — ↑ продавал дороже заданной цены, ↓ дешевле"
+              >
                 <Collapsible
                   rows={all.managers}
                   what={(n) => plural(n, "менеджер", "менеджера", "менеджеров")}
@@ -935,6 +1058,7 @@ function Details({
                       <th className="px-3 py-2 font-medium text-right">Заявок</th>
                       <th className="px-3 py-2 font-medium text-right">Выручка</th>
                       <th className="px-3 py-2 font-medium text-right">Собрано</th>
+                      <th className="px-3 py-2 font-medium text-right">К прайсу</th>
                     </>
                   }
                   render={(m) => {
@@ -951,9 +1075,19 @@ function Details({
                           </span>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{m.orders}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(m.revenue.value)}</td>
-                        <td className={clsx("px-3 py-2 text-right tabular-nums", TONE_TEXT[tone])}>
+                        <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                          {money(m.revenue.value)}
+                        </td>
+                        <td
+                          className={clsx(
+                            "px-3 py-2 text-right tabular-nums",
+                            TONE_TEXT[tone]
+                          )}
+                        >
                           {m.collectPercent === null ? "—" : `${dec(m.collectPercent, 0)} %`}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          <Deviation percent={m.discountPercent} compact />
                         </td>
                       </tr>
                     );

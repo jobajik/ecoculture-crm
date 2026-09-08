@@ -13,6 +13,9 @@ export function plansTabsFor(role: string | null | undefined) {
     { href: "/plans", label: "Планы менеджеров" },
     { href: "/plans/shipments", label: "План отгрузок" },
     { href: "/plans/balance", label: "Баланс" },
+    // Прайс-лист живёт здесь, а не в «Продажах»: цену задаёт РОП, а менеджеры
+    // по ней продают. Так решил владелец.
+    { href: "/prices", label: "Прайс-лист" },
   ];
   if (role === ROLES.ADMIN) tabs.push({ href: "/forecast", label: "Прогноз срезки" });
   return tabs;

@@ -16,6 +16,7 @@ import {
   SHIPMENT_DIRECTIONS,
   type FlowerType,
 } from "./constants";
+import { BASE_VARIETY, BASE_VARIETY_LABEL } from "./priceList";
 
 // ---------------------------------------------------------------------------
 // Загрузка приёмки с производства из Excel-файла.
@@ -1322,6 +1323,277 @@ export async function buildShipmentPlanTemplate(month: string): Promise<Buffer> 
     "",
     "Новое направление в файле не появится: список закрытый, иначе за месяц",
     "набегает «Астана», «астана» и «Астана » тремя разными строками.",
+  ];
+  lines.forEach((line) => notes.addRow([line]));
+  notes.getRow(1).font = { bold: true };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+
+// ---------------------------------------------------------------------------
+// Прайс-лист файлом.
+//
+// Прайс ведёт РОП, и вести его через веб-таблицу из трёхсот ячеек — работа на
+// полдня. Поэтому тот же приём, что у агронома с прогнозом: скачал файл,
+// поправил в Excel, загрузил обратно. Шаблон выгружается УЖЕ ЗАПОЛНЕННЫМ
+// действующими ценами — правят обычно две-три строки, а не весь прайс заново.
+//
+// Пустая ячейка означает «цену не трогаем», а не ноль: иначе загрузка файла, где
+// человек заполнил один цветок, стёрла бы цены на два остальных. Ноль пишется
+// отдельно и означает «цены нет» (см. priceList.ts).
+// ---------------------------------------------------------------------------
+
+export interface ParsedPriceRow {
+  sheet: string;
+  rowNumber: number;
+  flowerType: string;
+  /** Пустая строка — цена «на все сорта» этого цветка. */
+  variety: string;
+  grade: string;
+  price: number;
+  /** Прежняя цена, если она была: показываем в предпросмотре «было → стало». */
+  wasPrice: number | null;
+  error?: string;
+}
+
+export interface PriceParseResult {
+  rows: ParsedPriceRow[];
+  validCount: number;
+  errorCount: number;
+  /** Сколько строк файла совпали с действующей ценой — их писать незачем. */
+  sameCount: number;
+  fatalError?: string;
+}
+
+/** Подписи первой колонки, которые понимает разбор прайса. */
+const PRICE_LABEL_HEADERS = [...VARIETY_HEADERS, "позиция", "название"];
+
+function isBaseVarietyLabel(raw: string): boolean {
+  const cleaned = raw.trim().toLowerCase().replace(/ё/g, "е");
+  return cleaned === BASE_VARIETY_LABEL.toLowerCase() || cleaned === "все" || cleaned === "общая";
+}
+
+export async function parsePriceWorkbook(
+  buffer: ArrayBuffer,
+  /** Справочник сортов: цена не должна повиснуть на сорте, которого нет. */
+  varietyCatalog: Record<string, string[]> = {},
+  /** Действующие цены «цветок|сорт|градация» → цена: чтобы не писать то же самое. */
+  current: Record<string, number> = {}
+): Promise<PriceParseResult> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    return {
+      rows: [],
+      validCount: 0,
+      errorCount: 0,
+      sameCount: 0,
+      fatalError: "Не удалось прочитать файл. Нужен файл Excel в формате .xlsx.",
+    };
+  }
+
+  const rows: ParsedPriceRow[] = [];
+  let sameCount = 0;
+  let sawAnyTable = false;
+
+  for (const sheet of workbook.worksheets) {
+    if (normalizeHeader(sheet.name).startsWith("как заполнять")) continue;
+    const flowerType = flowerTypeFromSheetName(sheet.name);
+
+    // Ищем шапку: колонка с сортом плюс хотя бы одна колонка-градация.
+    let headerRow = 0;
+    let labelCol = 0;
+    const gradeCols: { col: number; grade: string }[] = [];
+
+    for (let r = 1; r <= Math.min(10, sheet.rowCount); r++) {
+      const row = sheet.getRow(r);
+      let foundLabel = 0;
+      const cols: { col: number; grade: string }[] = [];
+
+      row.eachCell((cell, colNumber) => {
+        const header = normalizeHeader(cellText(cell));
+        if (!header) return;
+        if (!foundLabel && PRICE_LABEL_HEADERS.includes(header)) {
+          foundLabel = colNumber;
+          return;
+        }
+        if (!flowerType) return;
+        const grade = normalizeGrade(cellText(cell), flowerType);
+        if (grade) cols.push({ col: colNumber, grade });
+      });
+
+      if (foundLabel && cols.length > 0) {
+        headerRow = r;
+        labelCol = foundLabel;
+        gradeCols.push(...cols);
+        break;
+      }
+    }
+
+    if (!headerRow) continue;
+    sawAnyTable = true;
+
+    for (let r = headerRow + 1; r <= sheet.rowCount; r++) {
+      const row = sheet.getRow(r);
+      const label = cellText(row.getCell(labelCol)).trim();
+      if (!label) continue;
+
+      const base = isBaseVarietyLabel(label);
+      const variety = base ? BASE_VARIETY : label;
+      const known =
+        base || (varietyCatalog[flowerType ?? ""] ?? []).some((v) => v.trim() === variety);
+
+      for (const { col, grade } of gradeCols) {
+        const raw = cellText(row.getCell(col));
+        // Пустая ячейка — «не трогаем». Именно пустая, а не ноль.
+        if (!raw.trim()) continue;
+
+        const parsed = Number(raw.replace(/\s/g, "").replace(",", "."));
+        const wasKey = `${flowerType ?? ""}|${variety}|${grade}`;
+        const was = Object.prototype.hasOwnProperty.call(current, wasKey) ? current[wasKey] : null;
+
+        if (!flowerType) {
+          rows.push({
+            sheet: sheet.name,
+            rowNumber: r,
+            flowerType: "",
+            variety,
+            grade,
+            price: 0,
+            wasPrice: null,
+            error: `Не понял, какой цветок на листе «${sheet.name}»`,
+          });
+          continue;
+        }
+        if (!known) {
+          rows.push({
+            sheet: sheet.name,
+            rowNumber: r,
+            flowerType,
+            variety,
+            grade,
+            price: 0,
+            wasPrice: null,
+            error: `Сорт «${variety}» не найден в справочнике`,
+          });
+          continue;
+        }
+        if (Number.isNaN(parsed) || !Number.isFinite(parsed) || parsed < 0) {
+          rows.push({
+            sheet: sheet.name,
+            rowNumber: r,
+            flowerType,
+            variety,
+            grade,
+            price: 0,
+            wasPrice: was,
+            error: `«${raw}» — не цена`,
+          });
+          continue;
+        }
+
+        const price = Math.round(parsed * 100) / 100;
+        // Цена не изменилась — в загрузку не берём: иначе история цен за неделю
+        // распухнет строками «было 250, стало 250».
+        if (was !== null && was === price) {
+          sameCount += 1;
+          continue;
+        }
+
+        rows.push({
+          sheet: sheet.name,
+          rowNumber: r,
+          flowerType,
+          variety,
+          grade,
+          price,
+          wasPrice: was,
+        });
+      }
+    }
+  }
+
+  if (!sawAnyTable) {
+    return {
+      rows: [],
+      validCount: 0,
+      errorCount: 0,
+      sameCount: 0,
+      fatalError:
+        "В файле не нашлось таблицы прайса. Нужна колонка «Сорт» и колонки с длинами или категориями — проще всего скачать шаблон: он выгружается уже с текущими ценами.",
+    };
+  }
+
+  return {
+    rows,
+    validCount: rows.filter((r) => !r.error).length,
+    errorCount: rows.filter((r) => r.error).length,
+    sameCount,
+  };
+}
+
+export async function buildPriceTemplate(
+  varietyCatalog: Record<string, string[]> = {},
+  /** Действующие цены «цветок|сорт|градация» → цена. Шаблон выгружается заполненным. */
+  current: Record<string, number> = {}
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Ecoculture-CRM";
+
+  const types = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+  for (const type of types) {
+    const grades = getGradesFor(type);
+    const plural = FLOWER_TYPE_LABELS_PLURAL[type] ?? FLOWER_TYPE_LABELS[type];
+    const sheet = workbook.addWorksheet(plural);
+    sheet.columns = [
+      { header: "Сорт", key: "label", width: 30 },
+      ...grades.map((g) => ({ header: formatGrade(g), key: `g${g}`, width: 12 })),
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getColumn(1).alignment = { horizontal: "left" };
+    sheet.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+
+    const addPriceRow = (label: string, variety: string, bold: boolean) => {
+      const values: Record<string, unknown> = { label };
+      for (const grade of grades) {
+        const price = current[`${type}|${variety}|${grade}`];
+        if (price !== undefined && price > 0) values[`g${grade}`] = price;
+      }
+      const row = sheet.addRow(values);
+      if (bold) row.font = { bold: true };
+    };
+
+    // Первая строка — та, ради которой всё и затевалось: цена по длине.
+    addPriceRow(BASE_VARIETY_LABEL, BASE_VARIETY, true);
+    for (const variety of varietyCatalog[type] ?? []) addPriceRow(variety, variety, false);
+  }
+
+  const notes = workbook.addWorksheet("Как заполнять");
+  notes.columns = [{ width: 110 }];
+  const lines = [
+    "Прайс-лист: цена за один стебель, ₸",
+    "",
+    "На каждый цветок свой лист: строки — сорта, колонки — длина (у хризантемы категория).",
+    "",
+    `Строка «${BASE_VARIETY_LABEL}» — главная. Её одной достаточно, чтобы оценить весь цветок:`,
+    "в хозяйстве цена почти всегда зависит от длины, а не от того, с какого куста стебель.",
+    "Отдельную цену сорту ставьте только там, где он действительно дороже или дешевле.",
+    "",
+    "Файл выгружается уже с действующими ценами — правьте только то, что меняется.",
+    "",
+    "Пустая ячейка означает «цену не трогаем», она останется прежней.",
+    "Ноль означает «цены нет»: позиция перестанет подставляться в заявку сама.",
+    "",
+    "Дата изменения запоминается сама: система хранит историю и показывает,",
+    "когда и на сколько цена менялась, а в аналитике — насколько продажи",
+    "отклоняются от заданной цены.",
+    "",
+    "Новых сортов файл не создаёт: сорта ведутся в справочнике. Незнакомая строка",
+    "с ценами будет помечена ошибкой и не загрузится.",
   ];
   lines.forEach((line) => notes.addRow([line]));
   notes.getRow(1).font = { bold: true };

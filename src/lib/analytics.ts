@@ -6,6 +6,7 @@ import { listHarvestForecast } from "./repo/harvestForecast";
 import { getSettings } from "./repo/settings";
 import { computeBatchStorageInfo, getMaxShelfLifeDays } from "./shelfLife";
 import { currentPrices, priceFor, type PriceRow } from "./priceList";
+import { priceChangeDays, daysSinceLastChange } from "./priceChanges";
 import {
   FLOWER_TYPE_LABELS,
   compareGrades,
@@ -116,6 +117,31 @@ export interface ManagerRow {
   avgCheck: number;
   /** Доля оплаченного от оформленного этим менеджером, %. */
   collectPercent: number | null;
+  /** Во что его заявки оценивались бы по прайсу (только позиции с ценой). */
+  listRevenue: number;
+  /** Насколько он продаёт дешевле прайса, %. Минус — продаёт дороже. */
+  discountPercent: number | null;
+}
+
+/**
+ * Отклонение факта от прайса в разрезе позиции.
+ *
+ * Менеджеру разрешено поставить в заявке свою цену — так решил владелец: с
+ * клиентом можно договориться и дороже, и дешевле. Но заданная цена остаётся
+ * ориентиром, и эта строка показывает, насколько от неё ушли.
+ */
+export interface PriceDeviationRow {
+  key: string;
+  flowerType: string;
+  grade: string;
+  label: string;
+  stems: number;
+  /** Сколько стоило бы по прайсу. */
+  listRevenue: number;
+  /** Сколько получилось на самом деле. */
+  revenue: number;
+  /** Скидка к прайсу, %. Отрицательная — продали дороже прайса. */
+  discountPercent: number | null;
 }
 
 /** Строка приёмки по ростовке: что реально дало производство. */
@@ -189,6 +215,15 @@ export interface AnalyticsSummary {
   /** Сколько заявки стоили бы по прайсу и сколько потеряли на скидках. */
   listRevenue: number;
   discountPercent: number | null;
+  /** Сколько денег разошлось между прайсом и фактом. Минус — продали дороже. */
+  discountMoney: number;
+  /** Какая доля выручки вообще сравнима с прайсом (у позиции есть цена), %. */
+  pricedRevenuePercent: number | null;
+  /** Когда прайс меняли последний раз и сколько дней назад это было. */
+  priceListLastChange: string | null;
+  priceListAgeDays: number | null;
+  /** Отклонение факта от прайса по позициям. */
+  priceDeviation: PriceDeviationRow[];
 
   receivedStems: Delta;
   /** Сколько из принятого за период уже продано, %. */
@@ -467,7 +502,19 @@ export async function getAnalyticsSummary(
     return built;
   };
 
+  // Отклонение от прайса считается ОДНИМ проходом: и общее, и по менеджерам, и
+  // по позициям. Владелец разрешил менеджерам менять цену в заявке («если
+  // договорились на высокую/низкую»), но попросил бенчмарк — насколько факт
+  // разошёлся с заданной ценой. Разрез по менеджеру отвечает на вопрос «кто
+  // раздаёт скидки», разрез по позиции — «где прайс оторван от жизни».
   let listRevenue = 0;
+  let soldAtListPrice = 0;
+  const deviationByManager = new Map<string, { list: number; fact: number; stems: number }>();
+  const deviationByPosition = new Map<
+    string,
+    { flowerType: string; grade: string; list: number; fact: number; stems: number }
+  >();
+
   for (const o of nowSales.orders) {
     const iso = (toIsoDate(o.createdAt) || o.createdAt).slice(0, 10);
     const table = pricesOn(iso);
@@ -475,23 +522,67 @@ export async function getAnalyticsSummary(
       const listPrice = priceFor(table, item.flowerType, item.variety, item.grade);
       // Позиции без цены в прайсе в расчёт скидки не берём: делить на ноль
       // и записывать «скидка 100 %» было бы враньём.
-      if (listPrice > 0) listRevenue += listPrice * item.quantity;
+      if (listPrice <= 0) continue;
+      const list = listPrice * item.quantity;
+      const fact = item.unitPrice * item.quantity;
+      listRevenue += list;
+      soldAtListPrice += fact;
+
+      const m = deviationByManager.get(o.managerEmail) ?? { list: 0, fact: 0, stems: 0 };
+      m.list += list;
+      m.fact += fact;
+      m.stems += item.quantity;
+      deviationByManager.set(o.managerEmail, m);
+
+      const pKey = `${item.flowerType}:${item.grade}`;
+      const p = deviationByPosition.get(pKey) ?? {
+        flowerType: item.flowerType,
+        grade: item.grade,
+        list: 0,
+        fact: 0,
+        stems: 0,
+      };
+      p.list += list;
+      p.fact += fact;
+      p.stems += item.quantity;
+      deviationByPosition.set(pKey, p);
     }
   }
-  const soldAtListPrice = nowSales.orders.reduce((sum, o) => {
-    const iso = (toIsoDate(o.createdAt) || o.createdAt).slice(0, 10);
-    const table = pricesOn(iso);
-    return (
-      sum +
-      o.items.reduce(
-        (s, i) =>
-          priceFor(table, i.flowerType, i.variety, i.grade) > 0 ? s + i.quantity * i.unitPrice : s,
-        0
-      )
-    );
-  }, 0);
   const discountPercent =
     listRevenue > 0 ? ((listRevenue - soldAtListPrice) / listRevenue) * 100 : null;
+  // Какая часть выручки вообще сравнима с прайсом. Без этой цифры «скидка 2 %»
+  // лукавит: она может быть посчитана по десятой части заявок.
+  const pricedRevenuePercent =
+    nowSales.revenue > 0 ? share(soldAtListPrice, nowSales.revenue) : null;
+
+  const priceDeviation: PriceDeviationRow[] = Array.from(deviationByPosition.values())
+    .map((p) => ({
+      key: `${p.flowerType}:${p.grade}`,
+      flowerType: p.flowerType,
+      grade: p.grade,
+      label: `${FLOWER_TYPE_LABELS[p.flowerType] ?? p.flowerType} ${formatGrade(p.grade)}`,
+      stems: p.stems,
+      listRevenue: p.list,
+      revenue: p.fact,
+      discountPercent: p.list > 0 ? ((p.list - p.fact) / p.list) * 100 : null,
+    }))
+    .sort(
+      (a, b) =>
+        flowerRank(a.flowerType) - flowerRank(b.flowerType) ||
+        compareGrades(a.flowerType, a.grade, b.grade)
+    );
+
+  // Когда прайс последний раз трогали. Прайс, которому два месяца, — это не
+  // «стабильные цены», а забытый файл; отклонение по нему ничего не значит.
+  const changeDays = priceChangeDays(priceRows);
+  const priceListLastChange = changeDays[0]?.date ?? null;
+  // Дату «сегодня» собираем из местных частей, а не через toISOString: у
+  // полуночи в плюсовом часовом поясе ISO отдаёт вчерашний день, и возраст
+  // прайса каждый раз оказывался бы на сутки больше.
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate()
+  ).padStart(2, "0")}`;
+  const priceListAgeDays = daysSinceLastChange(changeDays, todayIso);
 
   // --- Приёмка -------------------------------------------------------------
   const receivedNow = batches.filter((b) => inRange(b.receivedAt || b.harvestDate, from, to));
@@ -762,14 +853,20 @@ export async function getAnalyticsSummary(
 
   // --- Менеджеры -----------------------------------------------------------
   const managers: ManagerRow[] = Array.from(nowSales.byManager.entries())
-    .map(([managerEmail, m]) => ({
-      managerEmail,
-      orders: m.orders,
-      revenue: delta(m.revenue, prevSales.byManager.get(managerEmail)?.revenue ?? 0),
-      stems: m.stems,
-      avgCheck: m.orders > 0 ? m.revenue / m.orders : 0,
-      collectPercent: m.revenue > 0 ? share(m.paid, m.revenue) : null,
-    }))
+    .map(([managerEmail, m]) => {
+      const dev = deviationByManager.get(managerEmail);
+      return {
+        managerEmail,
+        orders: m.orders,
+        revenue: delta(m.revenue, prevSales.byManager.get(managerEmail)?.revenue ?? 0),
+        stems: m.stems,
+        avgCheck: m.orders > 0 ? m.revenue / m.orders : 0,
+        collectPercent: m.revenue > 0 ? share(m.paid, m.revenue) : null,
+        listRevenue: dev?.list ?? 0,
+        discountPercent:
+          dev && dev.list > 0 ? ((dev.list - dev.fact) / dev.list) * 100 : null,
+      };
+    })
     .sort((a, b) => b.revenue.value - a.revenue.value);
 
   // --- Недели (единственный график на странице) ----------------------------
@@ -904,12 +1001,50 @@ export async function getAnalyticsSummary(
     });
   }
   if (discountPercent !== null && discountPercent > BENCHMARKS.discountPercent.warn) {
+    // Называем поимённо: «скидки дают слишком легко» без имени — это претензия
+    // ко всем сразу, то есть ни к кому.
+    const worst = [...managers]
+      .filter((m) => m.discountPercent !== null && m.discountPercent > discountPercent)
+      .sort((a, b) => (b.discountPercent ?? 0) - (a.discountPercent ?? 0))
+      .slice(0, 2);
     attention.push({
       level: "warning",
       title: `Продаём на ${discountPercent.toFixed(1)} % дешевле прайса`,
-      detail: `По прайсу заявки стоили бы ${fmtN(listRevenue)} ₸, продали на ${fmtN(
-        soldAtListPrice
-      )} ₸. Либо прайс оторван от жизни, либо скидки дают слишком легко.`,
+      detail:
+        `По прайсу заявки стоили бы ${fmtN(listRevenue)} ₸, продали на ${fmtN(
+          soldAtListPrice
+        )} ₸ — разница ${fmtN(listRevenue - soldAtListPrice)} ₸. Ориентир — не больше ${
+          BENCHMARKS.discountPercent.warn
+        } %.` +
+        (worst.length > 0
+          ? ` Сильнее всех отклоняются: ${worst
+              .map((m) => `${m.managerEmail} (${m.discountPercent!.toFixed(1)} %)`)
+              .join(", ")}.`
+          : " Либо прайс оторван от жизни, либо скидки дают слишком легко."),
+    });
+  }
+  if (
+    priceListAgeDays !== null &&
+    priceListAgeDays > BENCHMARKS.priceListAgeDays.warn &&
+    nowSales.revenue > 0
+  ) {
+    attention.push({
+      level: "warning",
+      title: `Прайс не меняли ${priceListAgeDays} дн.`,
+      detail: `Последняя правка — ${priceListLastChange}. Пока прайс не обновлён, отклонение от него ничего не значит: сравнивать факт не с чем.`,
+    });
+  }
+  if (
+    pricedRevenuePercent !== null &&
+    pricedRevenuePercent < BENCHMARKS.pricedRevenuePercent.warn &&
+    nowSales.revenue > 0
+  ) {
+    attention.push({
+      level: "warning",
+      title: `С прайсом сравнимо только ${pricedRevenuePercent.toFixed(0)} % выручки`,
+      detail:
+        "У остальных позиций цены в прайсе нет, и отклонение по ним не считается вовсе. " +
+        "Заполните недостающие строки — иначе бенчмарк смотрит на часть продаж.",
     });
   }
   if (topClientsPercent > BENCHMARKS.topClientsPercent.warn && clientRows.length > 0) {
@@ -993,6 +1128,11 @@ export async function getAnalyticsSummary(
 
     listRevenue,
     discountPercent,
+    discountMoney: listRevenue - soldAtListPrice,
+    pricedRevenuePercent,
+    priceListLastChange,
+    priceListAgeDays,
+    priceDeviation,
 
     receivedStems: delta(receivedStems, receivedStemsPrev),
     liquidReceivedPercent,

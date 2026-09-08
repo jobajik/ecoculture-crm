@@ -3,10 +3,11 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
-import { savePrices, type PriceInput } from "@/lib/repo/prices";
+import { savePrices, getCurrentPrices, type PriceInput } from "@/lib/repo/prices";
 import { ROLES, getGradesFor, FLOWER_TYPE_LABELS } from "@/lib/constants";
 import { listVarietiesByType } from "@/lib/repo/varieties";
-import { BASE_VARIETY } from "@/lib/priceList";
+import { BASE_VARIETY, priceMapForClient } from "@/lib/priceList";
+import { parsePriceWorkbook, type ParsedPriceRow, type PriceParseResult } from "@/lib/excel";
 
 /** Прайс ведут РОП и администратор: цена — это решение о деньгах. */
 async function requirePricer(): Promise<void> {
@@ -50,4 +51,41 @@ export async function savePricesAction(rows: PriceInput[]) {
   revalidatePath("/prices");
   revalidatePath("/orders/new");
   return result;
+}
+
+/**
+ * Читает загруженный файл прайса и возвращает разобранные строки. Ничего не
+ * записывает: сначала РОП смотрит, что распозналось, и видит «было → стало».
+ * Молча уехавшая в таблицу неверная цена — худший вид ошибки: о ней узнают из
+ * выставленного счёта.
+ */
+export async function parsePriceFileAction(formData: FormData): Promise<PriceParseResult> {
+  await requirePricer();
+
+  const file = formData.get("file");
+  if (!file || typeof file === "string") {
+    return { rows: [], validCount: 0, errorCount: 0, sameCount: 0, fatalError: "Файл не получен" };
+  }
+
+  const [catalog, current] = await Promise.all([listVarietiesByType(), getCurrentPrices()]);
+  const buffer = await (file as File).arrayBuffer();
+  return parsePriceWorkbook(buffer, catalog, priceMapForClient(current));
+}
+
+/**
+ * Записывает разобранные строки файла сегодняшним днём. Строки с ошибками
+ * отбрасываются здесь же, а не только в интерфейсе: запрос можно послать и в
+ * обход страницы.
+ */
+export async function importPricesAction(rows: ParsedPriceRow[]) {
+  const good = rows.filter((r) => !r.error && r.flowerType && r.grade);
+  if (good.length === 0) return { updated: 0, created: 0 };
+  return savePricesAction(
+    good.map((r) => ({
+      flowerType: r.flowerType,
+      variety: r.variety,
+      grade: r.grade,
+      price: r.price,
+    }))
+  );
 }
