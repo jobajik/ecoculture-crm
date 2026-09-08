@@ -3,8 +3,26 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createShipmentAction } from "@/app/warehouse/actions";
+import clsx from "clsx";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import type { Batch, OrderWithItems } from "@/lib/types";
+
+/** Русское склонение дней: 1 день, 2 дня, 5 дней. */
+function dayWord(n: number) {
+  const t = Math.abs(n) % 100;
+  const o = t % 10;
+  if (t > 10 && t < 20) return "дней";
+  if (o > 1 && o < 5) return "дня";
+  if (o === 1) return "день";
+  return "дней";
+}
+
+/** Сколько дней прошло с даты срезки. */
+function daysSince(date: string): number {
+  const from = new Date(date);
+  if (Number.isNaN(from.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - from.getTime()) / 86_400_000));
+}
 
 interface ItemWithBatches {
   itemId: string;
@@ -94,17 +112,74 @@ function ItemShipRow({
           На складе нет партий этого сорта с остатком. Сначала оформите приёмку с производства.
         </div>
       ) : (
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[240px]">
-            <label className="label">Партия (сначала предлагаются самые старые — по сроку хранения)</label>
-            <select className="input" value={batchId} onChange={(e) => setBatchId(e.target.value)}>
-              {item.availableBatches.map((b) => (
-                <option key={b.batchId} value={b.batchId}>
-                  {b.batchId} · сбор {new Date(b.harvestDate).toLocaleDateString("ru-RU")} · остаток {b.quantityRemaining}
-                </option>
-              ))}
-            </select>
+        <div className="space-y-3">
+          {/* Партию выбирает человек, а не программа. Сверху предлагается самая
+              старая — её и надо отдавать первой, — но заведующий складом видит
+              холодильник и решает сам: свежую партию бывает нужно отгрузить
+              вперёд старой (клиент берёт на дальнюю дорогу, старую обещали
+              другому). Поэтому это подсказка, а не запрет. */}
+          <div>
+            <label className="label">
+              Из какой партии отгружаем
+              <span className="font-normal text-ink-muted"> — сверху та, что дольше лежит</span>
+            </label>
+            <div className="space-y-1.5">
+              {item.availableBatches.map((b, idx) => {
+                const days = daysSince(b.harvestDate);
+                const active = b.batchId === batchId;
+                return (
+                  <button
+                    key={b.batchId}
+                    type="button"
+                    onClick={() => {
+                      setBatchId(b.batchId);
+                      setQuantity(String(Math.min(remainingToShip, b.quantityRemaining)));
+                    }}
+                    className={clsx(
+                      "w-full text-left rounded-lg border px-3 py-2 flex items-center gap-3 transition-colors",
+                      active
+                        ? "border-accent bg-accent-soft"
+                        : "border-line-hairline hover:bg-surface-plane"
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        "w-4 h-4 rounded-full border-2 shrink-0",
+                        active ? "border-accent bg-accent" : "border-line-strong"
+                      )}
+                      aria-hidden
+                    />
+                    <span className="flex-1 min-w-0">
+                      <span className="block">
+                        Срезка {new Date(b.harvestDate).toLocaleDateString("ru-RU")}
+                        <span className="text-ink-secondary">
+                          {" "}
+                          · лежит {days} {dayWord(days)}
+                        </span>
+                        {idx === 0 && item.availableBatches.length > 1 && (
+                          <span className="text-xs text-accent"> · самая старая</span>
+                        )}
+                      </span>
+                      {/* Код партии нужен редко — только чтобы сверить с ярлыком
+                          на ведре. Держим его мелким и серым, чтобы он не спорил
+                          глазами с датой и остатком. */}
+                      <span className="block text-[11px] text-ink-muted font-mono">
+                        {b.batchId}
+                      </span>
+                    </span>
+                    <span className="text-right shrink-0">
+                      <span className="block font-semibold tabular-nums">
+                        {b.quantityRemaining.toLocaleString("ru-RU")}
+                      </span>
+                      <span className="block text-[11px] text-ink-muted">в остатке</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="label">Количество, шт</label>
             <input
@@ -119,6 +194,7 @@ function ItemShipRow({
           <button onClick={handleSubmit} disabled={submitting} className="btn-primary">
             {submitting ? "Отгрузка…" : "Отгрузить"}
           </button>
+          </div>
         </div>
       )}
 

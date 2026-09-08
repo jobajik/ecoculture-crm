@@ -42,7 +42,9 @@ export default function BatchReceiveForm({
         harvestDate,
         location: location.trim(),
       });
-      setSuccess(`Партия ${batchId} принята на склад`);
+      // Код показываем, но отдельной мелкой строкой: подтверждение приёмки
+      // важнее кода, а код нужен лишь чтобы подписать ведро.
+      setSuccess(batchId);
       setQuantityIn("");
       router.refresh();
     } catch (err) {
@@ -122,7 +124,12 @@ export default function BatchReceiveForm({
       </div>
 
       {error && <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>}
-      {success && <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">{success}</div>}
+      {success && (
+        <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">
+          Партия принята на склад
+          <span className="block text-[11px] text-ink-muted font-mono mt-0.5">{success}</span>
+        </div>
+      )}
 
       <button type="submit" disabled={submitting} className="btn-primary">
         {submitting ? "Сохранение…" : "Принять партию"}

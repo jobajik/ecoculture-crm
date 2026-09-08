@@ -36,8 +36,8 @@ export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Партия</th>
               <th className="px-4 py-3 font-medium">Тип / сорт</th>
+              <th className="px-4 py-3 font-medium">Код партии</th>
               <th className="px-4 py-3 font-medium">Сбор</th>
               <th className="px-4 py-3 font-medium">В хранении</th>
               <th className="px-4 py-3 font-medium">Остаток</th>
@@ -125,10 +125,16 @@ function BatchRow({
   return (
     <>
       <tr className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
-        <td className="px-4 py-3 font-medium">{batch.batchId}</td>
         <td className="px-4 py-3">
-          {FLOWER_TYPE_LABELS[batch.flowerType]} {batch.variety}
+          <div className="font-medium">
+            {FLOWER_TYPE_LABELS[batch.flowerType]} {batch.variety}
+          </div>
           <div className="text-xs text-ink-muted">{formatGrade(batch.grade)}</div>
+        </td>
+        {/* Код партии — служебный: он нужен, чтобы сверить строку с ярлыком на
+            ведре, и не должен спорить глазами с сортом и сроком. */}
+        <td className="px-4 py-3 text-[11px] text-ink-muted font-mono whitespace-nowrap">
+          {batch.batchId}
         </td>
         <td className="px-4 py-3 text-ink-secondary">
           {batch.harvestDate ? new Date(batch.harvestDate).toLocaleDateString("ru-RU") : "—"}
