@@ -434,7 +434,7 @@ export default function StockBoard({
           </table>
         </div>
 
-        {hiddenDetails > 0 || tableExpanded ? (
+        {hiddenDetails > 0 || (tableExpanded && !searching) ? (
           <div className="mt-2 flex items-center gap-3">
             <MoreToggle
               expanded={tableExpanded && !searching}

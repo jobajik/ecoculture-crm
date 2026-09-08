@@ -1222,5 +1222,69 @@
   "grade": "Мини-микс",
   "quantity": 50,
   "source": "сток хриза утро"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Altaj",
+  "grade": "Высшая",
+  "quantity": 1345,
+  "source": "срез хриза 07.09"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Altaj",
+  "grade": "Первая",
+  "quantity": 2355,
+  "source": "срез хриза 07.09"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Altaj",
+  "grade": "Вторая",
+  "quantity": 3900,
+  "source": "срез хриза 07.09"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Altaj",
+  "grade": "Третья",
+  "quantity": 7425,
+  "source": "срез хриза 07.09"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Altaj",
+  "grade": "Четвёртая",
+  "quantity": 1950,
+  "source": "срез хриза 07.09"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Altaj",
+  "grade": "Мини-микс",
+  "quantity": 450,
+  "source": "срез хриза 07.09"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Altaj",
+  "grade": "Брак",
+  "quantity": 1955,
+  "source": "срез хриза 07.09"
+ },
+ {
+  "harvestDate": "2026-09-07",
+  "flowerType": "chrysanthemum",
+  "variety": "Топспин",
+  "grade": "Вторая",
+  "quantity": 30,
+  "source": "срез хриза 07.09"
  }
 ]

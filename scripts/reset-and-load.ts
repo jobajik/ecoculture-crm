@@ -95,6 +95,26 @@ async function main() {
   const total = rows.reduce((s, r) => s + r.quantity, 0);
   console.log(`В файле ${rows.length} партий, ${total.toLocaleString("ru-RU")} стеблей.`);
 
+  // --- Предохранитель ------------------------------------------------------
+  // Скрипт стирает рабочие данные — это было нужно один раз, чтобы убрать
+  // примеры. Дальше он опасен: запустить его через месяц значит потерять все
+  // заявки и отгрузки. Поэтому при непустых заявках он останавливается и просит
+  // подтвердить это явно: `npx tsx scripts/reset-and-load.ts --force`.
+  const force = process.argv.includes("--force");
+  const [orders, shipments] = await Promise.all([
+    readTable(SHEET_TABS.ORDERS),
+    readTable(SHEET_TABS.SHIPMENTS),
+  ]);
+  if (!force && (orders.rows.length > 0 || shipments.rows.length > 0)) {
+    console.error(
+      `\nСТОП. В таблице уже есть заявки (${orders.rows.length}) и отгрузки ` +
+        `(${shipments.rows.length}) — это живая работа, а не примеры.\n` +
+        "Скрипт сотрёт их вместе с остальным. Если это действительно нужно, " +
+        "запустите его с ключом --force.\nНичего не изменено."
+    );
+    process.exit(1);
+  }
+
   // --- 1. Очистка ----------------------------------------------------------
   console.log("\n--- Чищу рабочие данные ---");
   for (const tab of TABS_TO_CLEAR) {
