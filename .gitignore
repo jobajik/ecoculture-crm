@@ -2,9 +2,33 @@ node_modules
 .next
 out
 .env
-.env.local
+.env*
+.vercel
 *.log
 .DS_Store
+tsconfig.tsbuildinfo
+
+# служебные скрипты Claude (одноразовые, в репозиторий не нужны)
+_claude-*.txt
 _temp/
-*.bat
+check.bat
+check2.bat
+cleanup.bat
+deploy.bat
+deploy2.bat
+gitconnect.bat
+install-git.bat
+install-gh.bat
+install-vercel.bat
+login-github.bat
+login-vercel.bat
+push-to-github.bat
+synctest.bat
+verify.bat
+pdfout.bat
+gitfix.bat
+env-push.mjs
+set-url.mjs
+
+# руководство пользователя (собирается отдельно, в публичный репозиторий не нужно)
 *.pdf
