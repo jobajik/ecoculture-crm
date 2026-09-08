@@ -4,6 +4,8 @@ import { getAnalyticsByFarm } from "@/lib/analytics";
 import { farmLabel } from "@/lib/constants";
 import AnalyticsReport from "@/components/AnalyticsReport";
 import FlowerSummary from "@/components/FlowerSummary";
+import SectionTabs from "@/components/SectionTabs";
+import { analyticsTabsFor } from "./tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -43,6 +45,12 @@ export default async function AnalyticsPage() {
           Обновлено {new Date(all.generatedAt).toLocaleString("ru-RU")}
         </span>
       </div>
+
+      {/* У администратора рядом с отчётом живёт календарь: остальным ролям
+          вкладок не показываем, одна вкладка в ряду выглядит как недоделка. */}
+      {analyticsTabsFor(session?.user?.role).length > 0 && (
+        <SectionTabs tabs={analyticsTabsFor(session?.user?.role)} />
+      )}
 
       {/* «По цветку» стоит ПЕРВОЙ — так решил владелец: это самая понятная
           таблица во всей аналитике, и прятать её под кнопкой «подробности»
