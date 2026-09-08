@@ -477,7 +477,10 @@ function FlowerColumnList({
       <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
         {cards.length} {varietyWord(cards.length)} · {batches} {batchWord(batches)}
         {worst !== "ok" && (
-          <span className={clsx(" · ", STATUS_TEXT[worst])}>{STATUS_LABEL[worst]}</span>
+          <>
+            {" · "}
+            <span className={STATUS_TEXT[worst]}>{STATUS_LABEL[worst]}</span>
+          </>
         )}
       </div>
     </>

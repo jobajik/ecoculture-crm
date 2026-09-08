@@ -134,7 +134,7 @@ export default function OrderForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-3xl">
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
       <div className="card grid sm:grid-cols-2 gap-4">
         <div>
           <label className="label">Клиент *</label>
@@ -169,8 +169,8 @@ export default function OrderForm({
 
         <div className="space-y-3">
           {items.map((it, idx) => (
-            <div key={idx} className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end border-b border-line-hairline pb-3 last:border-0">
-              <div className="col-span-2 sm:col-span-1">
+            <div key={idx} className="grid grid-cols-2 sm:grid-cols-9 gap-2 items-end border-b border-line-hairline pb-3 last:border-0">
+              <div className="col-span-2 sm:col-span-2">
                 <label className="label">Тип</label>
                 <select
                   className="input"
@@ -198,7 +198,7 @@ export default function OrderForm({
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="col-span-2 sm:col-span-2">
                 <label className="label">{GRADE_LABELS[it.flowerType]} *</label>
                 <select
                   className="input"
@@ -222,7 +222,7 @@ export default function OrderForm({
                   onChange={(e) => updateItem(idx, { quantity: e.target.value })}
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 col-span-2 sm:col-span-2">
                 <div className="flex-1">
                   <label className="label">
                     Цена, ₸ *
