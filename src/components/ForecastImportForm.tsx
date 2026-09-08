@@ -19,7 +19,12 @@ export default function ForecastImportForm({ month }: { month: string }) {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ForecastParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ updated: number; created: number; totalStems: number } | null>(
+  const [done, setDone] = useState<{
+    updated: number;
+    created: number;
+    totalStems: number;
+    cleared: number;
+  } | null>(
     null
   );
 
@@ -46,7 +51,7 @@ export default function ForecastImportForm({ month }: { month: string }) {
     setError(null);
     setImporting(true);
     try {
-      const summary = await importForecastAction(result.varieties, result.mix);
+      const summary = await importForecastAction(result.varieties, result.mix, month);
       setDone(summary);
       setResult(null);
       setFileName(null);
@@ -75,8 +80,8 @@ export default function ForecastImportForm({ month }: { month: string }) {
           <p className="text-sm text-ink-secondary mt-0.5">
             На каждый цветок два листа: «сорта» (строки — сорта) и «ростовка» (строки — длины, на
             весь цветок). Колонки — недели, в ячейках количество. Загружается в{" "}
-            <b className="capitalize">{periodLabel(month)}</b>; позиции, которых в файле нет,
-            останутся как были.
+            <b className="capitalize">{periodLabel(month)}</b> — файл <b>заменяет</b> месяц целиком:
+            позиции, которых в нём нет, обнуляются. Цветок, листа которого в файле нет, не трогается.
           </p>
         </div>
         <a href={`/api/forecast/template?period=${month}`} className="btn-secondary !py-1.5">
@@ -107,6 +112,7 @@ export default function ForecastImportForm({ month }: { month: string }) {
         <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">
           Записано позиций: <b>{done.updated + done.created}</b> (обновлено {done.updated}, добавлено{" "}
           {done.created}), по сортам {done.totalStems.toLocaleString("ru-RU")} шт.
+          {done.cleared > 0 && ` Обнулено позиций, которых в файле не было: ${done.cleared}.`}
         </div>
       )}
 

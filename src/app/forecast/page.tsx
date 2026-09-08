@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getForecastForMonth } from "@/lib/repo/harvestForecast";
 import { getMixForMonth } from "@/lib/repo/harvestMix";
-import { listVarietiesByType } from "@/lib/repo/varieties";
 import {
   FLOWER_TYPES,
   ROLES,
@@ -15,9 +14,9 @@ import {
 } from "@/lib/constants";
 import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
-import ForecastBoard from "@/components/ForecastBoard";
-import { forecastCellKey, mixCellKey } from "@/lib/forecastCell";
+import ForecastView from "@/components/ForecastView";
 import ForecastImportForm from "@/components/ForecastImportForm";
+import { buildForecastSummary } from "@/lib/forecastSummary";
 import { plansTabsFor } from "../plans/tabs";
 
 export const dynamic = "force-dynamic";
@@ -47,21 +46,18 @@ export default async function ForecastPage({
 
   const weeks = weeksOfMonth(month);
 
-  const [varieties, savedVarieties, savedMix] = await Promise.all([
-    listVarietiesByType(),
+  const [savedVarieties, savedMix] = await Promise.all([
     getForecastForMonth(month, allowedTypes),
     getMixForMonth(month, allowedTypes),
   ]);
 
-  const initialVarieties: Record<string, number> = {};
-  for (const row of savedVarieties.values()) {
-    initialVarieties[forecastCellKey(row.period, row.flowerType, row.variety)] = row.targetStems;
-  }
-
-  const initialMix: Record<string, number> = {};
-  for (const row of savedMix.values()) {
-    initialMix[mixCellKey(row.period, row.flowerType, row.grade)] = row.targetStems;
-  }
+  const summary = buildForecastSummary({
+    month,
+    weeks,
+    flowerTypes: allowedTypes,
+    varieties: Array.from(savedVarieties.values()),
+    mix: Array.from(savedMix.values()),
+  });
 
   const filledWeeks = weeks.filter(
     (w) =>
@@ -82,8 +78,9 @@ export default async function ForecastPage({
           Прогноз срезки{farm ? ` · ${farmLabel(farm)}` : ""}
         </h1>
         <p className="text-sm text-ink-secondary">
-          Сколько даст каждый сорт и какая получится ростовка — по неделям месяца. Прогноз можно
-          править сколько угодно раз: цифры переписываются, а не копятся.
+          Прогноз ведётся файлом: скачали шаблон, заполнили в Excel, загрузили обратно. Каждая
+          загрузка заменяет месяц целиком, поэтому здесь всегда лежит то, что в последнем файле.
+          Ниже — что из этого вырастет: по неделям, по сортам и по ростовке.
         </p>
       </div>
 
@@ -96,22 +93,14 @@ export default async function ForecastPage({
         <p className="text-sm text-ink-muted">
           {filledWeeks > 0
             ? `Заполнено недель: ${filledWeeks} из ${weeks.length}`
-            : "Месяц ещё не заполнен"}
+            : "Файл за этот месяц ещё не загружали"}
           {lastUpdate && ` · последняя правка ${new Date(lastUpdate).toLocaleString("ru-RU")}`}
         </p>
       </div>
 
       <ForecastImportForm key={`import-${month}`} month={month} />
 
-      <ForecastBoard
-        key={month}
-        month={month}
-        weeks={weeks}
-        flowerTypes={allowedTypes}
-        varieties={varieties}
-        initialVarieties={initialVarieties}
-        initialMix={initialMix}
-      />
+      <ForecastView key={month} summary={summary} />
     </div>
   );
 }

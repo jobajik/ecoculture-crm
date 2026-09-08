@@ -11,6 +11,7 @@
 import ExcelJS from "exceljs";
 import { buildForecastTemplate, parseForecastWorkbook } from "../src/lib/excel";
 import { weeksOfMonth } from "../src/lib/constants";
+import { rowsToZero } from "../src/lib/forecastReplace";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -223,6 +224,43 @@ async function main() {
     MONTH
   );
   check("посторонний файл отвергнут понятно", !!junkParsed.fatalError, true);
+
+  // --- Загрузка заменяет месяц ---------------------------------------------
+  // Агроном перезагружает файл целиком. Позиция, которой в новом файле нет,
+  // обязана обнулиться, иначе прошлая цифра прилипает и всплывает в балансе как
+  // урожай, которого никто не обещал.
+  const weekCodes = weeksOfMonth(MONTH).map((w) => w.code);
+  const existing = [
+    { period: weekCodes[0], flowerType: "rose", key: "Prestige", targetStems: 1000 },
+    { period: weekCodes[0], flowerType: "rose", key: "Freedom", targetStems: 500 },
+    { period: weekCodes[1], flowerType: "rose", key: "Prestige", targetStems: 700 },
+    { period: weekCodes[0], flowerType: "chrysanthemum", key: "Altaj", targetStems: 900 },
+    { period: "2026-08-W1", flowerType: "rose", key: "Prestige", targetStems: 400 },
+    { period: weekCodes[0], flowerType: "rose", key: "Уже ноль", targetStems: 0 },
+  ];
+  const loaded = [
+    { period: weekCodes[0], flowerType: "rose", key: "Prestige" },
+    { period: weekCodes[1], flowerType: "rose", key: "Prestige" },
+  ];
+  const zeros = rowsToZero(existing, loaded, weekCodes);
+
+  check(
+    "исчезнувший из файла сорт обнуляется",
+    zeros.map((r) => `${r.flowerType}:${r.key}`),
+    ["rose:Freedom"]
+  );
+  check(
+    "цветок, которого не было в файле, не трогаем",
+    zeros.some((r) => r.flowerType === "chrysanthemum"),
+    false
+  );
+  check(
+    "чужой месяц не трогаем",
+    zeros.some((r) => r.period === "2026-08-W1"),
+    false
+  );
+  check("уже нулевые строки не переписываем", zeros.some((r) => r.key === "Уже ноль"), false);
+  check("пустая загрузка ничего не стирает", rowsToZero(existing, [], weekCodes).length, 0);
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

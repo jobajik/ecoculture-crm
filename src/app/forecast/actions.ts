@@ -4,10 +4,12 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import {
+  getForecastForMonth,
   saveHarvestForecast,
   type HarvestForecastInput,
 } from "@/lib/repo/harvestForecast";
-import { saveHarvestMix, type HarvestMixInput } from "@/lib/repo/harvestMix";
+import { getMixForMonth, saveHarvestMix, type HarvestMixInput } from "@/lib/repo/harvestMix";
+import { rowsToZero } from "@/lib/forecastReplace";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import {
   parseForecastWorkbook,
@@ -24,6 +26,7 @@ import {
   getGradesFor,
   isValidPeriod,
   isValidWeekCode,
+  weeksOfMonth,
 } from "@/lib/constants";
 
 /**
@@ -163,10 +166,18 @@ export async function parseForecastFileAction(formData: FormData): Promise<Forec
 /**
  * Записывает разобранные строки файла. Неделю каждая строка несёт сама (в файле
  * весь месяц), поэтому пишем по неделям, группируя вызовы.
+ *
+ * Загрузка — это ЗАМЕНА месяца, а не дописывание: агроном перезагружает файл
+ * каждый раз, когда прогноз поменялся, и позиция, которой в новом файле нет,
+ * должна исчезнуть. Иначе прошлая цифра прилипает и потом всплывает в балансе
+ * как урожай, которого никто не обещал. Заменяются только те цветки, чьи листы
+ * есть в файле: файл с одними розами не должен стирать хризантему.
  */
 export async function importForecastAction(
   varieties: ParsedVarietyRow[],
-  mix: ParsedMixRow[]
+  mix: ParsedMixRow[],
+  /** Месяц, который заменяем. Без него обнуление не делается. */
+  month?: string
 ) {
   const goodVarieties = varieties.filter((r) => !r.error && r.variety && r.week);
   const goodMix = mix.filter((r) => !r.error && r.grade && r.week);
@@ -174,6 +185,64 @@ export async function importForecastAction(
   let updated = 0;
   let created = 0;
   let totalStems = 0;
+  let cleared = 0;
+
+  // --- Что из прошлой загрузки надо обнулить -------------------------------
+  if (month && isValidPeriod(month)) {
+    const weekCodes = weeksOfMonth(month).map((w) => w.code);
+    const [existingVarieties, existingMix] = await Promise.all([
+      getForecastForMonth(month),
+      getMixForMonth(month),
+    ]);
+
+    const varietyZeros = rowsToZero(
+      Array.from(existingVarieties.values()).map((r) => ({
+        period: r.period,
+        flowerType: r.flowerType,
+        key: r.variety,
+        targetStems: r.targetStems,
+      })),
+      goodVarieties.map((r) => ({
+        period: r.week,
+        flowerType: r.flowerType,
+        key: r.variety,
+      })),
+      weekCodes
+    );
+    const mixZeros = rowsToZero(
+      Array.from(existingMix.values()).map((r) => ({
+        period: r.period,
+        flowerType: r.flowerType,
+        key: r.grade,
+        targetStems: r.targetStems,
+      })),
+      goodMix.map((r) => ({ period: r.week, flowerType: r.flowerType, key: r.grade })),
+      weekCodes
+    );
+
+    for (const row of varietyZeros) {
+      goodVarieties.push({
+        sheet: "",
+        rowNumber: 0,
+        flowerType: row.flowerType as ParsedVarietyRow["flowerType"],
+        week: row.period,
+        variety: row.key,
+        stems: 0,
+      });
+      cleared += 1;
+    }
+    for (const row of mixZeros) {
+      goodMix.push({
+        sheet: "",
+        rowNumber: 0,
+        flowerType: row.flowerType as ParsedMixRow["flowerType"],
+        week: row.period,
+        grade: row.key,
+        stems: 0,
+      });
+      cleared += 1;
+    }
+  }
 
   const varietyByWeek = new Map<string, ParsedVarietyRow[]>();
   for (const row of goodVarieties) {
@@ -216,5 +285,5 @@ export async function importForecastAction(
     created += result.created;
   }
 
-  return { updated, created, totalStems };
+  return { updated, created, totalStems, cleared };
 }
