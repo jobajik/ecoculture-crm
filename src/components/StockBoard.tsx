@@ -7,10 +7,10 @@ import {
   FLOWER_TYPES_BY_FARM,
   FARM_ORDER,
   farmLabel,
-  formatGrade,
   getFarmFor,
 } from "@/lib/constants";
-import MoreToggle, { COLLAPSED_LIST_SIZE, COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import MoreToggle, { COLLAPSED_LIST_SIZE } from "./MoreToggle";
+import StockDetail from "./StockDetail";
 import type { AgeBucketRow, StockSnapshot, StockVarietyCard } from "@/lib/stock";
 import type { StorageStatus } from "@/lib/shelfLife";
 
@@ -92,19 +92,6 @@ function relativeTime(iso: string, now: number) {
   return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
-interface DetailRow {
-  key: string;
-  flowerType: string;
-  variety: string;
-  grade: string;
-  quantity: number;
-  oldestDays: number;
-  newestDays: number;
-  maxDays: number;
-  status: StorageStatus;
-  batches: number;
-}
-
 export default function StockBoard({
   initial,
   allowedTypes,
@@ -120,7 +107,6 @@ export default function StockBoard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(() => Date.now());
-  const [search, setSearch] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -177,46 +163,7 @@ export default function StockBoard({
     });
   }, [snapshot.varieties, allowedTypes]);
 
-  /** Нижний список — плоская таблица «сорт + длина», сначала самое срочное. */
-  const details = useMemo(() => {
-    const rows: DetailRow[] = [];
-    for (const card of snapshot.varieties) {
-      for (const g of card.grades) {
-        rows.push({
-          key: `${card.key}:${g.grade}`,
-          flowerType: card.flowerType,
-          variety: card.variety,
-          grade: g.grade,
-          quantity: g.quantity,
-          oldestDays: g.oldestDays,
-          newestDays: g.newestDays,
-          maxDays: g.maxDays,
-          status: g.status,
-          batches: g.batches,
-        });
-      }
-    }
-    const q = search.trim().toLowerCase();
-    return rows
-      .filter((r) => !q || r.variety.toLowerCase().includes(q))
-      .sort(
-        (a, b) =>
-          STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
-          b.oldestDays / Math.max(1, b.maxDays) - a.oldestDays / Math.max(1, a.maxDays) ||
-          b.quantity - a.quantity
-      );
-  }, [snapshot.varieties, search]);
-
   const atRisk = snapshot.warningStems + snapshot.criticalStems;
-
-  // Таблица показывает только начало списка: в ней бывает больше сотни строк, а
-  // отвечает она на вопрос «что продать раньше» — ответ в первых строках.
-  // Поиск при этом работает по всем: сузили запрос — увидели всё найденное.
-  const [tableExpanded, setTableExpanded] = useState(false);
-  const searching = search.trim().length > 0;
-  const visibleDetails =
-    tableExpanded || searching ? details : details.slice(0, COLLAPSED_TABLE_SIZE);
-  const hiddenDetails = details.length - visibleDetails.length;
 
   return (
     <section className="space-y-4">
@@ -339,123 +286,17 @@ export default function StockBoard({
         </div>
       </div>
 
-      {/* Подробный список — сначала то, что горит */}
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <h3 className="font-medium">
-            Подробно по позициям
-            <span className="text-sm font-normal text-ink-muted"> — сверху то, что нужно продать раньше</span>
-          </h3>
-          <input
-            className="input !w-auto !py-1.5 min-w-[180px]"
-            placeholder="Поиск по сорту"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      {/* Подробно по позициям: блок на цветок, строка на сорт, длины внутри */}
+      <StockDetail
+        varieties={snapshot.varieties}
+        allowedTypes={allowedTypes}
+        emptyHint={
+          snapshot.totalStems === 0
+            ? "На складе пусто. Как только зав. складом оформит приёмку, остатки появятся здесь."
+            : "Ничего не нашлось."
+        }
+      />
 
-        <div className="card !p-0 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                <th className="px-4 py-2.5 font-medium">Цветок</th>
-                <th className="px-4 py-2.5 font-medium">Сорт</th>
-                <th className="px-4 py-2.5 font-medium">Длина / кат.</th>
-                <th className="px-4 py-2.5 font-medium text-right">Осталось</th>
-                <th className="px-4 py-2.5 font-medium text-right">Лежит</th>
-                <th className="px-4 py-2.5 font-medium w-40">Срок хранения</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleDetails.map((r) => {
-                const fill = r.maxDays > 0 ? Math.min(100, (r.oldestDays / r.maxDays) * 100) : 0;
-                const spread = r.oldestDays !== r.newestDays;
-                return (
-                  <tr
-                    key={r.key}
-                    className={clsx(
-                      "border-b border-line-hairline last:border-0 hover:bg-surface-plane",
-                      r.status === "critical" && "bg-status-critical/5",
-                      r.status === "warning" && "bg-status-warning/5"
-                    )}
-                  >
-                    <td className="px-4 py-2 text-ink-secondary whitespace-nowrap">
-                      {FLOWER_TYPE_LABELS_PLURAL[r.flowerType] ?? r.flowerType}
-                    </td>
-                    <td className="px-4 py-2 font-medium">{r.variety}</td>
-                    <td className="px-4 py-2 text-ink-secondary whitespace-nowrap">
-                      {formatGrade(r.grade)}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums font-medium whitespace-nowrap">
-                      {r.quantity.toLocaleString("ru-RU")}
-                    </td>
-                    <td className="px-4 py-2 text-right whitespace-nowrap">
-                      <span
-                        className={clsx(
-                          "inline-block rounded-full px-2 py-0.5 tabular-nums text-xs font-medium",
-                          r.status === "critical" && "bg-status-critical/15",
-                          r.status === "warning" && "bg-status-warning/15",
-                          r.status === "ok" && "bg-status-good/10",
-                          STATUS_TEXT[r.status]
-                        )}
-                      >
-                        {spread ? `${r.newestDays}–${r.oldestDays}` : r.oldestDays}{" "}
-                        {dayWord(r.oldestDays)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 flex-1 rounded-full bg-surface-plane overflow-hidden min-w-[48px]">
-                          <div
-                            className={clsx("h-full rounded-full", STATUS_BAR[r.status])}
-                            style={{ width: `${Math.max(4, fill)}%` }}
-                          />
-                        </div>
-                        <span
-                          className={clsx("text-[11px] whitespace-nowrap tabular-nums", STATUS_TEXT[r.status])}
-                        >
-                          {r.oldestDays}/{r.maxDays}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {details.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
-                    {snapshot.totalStems === 0
-                      ? "На складе пусто. Как только зав. складом оформит приёмку, остатки появятся здесь."
-                      : "По этому сорту ничего не нашлось."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {hiddenDetails > 0 || (tableExpanded && !searching) ? (
-          <div className="mt-2 flex items-center gap-3">
-            <MoreToggle
-              expanded={tableExpanded && !searching}
-              hidden={hiddenDetails}
-              onToggle={() => setTableExpanded((v) => !v)}
-              what="позиций"
-            />
-            <span className="text-xs text-ink-muted">
-              всего позиций: {details.length.toLocaleString("ru-RU")}
-            </span>
-          </div>
-        ) : null}
-
-        <p className="text-xs text-ink-muted mt-2">
-          «Лежит» — дней с даты срезки. «Срок хранения» — сколько прошло из положенного:{" "}
-          <span className={STATUS_TEXT.warning}>жёлтый — скоро истечёт</span>,{" "}
-          <span className={STATUS_TEXT.critical}>красный — просрочено</span>.
-        </p>
-      </div>
-
-      {/* Разбивка по производствам — только когда видно оба */}
       {snapshot.byFarm.length > 1 && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-secondary">
           {FARM_ORDER.filter((f) => snapshot.byFarm.some((x) => x.farm === f)).map((f) => {
