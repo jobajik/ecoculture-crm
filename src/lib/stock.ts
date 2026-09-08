@@ -64,13 +64,22 @@ export function ageBucketKeyOf(daysInStorage: number): string {
   return (bucket ?? AGE_BUCKETS[AGE_BUCKETS.length - 1]).key;
 }
 
-/** Строка внутри диапазона: сорт целиком, без длин — так просил владелец. */
-export interface AgeBucketVariety {
+/**
+ * Строка внутри диапазона — ГРАДАЦИЯ (длина у розы, категория у хризантемы и
+ * эустомы), а не сорт. Так просил владелец: залежавшийся цветок продают
+ * ростовкой — «отдай всю шестидесятку», — и вопрос «что залежалось» на складе
+ * означает «какой длины», а не «какого куста».
+ *
+ * Название цветка остаётся в строке, потому что градации у разных цветков
+ * совпадают: «Мини-микс» и «50» есть и у розы, и у эустомы, и без цветка строка
+ * читалась бы неоднозначно.
+ */
+export interface AgeBucketGrade {
   flowerType: string;
-  variety: string;
+  grade: string;
   quantity: number;
   batches: number;
-  /** Самая старая партия сорта внутри этого диапазона. */
+  /** Самая старая партия этой градации внутри диапазона. */
   oldestDays: number;
   maxDays: number;
   status: StorageStatus;
@@ -88,7 +97,8 @@ export interface AgeBucketRow {
   share: number;
   /** Худший статус внутри диапазона — им и подсвечивается плитка. */
   status: StorageStatus;
-  varieties: AgeBucketVariety[];
+  /** Строки диапазона: градации, отсортированные по количеству. */
+  grades: AgeBucketGrade[];
 }
 
 export interface StockSnapshot {
@@ -209,18 +219,19 @@ export async function getStockSnapshot(
     .sort((a, b) => b.totalQuantity - a.totalQuantity);
 
   // --- Диапазоны по времени хранения ---------------------------------------
-  // Считаем по партиям, а складываем по сортам: длины здесь не нужны, вопрос
-  // стоит «сколько цветка какого сорта пролежало столько-то дней».
-  const bucketMap = new Map<string, Map<string, AgeBucketVariety>>();
+  // Считаем по партиям, а складываем по ГРАДАЦИЯМ: залежавшийся цветок продают
+  // ростовкой, поэтому «что залежалось» — это про длину и категорию, а не про
+  // сорт. Цветок остаётся в ключе: «Мини-микс» есть у всех троих.
+  const bucketMap = new Map<string, Map<string, AgeBucketGrade>>();
   for (const bucket of AGE_BUCKETS) bucketMap.set(bucket.key, new Map());
 
   for (const info of active) {
     const b = info.batch;
     const rows = bucketMap.get(ageBucketKeyOf(info.daysInStorage))!;
-    const key = `${b.flowerType}:${b.variety.trim().toLowerCase()}`;
+    const key = `${b.flowerType}:${b.grade.trim().toLowerCase()}`;
     const row = rows.get(key) ?? {
       flowerType: b.flowerType,
-      variety: b.variety,
+      grade: b.grade,
       quantity: 0,
       batches: 0,
       oldestDays: info.daysInStorage,
@@ -235,20 +246,20 @@ export async function getStockSnapshot(
   }
 
   const ageBuckets: AgeBucketRow[] = AGE_BUCKETS.map((bucket) => {
-    const varieties = Array.from(bucketMap.get(bucket.key)!.values()).sort(
-      (a, b) => b.quantity - a.quantity || a.variety.localeCompare(b.variety, "ru")
+    const grades = Array.from(bucketMap.get(bucket.key)!.values()).sort(
+      (a, b) => b.quantity - a.quantity || a.grade.localeCompare(b.grade, "ru")
     );
-    const quantity = varieties.reduce((s, v) => s + v.quantity, 0);
+    const quantity = grades.reduce((s, g) => s + g.quantity, 0);
     return {
       key: bucket.key,
       label: bucket.label,
       minDays: bucket.minDays,
       maxDays: bucket.maxDays,
       quantity,
-      batches: varieties.reduce((s, v) => s + v.batches, 0),
+      batches: grades.reduce((s, g) => s + g.batches, 0),
       share: totalStems > 0 ? quantity / totalStems : 0,
-      status: varieties.reduce<StorageStatus>((worst, v) => worseStatus(worst, v.status), "ok"),
-      varieties,
+      status: grades.reduce<StorageStatus>((worst, g) => worseStatus(worst, g.status), "ok"),
+      grades,
     };
   });
 

@@ -1,192 +1,313 @@
-import { format, startOfWeek } from "date-fns";
 import { listOrdersWithItems } from "./repo/orders";
 import { listBatches } from "./repo/batches";
 import { listWriteoffs } from "./repo/writeoffs";
 import { listPriceHistory } from "./repo/priceHistory";
 import { getSettings } from "./repo/settings";
-import { computeBatchStorageInfo } from "./shelfLife";
-import { getFarmFor } from "./constants";
+import { computeBatchStorageInfo, getMaxShelfLifeDays } from "./shelfLife";
+import { currentPrices, priceFor, type PriceRow } from "./priceList";
+import { FLOWER_TYPE_LABELS, formatGrade, getFarmFor, isTopGrade } from "./constants";
+import { toIsoDate } from "./sheetDate";
+import { BENCHMARKS } from "./benchmarks";
 import type { OrderWithItems } from "./types";
 
-export interface StockByVarietyRow {
+// ---------------------------------------------------------------------------
+// Аналитика: цифры, а не картинки.
+//
+// Владелец прямо попросил меньше графиков и больше чисел с ориентирами. Поэтому
+// здесь всё считается парами «сейчас / было» за два одинаковых окна: последние
+// 30 дней и предыдущие 30. Сравнение календарных месяцев в середине месяца врёт
+// (восьмое сентября против всего августа), а два равных окна честны в любой день.
+//
+// Каждая метрика, у которой есть «правильное» значение, сравнивается с
+// ориентиром из BENCHMARKS. Ориентиры — бизнес-решение владельца, а не
+// техническая константа: меняются здесь, и подсветка по всей странице
+// пересчитывается сама.
+// ---------------------------------------------------------------------------
+
+/** Длина окна сравнения в днях. */
+export const ANALYTICS_DAYS = 30;
+
+// Ориентиры вынесены в ./benchmarks — их читает и страница в браузере.
+export { BENCHMARKS, toneLowerBetter, toneHigherBetter } from "./benchmarks";
+export type { Tone, Benchmark } from "./benchmarks";
+
+export interface Delta {
+  /** Значение за текущее окно. */
+  value: number;
+  /** Значение за предыдущее окно такой же длины. */
+  prev: number;
+  /** Рост в процентах. null — сравнивать не с чем (в прошлом окне ноль). */
+  changePercent: number | null;
+}
+
+function delta(value: number, prev: number): Delta {
+  return {
+    value,
+    prev,
+    changePercent: prev > 0 ? ((value - prev) / prev) * 100 : null,
+  };
+}
+
+export interface FlowerRow {
+  flowerType: string;
+  /** Принято на склад за период, стеблей. */
+  received: number;
+  /** Продано (оформлено в заявках) за период, стеблей. */
+  sold: number;
+  /** Списано за период, стеблей. */
+  writeoff: number;
+  /** Лежит на складе сейчас. */
+  stock: number;
+  /** На сколько дней хватит склада при нынешнем темпе продаж. */
+  coverDays: number | null;
+  /** Срок хранения этого цветка. */
+  shelfLifeDays: number;
+  revenue: number;
+  revenueShare: number;
+  avgPrice: Delta;
+  /** Доля высшей категории в приёмке за период, %. */
+  topGradePercent: number | null;
+}
+
+export interface GradeRow {
+  flowerType: string;
+  grade: string;
+  label: string;
+  stems: number;
+  revenue: number;
+  avgPrice: Delta;
+  share: number;
+}
+
+export interface VarietyRow {
   key: string;
   flowerType: string;
   variety: string;
-  quantity: number;
+  stems: number;
+  revenue: Delta;
+  share: number;
+}
+
+export interface ClientRow {
+  clientName: string;
+  orders: number;
+  revenue: number;
+  share: number;
+  /** Сколько дней назад была последняя заявка. */
+  lastOrderDaysAgo: number;
+  /** Неоплаченное по этому клиенту за всё время. */
+  debt: number;
+}
+
+export interface ManagerRow {
+  managerEmail: string;
+  orders: number;
+  revenue: Delta;
+  stems: number;
+  avgCheck: number;
+  /** Доля оплаченного от оформленного этим менеджером, %. */
+  collectPercent: number | null;
+}
+
+export interface WriteoffReasonRow {
+  reason: string;
+  stems: number;
+  money: number;
+  share: number;
 }
 
 export interface StorageAlertRow {
   batchId: string;
   flowerType: string;
   variety: string;
+  grade: string;
   harvestDate: string;
   daysInStorage: number;
   maxDays: number;
   percentUsed: number;
   status: string;
   quantityRemaining: number;
+  /** Во что оценивается остаток партии по действующему прайсу. */
+  money: number;
 }
 
-export interface SalesWeekRow {
-  weekStart: string;
-  totalAmount: number;
-  totalQuantity: number;
+export interface AttentionRow {
+  level: "critical" | "warning" | "good";
+  title: string;
+  detail: string;
 }
 
-export interface SalesByManagerRow {
-  managerEmail: string;
-  orderCount: number;
-  totalAmount: number;
-  totalQuantity: number;
-}
-
-export interface SalesByVarietyRow {
-  key: string;
-  flowerType: string;
-  variety: string;
-  totalAmount: number;
-  totalQuantity: number;
-}
-
-export interface PricePointRow {
-  date: string;
-  key: string;
-  flowerType: string;
-  variety: string;
-  price: number;
-}
-
-export interface WriteoffSummary {
-  totalWriteoffQuantity: number;
-  totalReceivedQuantity: number;
-  percentOfReceived: number;
-  byReason: { reason: string; quantity: number }[];
-  byMonth: { month: string; quantity: number }[];
+export interface WeekRow {
+  label: string;
+  revenue: number;
+  stems: number;
 }
 
 export interface AnalyticsSummary {
   generatedAt: string;
-  stockByVariety: StockByVarietyRow[];
-  storage: {
-    avgDaysInStorage: number;
-    activeBatchCount: number;
-    histogram: { label: string; count: number }[];
-    alerts: StorageAlertRow[];
-  };
-  sales: {
-    byWeek: SalesWeekRow[];
-    byManager: SalesByManagerRow[];
-    byVariety: SalesByVarietyRow[];
-    totalOrders: number;
-    totalRevenue: number;
-    totalShippedStems: number;
-  };
-  priceDynamics: PricePointRow[];
-  writeoffs: WriteoffSummary;
+  days: number;
+  periodLabel: string;
+  prevLabel: string;
+
+  revenue: Delta;
+  stems: Delta;
+  orders: Delta;
+  avgPrice: Delta;
+  avgCheck: Delta;
+  clients: Delta;
+
+  /** Оплачено из оформленного за период. */
+  paidRevenue: number;
+  collectPercent: number;
+  /** Долг по всей базе, а не только за период — как у бухгалтера. */
+  debtTotal: number;
+
+  /** Сколько заявки стоили бы по прайсу и сколько потеряли на скидках. */
+  listRevenue: number;
+  discountPercent: number | null;
+
+  receivedStems: Delta;
+  writeoffStems: Delta;
+  writeoffPercent: number | null;
+  writeoffMoney: number;
+  topGradePercent: number | null;
+
+  stockStems: number;
+  stockMoney: number;
+  stockAvgAge: number;
+  expiredStems: number;
+  expiringStems: number;
+  expiredPercent: number;
+  coverDays: number | null;
+
+  topClientsPercent: number;
+
+  byFlower: FlowerRow[];
+  byGrade: GradeRow[];
+  topVarieties: VarietyRow[];
+  clientRows: ClientRow[];
+  managers: ManagerRow[];
+  writeoffReasons: WriteoffReasonRow[];
+  alerts: StorageAlertRow[];
+  attention: AttentionRow[];
+  weeks: WeekRow[];
 }
 
-function varietyKey(flowerType: string, variety: string) {
-  return `${flowerType}:${variety}`;
+// --- Вспомогательное --------------------------------------------------------
+
+function dayStart(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
 
-function computeStockByVariety(batches: Awaited<ReturnType<typeof listBatches>>): StockByVarietyRow[] {
-  const map = new Map<string, StockByVarietyRow>();
-  for (const b of batches) {
-    if (b.quantityRemaining <= 0) continue;
-    const key = varietyKey(b.flowerType, b.variety);
-    const existing = map.get(key);
-    if (existing) existing.quantity += b.quantityRemaining;
-    else map.set(key, { key, flowerType: b.flowerType, variety: b.variety, quantity: b.quantityRemaining });
+function shiftDays(d: Date, days: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + days);
+  return x;
+}
+
+function fmtDate(d: Date): string {
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+/** Дата заявки/партии/списания как Date; мусор превращается в null. */
+function parseDate(raw: string): Date | null {
+  const iso = toIsoDate(raw);
+  if (iso) {
+    const d = new Date(`${iso}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
-  return Array.from(map.values()).sort((a, b) => b.quantity - a.quantity);
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function computeSales(orders: OrderWithItems[]) {
-  const byWeekMap = new Map<string, SalesWeekRow>();
-  const byManagerMap = new Map<string, SalesByManagerRow>();
-  const byVarietyMap = new Map<string, SalesByVarietyRow>();
-  let totalRevenue = 0;
-  let totalShippedStems = 0;
+function inRange(raw: string, from: Date, to: Date): boolean {
+  const d = parseDate(raw);
+  return d !== null && d >= from && d < to;
+}
 
-  for (const order of orders) {
-    if (order.status === "cancelled") continue;
-    const created = new Date(order.createdAt);
-    const weekStart = format(startOfWeek(created, { weekStartsOn: 1 }), "yyyy-MM-dd");
+function share(part: number, total: number): number {
+  return total > 0 ? (part / total) * 100 : 0;
+}
 
-    const weekRow = byWeekMap.get(weekStart) ?? { weekStart, totalAmount: 0, totalQuantity: 0 };
-    const managerRow = byManagerMap.get(order.managerEmail) ?? {
-      managerEmail: order.managerEmail,
-      orderCount: 0,
-      totalAmount: 0,
-      totalQuantity: 0,
-    };
-    managerRow.orderCount += 1;
+/**
+ * Сводка по продажам за окно. Считается по дате ОФОРМЛЕНИЯ заявки — так же, как
+ * продажи менеджеров и финансы бухгалтера, чтобы цифры на разных страницах
+ * сходились.
+ */
+function salesWindow(orders: OrderWithItems[], from: Date, to: Date) {
+  const picked = orders.filter((o) => o.status !== "cancelled" && inRange(o.createdAt, from, to));
+  let revenue = 0;
+  let stems = 0;
+  let paidRevenue = 0;
+  const clients = new Set<string>();
+  const byFlower = new Map<string, { stems: number; revenue: number }>();
+  const byGrade = new Map<string, { flowerType: string; grade: string; stems: number; revenue: number }>();
+  const byVariety = new Map<string, { flowerType: string; variety: string; stems: number; revenue: number }>();
+  const byManager = new Map<
+    string,
+    { orders: number; stems: number; revenue: number; paid: number }
+  >();
 
-    for (const item of order.items) {
-      const amount = item.quantity * item.unitPrice;
-      totalRevenue += amount;
-      totalShippedStems += item.shippedQuantity;
+  for (const o of picked) {
+    const amount = o.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    revenue += amount;
+    if (o.paid) paidRevenue += amount;
+    if (o.clientName.trim()) clients.add(o.clientName.trim().toLowerCase());
 
-      weekRow.totalAmount += amount;
-      weekRow.totalQuantity += item.quantity;
+    const m = byManager.get(o.managerEmail) ?? { orders: 0, stems: 0, revenue: 0, paid: 0 };
+    m.orders += 1;
+    m.revenue += amount;
+    if (o.paid) m.paid += amount;
 
-      managerRow.totalAmount += amount;
-      managerRow.totalQuantity += item.quantity;
+    for (const item of o.items) {
+      const money = item.quantity * item.unitPrice;
+      stems += item.quantity;
+      m.stems += item.quantity;
 
-      const vKey = varietyKey(item.flowerType, item.variety);
-      const varietyRow = byVarietyMap.get(vKey) ?? {
-        key: vKey,
+      const f = byFlower.get(item.flowerType) ?? { stems: 0, revenue: 0 };
+      f.stems += item.quantity;
+      f.revenue += money;
+      byFlower.set(item.flowerType, f);
+
+      const gKey = `${item.flowerType}:${item.grade}`;
+      const g = byGrade.get(gKey) ?? {
+        flowerType: item.flowerType,
+        grade: item.grade,
+        stems: 0,
+        revenue: 0,
+      };
+      g.stems += item.quantity;
+      g.revenue += money;
+      byGrade.set(gKey, g);
+
+      const vKey = `${item.flowerType}:${item.variety}`;
+      const v = byVariety.get(vKey) ?? {
         flowerType: item.flowerType,
         variety: item.variety,
-        totalAmount: 0,
-        totalQuantity: 0,
+        stems: 0,
+        revenue: 0,
       };
-      varietyRow.totalAmount += amount;
-      varietyRow.totalQuantity += item.quantity;
-      byVarietyMap.set(vKey, varietyRow);
+      v.stems += item.quantity;
+      v.revenue += money;
+      byVariety.set(vKey, v);
     }
 
-    byWeekMap.set(weekStart, weekRow);
-    byManagerMap.set(order.managerEmail, managerRow);
+    byManager.set(o.managerEmail, m);
   }
 
   return {
-    byWeek: Array.from(byWeekMap.values()).sort((a, b) => (a.weekStart < b.weekStart ? -1 : 1)),
-    byManager: Array.from(byManagerMap.values()).sort((a, b) => b.totalAmount - a.totalAmount),
-    byVariety: Array.from(byVarietyMap.values()).sort((a, b) => b.totalQuantity - a.totalQuantity),
-    totalOrders: orders.filter((o) => o.status !== "cancelled").length,
-    totalRevenue,
-    totalShippedStems,
-  };
-}
-
-function computeWriteoffSummary(
-  writeoffs: Awaited<ReturnType<typeof listWriteoffs>>,
-  batches: Awaited<ReturnType<typeof listBatches>>
-): WriteoffSummary {
-  const totalWriteoffQuantity = writeoffs.reduce((sum, w) => sum + w.quantity, 0);
-  const totalReceivedQuantity = batches.reduce((sum, b) => sum + b.quantityIn, 0);
-  const percentOfReceived = totalReceivedQuantity > 0 ? (totalWriteoffQuantity / totalReceivedQuantity) * 100 : 0;
-
-  const byReasonMap = new Map<string, number>();
-  const byMonthMap = new Map<string, number>();
-  for (const w of writeoffs) {
-    const reasonKey = w.reason?.trim() || "Не указана";
-    byReasonMap.set(reasonKey, (byReasonMap.get(reasonKey) ?? 0) + w.quantity);
-    const month = w.createdAt ? format(new Date(w.createdAt), "yyyy-MM") : "—";
-    byMonthMap.set(month, (byMonthMap.get(month) ?? 0) + w.quantity);
-  }
-
-  return {
-    totalWriteoffQuantity,
-    totalReceivedQuantity,
-    percentOfReceived,
-    byReason: Array.from(byReasonMap.entries())
-      .map(([reason, quantity]) => ({ reason, quantity }))
-      .sort((a, b) => b.quantity - a.quantity),
-    byMonth: Array.from(byMonthMap.entries())
-      .map(([month, quantity]) => ({ month, quantity }))
-      .sort((a, b) => (a.month < b.month ? -1 : 1)),
+    orders: picked,
+    orderCount: picked.length,
+    revenue,
+    stems,
+    paidRevenue,
+    clientCount: clients.size,
+    byFlower,
+    byGrade,
+    byVariety,
+    byManager,
   };
 }
 
@@ -197,8 +318,9 @@ function computeWriteoffSummary(
  */
 export async function getAnalyticsSummary(
   farmFilter?: string | null,
-  /** Для тестов: подставить данные вместо чтения из Google-таблицы. */
+  /** Для тестов: подставить данные и «сегодня» вместо чтения из Google-таблицы. */
   injected?: {
+    now?: Date;
     orders: OrderWithItems[];
     batches: Awaited<ReturnType<typeof listBatches>>;
     writeoffs: Awaited<ReturnType<typeof listWriteoffs>>;
@@ -216,13 +338,18 @@ export async function getAnalyticsSummary(
         getSettings(),
       ]);
 
+  const now = injected?.now ?? new Date();
+  const to = shiftDays(dayStart(now), 1); // включая сегодня
+  const from = shiftDays(to, -ANALYTICS_DAYS);
+  const prevFrom = shiftDays(from, -ANALYTICS_DAYS);
+
   const mine = (flowerType: string) => !farmFilter || getFarmFor(flowerType) === farmFilter;
 
   const batches = allBatches.filter((b) => mine(b.flowerType));
   const priceHistory = allPriceHistory.filter((p) => mine(p.flowerType));
 
   // В заявке оставляем только свои позиции; заявки, где своего цветка нет, выпадают.
-  const orders = farmFilter
+  const orders: OrderWithItems[] = farmFilter
     ? allOrders
         .map((o) => {
           const items = o.items.filter((i) => mine(i.flowerType));
@@ -235,35 +362,248 @@ export async function getAnalyticsSummary(
         .filter((o) => o.items.length > 0)
     : allOrders;
 
-  // Списание привязано к партии — берём тип цветка оттуда.
-  const batchTypeById = new Map(allBatches.map((b) => [b.batchId, b.flowerType]));
-  const writeoffs = farmFilter
-    ? allWriteoffs.filter((w) => {
-        const type = batchTypeById.get(w.batchId);
-        return type ? mine(type) : false;
-      })
-    : allWriteoffs;
+  // Списание привязано к партии — тип цветка и градацию берём оттуда.
+  const batchById = new Map(allBatches.map((b) => [b.batchId, b]));
+  const writeoffs = allWriteoffs.filter((w) => {
+    const b = batchById.get(w.batchId);
+    return b ? mine(b.flowerType) : false;
+  });
 
+  const nowSales = salesWindow(orders, from, to);
+  const prevSales = salesWindow(orders, prevFrom, from);
+
+  // --- Цены: действующий прайс и во что заявки оценивались бы по нему -------
+  const priceRows: PriceRow[] = priceHistory.map((p) => ({
+    date: toIsoDate(p.date) || p.date,
+    flowerType: p.flowerType,
+    variety: p.variety,
+    grade: p.grade,
+    price: p.price,
+  }));
+  const pricesToday = currentPrices(priceRows, to.toISOString().slice(0, 10));
+  const priceCache = new Map<string, ReturnType<typeof currentPrices>>();
+  const pricesOn = (iso: string) => {
+    const found = priceCache.get(iso);
+    if (found) return found;
+    const built = currentPrices(priceRows, iso);
+    priceCache.set(iso, built);
+    return built;
+  };
+
+  let listRevenue = 0;
+  for (const o of nowSales.orders) {
+    const iso = (toIsoDate(o.createdAt) || o.createdAt).slice(0, 10);
+    const table = pricesOn(iso);
+    for (const item of o.items) {
+      const listPrice = priceFor(table, item.flowerType, item.variety, item.grade);
+      // Позиции без цены в прайсе в расчёт скидки не берём: делить на ноль
+      // и записывать «скидка 100 %» было бы враньём.
+      if (listPrice > 0) listRevenue += listPrice * item.quantity;
+    }
+  }
+  const soldAtListPrice = nowSales.orders.reduce((sum, o) => {
+    const iso = (toIsoDate(o.createdAt) || o.createdAt).slice(0, 10);
+    const table = pricesOn(iso);
+    return (
+      sum +
+      o.items.reduce(
+        (s, i) =>
+          priceFor(table, i.flowerType, i.variety, i.grade) > 0 ? s + i.quantity * i.unitPrice : s,
+        0
+      )
+    );
+  }, 0);
+  const discountPercent =
+    listRevenue > 0 ? ((listRevenue - soldAtListPrice) / listRevenue) * 100 : null;
+
+  // --- Приёмка -------------------------------------------------------------
+  const receivedNow = batches.filter((b) => inRange(b.receivedAt || b.harvestDate, from, to));
+  const receivedPrev = batches.filter((b) => inRange(b.receivedAt || b.harvestDate, prevFrom, from));
+  const receivedStems = receivedNow.reduce((s, b) => s + b.quantityIn, 0);
+  const receivedStemsPrev = receivedPrev.reduce((s, b) => s + b.quantityIn, 0);
+  const topGradeStems = receivedNow
+    .filter((b) => isTopGrade(b.flowerType, b.grade))
+    .reduce((s, b) => s + b.quantityIn, 0);
+  const topGradePercent = receivedStems > 0 ? share(topGradeStems, receivedStems) : null;
+
+  // --- Склад сейчас --------------------------------------------------------
   const activeBatches = batches.filter((b) => b.quantityRemaining > 0);
-  const storageInfos = activeBatches.map((b) => computeBatchStorageInfo(b, settings));
-  const avgDaysInStorage =
-    storageInfos.length > 0
-      ? storageInfos.reduce((sum, s) => sum + s.daysInStorage, 0) / storageInfos.length
+  const storageInfos = activeBatches.map((b) => computeBatchStorageInfo(b, settings, now));
+  const stockStems = activeBatches.reduce((s, b) => s + b.quantityRemaining, 0);
+  const stockAvgAge =
+    stockStems > 0
+      ? storageInfos.reduce((s, i) => s + i.daysInStorage * i.batch.quantityRemaining, 0) /
+        stockStems
       : 0;
+  const expiredStems = storageInfos
+    .filter((i) => i.status === "critical")
+    .reduce((s, i) => s + i.batch.quantityRemaining, 0);
+  const expiringStems = storageInfos
+    .filter((i) => i.status === "warning")
+    .reduce((s, i) => s + i.batch.quantityRemaining, 0);
+  const batchMoney = (b: (typeof activeBatches)[number]) =>
+    priceFor(pricesToday, b.flowerType, b.variety, b.grade) * b.quantityRemaining;
+  const stockMoney = activeBatches.reduce((s, b) => s + batchMoney(b), 0);
 
-  const bucketDefs = [
-    { label: "0-2 дня", max: 2 },
-    { label: "3-5 дней", max: 5 },
-    { label: "6-9 дней", max: 9 },
-    { label: "10-14 дней", max: 14 },
-    { label: "15+ дней", max: Infinity },
-  ];
-  const histogram = bucketDefs.map((b) => ({ label: b.label, count: 0 }));
-  for (const info of storageInfos) {
-    const idx = bucketDefs.findIndex((b) => info.daysInStorage <= b.max);
-    histogram[idx === -1 ? histogram.length - 1 : idx].count += 1;
+  // --- Списания ------------------------------------------------------------
+  const writeoffNow = writeoffs.filter((w) => inRange(w.createdAt, from, to));
+  const writeoffPrev = writeoffs.filter((w) => inRange(w.createdAt, prevFrom, from));
+  const writeoffStems = writeoffNow.reduce((s, w) => s + w.quantity, 0);
+  const writeoffStemsPrev = writeoffPrev.reduce((s, w) => s + w.quantity, 0);
+  const writeoffMoney = writeoffNow.reduce((sum, w) => {
+    const b = batchById.get(w.batchId);
+    if (!b) return sum;
+    return sum + priceFor(pricesToday, b.flowerType, b.variety, b.grade) * w.quantity;
+  }, 0);
+  const writeoffPercent = receivedStems > 0 ? share(writeoffStems, receivedStems) : null;
+
+  const reasonMap = new Map<string, { stems: number; money: number }>();
+  for (const w of writeoffNow) {
+    const key = w.reason?.trim() || "Не указана";
+    const b = batchById.get(w.batchId);
+    const money = b ? priceFor(pricesToday, b.flowerType, b.variety, b.grade) * w.quantity : 0;
+    const row = reasonMap.get(key) ?? { stems: 0, money: 0 };
+    row.stems += w.quantity;
+    row.money += money;
+    reasonMap.set(key, row);
+  }
+  const writeoffReasons: WriteoffReasonRow[] = Array.from(reasonMap.entries())
+    .map(([reason, r]) => ({
+      reason,
+      stems: r.stems,
+      money: r.money,
+      share: share(r.stems, writeoffStems),
+    }))
+    .sort((a, b) => b.stems - a.stems);
+
+  // --- По цветку -----------------------------------------------------------
+  const flowerTypes = Array.from(
+    new Set([
+      ...batches.map((b) => b.flowerType),
+      ...Array.from(nowSales.byFlower.keys()),
+      ...Array.from(prevSales.byFlower.keys()),
+    ])
+  ).filter(mine);
+
+  const byFlower: FlowerRow[] = flowerTypes
+    .map((flowerType) => {
+      const nowRow = nowSales.byFlower.get(flowerType) ?? { stems: 0, revenue: 0 };
+      const prevRow = prevSales.byFlower.get(flowerType) ?? { stems: 0, revenue: 0 };
+      const stock = activeBatches
+        .filter((b) => b.flowerType === flowerType)
+        .reduce((s, b) => s + b.quantityRemaining, 0);
+      const perDay = nowRow.stems / ANALYTICS_DAYS;
+      const receivedType = receivedNow.filter((b) => b.flowerType === flowerType);
+      const receivedTypeStems = receivedType.reduce((s, b) => s + b.quantityIn, 0);
+      const topType = receivedType
+        .filter((b) => isTopGrade(b.flowerType, b.grade))
+        .reduce((s, b) => s + b.quantityIn, 0);
+      return {
+        flowerType,
+        received: receivedTypeStems,
+        sold: nowRow.stems,
+        writeoff: writeoffNow
+          .filter((w) => batchById.get(w.batchId)?.flowerType === flowerType)
+          .reduce((s, w) => s + w.quantity, 0),
+        stock,
+        coverDays: perDay > 0 ? stock / perDay : null,
+        shelfLifeDays: getMaxShelfLifeDays(flowerType, settings),
+        revenue: nowRow.revenue,
+        revenueShare: share(nowRow.revenue, nowSales.revenue),
+        avgPrice: delta(
+          nowRow.stems > 0 ? nowRow.revenue / nowRow.stems : 0,
+          prevRow.stems > 0 ? prevRow.revenue / prevRow.stems : 0
+        ),
+        topGradePercent: receivedTypeStems > 0 ? share(topType, receivedTypeStems) : null,
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue || b.stock - a.stock);
+
+  // --- По ростовке ---------------------------------------------------------
+  const byGrade: GradeRow[] = Array.from(nowSales.byGrade.values())
+    .map((g) => {
+      const prev = prevSales.byGrade.get(`${g.flowerType}:${g.grade}`);
+      return {
+        flowerType: g.flowerType,
+        grade: g.grade,
+        label: `${FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType} ${formatGrade(g.grade)}`,
+        stems: g.stems,
+        revenue: g.revenue,
+        avgPrice: delta(
+          g.stems > 0 ? g.revenue / g.stems : 0,
+          prev && prev.stems > 0 ? prev.revenue / prev.stems : 0
+        ),
+        share: share(g.stems, nowSales.stems),
+      };
+    })
+    .sort((a, b) => b.stems - a.stems);
+
+  // --- Топ сортов ----------------------------------------------------------
+  const topVarieties: VarietyRow[] = Array.from(nowSales.byVariety.entries())
+    .map(([key, v]) => ({
+      key,
+      flowerType: v.flowerType,
+      variety: v.variety,
+      stems: v.stems,
+      revenue: delta(v.revenue, prevSales.byVariety.get(key)?.revenue ?? 0),
+      share: share(v.revenue, nowSales.revenue),
+    }))
+    .sort((a, b) => b.revenue.value - a.revenue.value);
+
+  // --- Клиенты -------------------------------------------------------------
+  const clientMap = new Map<
+    string,
+    { clientName: string; orders: number; revenue: number; last: Date | null }
+  >();
+  for (const o of nowSales.orders) {
+    const name = o.clientName.trim() || "Без названия";
+    const key = name.toLowerCase();
+    const row = clientMap.get(key) ?? { clientName: name, orders: 0, revenue: 0, last: null };
+    row.orders += 1;
+    row.revenue += o.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    const created = parseDate(o.createdAt);
+    if (created && (!row.last || created > row.last)) row.last = created;
+    clientMap.set(key, row);
+  }
+  // Долг считаем по всей базе, а не за окно: висяк не перестаёт быть висяком.
+  const debtByClient = new Map<string, number>();
+  let debtTotal = 0;
+  for (const o of orders) {
+    if (o.status === "cancelled" || o.paid) continue;
+    const amount = o.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    debtTotal += amount;
+    const key = (o.clientName.trim() || "Без названия").toLowerCase();
+    debtByClient.set(key, (debtByClient.get(key) ?? 0) + amount);
   }
 
+  const clientRows: ClientRow[] = Array.from(clientMap.entries())
+    .map(([key, c]) => ({
+      clientName: c.clientName,
+      orders: c.orders,
+      revenue: c.revenue,
+      share: share(c.revenue, nowSales.revenue),
+      lastOrderDaysAgo: c.last
+        ? Math.max(0, Math.round((dayStart(now).getTime() - c.last.getTime()) / 86400000))
+        : 0,
+      debt: debtByClient.get(key) ?? 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  const topClientsPercent = clientRows.slice(0, 3).reduce((s, c) => s + c.share, 0);
+
+  // --- Менеджеры -----------------------------------------------------------
+  const managers: ManagerRow[] = Array.from(nowSales.byManager.entries())
+    .map(([managerEmail, m]) => ({
+      managerEmail,
+      orders: m.orders,
+      revenue: delta(m.revenue, prevSales.byManager.get(managerEmail)?.revenue ?? 0),
+      stems: m.stems,
+      avgCheck: m.orders > 0 ? m.revenue / m.orders : 0,
+      collectPercent: m.revenue > 0 ? share(m.paid, m.revenue) : null,
+    }))
+    .sort((a, b) => b.revenue.value - a.revenue.value);
+
+  // --- Партии на грани -----------------------------------------------------
   const alerts: StorageAlertRow[] = storageInfos
     .filter((s) => s.status === "warning" || s.status === "critical")
     .sort((a, b) => b.percentUsed - a.percentUsed)
@@ -271,33 +611,197 @@ export async function getAnalyticsSummary(
       batchId: s.batch.batchId,
       flowerType: s.batch.flowerType,
       variety: s.batch.variety,
+      grade: s.batch.grade,
       harvestDate: s.batch.harvestDate,
       daysInStorage: s.daysInStorage,
       maxDays: s.maxDays,
       percentUsed: s.percentUsed,
       status: s.status,
       quantityRemaining: s.batch.quantityRemaining,
+      money: batchMoney(s.batch),
     }));
 
-  const priceDynamics: PricePointRow[] = priceHistory.map((p) => ({
-    date: p.date,
-    key: varietyKey(p.flowerType, p.variety),
-    flowerType: p.flowerType,
-    variety: p.variety,
-    price: p.price,
-  }));
+  // --- Недели (единственный график на странице) ----------------------------
+  const weeks: WeekRow[] = [];
+  for (let i = 7; i >= 0; i--) {
+    const wTo = shiftDays(to, -7 * i);
+    const wFrom = shiftDays(wTo, -7);
+    const w = salesWindow(orders, wFrom, wTo);
+    weeks.push({
+      label: `${fmtDate(wFrom)} – ${fmtDate(shiftDays(wTo, -1))}`,
+      revenue: w.revenue,
+      stems: w.stems,
+    });
+  }
+
+  const collectPercent = nowSales.revenue > 0 ? share(nowSales.paidRevenue, nowSales.revenue) : 0;
+  const expiredPercent = share(expiredStems, stockStems);
+  const soldPerDay = nowSales.stems / ANALYTICS_DAYS;
+  const coverDays = soldPerDay > 0 ? stockStems / soldPerDay : null;
+
+  // --- На что смотреть -----------------------------------------------------
+  // Список собирается из тех же цифр и ориентиров, что и таблицы: это не второй
+  // расчёт, а способ не заставлять человека искать проблему глазами.
+  const attention: AttentionRow[] = [];
+  const fmtN = (n: number) => Math.round(n).toLocaleString("ru-RU");
+
+  if (expiredStems > 0) {
+    attention.push({
+      level: "critical",
+      title: `Просрочено ${fmtN(expiredStems)} шт`,
+      detail: `${expiredPercent.toFixed(1)} % склада, примерно ${fmtN(
+        activeBatches
+          .filter((b, idx) => storageInfos[idx].status === "critical")
+          .reduce((s, b) => s + batchMoney(b), 0)
+      )} ₸ по прайсу. Уценить или списать — само оно не уйдёт.`,
+    });
+  }
+  // Про запас пишем ОДНОЙ строкой на все цветки: три одинаковых карточки подряд
+  // читаются как шум, а не как предупреждение.
+  const slow = byFlower.filter(
+    (row) => row.coverDays !== null && row.coverDays > row.shelfLifeDays && row.stock > 0
+  );
+  if (slow.length > 0) {
+    attention.push({
+      level: "warning",
+      title:
+        slow.length === 1
+          ? `${FLOWER_TYPE_LABELS[slow[0].flowerType] ?? slow[0].flowerType}: запаса больше, чем срок хранения`
+          : "Запаса больше, чем срок хранения",
+      detail: `${slow
+        .map(
+          (row) =>
+            `${FLOWER_TYPE_LABELS[row.flowerType] ?? row.flowerType} — ${fmtN(
+              row.coverDays!
+            )} дн. при сроке ${row.shelfLifeDays} (лежит ${fmtN(row.stock)}, уходит ${fmtN(
+              row.sold / ANALYTICS_DAYS
+            )} шт в день)`
+        )
+        .join("; ")}. При таком темпе часть не успеет уйти — либо продавать быстрее, либо срезать меньше.`,
+    });
+  }
+  if (writeoffPercent !== null && writeoffPercent > BENCHMARKS.writeoffPercent.warn) {
+    attention.push({
+      level: "critical",
+      title: `Списание ${writeoffPercent.toFixed(1)} % от принятого`,
+      detail: `Ориентир — не больше ${BENCHMARKS.writeoffPercent.warn} %. За период это ${fmtN(
+        writeoffStems
+      )} шт и примерно ${fmtN(writeoffMoney)} ₸.`,
+    });
+  }
+  if (nowSales.revenue > 0 && collectPercent < BENCHMARKS.collectPercent.good) {
+    attention.push({
+      level: collectPercent < BENCHMARKS.collectPercent.warn ? "critical" : "warning",
+      title: `Собираемость ${collectPercent.toFixed(0)} %`,
+      detail: `Не оплачено из оформленного за период ${fmtN(
+        nowSales.revenue - nowSales.paidRevenue
+      )} ₸. Всего долгов по базе — ${fmtN(debtTotal)} ₸.`,
+    });
+  }
+  if (discountPercent !== null && discountPercent > BENCHMARKS.discountPercent.warn) {
+    attention.push({
+      level: "warning",
+      title: `Продаём на ${discountPercent.toFixed(1)} % дешевле прайса`,
+      detail: `По прайсу заявки стоили бы ${fmtN(listRevenue)} ₸, продали на ${fmtN(
+        soldAtListPrice
+      )} ₸. Либо прайс оторван от жизни, либо скидки дают слишком легко.`,
+    });
+  }
+  if (topClientsPercent > BENCHMARKS.topClientsPercent.warn && clientRows.length > 0) {
+    attention.push({
+      level: "warning",
+      title: `На трёх клиентов приходится ${topClientsPercent.toFixed(0)} % выручки`,
+      detail: `Крупнейший — ${clientRows[0].clientName} (${clientRows[0].share.toFixed(
+        0
+      )} %). Уход одного такого клиента сразу вырубает месяц.`,
+    });
+  }
+  const priceDrops = byFlower.filter(
+    (f) => f.avgPrice.changePercent !== null && f.avgPrice.changePercent < -5
+  );
+  if (priceDrops.length > 0) {
+    attention.push({
+      level: "warning",
+      title:
+        priceDrops.length === 1
+          ? `${
+              FLOWER_TYPE_LABELS[priceDrops[0].flowerType] ?? priceDrops[0].flowerType
+            }: средняя цена упала на ${Math.abs(priceDrops[0].avgPrice.changePercent!).toFixed(1)} %`
+          : "Средняя цена продажи упала",
+      detail: `${priceDrops
+        .map(
+          (f) =>
+            `${FLOWER_TYPE_LABELS[f.flowerType] ?? f.flowerType}: ${fmtN(f.avgPrice.prev)} → ${fmtN(
+              f.avgPrice.value
+            )} ₸ за стебель`
+        )
+        .join("; ")}. Проверьте прайс и скидки.`,
+    });
+  }
+  if (attention.length === 0 && stockStems > 0) {
+    attention.push({
+      level: "good",
+      title: "Тревожных мест не видно",
+      detail:
+        "Просрочки нет, списание и собираемость в пределах ориентиров, запас укладывается в срок хранения.",
+    });
+  }
+
+  // Больше шести строк никто не читает: оставляем самое тревожное.
+  const ATTENTION_LIMIT = 6;
+  const attentionOrder = { critical: 0, warning: 1, good: 2 } as const;
+  attention.sort((a, b) => attentionOrder[a.level] - attentionOrder[b.level]);
 
   return {
-    generatedAt: new Date().toISOString(),
-    stockByVariety: computeStockByVariety(batches),
-    storage: {
-      avgDaysInStorage,
-      activeBatchCount: activeBatches.length,
-      histogram,
-      alerts,
-    },
-    sales: computeSales(orders),
-    priceDynamics,
-    writeoffs: computeWriteoffSummary(writeoffs, allBatches),
+    generatedAt: now.toISOString(),
+    days: ANALYTICS_DAYS,
+    periodLabel: `${fmtDate(from)} – ${fmtDate(shiftDays(to, -1))}`,
+    prevLabel: `${fmtDate(prevFrom)} – ${fmtDate(shiftDays(from, -1))}`,
+
+    revenue: delta(nowSales.revenue, prevSales.revenue),
+    stems: delta(nowSales.stems, prevSales.stems),
+    orders: delta(nowSales.orderCount, prevSales.orderCount),
+    avgPrice: delta(
+      nowSales.stems > 0 ? nowSales.revenue / nowSales.stems : 0,
+      prevSales.stems > 0 ? prevSales.revenue / prevSales.stems : 0
+    ),
+    avgCheck: delta(
+      nowSales.orderCount > 0 ? nowSales.revenue / nowSales.orderCount : 0,
+      prevSales.orderCount > 0 ? prevSales.revenue / prevSales.orderCount : 0
+    ),
+    clients: delta(nowSales.clientCount, prevSales.clientCount),
+
+    paidRevenue: nowSales.paidRevenue,
+    collectPercent,
+    debtTotal,
+
+    listRevenue,
+    discountPercent,
+
+    receivedStems: delta(receivedStems, receivedStemsPrev),
+    writeoffStems: delta(writeoffStems, writeoffStemsPrev),
+    writeoffPercent,
+    writeoffMoney,
+    topGradePercent,
+
+    stockStems,
+    stockMoney,
+    stockAvgAge,
+    expiredStems,
+    expiringStems,
+    expiredPercent,
+    coverDays,
+
+    topClientsPercent,
+
+    byFlower,
+    byGrade,
+    topVarieties,
+    clientRows,
+    managers,
+    writeoffReasons,
+    alerts,
+    attention: attention.slice(0, ATTENTION_LIMIT),
+    weeks,
   };
 }

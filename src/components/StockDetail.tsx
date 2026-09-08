@@ -3,19 +3,23 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { FLOWER_TYPE_LABELS_PLURAL, farmLabel, formatGrade, getFarmFor } from "@/lib/constants";
-import type { StockGradeRow, StockVarietyCard } from "@/lib/stock";
+import type { StockVarietyCard } from "@/lib/stock";
+import { groupByGrade, type GradeCard, type GradeVarietyRow } from "@/lib/stockByGrade";
 import type { StorageStatus } from "@/lib/shelfLife";
 import MoreToggle, { COLLAPSED_LIST_SIZE } from "./MoreToggle";
 
 /**
- * «Подробно по позициям» — блок по каждому цветку, строка по каждому сорту,
- * длины раскрываются по клику.
+ * «Подробно по позициям» — блок по каждому цветку, строка по каждой РОСТОВКЕ
+ * (длина у розы, категория у хризантемы и эустомы), сорта раскрываются по клику.
  *
- * Плоская таблица «сорт × длина» на настоящем складе даёт сотню строк, в
- * которых слово «Розы» повторяется сто раз, а Prestige — шесть. Читать это
- * невозможно. Поэтому цветок ушёл в заголовок блока, сорт стал строкой, а
- * длины спрятались внутрь сорта: на верхнем уровне остаётся два десятка строк
- * вместо сотни, и видно главное — сколько какого сорта и насколько он свежий.
+ * Разрез именно такой, потому что так устроена торговля: клиент просит
+ * шестидесятку или первую категорию, а каким кустом она выросла — вопрос
+ * второй. Раньше наверху стоял сорт, и чтобы ответить «сколько всего
+ * шестидесятки», приходилось складывать её по восемнадцати сортам вручную.
+ *
+ * Плоскую таблицу «ростовка × сорт» показывать нельзя: на настоящем складе это
+ * под сотню строк. Поэтому цветок ушёл в заголовок блока, ростовка стала
+ * строкой, а сорта спрятались внутрь.
  *
  * Цвет цветка (полоска слева, точка в заголовке) — только чтобы блоки не
  * сливались. Он приглушённый и намеренно далёк от зелёного/жёлтого/красного:
@@ -85,7 +89,7 @@ function plural(n: number, one: string, few: string, many: string) {
 }
 const dayWord = (n: number) => plural(n, "день", "дня", "дней");
 const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сортов");
-const positionWord = (n: number) => plural(n, "позиция", "позиции", "позиций");
+const gradeWord = (n: number) => plural(n, "ростовка", "ростовки", "ростовок");
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
@@ -98,17 +102,9 @@ function ageChipClass(status: StorageStatus): string {
   );
 }
 
-/** Что показать про сорт одной строкой: сколько дней лежит и худший статус. */
-function summarize(card: StockVarietyCard) {
-  const oldest = Math.max(...card.grades.map((g) => g.oldestDays), 0);
-  const newest = Math.min(...card.grades.map((g) => g.newestDays), oldest);
-  const maxDays = Math.max(...card.grades.map((g) => g.maxDays), 1);
-  return { oldest, newest, maxDays, fill: Math.min(100, (oldest / maxDays) * 100) };
-}
-
-/** «40 см, 50 см, 60 см» или «40 см, 50 см и ещё 4» — чтобы строка не разбухала. */
-function gradeHint(grades: StockGradeRow[]): string {
-  const names = grades.map((g) => formatGrade(g.grade));
+/** «Prestige, Avalanche и ещё 4» — чтобы строка не разбухала. */
+function varietyHint(varieties: GradeVarietyRow[]): string {
+  const names = varieties.map((v) => v.variety);
   if (names.length <= 3) return names.join(", ");
   return `${names.slice(0, 2).join(", ")} и ещё ${names.length - 2}`;
 }
@@ -128,32 +124,22 @@ export default function StockDetail({
 
   const groups = useMemo(() => {
     const visible = FLOWER_ORDER.filter((t) => !allowedTypes || allowedTypes.includes(t));
+    const all = groupByGrade(varieties);
     return visible
       .map((flowerType) => {
-        const cards = varieties
+        const cards = all
           .filter((c) => c.flowerType === flowerType)
           .filter(
             (c) =>
               !query ||
-              c.variety.toLowerCase().includes(query) ||
-              c.grades.some((g) => formatGrade(g.grade).toLowerCase().includes(query))
-          )
-          // Сверху то, что нужно продать раньше: сначала статус, потом доля
-          // прожитого срока, потом объём.
-          .sort((a, b) => {
-            const sa = summarize(a);
-            const sb = summarize(b);
-            return (
-              STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
-              sb.oldest / sb.maxDays - sa.oldest / sa.maxDays ||
-              b.totalQuantity - a.totalQuantity
-            );
-          });
+              formatGrade(c.grade).toLowerCase().includes(query) ||
+              c.varieties.some((v) => v.variety.toLowerCase().includes(query))
+          );
         return {
           flowerType,
           cards,
           total: cards.reduce((s, c) => s + c.totalQuantity, 0),
-          positions: cards.reduce((s, c) => s + c.grades.length, 0),
+          varietyCount: new Set(cards.flatMap((c) => c.varieties.map((v) => v.variety))).size,
           worst: cards.reduce<StorageStatus>(
             (worst, c) => (STATUS_ORDER[c.status] < STATUS_ORDER[worst] ? c.status : worst),
             "ok"
@@ -172,12 +158,12 @@ export default function StockDetail({
           Подробно по позициям
           <span className="text-sm font-normal text-ink-muted">
             {" "}
-            — сверху то, что нужно продать раньше
+            — по ростовке, сверху то, что нужно продать раньше
           </span>
         </h3>
         <input
           className="input w-full sm:!w-auto sm:min-w-[220px]"
-          placeholder="Поиск по сорту или длине"
+          placeholder="Поиск по ростовке или сорту"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -195,7 +181,7 @@ export default function StockDetail({
               flowerType={group.flowerType}
               cards={group.cards}
               total={group.total}
-              positions={group.positions}
+              varietyCount={group.varietyCount}
               worst={group.worst}
               /* При поиске разворачиваем всё: человек сузил список сам. */
               forceOpen={query.length > 0}
@@ -207,8 +193,8 @@ export default function StockDetail({
       <p className="text-xs text-ink-muted mt-2">
         «Лежит» — дней с даты срезки. Полоса — сколько прошло из положенного срока:{" "}
         <span className={STATUS_TEXT.warning}>жёлтый — скоро истечёт</span>,{" "}
-        <span className={STATUS_TEXT.critical}>красный — просрочено</span>. Нажмите на сорт, чтобы
-        увидеть длины.
+        <span className={STATUS_TEXT.critical}>красный — просрочено</span>. Нажмите на ростовку,
+        чтобы увидеть сорта.
       </p>
     </div>
   );
@@ -218,14 +204,14 @@ function FlowerGroup({
   flowerType,
   cards,
   total,
-  positions,
+  varietyCount,
   worst,
   forceOpen,
 }: {
   flowerType: string;
-  cards: StockVarietyCard[];
+  cards: GradeCard[];
   total: number;
-  positions: number;
+  varietyCount: number;
   worst: StorageStatus;
   forceOpen: boolean;
 }) {
@@ -258,7 +244,7 @@ function FlowerGroup({
           </div>
           <div className="text-sm text-ink-secondary tabular-nums">
             <b className="text-ink-primary">{fmt(total)}</b> шт · {cards.length}{" "}
-            {varietyWord(cards.length)} · {positions} {positionWord(positions)}
+            {gradeWord(cards.length)} · {varietyCount} {varietyWord(varietyCount)}
             {worst !== "ok" && (
               <span className={clsx("ml-2 font-medium", STATUS_TEXT[worst])}>
                 {STATUS_LABEL[worst]}
@@ -269,7 +255,7 @@ function FlowerGroup({
 
         <div className="divide-y divide-line-hairline border-t border-line-hairline">
           {shown.map((card) => (
-            <VarietyRow key={card.key} card={card} forceOpen={forceOpen} />
+            <GradeRow key={card.key} card={card} groupTotal={total} forceOpen={forceOpen} />
           ))}
         </div>
 
@@ -279,7 +265,7 @@ function FlowerGroup({
               expanded={expanded}
               hidden={hidden}
               onToggle={() => setExpanded((v) => !v)}
-              what={varietyWord(hidden)}
+              what={gradeWord(hidden)}
             />
           </div>
         )}
@@ -288,14 +274,23 @@ function FlowerGroup({
   );
 }
 
-function VarietyRow({ card, forceOpen }: { card: StockVarietyCard; forceOpen: boolean }) {
+function GradeRow({
+  card,
+  groupTotal,
+  forceOpen,
+}: {
+  card: GradeCard;
+  groupTotal: number;
+  forceOpen: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  // У сорта с единственной длиной раскрывать нечего: строка внутри повторила бы
-  // строку снаружи. Такой сорт не кликается и стрелки не показывает.
-  const expandable = card.grades.length > 1;
+  // Ростовку с единственным сортом раскрывать нечего: строка внутри повторила бы
+  // строку снаружи. Такая строка не кликается и стрелки не показывает.
+  const expandable = card.varieties.length > 1;
   const shown = expandable && (open || forceOpen);
-  const { oldest, newest, maxDays, fill } = summarize(card);
-  const spread = oldest !== newest;
+  const fill = card.maxDays > 0 ? Math.min(100, (card.oldestDays / card.maxDays) * 100) : 0;
+  const spread = card.oldestDays !== card.newestDays;
+  const share = groupTotal > 0 ? Math.round((card.totalQuantity / groupTotal) * 100) : 0;
 
   return (
     <div>
@@ -313,22 +308,23 @@ function VarietyRow({ card, forceOpen }: { card: StockVarietyCard; forceOpen: bo
           {expandable ? (shown ? "▲" : "▼") : ""}
         </span>
 
-        {/* На телефоне названию сорта нужна вся ширина строки, поэтому цифры
-            уходят к нему в пару: количество — к названию, срок — к длинам.
+        {/* На телефоне названию ростовки нужна вся ширина строки, поэтому цифры
+            уходят к нему в пару: количество — к названию, срок — к сортам.
             На компьютере всё возвращается в одну строку колонками. */}
         <span className="flex-1 min-w-0">
           <span className="flex items-baseline gap-2">
-            <span className="font-medium truncate flex-1">{card.variety}</span>
+            <span className="font-medium truncate flex-1">{formatGrade(card.grade)}</span>
             <span className="sm:hidden tabular-nums font-semibold shrink-0">
               {fmt(card.totalQuantity)}
             </span>
           </span>
           <span className="flex items-baseline gap-2">
             <span className="text-xs text-ink-muted truncate flex-1">
-              {gradeHint(card.grades)}
+              {varietyHint(card.varieties)}
             </span>
             <span className={clsx("sm:hidden shrink-0", ageChipClass(card.status))}>
-              {spread ? `${newest}–${oldest}` : oldest} {dayWord(oldest)}
+              {spread ? `${card.newestDays}–${card.oldestDays}` : card.oldestDays}{" "}
+              {dayWord(card.oldestDays)}
             </span>
           </span>
         </span>
@@ -337,8 +333,15 @@ function VarietyRow({ card, forceOpen }: { card: StockVarietyCard; forceOpen: bo
           {fmt(card.totalQuantity)}
         </span>
 
+        {/* Доля ростовки в цветке: главный смысл этого разреза — какой длины
+            склад состоит на самом деле. */}
+        <span className="hidden md:block text-[11px] text-ink-muted tabular-nums w-10 text-right shrink-0">
+          {share}%
+        </span>
+
         <span className={clsx("hidden sm:inline-block w-24 text-center", ageChipClass(card.status))}>
-          {spread ? `${newest}–${oldest}` : oldest} {dayWord(oldest)}
+          {spread ? `${card.newestDays}–${card.oldestDays}` : card.oldestDays}{" "}
+          {dayWord(card.oldestDays)}
         </span>
 
         <span className="hidden sm:flex items-center gap-2 w-32 shrink-0">
@@ -349,7 +352,7 @@ function VarietyRow({ card, forceOpen }: { card: StockVarietyCard; forceOpen: bo
             />
           </span>
           <span className={clsx("text-[11px] tabular-nums", STATUS_TEXT[card.status])}>
-            {oldest}/{maxDays}
+            {card.oldestDays}/{card.maxDays}
           </span>
         </span>
       </button>
@@ -358,29 +361,29 @@ function VarietyRow({ card, forceOpen }: { card: StockVarietyCard; forceOpen: bo
         <div className="px-4 pb-2 pl-9">
           <table className="w-full text-sm">
             <tbody>
-              {card.grades.map((g) => {
-                const gradeFill = g.maxDays > 0 ? Math.min(100, (g.oldestDays / g.maxDays) * 100) : 0;
-                const gradeSpread = g.oldestDays !== g.newestDays;
+              {card.varieties.map((v) => {
+                const vFill = v.maxDays > 0 ? Math.min(100, (v.oldestDays / v.maxDays) * 100) : 0;
+                const vSpread = v.oldestDays !== v.newestDays;
                 return (
-                  <tr key={g.grade} className="text-ink-secondary">
-                    <td className="py-1">{formatGrade(g.grade)}</td>
+                  <tr key={v.variety} className="text-ink-secondary">
+                    <td className="py-1">{v.variety}</td>
                     <td className="py-1 text-right tabular-nums w-20 text-ink-primary">
-                      {fmt(g.quantity)}
+                      {fmt(v.quantity)}
                     </td>
                     <td className="py-1 text-center tabular-nums w-24 text-xs whitespace-nowrap">
-                      {gradeSpread ? `${g.newestDays}–${g.oldestDays}` : g.oldestDays}{" "}
-                      {dayWord(g.oldestDays)}
+                      {vSpread ? `${v.newestDays}–${v.oldestDays}` : v.oldestDays}{" "}
+                      {dayWord(v.oldestDays)}
                     </td>
                     <td className="py-1 w-32">
                       <span className="hidden sm:flex items-center gap-2">
                         <span className="h-1 flex-1 rounded-full bg-surface-plane overflow-hidden">
                           <span
-                            className={clsx("h-full rounded-full block", STATUS_BAR[g.status])}
-                            style={{ width: `${Math.max(4, gradeFill)}%` }}
+                            className={clsx("h-full rounded-full block", STATUS_BAR[v.status])}
+                            style={{ width: `${Math.max(4, vFill)}%` }}
                           />
                         </span>
-                        <span className={clsx("text-[11px] tabular-nums", STATUS_TEXT[g.status])}>
-                          {g.oldestDays}/{g.maxDays}
+                        <span className={clsx("text-[11px] tabular-nums", STATUS_TEXT[v.status])}>
+                          {v.oldestDays}/{v.maxDays}
                         </span>
                       </span>
                     </td>

@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import {
+  FLOWER_TYPE_LABELS,
   FLOWER_TYPE_LABELS_PLURAL,
   FLOWER_TYPES_BY_FARM,
   FARM_ORDER,
   farmLabel,
+  formatGrade,
   getFarmFor,
 } from "@/lib/constants";
 import MoreToggle, { COLLAPSED_LIST_SIZE } from "./MoreToggle";
@@ -77,6 +79,7 @@ function plural(n: number, one: string, few: string, many: string) {
 const dayWord = (n: number) => plural(n, "день", "дня", "дней");
 const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сортов");
 const batchWord = (n: number) => plural(n, "партия", "партии", "партий");
+const gradeWord = (n: number) => plural(n, "ростовка", "ростовки", "ростовок");
 
 /** 1.0 -> «1», 1.4 -> «1.4» — лишний ноль в тексте мешает читать. */
 function neatNumber(value: number) {
@@ -264,14 +267,14 @@ export default function StockBoard({
       </div>
 
       {/* Сколько дней лежит — диапазонами. Отвечает на вопрос «что залежалось»
-          быстрее, чем таблица: цифра крупная, сорта под ней. */}
+          быстрее, чем таблица: цифра крупная, ростовка под ней. */}
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
           <h3 className="font-medium">
             Сколько дней лежит
             <span className="text-sm font-normal text-ink-muted">
               {" "}
-              — от даты срезки, по сортам
+              — от даты срезки, по ростовке
             </span>
           </h3>
           <span className="text-xs text-ink-muted">
@@ -322,15 +325,16 @@ export default function StockBoard({
 }
 
 /**
- * Плитка одного диапазона хранения. Внутри — сорта, без длин: на этот вопрос
- * («что залежалось») длина ответа не добавляет, а строк добавляет втрое.
+ * Плитка одного диапазона хранения. Внутри — ГРАДАЦИИ (длины у розы, категории
+ * у хризантемы и эустомы), а не сорта: залежавшееся продают ростовкой, и вопрос
+ * «что залежалось» на складе означает «какой длины».
  */
 function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number }) {
   const [expanded, setExpanded] = useState(false);
   const empty = bucket.quantity === 0;
   const percent = Math.round(bucket.share * 100);
-  const shown = expanded ? bucket.varieties : bucket.varieties.slice(0, COLLAPSED_LIST_SIZE);
-  const hidden = bucket.varieties.length - shown.length;
+  const shown = expanded ? bucket.grades : bucket.grades.slice(0, COLLAPSED_LIST_SIZE);
+  const hidden = bucket.grades.length - shown.length;
 
   return (
     <div
@@ -371,22 +375,27 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
       ) : (
         <>
           <ul className="mt-3 space-y-1.5">
-            {shown.map((v) => (
-              <li
-                key={`${v.flowerType}:${v.variety}`}
-                className="flex items-baseline gap-2 text-sm"
-              >
+            {shown.map((g) => (
+              <li key={`${g.flowerType}:${g.grade}`} className="flex items-baseline gap-2 text-sm">
                 <span
-                  className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[v.status])}
-                  title={`${FLOWER_TYPE_LABELS_PLURAL[v.flowerType] ?? v.flowerType} · ${
-                    STATUS_LABEL[v.status]
+                  className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[g.status])}
+                  title={`${FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType} · ${
+                    STATUS_LABEL[g.status]
                   }`}
                 />
-                <span className="truncate flex-1" title={v.variety}>
-                  {v.variety}
+                <span
+                  className="truncate flex-1"
+                  title={`${FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType} · ${formatGrade(
+                    g.grade
+                  )}`}
+                >
+                  <span className="text-ink-muted">
+                    {FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType}{" "}
+                  </span>
+                  {formatGrade(g.grade)}
                 </span>
                 <span className="tabular-nums font-medium shrink-0">
-                  {v.quantity.toLocaleString("ru-RU")}
+                  {g.quantity.toLocaleString("ru-RU")}
                 </span>
               </li>
             ))}
@@ -395,11 +404,11 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
             expanded={expanded}
             hidden={hidden}
             onToggle={() => setExpanded((v) => !v)}
-            what="сортов"
+            what={gradeWord(hidden)}
             className="mt-2"
           />
           <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
-            {bucket.varieties.length} {varietyWord(bucket.varieties.length)} · {bucket.batches}{" "}
+            {bucket.grades.length} {gradeWord(bucket.grades.length)} · {bucket.batches}{" "}
             {batchWord(bucket.batches)}
           </div>
         </>

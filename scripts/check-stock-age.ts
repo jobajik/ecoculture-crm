@@ -2,12 +2,14 @@
  * Проверка разбивки склада по времени хранения: 1–3, 4–7, 8–13, 14+ дней.
  *
  * Здесь легко ошибиться на границах (день 3 и день 4 обязаны попасть в разные
- * диапазоны) и потерять стебли при склейке сортов, поэтому проверяем и то и
+ * диапазоны) и потерять стебли при склейке ГРАДАЦИЙ (строки диапазона — это
+ * ростовка: длина у розы, категория у хризантемы), поэтому проверяем и то и
  * другое на выдуманном складе с известными числами.
  *
  * Запуск: npx tsx scripts/check-stock-age.ts
  */
 import { getStockSnapshot, ageBucketKeyOf, AGE_BUCKETS } from "../src/lib/stock";
+import { groupByGrade } from "../src/lib/stockByGrade";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -30,10 +32,10 @@ function daysAgo(days: number): string {
 }
 
 const batches = [
-  // Розы Freedom: две партии в первом диапазоне — должны сложиться в одну строку
-  // (длины разные, но в разбивке по дням длина не участвует).
+  // Две партии розы 60 см разных сортов в первом диапазоне — должны сложиться в
+  // одну строку «Роза 60»: сорт в разбивке по дням не участвует.
   { batchId: "B1", harvestDate: daysAgo(0), flowerType: "rose", variety: "Freedom", grade: "60", quantityIn: 200, quantityRemaining: 200, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
-  { batchId: "B2", harvestDate: daysAgo(3), flowerType: "rose", variety: "Freedom", grade: "80", quantityIn: 300, quantityRemaining: 300, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
+  { batchId: "B2", harvestDate: daysAgo(3), flowerType: "rose", variety: "Prestige", grade: "60", quantityIn: 300, quantityRemaining: 300, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
   // День 4 — уже следующий диапазон.
   { batchId: "B3", harvestDate: daysAgo(4), flowerType: "rose", variety: "Explorer", grade: "60", quantityIn: 100, quantityRemaining: 100, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
   // Роза 9 дней — при сроке 7 это просрочка.
@@ -42,6 +44,10 @@ const batches = [
   { batchId: "B5", harvestDate: daysAgo(9), flowerType: "chrysanthemum", variety: "Altaj", grade: "Высшая", quantityIn: 400, quantityRemaining: 400, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
   // 20 дней — последний диапазон.
   { batchId: "B6", harvestDate: daysAgo(20), flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantityIn: 70, quantityRemaining: 70, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
+  // Одна и та же градация «50» у розы и у эустомы в одном диапазоне: строки
+  // обязаны остаться разными, иначе длина розы сложилась бы с эустомой.
+  { batchId: "B8", harvestDate: daysAgo(1), flowerType: "rose", variety: "Freedom", grade: "50", quantityIn: 10, quantityRemaining: 10, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
+  { batchId: "B9", harvestDate: daysAgo(1), flowerType: "eustoma", variety: "Corelli", grade: "50", quantityIn: 20, quantityRemaining: 20, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
   // Пустая партия не должна попасть никуда.
   { batchId: "B7", harvestDate: daysAgo(5), flowerType: "rose", variety: "Freedom", grade: "60", quantityIn: 500, quantityRemaining: 0, location: "", receivedByEmail: "w@x.kz", receivedAt: "" },
 ] as never as Awaited<ReturnType<typeof import("../src/lib/repo/batches").listBatches>>;
@@ -72,38 +78,55 @@ async function main() {
   const bucket = (key: string) => snap.ageBuckets.find((b) => b.key === key)!;
 
   // --- Количества ----------------------------------------------------------
-  check("всего на складе", snap.totalStems, 200 + 300 + 100 + 50 + 400 + 70);
+  check("всего на складе", snap.totalStems, 200 + 300 + 100 + 50 + 400 + 70 + 10 + 20);
   check(
     "сумма диапазонов = складу",
     snap.ageBuckets.reduce((s, b) => s + b.quantity, 0),
     snap.totalStems
   );
-  check("1–3 дня", bucket("1-3").quantity, 500);
+  check("1–3 дня", bucket("1-3").quantity, 500 + 30);
   check("4–7 дней", bucket("4-7").quantity, 100);
   check("8–13 дней", bucket("8-13").quantity, 450);
   check("14+ дней", bucket("14+").quantity, 70);
 
-  // --- Склейка сортов ------------------------------------------------------
-  check("две партии Freedom слились в одну строку", bucket("1-3").varieties.length, 1);
-  check("Freedom: количество", bucket("1-3").varieties[0].quantity, 500);
-  check("Freedom: партий", bucket("1-3").varieties[0].batches, 2);
-  check("пустая партия никуда не попала", bucket("4-7").varieties.length, 1);
+  // --- Склейка градаций ----------------------------------------------------
+  check("две партии розы 60 см слились в одну строку", bucket("1-3").grades.filter((g) => g.grade === "60").length, 1);
+  check("строка диапазона — это градация", bucket("1-3").grades[0].grade, "60");
+  check("Роза 60: количество", bucket("1-3").grades[0].quantity, 500);
+  check("Роза 60: партий", bucket("1-3").grades[0].batches, 2);
+  check("строк в первом диапазоне", bucket("1-3").grades.length, 3);
+  check("пустая партия никуда не попала", bucket("4-7").grades.length, 1);
+  check(
+    "внутри диапазона одна строка на градацию",
+    snap.ageBuckets.every(
+      (b) => new Set(b.grades.map((g) => `${g.flowerType}:${g.grade}`)).size === b.grades.length
+    ),
+    true
+  );
+  check(
+    "«50» у розы и у эустомы — разные строки",
+    bucket("1-3")
+      .grades.filter((g) => g.grade === "50")
+      .map((g) => `${g.flowerType}:${g.quantity}`)
+      .sort(),
+    ["eustoma:20", "rose:10"]
+  );
 
   // --- Цвета: один диапазон, разные цветки, разные статусы ------------------
-  const nine = bucket("8-13").varieties;
+  const nine = bucket("8-13").grades;
+  check("роза 9 дней — просрочена", nine.find((g) => g.flowerType === "rose")?.status, "critical");
   check(
-    "роза 9 дней — просрочена",
-    nine.find((v) => v.variety === "Red Naomi")?.status,
-    "critical"
+    "хризантема 9 дней — в норме",
+    nine.find((g) => g.flowerType === "chrysanthemum")?.status,
+    "ok"
   );
-  check("хризантема 9 дней — в норме", nine.find((v) => v.variety === "Altaj")?.status, "ok");
   check("диапазон красится по худшему", bucket("8-13").status, "critical");
   check("свежий диапазон — зелёный", bucket("1-3").status, "ok");
 
   // --- Сортировка и доли ---------------------------------------------------
   check(
     "внутри диапазона сначала крупное",
-    nine.map((v) => v.quantity),
+    nine.map((g) => g.quantity),
     [400, 50]
   );
   check(
@@ -115,13 +138,14 @@ async function main() {
   // --- Пустой склад --------------------------------------------------------
   const empty = await getStockSnapshot(NOW, { batches: [], settings }, null);
   check("пустой склад: диапазоны всё равно есть", empty.ageBuckets.length, 4);
+  check("пустой склад: строк внутри нет", empty.ageBuckets.every((b) => b.grades.length === 0), true);
   check("пустой склад: без деления на ноль", empty.ageBuckets.every((b) => b.share === 0), true);
 
   // --- Фильтр по производству ----------------------------------------------
   const roseFarm = await getStockSnapshot(NOW, { batches, settings }, "rose_farm");
   check(
     "у Rose Farm хризантемы в диапазонах нет",
-    roseFarm.ageBuckets.every((b) => b.varieties.every((v) => v.flowerType !== "chrysanthemum")),
+    roseFarm.ageBuckets.every((b) => b.grades.every((g) => g.flowerType !== "chrysanthemum")),
     true
   );
   check(
@@ -129,6 +153,36 @@ async function main() {
     roseFarm.ageBuckets.reduce((s, b) => s + b.quantity, 0),
     roseFarm.totalStems
   );
+
+  // --- Разрез «ростовка → сорта» в «Подробно по позициям» -------------------
+  const byGrade = groupByGrade(snap.varieties);
+  const rose60 = byGrade.find((c) => c.flowerType === "rose" && c.grade === "60")!;
+  check("роза 60 см собрана в одну строку", rose60 !== undefined, true);
+  check("роза 60 см: всего", rose60.totalQuantity, 200 + 300 + 100);
+  check(
+    "внутри ростовки — сорта",
+    rose60.varieties.map((v) => v.variety).sort(),
+    ["Explorer", "Freedom", "Prestige"]
+  );
+  check(
+    "сумма сортов = ростовке",
+    rose60.varieties.reduce((s, v) => s + v.quantity, 0),
+    rose60.totalQuantity
+  );
+  check("ростовка стареет по худшему сорту", rose60.oldestDays, 4);
+  check("разброс дней виден", rose60.newestDays, 0);
+  check(
+    "все стебли склада попали в разрез",
+    byGrade.reduce((s, c) => s + c.totalQuantity, 0),
+    snap.totalStems
+  );
+  check(
+    "цветки не перемешались",
+    byGrade.every((c) => c.varieties.length > 0) &&
+      new Set(byGrade.map((c) => c.key)).size === byGrade.length,
+    true
+  );
+  check("пустой склад: разрез пустой", groupByGrade([]).length, 0);
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

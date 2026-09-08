@@ -108,6 +108,9 @@ async function main() {
     { date: "2026-09-08", flowerType: "chrysanthemum", variety: "Altaj", grade: "Высшая", price: 300 },
   ] as never;
   const inj = () => ({
+    // «Сегодня» фиксируем: аналитика считает два окна по 30 дней от текущей
+    // даты, и без этого проверка ломалась бы через месяц сама по себе.
+    now: new Date("2026-09-08T12:00:00"),
     orders: orders as never,
     batches: batches as never,
     writeoffs: [] as never,
@@ -117,29 +120,42 @@ async function main() {
 
   const aEsentai = await getAnalyticsSummary("esentai", inj());
   check(
-    "аналитика Есентая: в остатках только хризантема",
-    [...new Set(aEsentai.stockByVariety.map((v) => v.flowerType))],
+    "аналитика Есентая: в разрезе по цветку только хризантема",
+    aEsentai.byFlower.map((f) => f.flowerType),
     ["chrysanthemum"]
   );
   check(
-    "аналитика Есентая: в ценах только хризантема",
-    [...new Set(aEsentai.priceDynamics.map((p) => p.flowerType))],
+    "аналитика Есентая: в ростовках только хризантема",
+    [...new Set(aEsentai.byGrade.map((g) => g.flowerType))],
     ["chrysanthemum"]
   );
-  check("аналитика Есентая: активных партий", aEsentai.storage.activeBatchCount, 1);
-  check("аналитика Есентая: выручка только своя", aEsentai.sales.totalRevenue, 30_000);
+  check("аналитика Есентая: на складе только своё", aEsentai.stockStems, 400);
+  check("аналитика Есентая: выручка только своя", aEsentai.revenue.value, 30_000);
+  check("аналитика Есентая: склад в деньгах по своему прайсу", aEsentai.stockMoney, 400 * 300);
 
   const aRose = await getAnalyticsSummary("rose_farm", inj());
   check(
-    "аналитика Rose Farm: в остатках только роза",
-    [...new Set(aRose.stockByVariety.map((v) => v.flowerType))],
+    "аналитика Rose Farm: в разрезе по цветку только роза",
+    aRose.byFlower.map((f) => f.flowerType),
     ["rose"]
   );
-  check("аналитика Rose Farm: выручка своя", aRose.sales.totalRevenue, 90_000);
+  check("аналитика Rose Farm: выручка своя", aRose.revenue.value, 90_000);
+  check("аналитика Rose Farm: чужой клиент не потерялся", aRose.clientRows.length, 2);
 
   const aAll = await getAnalyticsSummary(null, inj());
-  check("аналитика админа: оба типа", [...new Set(aAll.stockByVariety.map((v) => v.flowerType))].sort(), ["chrysanthemum", "rose"]);
-  check("аналитика: части = целое", aEsentai.sales.totalRevenue + aRose.sales.totalRevenue, aAll.sales.totalRevenue);
+  check(
+    "аналитика админа: оба типа",
+    aAll.byFlower.map((f) => f.flowerType).sort(),
+    ["chrysanthemum", "rose"]
+  );
+  check("аналитика: части = целое", aEsentai.revenue.value + aRose.revenue.value, aAll.revenue.value);
+  check("аналитика: стебли тоже сходятся", aEsentai.stems.value + aRose.stems.value, aAll.stems.value);
+  check(
+    "аналитика: долг считается по неоплаченным",
+    aAll.debtTotal,
+    40_000
+  );
+  check("аналитика: собираемость", Math.round(aAll.collectPercent), 67);
 
   // --- Колонки на главной: чужой цветок не должен даже присутствовать ---
   const COLUMN_ORDER = ["rose", "chrysanthemum", "eustoma"];
