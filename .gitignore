@@ -27,6 +27,8 @@ synctest.bat
 verify.bat
 pdfout.bat
 gitfix.bat
+# одноразовые .bat, которые Claude кладёт в папку для запуска команд
+*.bat
 env-push.mjs
 set-url.mjs
 
