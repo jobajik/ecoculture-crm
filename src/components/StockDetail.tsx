@@ -2,7 +2,13 @@
 
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { FLOWER_TYPE_LABELS_PLURAL, farmLabel, formatGrade, getFarmFor } from "@/lib/constants";
+import {
+  FLOWER_TYPE_LABELS_PLURAL,
+  farmLabel,
+  formatGrade,
+  getFarmFor,
+  gradeNoun,
+} from "@/lib/constants";
 import type { StockVarietyCard } from "@/lib/stock";
 import { groupByGrade, type GradeCard, type GradeVarietyRow } from "@/lib/stockByGrade";
 import type { StorageStatus } from "@/lib/shelfLife";
@@ -89,7 +95,6 @@ function plural(n: number, one: string, few: string, many: string) {
 }
 const dayWord = (n: number) => plural(n, "день", "дня", "дней");
 const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сортов");
-const gradeWord = (n: number) => plural(n, "ростовка", "ростовки", "ростовок");
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
@@ -169,12 +174,12 @@ export default function StockDetail({
           Подробно по позициям
           <span className="text-sm font-normal text-ink-muted">
             {" "}
-            — по ростовке: 40, 50, 60… мини-микс, второй сорт
+            — у роз по ростовке, у хризантем по категории
           </span>
         </h3>
         <input
           className="input w-full sm:!w-auto sm:min-w-[220px]"
-          placeholder="Поиск по ростовке или сорту"
+          placeholder="Поиск по длине, категории или сорту"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -204,7 +209,7 @@ export default function StockDetail({
       <p className="text-xs text-ink-muted mt-2">
         «Лежит» — дней с даты срезки. Полоса — сколько прошло из положенного срока:{" "}
         <span className={STATUS_TEXT.warning}>жёлтый — скоро истечёт</span>,{" "}
-        <span className={STATUS_TEXT.critical}>красный — просрочено</span>. Нажмите на ростовку,
+        <span className={STATUS_TEXT.critical}>красный — просрочено</span>. Нажмите на строку,
         чтобы увидеть сорта.
       </p>
     </div>
@@ -255,7 +260,7 @@ function FlowerGroup({
           </div>
           <div className="text-sm text-ink-secondary tabular-nums">
             <b className="text-ink-primary">{fmt(total)}</b> шт · {cards.length}{" "}
-            {gradeWord(cards.length)} · {varietyCount} {varietyWord(varietyCount)}
+            {gradeNoun(flowerType, cards.length)} · {varietyCount} {varietyWord(varietyCount)}
             {worst !== "ok" && (
               <span className={clsx("ml-2 font-medium", STATUS_TEXT[worst])}>
                 {STATUS_LABEL[worst]}
@@ -276,7 +281,7 @@ function FlowerGroup({
               expanded={expanded}
               hidden={hidden}
               onToggle={() => setExpanded((v) => !v)}
-              what={gradeWord(hidden)}
+              what={gradeNoun(flowerType, hidden)}
             />
           </div>
         )}

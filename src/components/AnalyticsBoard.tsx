@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { FLOWER_TYPE_LABELS, FLOWER_TYPE_LABELS_PLURAL, formatGrade } from "@/lib/constants";
+import {
+  FLOWER_TYPE_LABELS,
+  FLOWER_TYPE_LABELS_PLURAL,
+  FLOWER_TYPES_BY_FARM,
+  formatGrade,
+  gradeColumnLabelFor,
+  gradeNounFor,
+} from "@/lib/constants";
 import { BENCHMARKS, toneHigherBetter, toneLowerBetter, type Tone } from "@/lib/benchmarks";
 import type { AnalyticsSummary, Delta } from "@/lib/analytics";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
@@ -61,7 +68,6 @@ function plural(n: number, one: string, few: string, many: string) {
 }
 const dayWord = (n: number) => plural(n, "день", "дня", "дней");
 const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сортов");
-const gradeWord = (n: number) => plural(n, "ростовка", "ростовки", "ростовок");
 const clientWord = (n: number) => plural(n, "клиент", "клиента", "клиентов");
 const managerWord = (n: number) => plural(n, "менеджер", "менеджера", "менеджеров");
 const reasonWord = (n: number) => plural(n, "причина", "причины", "причин");
@@ -207,8 +213,41 @@ function Collapsible<T>({
   );
 }
 
-export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary }) {
+export default function AnalyticsBoard({
+  summary,
+  farm,
+}: {
+  summary: AnalyticsSummary;
+  /** Выбранное производство: от него зависят слова «ростовка» и «категория». */
+  farm?: string | null;
+}) {
   const s = summary;
+
+  // Как называть градацию на этой вкладке. У Rose Farm это длина («ростовка»),
+  // у Есентая — качество («категория»), а когда показано всё хозяйство сразу,
+  // приходится писать оба слова.
+  const flowersHere = farm
+    ? FLOWER_TYPES_BY_FARM[farm] ?? []
+    : ["rose", "chrysanthemum", "eustoma"];
+  const gradeColumn = gradeColumnLabelFor(flowersHere);
+  const gradeWordHere = (n: number) => gradeNounFor(flowersHere, n);
+  /** «по ростовке» / «по категориям» — чтобы заголовки читались по-русски. */
+  const gradePhrase =
+    gradeColumn === "Категория"
+      ? "категориям"
+      : gradeColumn === "Ростовка"
+        ? "ростовке"
+        : "ростовке и категориям";
+  /** На вкладке одного цветка повторять его название в каждой строке незачем. */
+  const singleFlower = flowersHere.length === 1;
+  /** Из чего состоит ликвид именно на этой вкладке. */
+  const liquidHint = singleFlower
+    ? flowersHere[0] === "chrysanthemum"
+      ? "ликвид — высшая, первая и вторая; третья и четвёртая продаются тяжелее"
+      : "ликвид — первый сорт по длинам"
+    : flowersHere.includes("chrysanthemum")
+      ? "хризантема — высшая, первая, вторая; роза — первый сорт по длинам"
+      : "ликвид — первый сорт по длинам; мини-микс и второй сорт в него не входят";
 
   const collectTone = toneHigherBetter(s.collectPercent, BENCHMARKS.collectPercent);
   const writeoffTone =
@@ -352,8 +391,22 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
 
       {/* --- Склад ----------------------------------------------------------- */}
       <Block title="Склад сейчас" hint="Запас — на сколько дней хватит при нынешнем темпе продаж">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <Tile label="Лежит стеблей" value={num(s.stockStems)} sub={`${shortMoney(s.stockMoney)} по прайсу`} />
+          <Tile
+            label="Ликвид на складе"
+            value={s.liquidStockPercent === null ? "—" : pct(s.liquidStockPercent, 0)}
+            tone={
+              s.liquidStockPercent === null
+                ? "neutral"
+                : s.liquidStockPercent >= 70
+                  ? "good"
+                  : s.liquidStockPercent >= 50
+                    ? "warning"
+                    : "critical"
+            }
+            sub={liquidHint}
+          />
           <Tile
             label="Средний возраст"
             value={`${dec(s.stockAvgAge)} ${dayWord(Math.round(s.stockAvgAge))}`}
@@ -386,13 +439,18 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
             sub={`${num(s.receivedStems.value / s.days)} шт в день`}
           />
           <Tile
-            label="Выход высшей категории"
-            value={s.topGradePercent === null ? "—" : pct(s.topGradePercent, 0)}
-            sub={
-              s.topGradePercent === null
-                ? "приёмки не было"
-                : "роза от 70 см, хризантема «Высшая»"
+            label="Ликвидное качество в срезке"
+            value={s.liquidReceivedPercent === null ? "—" : pct(s.liquidReceivedPercent, 0)}
+            tone={
+              s.liquidReceivedPercent === null
+                ? "neutral"
+                : s.liquidReceivedPercent >= 70
+                  ? "good"
+                  : s.liquidReceivedPercent >= 50
+                    ? "warning"
+                    : "critical"
             }
+            sub={liquidHint}
           />
           <Tile
             label="Продано от принятого"
@@ -411,7 +469,11 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
           <Tile
             label="Вырастили на сумму"
             value={shortMoney(s.receivedMoney)}
-            sub="принятое по действующему прайсу"
+            sub={
+              s.topGradePercent === null
+                ? "принятое по действующему прайсу"
+                : `по прайсу · высшей категории ${pct(s.topGradePercent, 0)}`
+            }
           />
         </div>
 
@@ -466,10 +528,10 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
           <div className="mt-3">
             <Collapsible
               rows={s.receivedByGrade}
-              what={gradeWord}
+              what={gradeWordHere}
               head={
                 <>
-                  <th className="px-4 py-2 font-medium">Приёмка по ростовке</th>
+                  <th className="px-4 py-2 font-medium">Приёмка по {gradePhrase}</th>
                   <th className="px-3 py-2 font-medium text-right">Принято</th>
                   <th className="px-3 py-2 font-medium text-right">Доля</th>
                   <th className="px-3 py-2 font-medium text-right">К прошлым 30</th>
@@ -481,12 +543,17 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
                   className="border-b border-line-hairline last:border-0"
                 >
                   <td className="px-4 py-2">
-                    <span className="text-ink-muted">
-                      {FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType}{" "}
-                    </span>
+                    {!singleFlower && (
+                      <span className="text-ink-muted">
+                        {FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType}{" "}
+                      </span>
+                    )}
                     <span className="font-medium">{formatGrade(r.grade)}</span>
                     {r.top && (
                       <span className={clsx("ml-2 text-[11px]", TONE_TEXT.good)}>высшая</span>
+                    )}
+                    {!r.top && r.liquid && (
+                      <span className="ml-2 text-[11px] text-ink-muted">ликвид</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(r.stems.value)}</td>
@@ -607,13 +674,16 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
 
       {/* --- Ростовка -------------------------------------------------------- */}
       {s.byGrade.length > 0 && (
-        <Block title="Что продаётся: по ростовке" hint="Стебли, доля и средняя цена продажи">
+        <Block
+          title={`Что продаётся: по ${gradePhrase}`}
+          hint="Сколько ушло стеблей, какая это доля продаж и почём в среднем продавали"
+        >
           <Collapsible
             rows={s.byGrade}
-            what={gradeWord}
+            what={gradeWordHere}
             head={
               <>
-                <th className="px-4 py-2 font-medium">Ростовка</th>
+                <th className="px-4 py-2 font-medium">{gradeColumn}</th>
                 <th className="px-3 py-2 font-medium text-right">Стеблей</th>
                 <th className="px-3 py-2 font-medium text-right">Доля</th>
                 <th className="px-3 py-2 font-medium text-right">Ср. цена</th>
@@ -623,9 +693,11 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
             render={(g) => (
               <tr key={`${g.flowerType}:${g.grade}`} className="border-b border-line-hairline last:border-0">
                 <td className="px-4 py-2">
-                  <span className="text-ink-muted">
-                    {FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType}{" "}
-                  </span>
+                  {!singleFlower && (
+                    <span className="text-ink-muted">
+                      {FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType}{" "}
+                    </span>
+                  )}
                   <span className="font-medium">{formatGrade(g.grade)}</span>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(g.stems)}</td>
@@ -665,9 +737,11 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
                 <tr key={v.key} className="border-b border-line-hairline last:border-0">
                   <td className="px-4 py-2">
                     <span className="font-medium">{v.variety}</span>
-                    <span className="block text-[11px] text-ink-muted">
-                      {FLOWER_TYPE_LABELS[v.flowerType] ?? v.flowerType}
-                    </span>
+                    {!singleFlower && (
+                      <span className="block text-[11px] text-ink-muted">
+                        {FLOWER_TYPE_LABELS[v.flowerType] ?? v.flowerType}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(v.stems)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">

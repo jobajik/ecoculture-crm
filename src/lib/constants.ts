@@ -469,10 +469,87 @@ export function groupOfDirection(direction: string): (typeof DIRECTION_GROUPS)[n
 // ---------------------------------------------------------------------------
 
 export const TOP_GRADES_BY_FLOWER_TYPE: Record<string, string[]> = {
-  rose: ["70", "80", "90", "100"],
+  // 70 см у розы высшей категорией НЕ считается — так сказал владелец. Высшая
+  // роза начинается с 80 см; всё, что короче, это обычный товарный цветок.
+  rose: ["80", "90", "100"],
   chrysanthemum: ["Высшая"],
   eustoma: ["Стандарт"],
 };
+
+/**
+ * Ликвидное качество — то, что уходит с рынка без уговоров и скидок.
+ *
+ * У хризантемы это прямо названные владельцем «Высшая», «Первая» и «Вторая»:
+ * третья и четвёртая уже продаются тяжело. У розы ликвид — весь первый сорт по
+ * длинам; мини-микс, второй сорт, B-quality и уценка в него не входят. У
+ * эустомы — стандарт и пятидесятка.
+ *
+ * Это бизнес-решение, а не техническое: если в хозяйстве считают иначе, здесь
+ * меняется одна строка, и доля ликвида пересчитывается на всех страницах.
+ */
+export const LIQUID_GRADES_BY_FLOWER_TYPE: Record<string, string[]> = {
+  rose: ["40", "50", "60", "70", "80", "90", "100"],
+  chrysanthemum: ["Высшая", "Первая", "Вторая"],
+  eustoma: ["Стандарт", "50"],
+};
+
+export function isLiquidGrade(flowerType: string, grade: string): boolean {
+  return (LIQUID_GRADES_BY_FLOWER_TYPE[flowerType] ?? []).includes(grade.trim());
+}
+
+/** Человеческое название градации: у розы и эустомы «ростовка», у хризантемы «категория». */
+const GRADE_NOUN: Record<string, [string, string, string]> = {
+  rose: ["ростовка", "ростовки", "ростовок"],
+  eustoma: ["ростовка", "ростовки", "ростовок"],
+  chrysanthemum: ["категория", "категории", "категорий"],
+};
+
+/**
+ * «7 ростовок» для розы и «7 категорий» для хризантемы.
+ *
+ * Владелец отдельно попросил: у хризантемы слова «ростовка» быть не должно —
+ * она не меряется длиной, у неё качество. Для смешанного списка (когда на
+ * экране сразу все цветки) есть нейтральное «позиция».
+ */
+export function gradeNoun(flowerType: string | null, count: number): string {
+  const forms = flowerType ? GRADE_NOUN[flowerType] : undefined;
+  const [one, few, many] = forms ?? ["позиция", "позиции", "позиций"];
+  const t = Math.abs(count) % 100;
+  const o = t % 10;
+  if (t > 10 && t < 20) return many;
+  if (o > 1 && o < 5) return few;
+  if (o === 1) return one;
+  return many;
+}
+
+/** Заголовок колонки: «Ростовка» или «Категория». */
+export function gradeColumnLabel(flowerType: string | null): string {
+  if (!flowerType) return "Позиция";
+  return flowerType === "chrysanthemum" ? "Категория" : "Ростовка";
+}
+
+/**
+ * То же самое для списка, где цветков может быть несколько: у Rose Farm это
+ * роза и эустома — обе меряются длиной, поэтому «Ростовка»; у Есентая одна
+ * хризантема — «Категория»; когда на экране все три, честнее написать оба слова.
+ */
+export function gradeColumnLabelFor(flowerTypes: readonly string[]): string {
+  const set = new Set(flowerTypes);
+  if (set.size === 0) return "Позиция";
+  const hasChrysanthemum = set.has("chrysanthemum");
+  const hasOther = Array.from(set).some((t) => t !== "chrysanthemum");
+  if (hasChrysanthemum && hasOther) return "Ростовка и категория";
+  return hasChrysanthemum ? "Категория" : "Ростовка";
+}
+
+/** «5 ростовок» / «5 категорий» / «5 позиций» — по составу списка. */
+export function gradeNounFor(flowerTypes: readonly string[], count: number): string {
+  const set = new Set(flowerTypes);
+  const hasChrysanthemum = set.has("chrysanthemum");
+  const hasOther = Array.from(set).some((t) => t !== "chrysanthemum");
+  if (set.size === 0 || (hasChrysanthemum && hasOther)) return gradeNoun(null, count);
+  return gradeNoun(hasChrysanthemum ? "chrysanthemum" : "rose", count);
+}
 
 export function isTopGrade(flowerType: string, grade: string): boolean {
   return (TOP_GRADES_BY_FLOWER_TYPE[flowerType] ?? []).includes(grade);

@@ -17,6 +17,10 @@ import {
   periodShift,
   periodLabel,
   topGradeHint,
+  isLiquidGrade,
+  LIQUID_GRADES_BY_FLOWER_TYPE,
+  gradeNoun,
+  gradeColumnLabel,
 } from "../src/lib/constants";
 import { shipmentPlanKey } from "../src/lib/repo/shipmentPlans";
 import { forecastKey } from "../src/lib/repo/harvestForecast";
@@ -158,7 +162,8 @@ check("обнуление записало ноль", forecastTable[0].value, 0)
 // --- Выход высшей категории -----------------------------------------------
 
 check("роза 80 — высшая", isTopGrade("rose", "80"), true);
-check("роза 70 — высшая", isTopGrade("rose", "70"), true);
+// 70 см высшей не считается — решение владельца, см. TOP_GRADES_BY_FLOWER_TYPE.
+check("роза 70 — НЕ высшая", isTopGrade("rose", "70"), false);
 check("роза 60 — НЕ высшая", isTopGrade("rose", "60"), false);
 check("роза Уценка — НЕ высшая", isTopGrade("rose", "Уценка"), false);
 check("хризантема Высшая — высшая", isTopGrade("chrysanthemum", "Высшая"), true);
@@ -171,7 +176,7 @@ for (const flowerType of ["rose", "chrysanthemum", "eustoma"]) {
   const top = grades.filter((g) => isTopGrade(flowerType, g));
   check(`высшие градации ${flowerType} есть в справочнике`, top.length > 0, true);
 }
-check("подпись высшей для розы", topGradeHint("rose"), "70 см, 80 см, 90 см, 100 см");
+check("подпись высшей для розы", topGradeHint("rose"), "80 см, 90 см, 100 см");
 check("подпись высшей для хризантемы", topGradeHint("chrysanthemum"), "Высшая");
 
 // Считаем ростовку так же, как ForecastBoard.
@@ -181,8 +186,36 @@ const top = Object.entries(rostovka)
   .filter(([grade]) => isTopGrade("rose", grade))
   .reduce((s, [, v]) => s + v, 0);
 check("всего по ростовке", total, 10_000);
-check("из них высшей", top, 6_000);
-check("доля высшей", Math.round((top / total) * 1000) / 10, 60);
+check("из них высшей", top, 4_000);
+check("доля высшей", Math.round((top / total) * 1000) / 10, 40);
+
+// --- Ликвидное качество ----------------------------------------------------
+// Владелец назвал ликвидом у хризантемы «Высшую», «Первую» и «Вторую»; у розы
+// это весь первый сорт по длинам, мини-микс и второй сорт в ликвид не входят.
+check("хризантема Вторая — ликвид", isLiquidGrade("chrysanthemum", "Вторая"), true);
+check("хризантема Третья — НЕ ликвид", isLiquidGrade("chrysanthemum", "Третья"), false);
+check("роза 40 — ликвид", isLiquidGrade("rose", "40"), true);
+check("роза Мини-микс — НЕ ликвид", isLiquidGrade("rose", "Мини-микс"), false);
+check("роза второй сорт — НЕ ликвид", isLiquidGrade("rose", "50 (2 сорт)"), false);
+check("эустома Стандарт — ликвид", isLiquidGrade("eustoma", "Стандарт"), true);
+for (const flowerType of ["rose", "chrysanthemum", "eustoma"]) {
+  const grades = getGradesFor(flowerType) as readonly string[];
+  check(
+    `ликвидные градации ${flowerType} есть в справочнике`,
+    grades.filter((g) => isLiquidGrade(flowerType, g)).length,
+    LIQUID_GRADES_BY_FLOWER_TYPE[flowerType].length
+  );
+}
+
+// --- Как называется градация -----------------------------------------------
+// У хризантемы слова «ростовка» быть не должно: она не меряется длиной.
+check("хризантема: категория", gradeNoun("chrysanthemum", 1), "категория");
+check("хризантема: 5 категорий", gradeNoun("chrysanthemum", 5), "категорий");
+check("роза: ростовка", gradeNoun("rose", 1), "ростовка");
+check("роза: 2 ростовки", gradeNoun("rose", 2), "ростовки");
+check("смешанный список: позиции", gradeNoun(null, 3), "позиции");
+check("заголовок колонки у хризантемы", gradeColumnLabel("chrysanthemum"), "Категория");
+check("заголовок колонки у розы", gradeColumnLabel("rose"), "Ростовка");
 
 // Пустой прогноз не должен давать деления на ноль.
 const emptyShare = 0 > 0 ? 1 : 0;

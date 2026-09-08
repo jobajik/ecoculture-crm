@@ -84,7 +84,7 @@ function plural(n: number, one: string, few: string, many: string) {
 const dayWord = (n: number) => plural(n, "день", "дня", "дней");
 const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сортов");
 const batchWord = (n: number) => plural(n, "партия", "партии", "партий");
-const gradeWord = (n: number) => plural(n, "ростовка", "ростовки", "ростовок");
+const positionWord = (n: number) => plural(n, "позиция", "позиции", "позиций");
 
 /** 1.0 -> «1», 1.4 -> «1.4» — лишний ноль в тексте мешает читать. */
 function neatNumber(value: number) {
@@ -279,7 +279,7 @@ export default function StockBoard({
             Сколько дней лежит
             <span className="text-sm font-normal text-ink-muted">
               {" "}
-              — от даты срезки; нажмите на цветок, чтобы увидеть ростовки
+              — от даты срезки; нажмите на цветок, чтобы увидеть длины и категории
             </span>
           </h3>
           <span className="text-xs text-ink-muted">
@@ -387,7 +387,7 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
             ))}
           </div>
           <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
-            {gradeCount(bucket)} {gradeWord(gradeCount(bucket))} · {bucket.batches}{" "}
+            {gradeCount(bucket)} {positionWord(gradeCount(bucket))} · {bucket.batches}{" "}
             {batchWord(bucket.batches)}
           </div>
         </>

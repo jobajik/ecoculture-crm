@@ -11,6 +11,7 @@ import {
   compareGrades,
   formatGrade,
   getFarmFor,
+  isLiquidGrade,
   isTopGrade,
   monthOfWeek,
 } from "./constants";
@@ -126,6 +127,8 @@ export interface ReceivedGradeRow {
   share: number;
   /** Высшая ли это категория — по ней считается выход. */
   top: boolean;
+  /** Ликвидное ли качество — то, что уходит без уговоров и скидок. */
+  liquid: boolean;
 }
 
 /** План срезки агронома против фактической приёмки, по текущему месяцу. */
@@ -158,6 +161,8 @@ export interface WeekRow {
 
 export interface AnalyticsSummary {
   generatedAt: string;
+  /** Две-четыре фразы человеческим языком: что вообще произошло за период. */
+  headline: string[];
   days: number;
   periodLabel: string;
   prevLabel: string;
@@ -200,6 +205,10 @@ export interface AnalyticsSummary {
   writeoffPercent: number | null;
   writeoffMoney: number;
   topGradePercent: number | null;
+  /** Доля ликвидного качества в приёмке за период, %. */
+  liquidReceivedPercent: number | null;
+  /** Доля ликвидного качества в том, что лежит на складе сейчас, %. */
+  liquidStockPercent: number | null;
 
   stockStems: number;
   stockMoney: number;
@@ -493,6 +502,11 @@ export async function getAnalyticsSummary(
     .filter((b) => isTopGrade(b.flowerType, b.grade))
     .reduce((s, b) => s + b.quantityIn, 0);
   const topGradePercent = receivedStems > 0 ? share(topGradeStems, receivedStems) : null;
+  const liquidReceivedStems = receivedNow
+    .filter((b) => isLiquidGrade(b.flowerType, b.grade))
+    .reduce((s, b) => s + b.quantityIn, 0);
+  const liquidReceivedPercent =
+    receivedStems > 0 ? share(liquidReceivedStems, receivedStems) : null;
   // Во что принятое оценивается по действующему прайсу — «на сколько вырастили».
   const receivedMoney = receivedNow.reduce(
     (sum, b) => sum + priceFor(pricesToday, b.flowerType, b.variety, b.grade) * b.quantityIn,
@@ -529,6 +543,7 @@ export async function getAnalyticsSummary(
       stems: delta(r.now, r.prev),
       share: share(r.now, receivedStems),
       top: isTopGrade(r.flowerType, r.grade),
+      liquid: isLiquidGrade(r.flowerType, r.grade),
     }))
     .filter((r) => r.stems.value > 0 || r.stems.prev > 0)
     .sort(
@@ -588,6 +603,10 @@ export async function getAnalyticsSummary(
   const batchMoney = (b: (typeof activeBatches)[number]) =>
     priceFor(pricesToday, b.flowerType, b.variety, b.grade) * b.quantityRemaining;
   const stockMoney = activeBatches.reduce((s, b) => s + batchMoney(b), 0);
+  const liquidStockStems = activeBatches
+    .filter((b) => isLiquidGrade(b.flowerType, b.grade))
+    .reduce((s, b) => s + b.quantityRemaining, 0);
+  const liquidStockPercent = stockStems > 0 ? share(liquidStockStems, stockStems) : null;
 
   // --- Списания ------------------------------------------------------------
   const writeoffNow = writeoffs.filter((w) => inRange(w.createdAt, from, to));
@@ -771,6 +790,60 @@ export async function getAnalyticsSummary(
   const soldPerDay = nowSales.stems / ANALYTICS_DAYS;
   const coverDays = soldPerDay > 0 ? stockStems / soldPerDay : null;
 
+  // --- Коротко: что вообще произошло ---------------------------------------
+  // Три-четыре фразы обычным языком. Владелец справедливо заметил, что
+  // «просто цифры» ничего не объясняют: плитка «19 %» понятна только тому, кто
+  // помнит, от чего этот процент. Поэтому сверху страницы стоит короткий
+  // пересказ, а таблицы ниже — уже подробности для того, кто захочет копнуть.
+  const headline: string[] = [];
+  const say = (n: number) => Math.round(n).toLocaleString("ru-RU");
+  const moneyShort = (n: number) =>
+    Math.abs(n) >= 1_000_000
+      ? `${(n / 1_000_000).toFixed(1).replace(".", ",")} млн ₸`
+      : `${say(n)} ₸`;
+
+  if (nowSales.stems > 0) {
+    const changeWord =
+      nowSales.revenue > prevSales.revenue ? "больше" : nowSales.revenue < prevSales.revenue ? "меньше" : "столько же";
+    headline.push(
+      `За 30 дней продали ${say(nowSales.stems)} стеблей на ${moneyShort(nowSales.revenue)} — ` +
+        `в среднем ${say(nowSales.revenue / nowSales.stems)} ₸ за стебель` +
+        (prevSales.revenue > 0
+          ? `. Это на ${Math.abs(
+              Math.round(((nowSales.revenue - prevSales.revenue) / prevSales.revenue) * 100)
+            )} % ${changeWord}, чем в предыдущие 30 дней.`
+          : ".")
+    );
+  } else {
+    headline.push("За 30 дней заявок не было — продажам взяться неоткуда.");
+  }
+
+  if (receivedStems > 0) {
+    headline.push(
+      `Срезали и приняли ${say(receivedStems)} стеблей. Продано ${Math.round(
+        share(nowSales.stems, receivedStems)
+      )} % от этого` +
+        (liquidReceivedPercent !== null
+          ? `, ликвидного качества в срезке ${Math.round(liquidReceivedPercent)} %.`
+          : ".")
+    );
+  }
+
+  headline.push(
+    `Сейчас на складе ${say(stockStems)} стеблей на ${moneyShort(stockMoney)} по прайсу, ` +
+      `средний возраст ${stockAvgAge.toFixed(1).replace(".", ",")} дн.` +
+      (coverDays !== null
+        ? ` При нынешнем темпе продаж этого хватит на ${Math.round(coverDays)} дн.`
+        : "")
+  );
+
+  if (nowSales.revenue > 0) {
+    headline.push(
+      `Оплачено ${Math.round(collectPercent)} % из оформленного за период; ` +
+        `всего долгов по базе ${moneyShort(debtTotal)}.`
+    );
+  }
+
   // --- На что смотреть -----------------------------------------------------
   // Список собирается из тех же цифр и ориентиров, что и таблицы: это не второй
   // расчёт, а способ не заставлять человека искать проблему глазами.
@@ -886,6 +959,7 @@ export async function getAnalyticsSummary(
 
   return {
     generatedAt: now.toISOString(),
+    headline,
     days: ANALYTICS_DAYS,
     periodLabel: `${fmtDate(from)} – ${fmtDate(shiftDays(to, -1))}`,
     prevLabel: `${fmtDate(prevFrom)} – ${fmtDate(shiftDays(from, -1))}`,
@@ -921,6 +995,8 @@ export async function getAnalyticsSummary(
     discountPercent,
 
     receivedStems: delta(receivedStems, receivedStemsPrev),
+    liquidReceivedPercent,
+    liquidStockPercent,
     soldOfReceivedPercent: receivedStems > 0 ? share(nowSales.stems, receivedStems) : null,
     receivedMoney,
     receivedByGrade,

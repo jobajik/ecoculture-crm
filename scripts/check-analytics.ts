@@ -159,7 +159,7 @@ async function main() {
   // --- Приёмка и списание --------------------------------------------------
   check("принято за период", s.receivedStems.value, 10_000);
   check("принято в прошлом периоде", s.receivedStems.prev, 5000);
-  check("высшая категория в приёмке", Math.round(s.topGradePercent!), 20);
+  check("высшая категория в приёмке", Math.round(s.topGradePercent!), 0);
   check("списано за период", s.writeoffStems.value, 500);
   check("списание от принятого", Number(s.writeoffPercent!.toFixed(1)), 5);
   check("деньги списания по прайсу", s.writeoffMoney, 500 * 200);
@@ -232,8 +232,17 @@ async function main() {
     s.receivedByGrade.find((r) => r.grade === "Первая")?.stems,
     { value: 0, prev: 5000, changePercent: -100 }
   );
-  check("высшая помечена", s.receivedByGrade.find((r) => r.grade === "70")?.top, true);
+  // 70 см высшей больше не считается — так решил владелец.
+  check("роза 70 см не высшая", s.receivedByGrade.find((r) => r.grade === "70")?.top, false);
   check("длина 60 высшей не считается", s.receivedByGrade.find((r) => r.grade === "60")?.top, false);
+  check("роза 70 см — ликвид", s.receivedByGrade.find((r) => r.grade === "70")?.liquid, true);
+  check(
+    "хризантема Первая — ликвид",
+    s.receivedByGrade.find((r) => r.grade === "Первая")?.liquid,
+    true
+  );
+  check("доля ликвида в срезке", Math.round(s.liquidReceivedPercent!), 100);
+  check("доля ликвида на складе", Math.round(s.liquidStockPercent!), 100);
   check("приёмка: доли складываются", Math.round(s.receivedByGrade.reduce((sum, r) => sum + r.share, 0)), 100);
   check(
     "план срезки на месяц берётся из недель этого месяца",
@@ -255,6 +264,19 @@ async function main() {
     "в план-факт попадает только то, что было в этом месяце",
     s.harvestPlan.map((h) => h.flowerType),
     ["rose"]
+  );
+
+  // --- Коротко ---------------------------------------------------------------
+  check("«коротко» не пустое", s.headline.length >= 3, true);
+  check(
+    "в «коротко» есть выручка",
+    s.headline[0].includes("стеблей") && s.headline[0].includes("₸"),
+    true
+  );
+  check(
+    "в «коротко» есть склад",
+    s.headline.some((h) => h.includes("на складе")),
+    true
   );
 
   // --- Подсветка -----------------------------------------------------------
@@ -312,6 +334,8 @@ async function main() {
   check("пусто: повторных клиентов нет", empty.repeatClientPercent, null);
   check("пусто: приёмка по ростовке пустая", empty.receivedByGrade.length, 0);
   check("пусто: плана срезки нет", empty.harvestPlan.length, 0);
+  check("пусто: доля ликвида неизвестна", [empty.liquidReceivedPercent, empty.liquidStockPercent], [null, null]);
+  check("пусто: «коротко» всё равно есть", empty.headline.length > 0, true);
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);
