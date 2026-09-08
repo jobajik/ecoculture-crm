@@ -7,6 +7,7 @@ const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
   { prefix: "/finance", roles: ["accountant", "admin"] },
   { prefix: "/sales", roles: ["manager", "admin", "accountant"] },
+  { prefix: "/prices", roles: ["manager", "sales_head", "admin"] },
   { prefix: "/admin", roles: ["admin"] },
 ];
 
@@ -42,6 +43,7 @@ export const config = {
     "/finance/:path*",
     "/warehouse/:path*",
     "/analytics/:path*",
+    "/prices/:path*",
     "/admin/:path*",
   ],
 };

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createOrderAction } from "@/app/orders/actions";
 import { FLOWER_TYPE_LABELS, GRADE_LABELS, formatGrade, getGradesFor } from "@/lib/constants";
 import type { FlowerType } from "@/lib/constants";
+import { priceFromMap } from "@/lib/priceList";
 
 interface DraftItem {
   flowerType: FlowerType;
@@ -14,23 +15,36 @@ interface DraftItem {
   unitPrice: string;
 }
 
-function emptyItem(varieties: Record<string, string[]>): DraftItem {
+function emptyItem(
+  varieties: Record<string, string[]>,
+  prices: Record<string, number>
+): DraftItem {
+  const variety = varieties.rose?.[0] ?? "";
+  const grade = getGradesFor("rose")[0] ?? "";
+  const price = priceFromMap(prices, "rose", variety, grade);
   return {
     flowerType: "rose",
-    variety: varieties.rose?.[0] ?? "",
-    grade: getGradesFor("rose")[0] ?? "",
+    variety,
+    grade,
     quantity: "",
-    unitPrice: "",
+    unitPrice: price > 0 ? String(price) : "",
   };
 }
 
-export default function OrderForm({ varieties }: { varieties: Record<string, string[]> }) {
+export default function OrderForm({
+  varieties,
+  prices = {},
+}: {
+  varieties: Record<string, string[]>;
+  /** Действующий прайс: «цветок|сорт|градация» → цена. */
+  prices?: Record<string, number>;
+}) {
   const router = useRouter();
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties)]);
+  const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties, prices)]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,9 +52,31 @@ export default function OrderForm({ varieties }: { varieties: Record<string, str
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
 
+  /**
+   * Меняется позиция — подставляем цену из прайса. Но только если менеджер ещё
+   * не поставил свою: затирать введённую руками цену нельзя, иначе человек
+   * поправит её, переключит длину и молча потеряет правку.
+   */
+  function updatePosition(idx: number, patch: Partial<DraftItem>) {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== idx) return it;
+        const next = { ...it, ...patch };
+        const wasSuggested =
+          !it.unitPrice ||
+          Number(it.unitPrice) === priceFromMap(prices, it.flowerType, it.variety, it.grade);
+        if (wasSuggested) {
+          const price = priceFromMap(prices, next.flowerType, next.variety, next.grade);
+          next.unitPrice = price > 0 ? String(price) : "";
+        }
+        return next;
+      })
+    );
+  }
+
   /** При смене типа цветка списки сортов и градаций другие — подставляем первые доступные. */
   function changeFlowerType(idx: number, flowerType: DraftItem["flowerType"]) {
-    updateItem(idx, {
+    updatePosition(idx, {
       flowerType,
       grade: getGradesFor(flowerType)[0] ?? "",
       variety: varieties[flowerType]?.[0] ?? "",
@@ -48,7 +84,7 @@ export default function OrderForm({ varieties }: { varieties: Record<string, str
   }
 
   function addItem() {
-    setItems((prev) => [...prev, emptyItem(varieties)]);
+    setItems((prev) => [...prev, emptyItem(varieties, prices)]);
   }
 
   function removeItem(idx: number) {
@@ -153,7 +189,7 @@ export default function OrderForm({ varieties }: { varieties: Record<string, str
                 <select
                   className="input"
                   value={it.variety}
-                  onChange={(e) => updateItem(idx, { variety: e.target.value })}
+                  onChange={(e) => updatePosition(idx, { variety: e.target.value })}
                 >
                   {(varieties[it.flowerType] ?? []).map((v) => (
                     <option key={v} value={v}>
@@ -167,7 +203,7 @@ export default function OrderForm({ varieties }: { varieties: Record<string, str
                 <select
                   className="input"
                   value={it.grade}
-                  onChange={(e) => updateItem(idx, { grade: e.target.value })}
+                  onChange={(e) => updatePosition(idx, { grade: e.target.value })}
                 >
                   {getGradesFor(it.flowerType).map((grade) => (
                     <option key={grade} value={grade}>
@@ -188,7 +224,18 @@ export default function OrderForm({ varieties }: { varieties: Record<string, str
               </div>
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="label">Цена, ₸ *</label>
+                  <label className="label">
+                    Цена, ₸ *
+                    {priceFromMap(prices, it.flowerType, it.variety, it.grade) > 0 && (
+                      <span className="font-normal text-ink-muted">
+                        {" "}
+                        · прайс{" "}
+                        {priceFromMap(prices, it.flowerType, it.variety, it.grade).toLocaleString(
+                          "ru-RU"
+                        )}
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="number"
                     min={0}
