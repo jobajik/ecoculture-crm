@@ -1,6 +1,7 @@
 import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
 import { generateId } from "../id";
-import { ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
+import { toIsoDate } from "../sheetDate";
+import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
 import type { Order, OrderItem, OrderWithItems } from "../types";
 import { addPriceHistoryEntry } from "./priceHistory";
 
@@ -26,7 +27,17 @@ function toOrder(record: Record<string, string>): Order {
     paidAt: record.PaidAt || "",
     paymentMethod: record.PaymentMethod || "",
     accountantEmail: (record.AccountantEmail || "").toLowerCase(),
+    paidAmount: toMoney(record.PaidAmount),
+    promisedAt: toIsoDate(record.PromisedAt),
+    collectionNote: record.CollectionNote || "",
   };
+}
+
+/** «1 200,50» и «1200.5» — одно и то же число. Пустая ячейка — ноль. */
+function toMoney(value: string | undefined): number {
+  const cleaned = String(value ?? "").replace(/\s/g, "").replace(",", ".");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function toOrderItem(record: Record<string, string>): OrderItem {
@@ -72,7 +83,12 @@ export async function listOrdersWithItems(): Promise<OrderWithItems[]> {
     .map((order) => {
       const orderItems = items.filter((i) => i.orderId === order.orderId);
       const totalAmount = orderItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
-      return { ...order, items: orderItems, totalAmount };
+      // Заявки, оплаченные ДО появления частичной оплаты, несут только галочку —
+      // колонка PaidAmount у них пустая. Считаем их оплаченными целиком, иначе
+      // после обновления вся прошлая выручка разом уехала бы в долги.
+      const paidAmount =
+        order.paidAmount > 0 ? order.paidAmount : order.paid ? totalAmount : 0;
+      return { ...order, paidAmount, items: orderItems, totalAmount };
     })
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
@@ -101,6 +117,9 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     PaidAt: "",
     PaymentMethod: "",
     AccountantEmail: "",
+    PaidAmount: 0,
+    PromisedAt: "",
+    CollectionNote: "",
   });
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -147,27 +166,90 @@ export async function updateOrderNotes(orderId: string, notes: string): Promise<
 }
 
 /**
- * Отмечает оплату заявки (вторая «зелёная галочка»). Оплата только целиком —
- * частичных сумм в системе нет, поэтому хранится флаг, а не остаток.
+ * Записывает, сколько денег по заявке получено.
+ *
+ * Флаг `Paid` («вторая зелёная галочка») здесь не вводится руками, а СЧИТАЕТСЯ
+ * из суммы: оплачено целиком — значит внесено не меньше суммы заявки. Так два
+ * поля не могут разойтись, а разошедшись, они дали бы худший из возможных
+ * споров: галочка стоит, а денег нет.
+ *
+ * Допуск в одну тенге — из-за округления при пересчёте заявки: без него заявка
+ * зависла бы в долгах из-за копейки.
  */
+export async function setOrderPayment(
+  orderId: string,
+  paidAmount: number,
+  totalAmount: number,
+  accountantEmail: string,
+  paymentMethod = ""
+): Promise<boolean> {
+  const amount = Math.max(0, Math.round(paidAmount * 100) / 100);
+  const fully = amount > 0 && amount >= totalAmount - MONEY_EPSILON;
+
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    (record) => ({
+      PaidAmount: amount,
+      Paid: fully ? "TRUE" : "FALSE",
+      // Дату первой оплаты не перетираем: она отвечает на вопрос «когда пришли
+      // деньги», а не «когда бухгалтер последний раз трогала строку».
+      PaidAt: amount > 0 ? (record.PaidAt || "").trim() || new Date().toISOString() : "",
+      PaymentMethod: amount > 0 ? paymentMethod || record.PaymentMethod || "" : "",
+      AccountantEmail: accountantEmail,
+    })
+  );
+}
+
+/** Оплата целиком или снятие оплаты — частый случай, обёртка над суммой. */
 export async function setOrderPaid(
   orderId: string,
   paid: boolean,
   accountantEmail: string,
-  paymentMethod = ""
+  paymentMethod = "",
+  totalAmount = 0
+): Promise<boolean> {
+  return setOrderPayment(
+    orderId,
+    paid ? totalAmount : 0,
+    totalAmount,
+    accountantEmail,
+    paymentMethod
+  );
+}
+
+/** Обещание клиента заплатить и заметка бухгалтера по взысканию. */
+export async function setOrderPromise(
+  orderId: string,
+  promisedAt: string,
+  note: string
 ): Promise<boolean> {
   return updateWhere(
     SHEET_TABS.ORDERS,
     (record) => record.OrderID === orderId,
-    () =>
-      paid
-        ? {
-            Paid: "TRUE",
-            PaidAt: new Date().toISOString(),
-            PaymentMethod: paymentMethod,
-            AccountantEmail: accountantEmail,
-          }
-        : { Paid: "FALSE", PaidAt: "", PaymentMethod: "", AccountantEmail: accountantEmail }
+    () => ({ PromisedAt: promisedAt, CollectionNote: note })
+  );
+}
+
+/**
+ * Пересчёт позиции заявки — количество и цена.
+ *
+ * Нужен для рекламации: клиент получил тысячу стеблей, двести пришли с браком,
+ * платит за восемьсот. Отгруженное количество при этом НЕ меняется — цветок со
+ * склада действительно уехал, и подчищать историю склада ради счёта нельзя.
+ */
+export async function updateOrderItemAmounts(
+  itemId: string,
+  quantity: number,
+  unitPrice: number
+): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDER_ITEMS,
+    (record) => record.ItemID === itemId,
+    () => ({
+      Quantity: Math.max(0, Math.round(quantity)),
+      UnitPrice: Math.max(0, Math.round(unitPrice * 100) / 100),
+    })
   );
 }
 

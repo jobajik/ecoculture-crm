@@ -1,25 +1,21 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState } from "react";
+import Link from "next/link";
 import clsx from "clsx";
-import { useRouter } from "next/navigation";
-import { setPaidAction } from "@/app/finance/actions";
-import { PAYMENT_METHODS } from "@/lib/constants";
 import type { FinanceOrderRow, FinanceSnapshot } from "@/lib/finance";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import PaymentPanel, { PaymentState, money } from "./PaymentPanel";
 
-type Filter = "all" | "unpaid" | "paid" | "ready";
+type Filter = "all" | "unpaid" | "partial" | "paid" | "ready";
 
 const FILTER_LABELS: Record<Filter, string> = {
   all: "Все",
   unpaid: "Не оплачены",
+  partial: "Оплачены частично",
   paid: "Оплачены",
   ready: "Готовы к сборке",
 };
-
-function money(value: number): string {
-  return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
-}
 
 function dateLabel(key: string): string {
   if (!key) return "—";
@@ -35,18 +31,17 @@ export default function FinanceBoard({
   /** Отмечать оплату может только бухгалтер и админ; остальным — только смотреть. */
   canEdit: boolean;
 }) {
-  const router = useRouter();
   const [filter, setFilter] = useState<Filter>("unpaid");
   const [search, setSearch] = useState("");
-  const [method, setMethod] = useState<string>(PAYMENT_METHODS[0]);
-  const [pending, startTransition] = useTransition();
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Какая заявка сейчас раскрыта на оплату. Одна за раз: панель занимает
+  // строку, и две открытые превращают таблицу в лестницу.
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return snapshot.orders.filter((r) => {
       if (filter === "unpaid" && r.paid) return false;
+      if (filter === "partial" && !(r.paidAmount > 0 && !r.paid)) return false;
       if (filter === "paid" && !r.paid) return false;
       if (filter === "ready" && !r.readyToCollect) return false;
       if (q && !r.clientName.toLowerCase().includes(q) && !r.managerName.toLowerCase().includes(q)) {
@@ -63,33 +58,26 @@ export default function FinanceBoard({
   const shownRows = expandedRows || narrowed ? rows : rows.slice(0, COLLAPSED_TABLE_SIZE);
   const hiddenRows = rows.length - shownRows.length;
 
-  function togglePaid(row: FinanceOrderRow) {
-    if (!canEdit) return;
-    setError(null);
-    setBusyId(row.orderId);
-    startTransition(async () => {
-      try {
-        await setPaidAction(row.orderId, !row.paid, method);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Не удалось сохранить");
-      } finally {
-        setBusyId(null);
-      }
-    });
-  }
-
   const t = snapshot.totals;
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile label="Оформлено за период" value={money(t.amount)} sub={`${t.orders} заявок`} />
-        <Tile label="Оплачено" value={money(t.paidAmount)} sub={`${t.paidOrders} из ${t.orders}`} tone="good" />
+        <Tile
+          label="Получено"
+          value={money(t.paidAmount)}
+          sub={
+            t.partlyPaidOrders > 0
+              ? `${t.paidOrders} из ${t.orders} целиком, ${t.partlyPaidOrders} частично`
+              : `${t.paidOrders} из ${t.orders}`
+          }
+          tone="good"
+        />
         <Tile
           label="Ждём оплату"
           value={money(t.unpaidAmount)}
-          sub={`${t.orders - t.paidOrders} заявок`}
+          sub={`${t.orders - t.paidOrders} заявок не закрыты`}
           tone={t.unpaidAmount > 0 ? "warning" : "default"}
         />
         <Tile
@@ -142,23 +130,7 @@ export default function FinanceBoard({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        {canEdit && (
-          <label className="flex items-center gap-2 text-sm text-ink-secondary">
-            Способ оплаты
-            <select className="input !w-auto !py-1.5" value={method} onChange={(e) => setMethod(e.target.value)}>
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
       </div>
-
-      {error && (
-        <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>
-      )}
 
       <div className="card !p-0 overflow-x-auto">
         <table className="w-full text-sm">
@@ -170,63 +142,74 @@ export default function FinanceBoard({
               <th className="px-4 py-3 font-medium">Менеджер</th>
               <th className="px-4 py-3 font-medium text-right">Сумма</th>
               <th className="px-4 py-3 font-medium text-center">Менеджер<br />подтвердил</th>
-              <th className="px-4 py-3 font-medium text-center">Оплачено</th>
+              <th className="px-4 py-3 font-medium text-right">Получено</th>
+              <th className="px-4 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
             {shownRows.map((r) => (
-              <tr
-                key={r.orderId}
-                className={clsx(
-                  "border-b border-line-hairline last:border-0 hover:bg-surface-plane",
-                  r.readyToCollect && "bg-status-good/5"
-                )}
-              >
-                <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{dateLabel(r.createdDate)}</td>
-                <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{dateLabel(r.deliveryDate)}</td>
-                <td className="px-4 py-2.5">
-                  <div className="font-medium">{r.clientName}</div>
-                  <div className="text-xs text-ink-muted truncate max-w-[240px]" title={r.positions}>
-                    {r.positions}
-                  </div>
-                </td>
-                <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{r.managerName}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">
-                  {money(r.amount)}
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <span className={clsx("text-base", r.managerConfirmed ? "text-status-good" : "text-ink-muted")}>
-                    {r.managerConfirmed ? "✓" : "—"}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <button
-                    onClick={() => togglePaid(r)}
-                    disabled={!canEdit || (pending && busyId === r.orderId)}
-                    title={
-                      canEdit
-                        ? r.paid
-                          ? `Оплачено${r.paymentMethod ? ` · ${r.paymentMethod}` : ""} — нажмите, чтобы снять`
-                          : "Отметить как оплаченную"
-                        : "Отмечать оплату может бухгалтер"
-                    }
-                    className={clsx(
-                      "inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors",
-                      r.paid
-                        ? "bg-status-good/15 border-status-good/40 text-status-good"
-                        : "border-line-hairline text-ink-muted",
-                      canEdit && "hover:border-status-good cursor-pointer",
-                      !canEdit && "cursor-default"
+              <Fragment key={r.orderId}>
+                <tr
+                  className={clsx(
+                    "border-b border-line-hairline hover:bg-surface-plane",
+                    r.readyToCollect && "bg-status-good/5",
+                    openId === r.orderId && "bg-accent-soft/40"
+                  )}
+                >
+                  <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{dateLabel(r.createdDate)}</td>
+                  <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{dateLabel(r.deliveryDate)}</td>
+                  <td className="px-4 py-2.5">
+                    <Link href={`/orders/${r.orderId}`} className="font-medium hover:underline">
+                      {r.clientName}
+                    </Link>
+                    <div className="text-xs text-ink-muted truncate max-w-[240px]" title={r.positions}>
+                      {r.positions}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{r.managerName}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">
+                    {money(r.amount)}
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <span className={clsx("text-base", r.managerConfirmed ? "text-status-good" : "text-ink-muted")}>
+                      {r.managerConfirmed ? "✓" : "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <div className="inline-block text-right">
+                      <PaymentState totalAmount={r.amount} paidAmount={r.paidAmount} compact />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    {canEdit ? (
+                      <button
+                        onClick={() => setOpenId(openId === r.orderId ? null : r.orderId)}
+                        className="btn-secondary !py-1 !px-2.5 text-xs"
+                      >
+                        {openId === r.orderId ? "Закрыть" : r.paid ? "Изменить" : "Внести оплату"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-ink-muted">только просмотр</span>
                     )}
-                  >
-                    {busyId === r.orderId && pending ? "…" : r.paid ? "✓" : ""}
-                  </button>
-                </td>
-              </tr>
+                  </td>
+                </tr>
+                {openId === r.orderId && canEdit && (
+                  <tr className="border-b border-line-hairline bg-accent-soft/20">
+                    <td colSpan={8} className="px-4 py-4">
+                      <PaymentPanel
+                        orderId={r.orderId}
+                        totalAmount={r.amount}
+                        paidAmount={r.paidAmount}
+                        onDone={() => setOpenId(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
+                <td colSpan={8} className="px-4 py-10 text-center text-ink-muted">
                   Заявок по этому фильтру нет
                 </td>
               </tr>

@@ -15,8 +15,12 @@ function ord(
   manager: string,
   createdAt: string,
   paid: boolean,
-  items: [string, number, number][] // [тип, количество, цена]
+  items: [string, number, number][], // [тип, количество, цена]
+  /** Частичная оплата: доля от 0 до 1. По умолчанию — как флаг. */
+  paidShare?: number
 ) {
+  const total = items.reduce((s, [, q, p]) => s + q * p, 0);
+  const paidAmount = paidShare !== undefined ? total * paidShare : paid ? total : 0;
   return {
     orderId: id,
     clientName: `Клиент ${id}`,
@@ -28,11 +32,14 @@ function ord(
     createdAt,
     managerConfirmed: true,
     managerConfirmedAt: "",
-    paid,
-    paidAt: paid ? createdAt : "",
-    paymentMethod: paid ? "Каспи" : "",
+    paid: paidAmount >= total && paidAmount > 0,
+    paidAmount,
+    promisedAt: "",
+    collectionNote: "",
+    paidAt: paidAmount > 0 ? createdAt : "",
+    paymentMethod: paidAmount > 0 ? "Каспи" : "",
     accountantEmail: "",
-    totalAmount: items.reduce((s, [, q, p]) => s + q * p, 0),
+    totalAmount: total,
     items: items.map(([flowerType, quantity, unitPrice]) => ({
       flowerType,
       variety: "X",

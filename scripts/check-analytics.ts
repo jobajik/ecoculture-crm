@@ -59,6 +59,11 @@ const order = (
   managerConfirmed: true,
   managerConfirmedAt: "",
   paid,
+  // Флаг «оплачено целиком» и сумма оплаты — это одно и то же состояние,
+  // записанное с двух сторон; в самой программе сумма считается первичной.
+  paidAmount: paid ? items.reduce((s, i) => s + i.quantity * i.unitPrice, 0) : 0,
+  promisedAt: "",
+  collectionNote: "",
   paidAt: paid ? daysAgo(ago) : "",
   paymentMethod: paid ? "Каспи" : "",
   accountantEmail: "",

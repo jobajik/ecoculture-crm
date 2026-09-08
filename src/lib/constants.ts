@@ -15,6 +15,8 @@ export const SHEET_TABS = {
   SHIPMENT_PLANS: "ShipmentPlans",
   HARVEST_FORECAST: "HarvestForecast",
   HARVEST_MIX: "HarvestMix",
+  CLAIMS: "Claims",
+  MONEY_LOG: "MoneyLog",
   SETTINGS: "Settings",
 } as const;
 
@@ -39,6 +41,11 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "PaidAt",
     "PaymentMethod",
     "AccountantEmail",
+    // Частичная оплата и работа с долгом — тоже в конец строки (грабли 1.1).
+    // PaidAmount пустой у старых заявок: там смотрим на флаг Paid.
+    "PaidAmount",
+    "PromisedAt",
+    "CollectionNote",
   ],
   [SHEET_TABS.ORDER_ITEMS]: [
     "OrderID",
@@ -122,6 +129,30 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "UpdatedAt",
     "UpdatedByEmail",
   ],
+  // Рекламация: менеджер сообщает, что с заявкой не так, бухгалтер решает.
+  [SHEET_TABS.CLAIMS]: [
+    "ClaimID",
+    "CreatedAt",
+    "OrderID",
+    "ManagerEmail",
+    "Reason",
+    "Comment",
+    "Status",
+    "DecidedAt",
+    "AccountantEmail",
+    "Decision",
+  ],
+  // Журнал действий по деньгам: кто, когда, с какой заявкой и что сделал.
+  [SHEET_TABS.MONEY_LOG]: [
+    "LogID",
+    "CreatedAt",
+    "ActorEmail",
+    "OrderID",
+    "Action",
+    "Details",
+    "AmountBefore",
+    "AmountAfter",
+  ],
   [SHEET_TABS.SETTINGS]: ["Key", "Value"],
 };
 
@@ -166,6 +197,71 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 /** Через сколько дней после даты доставки долг считается просроченным. */
 export const DEBT_OVERDUE_DAYS = 3;
+
+/**
+ * Копеечный допуск при сравнении денег. Оплата 799 999,999 ₸ по счёту на
+ * 800 000 ₸ — это оплачено целиком, а не «не хватает копейки»: иначе заявка
+ * навсегда зависла бы в долгах из-за округления при пересчёте.
+ */
+export const MONEY_EPSILON = 1;
+
+// ---------------------------------------------------------------------------
+// Рекламации.
+//
+// Клиент жалуется менеджеру, а деньги правит бухгалтер — значит это разговор
+// двух ролей, и его надо где-то хранить. Менеджер заводит рекламацию на своей
+// заявке, бухгалтер её проводит (пересчитывает заявку) или отклоняет.
+// Так решил владелец: «менеджер заводит, бухгалтер решает».
+// ---------------------------------------------------------------------------
+
+/** Причины рекламации. Список закрытый: свободный ввод не сводится в отчёт. */
+export const CLAIM_REASONS = [
+  "Брак",
+  "Пересорт",
+  "Недовоз",
+  "Опоздание",
+  "Ошибка в цене",
+  "Другое",
+] as const;
+export type ClaimReason = (typeof CLAIM_REASONS)[number];
+
+export const CLAIM_STATUSES = {
+  NEW: "new",
+  ACCEPTED: "accepted",
+  REJECTED: "rejected",
+} as const;
+export type ClaimStatus = (typeof CLAIM_STATUSES)[keyof typeof CLAIM_STATUSES];
+
+export const CLAIM_STATUS_LABELS: Record<string, string> = {
+  new: "Ждёт решения",
+  accepted: "Проведена",
+  rejected: "Отклонена",
+};
+
+/**
+ * Что записывается в журнал действий по деньгам. Строки короткие и постоянные:
+ * по ним потом фильтруют, а человеческую подпись даёт MONEY_LOG_LABELS.
+ */
+export const MONEY_LOG_ACTIONS = {
+  PAYMENT: "payment",
+  PAYMENT_CLEARED: "payment_cleared",
+  RECALCULATED: "recalculated",
+  CLAIM_CREATED: "claim_created",
+  CLAIM_ACCEPTED: "claim_accepted",
+  CLAIM_REJECTED: "claim_rejected",
+  PROMISE: "promise",
+} as const;
+export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
+
+export const MONEY_LOG_LABELS: Record<string, string> = {
+  payment: "Оплата",
+  payment_cleared: "Оплата снята",
+  recalculated: "Пересчёт заявки",
+  claim_created: "Рекламация подана",
+  claim_accepted: "Рекламация проведена",
+  claim_rejected: "Рекламация отклонена",
+  promise: "Обещание оплаты",
+};
 
 // ---------------------------------------------------------------------------
 // Бонусы менеджеров. Процент зависит от типа цветка и совпадает с делением по

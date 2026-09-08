@@ -352,13 +352,15 @@ function salesWindow(orders: OrderWithItems[], from: Date, to: Date) {
       dueShipped += o.items.reduce((s, i) => s + i.shippedQuantity, 0);
     }
     revenue += amount;
-    if (o.paid) paidRevenue += amount;
+    // Деньгами считаем полученную сумму, а не флаг: предоплата 300 из 800 — это
+    // 300 собранных тенге и 500 долга, а не «ничего не оплачено».
+    paidRevenue += Math.min(o.paidAmount, amount);
     if (o.clientName.trim()) clients.add(o.clientName.trim().toLowerCase());
 
     const m = byManager.get(o.managerEmail) ?? { orders: 0, stems: 0, revenue: 0, paid: 0 };
     m.orders += 1;
     m.revenue += amount;
-    if (o.paid) m.paid += amount;
+    m.paid += Math.min(o.paidAmount, amount);
 
     for (const item of o.items) {
       const money = item.quantity * item.unitPrice;
@@ -465,10 +467,17 @@ export async function getAnalyticsSummary(
     ? allOrders
         .map((o) => {
           const items = o.items.filter((i) => mine(i.flowerType));
+          const fullTotal = o.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+          const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+          // Деньги за смешанную заявку приходят ОДНОЙ суммой, и разделить её
+          // между производствами можно только по их долям в счёте. Оставить
+          // полную оплату у каждого — значит показать зав. складом Есентая
+          // собираемость 160 %.
           return {
             ...o,
             items,
-            totalAmount: items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
+            totalAmount,
+            paidAmount: fullTotal > 0 ? (o.paidAmount * totalAmount) / fullTotal : 0,
           };
         })
         .filter((o) => o.items.length > 0)
@@ -829,11 +838,16 @@ export async function getAnalyticsSummary(
   const debtByClient = new Map<string, number>();
   let debtTotal = 0;
   for (const o of orders) {
-    if (o.status === "cancelled" || o.paid) continue;
+    if (o.status === "cancelled") continue;
     const amount = o.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    debtTotal += amount;
+    // Долг — остаток, а не вся сумма: частично оплаченная заявка висит только
+    // на невнесённую часть.
+    // Остаток меньше тенге — округление при пересчёте, а не долг.
+    const debt = amount - o.paidAmount > 1 ? amount - o.paidAmount : 0;
+    if (debt <= 0) continue;
+    debtTotal += debt;
     const key = (o.clientName.trim() || "Без названия").toLowerCase();
-    debtByClient.set(key, (debtByClient.get(key) ?? 0) + amount);
+    debtByClient.set(key, (debtByClient.get(key) ?? 0) + debt);
   }
 
   const clientRows: ClientRow[] = Array.from(clientMap.entries())

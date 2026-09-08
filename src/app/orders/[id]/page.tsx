@@ -4,9 +4,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getOrderById } from "@/lib/repo/orders";
 import { listShipments } from "@/lib/repo/shipments";
-import { FLOWER_TYPE_LABELS, farmLabel, formatGrade, getFarmFor } from "@/lib/constants";
+import { listClaims } from "@/lib/repo/claims";
+import { listUsers } from "@/lib/repo/users";
+import { FLOWER_TYPE_LABELS, ROLES, farmLabel, formatGrade, getFarmFor } from "@/lib/constants";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ReadyChecks from "@/components/ReadyChecks";
+import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +36,31 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       }
     : loaded;
 
-  const allShipments = await listShipments();
+  const [allShipments, allClaims, users] = await Promise.all([
+    listShipments(),
+    listClaims(),
+    listUsers(),
+  ]);
   const shipments = allShipments.filter((s) => s.orderId === order.orderId);
+
+  // Рекламации показываем всем, кто видит заявку: складу тоже полезно знать,
+  // что по этой отгрузке была жалоба. Заводить может только свой менеджер.
+  const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  const claims: OrderClaimRow[] = allClaims
+    .filter((c) => c.orderId === order.orderId)
+    .map((c) => ({
+      claimId: c.claimId,
+      createdAt: c.createdAt,
+      reason: c.reason,
+      comment: c.comment,
+      status: c.status,
+      decidedAt: c.decidedAt,
+      decision: c.decision,
+      managerName: nameByEmail.get(c.managerEmail) ?? c.managerEmail,
+    }));
+  const canCreateClaim =
+    role === ROLES.ADMIN ||
+    (role === ROLES.MANAGER && order.managerEmail === session?.user?.email?.toLowerCase());
   const canShip = (role === "warehouse" || role === "admin") && order.status !== "shipped" && order.status !== "cancelled";
 
   return (
@@ -61,11 +87,15 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         paid={order.paid}
         paidAt={order.paidAt}
         paymentMethod={order.paymentMethod}
+        paidAmount={order.paidAmount}
+        totalAmount={order.totalAmount}
         canConfirm={
           role === "admin" ||
           (role === "manager" && order.managerEmail === session?.user?.email?.toLowerCase())
         }
       />
+
+      <OrderClaims orderId={order.orderId} claims={claims} canCreate={canCreateClaim} />
 
       <div className="card grid sm:grid-cols-2 gap-4 mb-6">
         <div>

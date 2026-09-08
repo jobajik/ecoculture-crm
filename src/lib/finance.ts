@@ -1,15 +1,16 @@
 import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
-import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, getFarmFor } from "./constants";
+import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./constants";
 import type { OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
 // Финансы для бухгалтера.
 //
-// Оплата в системе только целиком: заявка либо оплачена, либо нет (частичных
-// сумм и предоплат нет — так решено сознательно, чтобы не плодить кликов).
-// Поэтому «оплачено» — это сумма заявок с галочкой, а «долг» — сумма заявок
-// без галочки. Отменённые заявки не считаются нигде.
+// Оплата бывает ЧАСТИЧНОЙ: клиент вносит предоплату, потом остаток. Поэтому
+// хранится сумма (`paidAmount`), а галочка «оплачено» — это уже вывод из неё:
+// внесено не меньше суммы заявки. Долг — остаток, а не вся сумма заявки, иначе
+// клиент с предоплатой 90 % выглядел бы таким же должником, как тот, кто не
+// заплатил вовсе. Отменённые заявки не считаются нигде.
 //
 // Период считается по дате ОФОРМЛЕНИЯ заявки — так же, как продажи менеджеров,
 // чтобы цифры бухгалтера и цифры менеджеров сходились.
@@ -30,12 +31,45 @@ export interface FinanceOrderRow {
   amount: number;
   stems: number;
   managerConfirmed: boolean;
+  /** Оплачено ЦЕЛИКОМ. Частичная оплата — это paidAmount без этого флага. */
   paid: boolean;
   paidAt: string;
   paymentMethod: string;
+  /** Сколько денег получено. */
+  paidAmount: number;
+  /** Сколько осталось получить. Ноль — вопрос закрыт. */
+  debt: number;
+  /** Сколько получено сверх суммы заявки — обычно после пересчёта по рекламации. */
+  overpaid: number;
+  promisedAt: string;
+  collectionNote: string;
   /** Обе галочки — заявку можно собирать. */
   readyToCollect: boolean;
   positions: string;
+}
+
+/** Как обстоят дела с обещанием клиента заплатить. */
+export type PromiseState = "none" | "future" | "today" | "broken";
+
+/** Строка списка «кому звонить сегодня»: один долг — одна строка. */
+export interface CallRow {
+  orderId: string;
+  clientName: string;
+  clientPhone: string;
+  managerName: string;
+  deliveryDate: string;
+  /** Сумма заявки и сколько уже получено — панель оплаты работает от них. */
+  amount: number;
+  paidAmount: number;
+  debt: number;
+  /** Сколько дней долгу. */
+  days: number;
+  overdue: boolean;
+  promisedAt: string;
+  promiseState: PromiseState;
+  collectionNote: string;
+  /** Почему строка стоит именно здесь — пишем словами, чтобы не гадать. */
+  why: string;
 }
 
 export interface DebtRow {
@@ -62,6 +96,8 @@ export interface FinanceTotals {
   unpaidAmount: number;
   orders: number;
   paidOrders: number;
+  /** Заявки, где деньги пришли не полностью: их не видно ни в «оплачено», ни в «не оплачено». */
+  partlyPaidOrders: number;
   collectPercent: number;
   avgOrder: number;
 }
@@ -82,6 +118,10 @@ export interface FinanceSnapshot {
   debts: DebtRow[];
   debtTotal: number;
   debtOverdueTotal: number;
+  /** «Кому звонить сегодня»: тот же долг, но по заявкам и в порядке срочности. */
+  calls: CallRow[];
+  /** Сколько денег получено сверх счёта — их придётся возвращать или зачитывать. */
+  overpaidTotal: number;
 }
 
 function dayKey(date: Date): string {
@@ -97,6 +137,12 @@ function parseKey(key: string): Date {
 
 function daysBetween(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / 86_400_000);
+}
+
+/** «2026-09-10» → «10 сентября». Для фраз, которые читает человек. */
+function dateWord(key: string): string {
+  if (!key) return "";
+  return parseKey(key).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 }
 
 /** Границы периода: день — сам день, неделя — Пн-Вс, месяц — календарный. */
@@ -156,6 +202,7 @@ export async function getFinanceSnapshot(
 
   const toRow = (order: OrderWithItems): FinanceOrderRow => {
     const amount = order.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    const paidAmount = order.paidAmount;
     return {
       orderId: order.orderId,
       createdAt: order.createdAt,
@@ -172,6 +219,13 @@ export async function getFinanceSnapshot(
       paid: order.paid,
       paidAt: order.paidAt,
       paymentMethod: order.paymentMethod,
+      paidAmount,
+      // Остаток меньше тенге — это округление при пересчёте, а не долг. Без
+      // этого заявка навсегда осталась бы в списке звонков из-за копейки.
+      debt: amount - paidAmount > MONEY_EPSILON ? amount - paidAmount : 0,
+      overpaid: Math.max(0, paidAmount - amount),
+      promisedAt: order.promisedAt,
+      collectionNote: order.collectionNote,
       readyToCollect: order.managerConfirmed && order.paid,
       positions: order.items.map((i) => `${i.variety} ${i.grade}`).join(", "),
     };
@@ -181,16 +235,19 @@ export async function getFinanceSnapshot(
   const periodRows = allRows.filter((r) => r.createdDate >= from && r.createdDate <= to);
 
   // --- Итоги периода ---
+  // Считаем по ДЕНЬГАМ, а не по галочкам: заявка с предоплатой 300 из 800 даёт
+  // и оплаченные 300, и долг 500. По флагу она попала бы целиком в долги.
   const amount = periodRows.reduce((s, r) => s + r.amount, 0);
-  const paidAmount = periodRows.filter((r) => r.paid).reduce((s, r) => s + r.amount, 0);
+  const paidAmount = periodRows.reduce((s, r) => s + Math.min(r.paidAmount, r.amount), 0);
   const paidOrders = periodRows.filter((r) => r.paid).length;
+  const partlyPaidOrders = periodRows.filter((r) => !r.paid && r.paidAmount > 0).length;
 
   // --- По дням внутри периода ---
   const dayMap = new Map<string, { paid: number; unpaid: number }>();
   for (const r of periodRows) {
     const point = dayMap.get(r.createdDate) ?? { paid: 0, unpaid: 0 };
-    if (r.paid) point.paid += r.amount;
-    else point.unpaid += r.amount;
+    point.paid += Math.min(r.paidAmount, r.amount);
+    point.unpaid += r.debt;
     dayMap.set(r.createdDate, point);
   }
 
@@ -208,10 +265,10 @@ export async function getFinanceSnapshot(
 
   // --- Разрезы периода ---
   const methodMap = new Map<string, { amount: number; orders: number }>();
-  for (const r of periodRows.filter((x) => x.paid)) {
+  for (const r of periodRows.filter((x) => x.paidAmount > 0)) {
     const key = r.paymentMethod || "не указан";
     const m = methodMap.get(key) ?? { amount: 0, orders: 0 };
-    m.amount += r.amount;
+    m.amount += Math.min(r.paidAmount, r.amount);
     m.orders += 1;
     methodMap.set(key, m);
   }
@@ -225,7 +282,7 @@ export async function getFinanceSnapshot(
       orders: 0,
     };
     m.amount += r.amount;
-    if (r.paid) m.paidAmount += r.amount;
+    m.paidAmount += Math.min(r.paidAmount, r.amount);
     m.orders += 1;
     managerMap.set(r.managerEmail, m);
   }
@@ -241,9 +298,11 @@ export async function getFinanceSnapshot(
   }
 
   // --- Долги: по всей базе, не только за период ---
+  // Долг — ОСТАТОК по заявке, а не вся её сумма: клиент с предоплатой 90 % не
+  // должен выглядеть таким же должником, как тот, кто не заплатил вовсе.
   const debtMap = new Map<string, DebtRow & { oldest: string }>();
   for (const r of allRows) {
-    if (r.paid) continue;
+    if (r.debt <= 0) continue;
     const key = r.clientName.trim().toLowerCase() || r.orderId;
     // Возраст долга считаем от даты доставки; если её нет — от даты оформления.
     const basis = r.deliveryDate || r.createdDate;
@@ -258,19 +317,77 @@ export async function getFinanceSnapshot(
       oldest: basis,
     };
     row.orders += 1;
-    row.amount += r.amount;
+    row.amount += r.debt;
     if (basis < row.oldest) row.oldest = basis;
     if (!row.clientPhone && r.clientPhone) row.clientPhone = r.clientPhone;
     debtMap.set(key, row);
   }
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayKey = dayKey(today);
   const debts: DebtRow[] = Array.from(debtMap.values())
     .map(({ oldest, ...row }) => {
       const days = Math.max(0, daysBetween(parseKey(oldest), today));
       return { ...row, oldestDays: days, overdue: days > DEBT_OVERDUE_DAYS };
     })
     .sort((a, b) => b.amount - a.amount);
+
+  // --- Кому звонить сегодня ------------------------------------------------
+  // Тот же долг, но по заявкам и в порядке срочности. Порядок здесь и есть вся
+  // работа: сверху те, кто обещал и не заплатил, потом старые долги без
+  // обещания, а те, кто обещал заплатить позже, лежат внизу — их не тревожат.
+  const calls: CallRow[] = allRows
+    .filter((r) => r.debt > 0)
+    .map((r) => {
+      const basis = r.deliveryDate || r.createdDate;
+      const days = Math.max(0, daysBetween(parseKey(basis), today));
+      const promiseState: PromiseState = !r.promisedAt
+        ? "none"
+        : r.promisedAt < todayKey
+          ? "broken"
+          : r.promisedAt === todayKey
+            ? "today"
+            : "future";
+      const why =
+        promiseState === "broken"
+          ? `Обещал заплатить ${dateWord(r.promisedAt)} — деньги не пришли`
+          : promiseState === "today"
+            ? "Обещал заплатить сегодня"
+            : promiseState === "future"
+              ? `Обещал заплатить ${dateWord(r.promisedAt)} — можно не трогать`
+              : days > DEBT_OVERDUE_DAYS
+                ? `Висит ${days} дн., договорённости о сроке нет`
+                : "Срок ещё не вышел";
+      return {
+        orderId: r.orderId,
+        clientName: r.clientName || "(без названия)",
+        clientPhone: r.clientPhone,
+        managerName: r.managerName,
+        deliveryDate: r.deliveryDate,
+        amount: r.amount,
+        paidAmount: r.paidAmount,
+        debt: r.debt,
+        days,
+        overdue: days > DEBT_OVERDUE_DAYS,
+        promisedAt: r.promisedAt,
+        promiseState,
+        collectionNote: r.collectionNote,
+        why,
+      };
+    })
+    .sort((a, b) => {
+      const rank = (row: CallRow) =>
+        row.promiseState === "broken"
+          ? 0
+          : row.promiseState === "today"
+            ? 1
+            : row.promiseState === "none" && row.overdue
+              ? 2
+              : row.promiseState === "none"
+                ? 3
+                : 4;
+      return rank(a) - rank(b) || b.days - a.days || b.debt - a.debt;
+    });
 
   return {
     generatedAt: now.toISOString(),
@@ -284,6 +401,7 @@ export async function getFinanceSnapshot(
       unpaidAmount: amount - paidAmount,
       orders: periodRows.length,
       paidOrders,
+      partlyPaidOrders,
       collectPercent: amount > 0 ? (paidAmount / amount) * 100 : 0,
       avgOrder: periodRows.length > 0 ? amount / periodRows.length : 0,
     },
@@ -299,5 +417,7 @@ export async function getFinanceSnapshot(
     debts,
     debtTotal: debts.reduce((s, d) => s + d.amount, 0),
     debtOverdueTotal: debts.filter((d) => d.overdue).reduce((s, d) => s + d.amount, 0),
+    calls,
+    overpaidTotal: allRows.reduce((s, r) => s + r.overpaid, 0),
   };
 }

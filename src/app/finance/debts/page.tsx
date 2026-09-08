@@ -1,7 +1,10 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot } from "@/lib/finance";
-import { DEBT_OVERDUE_DAYS } from "@/lib/constants";
+import { DEBT_OVERDUE_DAYS, ROLES } from "@/lib/constants";
 
 import SectionTabs from "@/components/SectionTabs";
+import CallsBoard from "@/components/CallsBoard";
 import { FINANCE_TABS } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -21,17 +24,23 @@ function dayWord(n: number): string {
 }
 
 export default async function DebtsPage() {
+  const session = await getServerSession(authOptions);
+  const role = session?.user?.role;
+  const canEdit = role === ROLES.ACCOUNTANT || role === ROLES.ADMIN;
+
   // Долги считаются по всей базе, поэтому период здесь не важен.
   const snapshot = await getFinanceSnapshot("month");
-  const { debts } = snapshot;
+  const { debts, calls } = snapshot;
+  const broken = calls.filter((c) => c.promiseState === "broken").length;
 
   return (
     <div className="space-y-5 max-w-4xl">
       <div>
-        <h1 className="text-xl font-semibold">Долги</h1>
+        <h1 className="text-xl font-semibold">Долги и звонки</h1>
         <p className="text-sm text-ink-secondary">
-          Неоплаченные заявки по клиентам. Возраст считается от даты доставки; после{" "}
-          {DEBT_OVERDUE_DAYS} дней долг помечается как просроченный.
+          Долг — это ОСТАТОК по заявке: клиент с предоплатой висит только на невнесённую часть.
+          Возраст считается от даты доставки; после {DEBT_OVERDUE_DAYS} дней долг помечается как
+          просроченный. Сверху — список на сегодня, ниже — сколько всего должен каждый клиент.
         </p>
       </div>
 
@@ -53,13 +62,27 @@ export default async function DebtsPage() {
           </div>
         </div>
         <div className="card !p-4">
-          <div className="text-xs text-ink-secondary mb-1">Самый старый долг</div>
-          <div className="text-2xl font-semibold tabular-nums">
-            {debts.length > 0 ? Math.max(...debts.map((d) => d.oldestDays)) : 0}
+          <div className="text-xs text-ink-secondary mb-1">Обещали и не заплатили</div>
+          <div
+            className={
+              broken > 0
+                ? "text-2xl font-semibold tabular-nums text-status-critical"
+                : "text-2xl font-semibold tabular-nums"
+            }
+          >
+            {broken}
           </div>
-          <div className="text-xs text-ink-muted mt-1">дней</div>
+          <div className="text-xs text-ink-muted mt-1">
+            {debts.length > 0
+              ? `самый старый долг — ${Math.max(...debts.map((d) => d.oldestDays))} дн.`
+              : "долгов нет"}
+          </div>
         </div>
       </div>
+
+      <CallsBoard calls={calls} canEdit={canEdit} />
+
+      <h2 className="font-medium pt-2">Сколько должен каждый клиент</h2>
 
       <div className="card !p-0 overflow-x-auto">
         <table className="w-full text-sm">

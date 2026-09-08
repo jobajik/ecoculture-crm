@@ -131,21 +131,33 @@ export async function getLeaderboard(
     const row = map.get(email) ?? blank(email);
     row.orders += 1;
 
+    // Оплата бывает частичной, поэтому бонус начисляется от ОПЛАЧЕННОЙ ДОЛИ
+    // заявки, а не от флага «оплачено». Клиент внёс половину — менеджер заработал
+    // половину бонуса, вторая половина ждёт в «бонус ждёт». При полной оплате
+    // доля равна единице, и всё считается как раньше.
+    const total = order.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    const share = total > 0 ? Math.min(1, Math.max(0, order.paidAmount / total)) : 0;
+
     for (const item of order.items) {
       const amount = item.quantity * item.unitPrice;
       const rate = bonusRateFor(item.flowerType);
       row.totalAmount += amount;
 
-      if (order.paid) {
-        row.paidAmount += amount;
-        row.paidStems += item.quantity;
-        row.paidByFlowerType[item.flowerType] = (row.paidByFlowerType[item.flowerType] ?? 0) + amount;
+      const paidPart = amount * share;
+      const pendingPart = amount - paidPart;
+
+      if (paidPart > 0) {
+        row.paidAmount += paidPart;
+        row.paidStems += item.quantity * share;
+        row.paidByFlowerType[item.flowerType] =
+          (row.paidByFlowerType[item.flowerType] ?? 0) + paidPart;
         row.bonusByFlowerType[item.flowerType] =
-          (row.bonusByFlowerType[item.flowerType] ?? 0) + amount * rate;
-        row.bonus += amount * rate;
-      } else {
-        row.pendingAmount += amount;
-        row.pendingBonus += amount * rate;
+          (row.bonusByFlowerType[item.flowerType] ?? 0) + paidPart * rate;
+        row.bonus += paidPart * rate;
+      }
+      if (pendingPart > 0) {
+        row.pendingAmount += pendingPart;
+        row.pendingBonus += pendingPart * rate;
       }
     }
 
@@ -159,6 +171,8 @@ export async function getLeaderboard(
       const target = isMonth ? plans.get(row.managerEmail)?.targetAmount ?? 0 : 0;
       return {
         ...row,
+        // Доля оплаты даёт дробные стебли — показывать «1249,6 шт» незачем.
+        paidStems: Math.round(row.paidStems),
         targetAmount: target,
         progressPercent: target > 0 ? (row.paidAmount / target) * 100 : 0,
         avgOrder: row.orders > 0 ? row.totalAmount / row.orders : 0,

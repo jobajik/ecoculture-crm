@@ -27,6 +27,50 @@ export interface Order {
   paymentMethod: string;
   /** Кто из бухгалтеров отметил оплату. */
   accountantEmail: string;
+  /**
+   * Сколько денег по заявке уже получено. Оплата бывает частичной: клиент вносит
+   * предоплату, потом остаток. Флаг `paid` при этом означает «оплачено целиком»
+   * и считается из этой суммы — два поля не расходятся, потому что флаг всегда
+   * пересчитывается при записи.
+   */
+  paidAmount: number;
+  /** Клиент обещал заплатить до этой даты («ГГГГ-ММ-ДД»). Ставит бухгалтер. */
+  promisedAt: string;
+  /** Заметка бухгалтера по взысканию: с кем говорили, о чём договорились. */
+  collectionNote: string;
+}
+
+/**
+ * Рекламация: клиент пожаловался, менеджер сообщил, бухгалтер решает.
+ * Решение «проведена» означает, что заявку пересчитали — сумма изменилась.
+ */
+export interface Claim {
+  claimId: string;
+  createdAt: string;
+  orderId: string;
+  /** Кто подал — менеджер заявки. */
+  managerEmail: string;
+  reason: string;
+  comment: string;
+  status: string;
+  decidedAt: string;
+  /** Кто решил — бухгалтер. */
+  accountantEmail: string;
+  /** Комментарий бухгалтера к решению. */
+  decision: string;
+}
+
+/** Строка журнала действий по деньгам. Пишется всегда, стирать её нельзя. */
+export interface MoneyLogEntry {
+  logId: string;
+  createdAt: string;
+  actorEmail: string;
+  orderId: string;
+  action: string;
+  details: string;
+  /** Сумма заявки до и после действия — по ним видно, что реально изменилось. */
+  amountBefore: number;
+  amountAfter: number;
 }
 
 export interface OrderItem {

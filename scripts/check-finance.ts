@@ -17,7 +17,15 @@ function order(
   manager: string,
   amountPerStem: number,
   qty: number,
-  opts: { paid?: boolean; confirmed?: boolean; delivery?: string; type?: string; method?: string } = {}
+  opts: {
+    paid?: boolean;
+    /** Частичная оплата: сколько денег реально получено. */
+    paidAmount?: number;
+    confirmed?: boolean;
+    delivery?: string;
+    type?: string;
+    method?: string;
+  } = {}
 ) {
   return {
     orderId: id,
@@ -30,9 +38,16 @@ function order(
     createdAt,
     managerConfirmed: opts.confirmed ?? false,
     managerConfirmedAt: "",
-    paid: opts.paid ?? false,
-    paidAt: opts.paid ? createdAt : "",
-    paymentMethod: opts.paid ? opts.method ?? "Каспи" : "",
+    // Флаг «оплачено целиком» — вывод из суммы, как и в самой программе.
+    paid: opts.paidAmount !== undefined
+      ? opts.paidAmount >= amountPerStem * qty
+      : opts.paid ?? false,
+    paidAmount:
+      opts.paidAmount !== undefined ? opts.paidAmount : opts.paid ? amountPerStem * qty : 0,
+    promisedAt: "",
+    collectionNote: "",
+    paidAt: opts.paid || opts.paidAmount ? createdAt : "",
+    paymentMethod: opts.paid || opts.paidAmount ? opts.method ?? "Каспи" : "",
     accountantEmail: "",
     totalAmount: amountPerStem * qty,
     items: [

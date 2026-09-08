@@ -16,6 +16,8 @@ export default function ReadyChecks({
   paid,
   paidAt,
   paymentMethod,
+  paidAmount,
+  totalAmount,
   canConfirm,
 }: {
   orderId: string;
@@ -23,6 +25,9 @@ export default function ReadyChecks({
   paid: boolean;
   paidAt: string;
   paymentMethod: string;
+  /** Сколько денег получено и сколько всего по счёту — оплата бывает частичной. */
+  paidAmount: number;
+  totalAmount: number;
   canConfirm: boolean;
 }) {
   const router = useRouter();
@@ -30,6 +35,8 @@ export default function ReadyChecks({
   const [error, setError] = useState<string | null>(null);
 
   const ready = managerConfirmed && paid;
+  const partial = !paid && paidAmount > 0;
+  const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 
   function toggle() {
     if (!canConfirm) return;
@@ -90,20 +97,33 @@ export default function ReadyChecks({
           <span
             className={clsx(
               "inline-flex items-center justify-center w-7 h-7 rounded-lg shrink-0 text-base",
-              paid ? "bg-status-good/15 text-status-good" : "bg-surface-plane text-ink-muted"
+              paid
+                ? "bg-status-good/15 text-status-good"
+                : partial
+                  ? "bg-[#8a5a00]/15 text-[#8a5a00]"
+                  : "bg-surface-plane text-ink-muted"
             )}
           >
-            {paid ? "✓" : "—"}
+            {paid ? "✓" : partial ? "½" : "—"}
           </span>
           <div className="min-w-0">
-            <div className="text-sm font-medium">Оплачено</div>
+            <div className="text-sm font-medium">
+              {paid ? "Оплачено" : partial ? "Оплачено частично" : "Оплачено"}
+            </div>
             <div className="text-xs text-ink-muted">
               {paid
                 ? `${paymentMethod || "способ не указан"}${
                     paidAt ? ` · ${new Date(paidAt).toLocaleDateString("ru-RU")}` : ""
                   }`
-                : "Отмечает бухгалтер в разделе «Оплаты»"}
+                : partial
+                  ? `Получено ${money(paidAmount)} из ${money(totalAmount)}`
+                  : "Отмечает бухгалтер в разделе «Оплаты»"}
             </div>
+            {partial && (
+              <div className="text-xs text-[#8a5a00] mt-0.5">
+                Остаток {money(totalAmount - paidAmount)}
+              </div>
+            )}
           </div>
         </div>
       </div>
