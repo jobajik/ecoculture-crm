@@ -1027,3 +1027,38 @@ export async function getAnalyticsSummary(
     weeks,
   };
 }
+
+/**
+ * Аналитика сразу по обоим производствам и по хозяйству целиком.
+ *
+ * Данные из Google-таблицы читаются ОДИН раз и прогоняются через тот же расчёт
+ * с разными фильтрами: иначе три вызова подряд означали бы восемнадцать запросов
+ * к Google вместо шести. Возвращает три готовых сводки — их и показывает отчёт
+ * тремя колонками.
+ */
+export async function getAnalyticsByFarm(
+  /** Зав. складом видит только своё производство: тогда считаем одну колонку. */
+  onlyFarm?: string | null
+): Promise<{ all: AnalyticsSummary; byFarm: { farm: string; summary: AnalyticsSummary }[] }> {
+  const [orders, batches, writeoffs, priceHistory, settings, forecast] = await Promise.all([
+    listOrdersWithItems(),
+    listBatches(),
+    listWriteoffs(),
+    listPriceHistory(),
+    getSettings(),
+    listHarvestForecast(),
+  ]);
+  const injected = { orders, batches, writeoffs, priceHistory, settings, forecast };
+
+  if (onlyFarm) {
+    const summary = await getAnalyticsSummary(onlyFarm, injected);
+    return { all: summary, byFarm: [{ farm: onlyFarm, summary }] };
+  }
+
+  const farms = ["rose_farm", "esentai"];
+  const [all, ...rest] = await Promise.all([
+    getAnalyticsSummary(null, injected),
+    ...farms.map((farm) => getAnalyticsSummary(farm, injected)),
+  ]);
+  return { all, byFarm: farms.map((farm, i) => ({ farm, summary: rest[i] })) };
+}

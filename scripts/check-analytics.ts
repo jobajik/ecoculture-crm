@@ -337,6 +337,29 @@ async function main() {
   check("пусто: доля ликвида неизвестна", [empty.liquidReceivedPercent, empty.liquidStockPercent], [null, null]);
   check("пусто: «коротко» всё равно есть", empty.headline.length > 0, true);
 
+  // --- Три колонки отчёта --------------------------------------------------
+  // Отчёт показывает Rose Farm, Есентай и хозяйство целиком. Проверяем, что
+  // части сходятся с целым там, где это вообще возможно: стебли и деньги
+  // складываются, а вот заявки и клиенты — нет, смешанная заявка попадает в оба
+  // производства сразу, и это не ошибка.
+  const colRose = await getAnalyticsSummary("rose_farm", inj());
+  const colEsentai = await getAnalyticsSummary("esentai", inj());
+  check("выручка: части = целое", colRose.revenue.value + colEsentai.revenue.value, s.revenue.value);
+  check("стебли: части = целое", colRose.stems.value + colEsentai.stems.value, s.stems.value);
+  check("склад: части = целое", colRose.stockStems + colEsentai.stockStems, s.stockStems);
+  check(
+    "приёмка: части = целое",
+    colRose.receivedStems.value + colEsentai.receivedStems.value,
+    s.receivedStems.value
+  );
+  check("долг: части = целое", colRose.debtTotal + colEsentai.debtTotal, s.debtTotal);
+  check("у Rose Farm только своё", colRose.byFlower.map((f) => f.flowerType), ["rose"]);
+  check(
+    "у Есентая только хризантема",
+    colEsentai.byFlower.map((f) => f.flowerType),
+    ["chrysanthemum"]
+  );
+
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);
 }
