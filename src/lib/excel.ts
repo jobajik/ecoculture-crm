@@ -12,6 +12,8 @@ import {
   topGradeHint,
   formatGrade,
   weeksOfMonth,
+  DIRECTION_GROUPS,
+  SHIPMENT_DIRECTIONS,
   type FlowerType,
 } from "./constants";
 
@@ -1084,6 +1086,242 @@ export async function buildForecastTemplate(
     ...allowedTypes.map((t) => `   ${FLOWER_TYPE_LABELS[t]}: ${topGradeHint(t)}.`),
     "",
     "Новый сорт добавляется на вкладке Varieties в самой Google-таблице CRM.",
+  ];
+  lines.forEach((line) => notes.addRow([line]));
+  notes.getRow(1).font = { bold: true };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+// ---------------------------------------------------------------------------
+// План отгрузок РОПа: файл «направления × недели» на каждый цветок.
+//
+// Сделан по образцу прогноза срезки — сознательно: в хозяйстве уже привыкли,
+// что план заполняется таблицей, где строки это позиции, а колонки недели.
+// Второй непохожий формат означал бы второе обучение.
+// ---------------------------------------------------------------------------
+
+export interface ParsedShipmentPlanRow {
+  week: string;
+  weekIndex: number;
+  flowerType: string;
+  direction: string;
+  stems: number;
+  error?: string;
+}
+
+export interface ShipmentPlanParseResult {
+  rows: ParsedShipmentPlanRow[];
+  validCount: number;
+  errorCount: number;
+  fatalError?: string;
+}
+
+const DIRECTION_HEADERS = ["направление", "направления", "direction"];
+
+/** «Астана » или «астана» — то же направление. */
+function matchDirection(raw: string): string | null {
+  const cleaned = raw.trim().toLowerCase();
+  if (!cleaned) return null;
+  return SHIPMENT_DIRECTIONS.find((d) => d.trim().toLowerCase() === cleaned) ?? null;
+}
+
+export async function parseShipmentPlanWorkbook(
+  buffer: ArrayBuffer,
+  /** Месяц («2026-09») — из него собираются коды недель. */
+  month = ""
+): Promise<ShipmentPlanParseResult> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    return {
+      rows: [],
+      validCount: 0,
+      errorCount: 0,
+      fatalError: "Не удалось прочитать файл. Нужен файл Excel в формате .xlsx.",
+    };
+  }
+
+  const weeks = month ? weeksOfMonth(month) : [];
+  const rows: ParsedShipmentPlanRow[] = [];
+  let sawAnyTable = false;
+
+  for (const sheet of workbook.worksheets) {
+    if (normalizeHeader(sheet.name).startsWith("как заполнять")) continue;
+
+    const sheetType = flowerTypeFromSheetName(sheet.name);
+
+    let headerRow = 0;
+    let firstCol = 0;
+    const weekCols: { col: number; index: number }[] = [];
+
+    for (let r = 1; r <= Math.min(10, sheet.rowCount); r++) {
+      const row = sheet.getRow(r);
+      let foundFirst = 0;
+      const cols: { col: number; index: number }[] = [];
+
+      row.eachCell((cell, colNumber) => {
+        const header = normalizeHeader(cellText(cell));
+        if (!header) return;
+        if (!foundFirst && DIRECTION_HEADERS.includes(header)) {
+          foundFirst = colNumber;
+          return;
+        }
+        const weekIndex = weekNumberFromHeader(header);
+        if (weekIndex) cols.push({ col: colNumber, index: weekIndex });
+      });
+
+      if (foundFirst && cols.length > 0) {
+        headerRow = r;
+        firstCol = foundFirst;
+        weekCols.push(...cols);
+        break;
+      }
+    }
+
+    if (!headerRow) continue;
+    sawAnyTable = true;
+
+    for (let r = headerRow + 1; r <= sheet.rowCount; r++) {
+      const row = sheet.getRow(r);
+      const label = cellText(row.getCell(firstCol));
+      if (!label.trim()) continue;
+      // Строки-заголовки блоков («РЕГИОНЫ КАЗАХСТАНА») просто пропускаем.
+      const direction = matchDirection(label);
+
+      for (const { col, index } of weekCols) {
+        const raw = cellText(row.getCell(col));
+        if (!raw.trim()) continue;
+        const parsed = Number(raw.replace(/\s/g, "").replace(",", "."));
+        const stems = Number.isNaN(parsed) || parsed < 0 ? null : Math.round(parsed);
+        const week = weeks.find((w) => w.index === index);
+
+        if (!direction) {
+          // Неизвестная строка с цифрами — это ошибка, а не заголовок блока.
+          rows.push({
+            week: week?.code ?? "",
+            weekIndex: index,
+            flowerType: sheetType ?? "",
+            direction: label.trim(),
+            stems: 0,
+            error: `Направление «${label.trim()}» не из списка`,
+          });
+          continue;
+        }
+        if (!sheetType) {
+          rows.push({
+            week: week?.code ?? "",
+            weekIndex: index,
+            flowerType: "",
+            direction,
+            stems: 0,
+            error: `Не понял, какой цветок на листе «${sheet.name}»`,
+          });
+          continue;
+        }
+        if (!week) {
+          rows.push({
+            week: "",
+            weekIndex: index,
+            flowerType: sheetType,
+            direction,
+            stems: 0,
+            error: `В этом месяце нет недели ${index}`,
+          });
+          continue;
+        }
+        if (stems === null) {
+          rows.push({
+            week: week.code,
+            weekIndex: index,
+            flowerType: sheetType,
+            direction,
+            stems: 0,
+            error: `«${raw}» — не количество`,
+          });
+          continue;
+        }
+        rows.push({
+          week: week.code,
+          weekIndex: index,
+          flowerType: sheetType,
+          direction,
+          stems,
+        });
+      }
+    }
+  }
+
+  if (!sawAnyTable) {
+    return {
+      rows: [],
+      validCount: 0,
+      errorCount: 0,
+      fatalError:
+        "В файле не нашлось таблицы плана. Нужна колонка «Направление» и колонки «Неделя 1», «Неделя 2» и так далее — проще всего скачать шаблон.",
+    };
+  }
+
+  return {
+    rows,
+    validCount: rows.filter((r) => !r.error).length,
+    errorCount: rows.filter((r) => r.error).length,
+  };
+}
+
+export async function buildShipmentPlanTemplate(month: string): Promise<Buffer> {
+  const weeks = weeksOfMonth(month);
+  const weekColumns = weeks.map((w) => ({
+    header: `Неделя ${w.index}`,
+    key: `w${w.index}`,
+    width: 12,
+  }));
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Ecoculture-CRM";
+
+  const types = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+  for (const type of types) {
+    const plural = FLOWER_TYPE_LABELS_PLURAL[type] ?? FLOWER_TYPE_LABELS[type];
+    const sheet = workbook.addWorksheet(plural);
+    sheet.columns = [{ header: "Направление", key: "label", width: 28 }, ...weekColumns];
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getColumn(1).alignment = { horizontal: "left" };
+    sheet.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+
+    for (const group of DIRECTION_GROUPS) {
+      const head = sheet.addRow({ label: group.label.toUpperCase() });
+      head.font = { bold: true };
+      for (const direction of group.directions) sheet.addRow({ label: direction });
+    }
+  }
+
+  const notes = workbook.addWorksheet("Как заполнять");
+  notes.columns = [{ width: 110 }];
+  const lines = [
+    `План отгрузок на ${periodLabel(month)}`,
+    "",
+    "На каждый цветок свой лист: строки — направления, колонки — недели месяца,",
+    "в ячейках количество стеблей.",
+    "",
+    "Недели этого месяца:",
+    ...weeks.map((w) => `      Неделя ${w.index} — ${w.label} (${w.days} дн.)`),
+    "",
+    "Суммы вводить не нужно: система посчитает их сама по цене из прайс-листа,",
+    "а поправить цену можно прямо на странице плана.",
+    "",
+    "Заполняйте только те ячейки, куда собираетесь отгружать. Пустые пропускаются.",
+    "Ноль означает «в это направление на этой неделе не везём» — так убирается то,",
+    "что вносили раньше.",
+    "",
+    "Строки с названиями блоков («РЕГИОНЫ КАЗАХСТАНА») трогать не нужно, они для",
+    "удобства. Порядок колонок менять можно — система смотрит на заголовки.",
+    "",
+    "Новое направление в файле не появится: список закрытый, иначе за месяц",
+    "набегает «Астана», «астана» и «Астана » тремя разными строками.",
   ];
   lines.forEach((line) => notes.addRow([line]));
   notes.getRow(1).font = { bold: true };
