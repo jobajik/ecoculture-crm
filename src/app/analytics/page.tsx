@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { getAnalyticsByFarm } from "@/lib/analytics";
 import { farmLabel } from "@/lib/constants";
 import AnalyticsReport from "@/components/AnalyticsReport";
+import FlowerSummary from "@/components/FlowerSummary";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,6 +43,11 @@ export default async function AnalyticsPage() {
           Обновлено {new Date(all.generatedAt).toLocaleString("ru-RU")}
         </span>
       </div>
+
+      {/* «По цветку» стоит ПЕРВОЙ — так решил владелец: это самая понятная
+          таблица во всей аналитике, и прятать её под кнопкой «подробности»
+          было ошибкой. Остальное — пояснения и разрезы к ней. */}
+      <FlowerSummary rows={all.byFlower} days={all.days} />
 
       {all.headline.length > 0 && (
         <div className="card border-l-4 border-l-accent">

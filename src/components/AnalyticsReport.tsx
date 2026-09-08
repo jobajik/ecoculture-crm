@@ -799,58 +799,6 @@ function Details({
 
       {open && (
         <div className="space-y-6 mt-3">
-          {all.byFlower.length > 0 && (
-            <Block title="По цветку" hint="Что пришло, что ушло и что осталось за 30 дней">
-              <div className="card !p-0 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                      <th className="px-4 py-2 font-medium">Цветок</th>
-                      <th className="px-3 py-2 font-medium text-right">Срезано</th>
-                      <th className="px-3 py-2 font-medium text-right">Продано</th>
-                      <th className="px-3 py-2 font-medium text-right">Списано</th>
-                      <th className="px-3 py-2 font-medium text-right">На складе</th>
-                      <th className="px-3 py-2 font-medium text-right">Запас</th>
-                      <th className="px-3 py-2 font-medium text-right">Ср. цена</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {all.byFlower.map((f) => {
-                      const ratio =
-                        f.coverDays !== null ? f.coverDays / Math.max(1, f.shelfLifeDays) : null;
-                      const tone: Tone =
-                        ratio === null ? "neutral" : toneLowerBetter(ratio, BENCHMARKS.coverRatio);
-                      return (
-                        <tr key={f.flowerType} className="border-b border-line-hairline last:border-0">
-                          <td className="px-4 py-2 font-medium">
-                            {FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">{nf(f.received)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{nf(f.sold)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {f.writeoff > 0 ? nf(f.writeoff) : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium">
-                            {nf(f.stock)}
-                          </td>
-                          <td className={clsx("px-3 py-2 text-right tabular-nums", TONE_TEXT[tone])}>
-                            {f.coverDays === null ? "—" : `${Math.round(f.coverDays)} дн.`}
-                            <span className="block text-[11px] text-ink-muted">
-                              срок {f.shelfLifeDays} {dayWord(f.shelfLifeDays)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {f.avgPrice.value > 0 ? `${nf(f.avgPrice.value)} ₸` : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Block>
-          )}
-
           {all.byGrade.length > 0 && (
             <Block title="Что продаётся" hint={`Разрез по ${gradePhrase}`}>
               <Collapsible
