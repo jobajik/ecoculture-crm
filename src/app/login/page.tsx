@@ -3,6 +3,7 @@
 import { signIn } from "next-auth/react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Suspense } from "react";
 
 function LoginContent() {
@@ -47,6 +48,15 @@ function LoginContent() {
           <button onClick={() => signIn("google", { callbackUrl: "/" })} className="btn-primary w-full">
             Войти через Google
           </button>
+
+          {/* Ссылка нужна и людям, и Google: без публичной политики
+              конфиденциальности приложение нельзя вывести из режима
+              «Тестирование» (см. CLAUDE.md, грабли 1.10). */}
+          <p className="text-xs text-ink-muted text-center mt-4">
+            <Link href="/privacy" className="hover:text-ink-secondary hover:underline">
+              Политика конфиденциальности
+            </Link>
+          </p>
         </div>
       </div>
     </div>
