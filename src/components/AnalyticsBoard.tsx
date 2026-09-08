@@ -221,6 +221,10 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
       : toneLowerBetter(s.discountPercent, BENCHMARKS.discountPercent);
   const expiredTone = toneLowerBetter(s.expiredPercent, BENCHMARKS.expiredPercent);
   const clientsTone = toneLowerBetter(s.topClientsPercent, BENCHMARKS.topClientsPercent);
+  const fillTone: Tone =
+    s.fillRatePercent === null
+      ? "neutral"
+      : toneHigherBetter(s.fillRatePercent, BENCHMARKS.fillRatePercent);
 
   const maxWeek = Math.max(...s.weeks.map((w) => w.revenue), 1);
 
@@ -252,7 +256,7 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
 
       {/* --- Продажи -------------------------------------------------------- */}
       <Block title="Продажи" hint={`${s.periodLabel} · сравнение с ${s.prevLabel}`}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Tile
             label="Выручка по заявкам"
             value={shortMoney(s.revenue.value)}
@@ -279,6 +283,20 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
             change={s.clients}
             sub={`топ-3 дают ${pct(s.topClientsPercent, 0)}`}
             subTone={clientsTone}
+          />
+          <Tile
+            label="Повторные клиенты"
+            value={s.repeatClientPercent === null ? "—" : pct(s.repeatClientPercent, 0)}
+            sub="покупали и в прошлые 30 дней"
+          />
+          <Tile
+            label="От заявки до доставки"
+            value={
+              s.avgLeadDays === null
+                ? "—"
+                : `${dec(s.avgLeadDays)} ${dayWord(Math.round(s.avgLeadDays))}`
+            }
+            sub="в среднем по заявкам периода"
           />
         </div>
       </Block>
@@ -324,10 +342,10 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
             }
           />
           <Tile
-            label="Просрочено на складе"
-            value={pct(s.expiredPercent)}
-            tone={expiredTone}
-            sub={`${num(s.expiredStems)} шт · скоро истечёт ещё ${num(s.expiringStems)}`}
+            label="Выполнено по отгрузке"
+            value={s.fillRatePercent === null ? "—" : pct(s.fillRatePercent, 0)}
+            tone={fillTone}
+            sub={`ориентир от ${BENCHMARKS.fillRatePercent.good} % · заявки с прошедшей доставкой`}
           />
         </div>
       </Block>
@@ -347,16 +365,142 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
             sub={s.coverDays === null ? "продаж за период не было" : "при темпе последних 30 дней"}
           />
           <Tile
+            label="Просрочено на складе"
+            value={pct(s.expiredPercent)}
+            tone={expiredTone}
+            sub={`${num(s.expiredStems)} шт · скоро истечёт ещё ${num(s.expiringStems)}`}
+          />
+        </div>
+      </Block>
+
+      {/* --- Производство ---------------------------------------------------- */}
+      <Block
+        title="Производство"
+        hint="Что дало хозяйство за 30 дней и как это сходится с планом агронома"
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Tile
             label="Принято за период"
             value={num(s.receivedStems.value)}
             change={s.receivedStems}
+            sub={`${num(s.receivedStems.value / s.days)} шт в день`}
+          />
+          <Tile
+            label="Выход высшей категории"
+            value={s.topGradePercent === null ? "—" : pct(s.topGradePercent, 0)}
             sub={
               s.topGradePercent === null
                 ? "приёмки не было"
-                : `высшей категории ${pct(s.topGradePercent, 0)}`
+                : "роза от 70 см, хризантема «Высшая»"
             }
           />
+          <Tile
+            label="Продано от принятого"
+            value={s.soldOfReceivedPercent === null ? "—" : pct(s.soldOfReceivedPercent, 0)}
+            tone={
+              s.soldOfReceivedPercent === null
+                ? "neutral"
+                : s.soldOfReceivedPercent >= 90
+                  ? "good"
+                  : s.soldOfReceivedPercent >= 60
+                    ? "warning"
+                    : "critical"
+            }
+            sub="меньше 100 % — склад растёт"
+          />
+          <Tile
+            label="Вырастили на сумму"
+            value={shortMoney(s.receivedMoney)}
+            sub="принятое по действующему прайсу"
+          />
         </div>
+
+        {s.harvestPlan.length > 0 && (
+          <div className="card !p-0 overflow-x-auto mt-3">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                  <th className="px-4 py-2 font-medium">Прогноз срезки на месяц</th>
+                  <th className="px-3 py-2 font-medium text-right">План</th>
+                  <th className="px-3 py-2 font-medium text-right">Срезано</th>
+                  <th className="px-3 py-2 font-medium text-right">Выполнено</th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.harvestPlan.map((h) => {
+                  // Честное сравнение: если прошло 27 % месяца, то и плана
+                  // должно быть выполнено примерно столько же.
+                  const tone: Tone =
+                    h.percentOfPlan === null
+                      ? "neutral"
+                      : h.percentOfPlan >= s.monthProgressPercent * 0.9
+                        ? "good"
+                        : h.percentOfPlan >= s.monthProgressPercent * 0.7
+                          ? "warning"
+                          : "critical";
+                  return (
+                    <tr key={h.flowerType} className="border-b border-line-hairline last:border-0">
+                      <td className="px-4 py-2 font-medium">
+                        {FLOWER_TYPE_LABELS_PLURAL[h.flowerType] ?? h.flowerType}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {h.planStems > 0 ? num(h.planStems) : "не заполнен"}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{num(h.receivedStems)}</td>
+                      <td className={clsx("px-3 py-2 text-right tabular-nums", TONE_TEXT[tone])}>
+                        {h.percentOfPlan === null ? "—" : pct(h.percentOfPlan, 0)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="px-4 py-2 border-t border-line-hairline text-xs text-ink-muted">
+              С начала месяца прошло {pct(s.monthProgressPercent, 0)} — примерно столько же должно
+              быть срезано, если прогноз ровный по неделям.
+            </div>
+          </div>
+        )}
+
+        {s.receivedByGrade.length > 0 && (
+          <div className="mt-3">
+            <Collapsible
+              rows={s.receivedByGrade}
+              what={gradeWord}
+              head={
+                <>
+                  <th className="px-4 py-2 font-medium">Приёмка по ростовке</th>
+                  <th className="px-3 py-2 font-medium text-right">Принято</th>
+                  <th className="px-3 py-2 font-medium text-right">Доля</th>
+                  <th className="px-3 py-2 font-medium text-right">К прошлым 30</th>
+                </>
+              }
+              render={(r) => (
+                <tr
+                  key={`${r.flowerType}:${r.grade}`}
+                  className="border-b border-line-hairline last:border-0"
+                >
+                  <td className="px-4 py-2">
+                    <span className="text-ink-muted">
+                      {FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType}{" "}
+                    </span>
+                    <span className="font-medium">{formatGrade(r.grade)}</span>
+                    {r.top && (
+                      <span className={clsx("ml-2 text-[11px]", TONE_TEXT.good)}>высшая</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(r.stems.value)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-secondary">
+                    {pct(r.share, 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Change delta={r.stems} compact />
+                  </td>
+                </tr>
+              )}
+            />
+          </div>
+        )}
       </Block>
 
       {/* --- Единственный график: выручка по неделям ------------------------- */}
@@ -673,48 +817,6 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
         </Block>
       </div>
 
-      {/* --- Партии на грани -------------------------------------------------- */}
-      {s.alerts.length > 0 && (
-        <Block
-          title="Партии, которые скоро сгорят"
-          hint="Сверху те, у кого срок прожит сильнее всего"
-        >
-          <Collapsible
-            rows={s.alerts}
-            what={batchWord}
-            head={
-              <>
-                <th className="px-4 py-2 font-medium">Позиция</th>
-                <th className="px-3 py-2 font-medium text-right">Лежит</th>
-                <th className="px-3 py-2 font-medium text-right">Остаток</th>
-                <th className="px-3 py-2 font-medium text-right">Деньги</th>
-              </>
-            }
-            render={(a) => (
-              <tr key={a.batchId} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-2">
-                  <span className="font-medium">
-                    {FLOWER_TYPE_LABELS[a.flowerType] ?? a.flowerType} {a.variety}
-                  </span>{" "}
-                  <span className="text-ink-secondary">{formatGrade(a.grade)}</span>
-                  <span className="block text-[11px] text-ink-muted font-mono">{a.batchId}</span>
-                </td>
-                <td
-                  className={clsx(
-                    "px-3 py-2 text-right tabular-nums",
-                    a.status === "critical" ? TONE_TEXT.critical : TONE_TEXT.warning
-                  )}
-                >
-                  {a.daysInStorage} из {a.maxDays} дн.
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(a.quantityRemaining)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{shortMoney(a.money)}</td>
-              </tr>
-            )}
-          />
-        </Block>
-      )}
-
       {/* --- Ориентиры -------------------------------------------------------- */}
       <Block title="Ориентиры" hint="По ним и красится страница. Меняются в коде одной строкой">
         <div className="card text-sm text-ink-secondary">
@@ -738,6 +840,11 @@ export default function AnalyticsBoard({ summary }: { summary: AnalyticsSummary 
             <li>
               Запас — не больше <b>{Math.round(BENCHMARKS.coverRatio.good * 100)} %</b> срока
               хранения. Запас длиннее срока означает, что часть цветка не успеет уйти.
+            </li>
+            <li>
+              Выполнение по отгрузке — от <b>{BENCHMARKS.fillRatePercent.good} %</b> заказанного.
+              Ниже <b>{BENCHMARKS.fillRatePercent.warn} %</b> значит, что клиенту регулярно
+              недокладывают.
             </li>
             <li>
               Три крупнейших клиента — до <b>{BENCHMARKS.topClientsPercent.good} %</b> выручки. Выше{" "}

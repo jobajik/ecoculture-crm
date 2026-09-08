@@ -1,3 +1,4 @@
+import { compareGrades } from "./constants";
 import type { StockVarietyCard } from "./stock";
 import type { StorageStatus } from "./shelfLife";
 
@@ -106,5 +107,13 @@ export function groupByGrade(cards: StockVarietyCard[]): GradeCard[] {
         urgency(a, b) || a.variety.localeCompare(b.variety, "ru")
       ),
     }))
-    .sort((a, b) => urgency({ ...a, quantity: a.totalQuantity }, { ...b, quantity: b.totalQuantity }));
+    // Порядок ростовок — естественный (40, 50, 60… мини-микс, 2 сорт), а не по
+    // объёму: длина это шкала, и прыгающие строки каждый раз приходится искать
+    // заново. Срочность видна плашкой дней и полосой срока, а не местом в списке.
+    // Разные цветки в списке перемешаны намеренно — их разносит по блокам уже
+    // сам компонент, здесь важен только порядок внутри цветка.
+    .sort(
+      (a, b) =>
+        a.flowerType.localeCompare(b.flowerType) || compareGrades(a.flowerType, a.grade, b.grade)
+    );
 }

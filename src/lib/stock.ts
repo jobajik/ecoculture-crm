@@ -1,7 +1,7 @@
 import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
 import { computeBatchStorageInfo, type StorageStatus } from "./shelfLife";
-import { getFarmFor } from "./constants";
+import { compareGrades, getFarmFor } from "./constants";
 import type { Batch, Settings } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -85,6 +85,21 @@ export interface AgeBucketGrade {
   status: StorageStatus;
 }
 
+/**
+ * Внутри диапазона строки сгруппированы по цветку: «Хризантемы 26 010» одной
+ * строкой, а ростовки под ней раскрываются по клику. Без группировки в плитке
+ * набегало пятнадцать строк вида «Хризантема Третья», «Роза 50 см» вперемешку,
+ * и прочитать «сколько всего хризантемы залежалось» было нельзя.
+ */
+export interface AgeBucketFlower {
+  flowerType: string;
+  quantity: number;
+  batches: number;
+  status: StorageStatus;
+  /** Ростовки в естественном порядке цветка: 40, 50, 60… мини-микс, 2 сорт. */
+  grades: AgeBucketGrade[];
+}
+
 export interface AgeBucketRow {
   key: string;
   label: string;
@@ -97,8 +112,8 @@ export interface AgeBucketRow {
   share: number;
   /** Худший статус внутри диапазона — им и подсвечивается плитка. */
   status: StorageStatus;
-  /** Строки диапазона: градации, отсортированные по количеству. */
-  grades: AgeBucketGrade[];
+  /** Цветки диапазона, крупные сверху; внутри каждого — ростовки. */
+  flowers: AgeBucketFlower[];
 }
 
 export interface StockSnapshot {
@@ -246,9 +261,32 @@ export async function getStockSnapshot(
   }
 
   const ageBuckets: AgeBucketRow[] = AGE_BUCKETS.map((bucket) => {
-    const grades = Array.from(bucketMap.get(bucket.key)!.values()).sort(
-      (a, b) => b.quantity - a.quantity || a.grade.localeCompare(b.grade, "ru")
-    );
+    const grades = Array.from(bucketMap.get(bucket.key)!.values());
+
+    // Складываем ростовки по цветку: крупный цветок сверху, внутри — свой
+    // естественный порядок длин и категорий.
+    const flowerMap = new Map<string, AgeBucketFlower>();
+    for (const g of grades) {
+      const row = flowerMap.get(g.flowerType) ?? {
+        flowerType: g.flowerType,
+        quantity: 0,
+        batches: 0,
+        status: "ok" as StorageStatus,
+        grades: [] as AgeBucketGrade[],
+      };
+      row.quantity += g.quantity;
+      row.batches += g.batches;
+      row.status = worseStatus(row.status, g.status);
+      row.grades.push(g);
+      flowerMap.set(g.flowerType, row);
+    }
+    const flowers = Array.from(flowerMap.values())
+      .map((f) => ({
+        ...f,
+        grades: f.grades.sort((a, b) => compareGrades(f.flowerType, a.grade, b.grade)),
+      }))
+      .sort((a, b) => b.quantity - a.quantity);
+
     const quantity = grades.reduce((s, g) => s + g.quantity, 0);
     return {
       key: bucket.key,
@@ -259,7 +297,7 @@ export async function getStockSnapshot(
       batches: grades.reduce((s, g) => s + g.batches, 0),
       share: totalStems > 0 ? quantity / totalStems : 0,
       status: grades.reduce<StorageStatus>((worst, g) => worseStatus(worst, g.status), "ok"),
-      grades,
+      flowers,
     };
   });
 

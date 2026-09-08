@@ -6,7 +6,7 @@ import { FLOWER_TYPE_LABELS_PLURAL, farmLabel, formatGrade, getFarmFor } from "@
 import type { StockVarietyCard } from "@/lib/stock";
 import { groupByGrade, type GradeCard, type GradeVarietyRow } from "@/lib/stockByGrade";
 import type { StorageStatus } from "@/lib/shelfLife";
-import MoreToggle, { COLLAPSED_LIST_SIZE } from "./MoreToggle";
+import MoreToggle from "./MoreToggle";
 
 /**
  * «Подробно по позициям» — блок по каждому цветку, строка по каждой РОСТОВКЕ
@@ -93,6 +93,14 @@ const gradeWord = (n: number) => plural(n, "ростовка", "ростовки
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
+/**
+ * Сколько ростовок показывать без раскрытия. Восемь — это ровно основные длины
+ * розы (40…100 плюс мини-микс) и все категории хризантемы до мини-микса. Под
+ * кнопкой остаётся хвост: второй сорт, уценка, брак. Пять было мало — под нож
+ * попадал мини-микс, а это двадцать одна тысяча стеблей.
+ */
+const VISIBLE_GRADES = 8;
+
 /** Плашка «сколько дней лежит»: один вид на телефоне и на компьютере. */
 function ageChipClass(status: StorageStatus): string {
   return clsx(
@@ -158,7 +166,7 @@ export default function StockDetail({
           Подробно по позициям
           <span className="text-sm font-normal text-ink-muted">
             {" "}
-            — по ростовке, сверху то, что нужно продать раньше
+            — по ростовке: 40, 50, 60… мини-микс, второй сорт
           </span>
         </h3>
         <input
@@ -218,7 +226,7 @@ function FlowerGroup({
   const [expanded, setExpanded] = useState(false);
   const accent = FLOWER_ACCENT[flowerType] ?? FLOWER_ACCENT.rose;
 
-  const shown = expanded || forceOpen ? cards : cards.slice(0, COLLAPSED_LIST_SIZE);
+  const shown = expanded || forceOpen ? cards : cards.slice(0, VISIBLE_GRADES);
   const hidden = cards.length - shown.length;
 
   return (

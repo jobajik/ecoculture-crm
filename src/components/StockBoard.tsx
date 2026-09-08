@@ -13,7 +13,12 @@ import {
 } from "@/lib/constants";
 import MoreToggle, { COLLAPSED_LIST_SIZE } from "./MoreToggle";
 import StockDetail from "./StockDetail";
-import type { AgeBucketRow, StockSnapshot, StockVarietyCard } from "@/lib/stock";
+import type {
+  AgeBucketFlower as AgeBucketFlowerBlock,
+  AgeBucketRow,
+  StockSnapshot,
+  StockVarietyCard,
+} from "@/lib/stock";
 import type { StorageStatus } from "@/lib/shelfLife";
 
 const REFRESH_MS = 45_000;
@@ -274,7 +279,7 @@ export default function StockBoard({
             Сколько дней лежит
             <span className="text-sm font-normal text-ink-muted">
               {" "}
-              — от даты срезки, по ростовке
+              — от даты срезки; нажмите на цветок, чтобы увидеть ростовки
             </span>
           </h3>
           <span className="text-xs text-ink-muted">
@@ -325,16 +330,18 @@ export default function StockBoard({
 }
 
 /**
- * Плитка одного диапазона хранения. Внутри — ГРАДАЦИИ (длины у розы, категории
- * у хризантемы и эустомы), а не сорта: залежавшееся продают ростовкой, и вопрос
- * «что залежалось» на складе означает «какой длины».
+ * Плитка одного диапазона хранения. Внутри — цветки одной строкой, а ростовки
+ * (длины у розы, категории у хризантемы и эустомы) раскрываются по клику.
+ *
+ * Без группировки в плитке набегало полтора десятка строк вида «Хризантема
+ * Третья», «Роза 50 см» вперемешку: прочитать «сколько всего хризантемы
+ * залежалось» было нельзя, а плитка превращалась в полотно. Теперь свёрнутая
+ * плитка отвечает на главный вопрос («какого цветка сколько»), а подробности
+ * человек открывает сам.
  */
 function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number }) {
-  const [expanded, setExpanded] = useState(false);
   const empty = bucket.quantity === 0;
   const percent = Math.round(bucket.share * 100);
-  const shown = expanded ? bucket.grades : bucket.grades.slice(0, COLLAPSED_LIST_SIZE);
-  const hidden = bucket.grades.length - shown.length;
 
   return (
     <div
@@ -374,44 +381,67 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
         <p className="text-sm text-ink-muted mt-3">Ничего нет</p>
       ) : (
         <>
-          <ul className="mt-3 space-y-1.5">
-            {shown.map((g) => (
-              <li key={`${g.flowerType}:${g.grade}`} className="flex items-baseline gap-2 text-sm">
-                <span
-                  className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[g.status])}
-                  title={`${FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType} · ${
-                    STATUS_LABEL[g.status]
-                  }`}
-                />
-                <span
-                  className="truncate flex-1"
-                  title={`${FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType} · ${formatGrade(
-                    g.grade
-                  )}`}
-                >
-                  <span className="text-ink-muted">
-                    {FLOWER_TYPE_LABELS[g.flowerType] ?? g.flowerType}{" "}
-                  </span>
-                  {formatGrade(g.grade)}
-                </span>
-                <span className="tabular-nums font-medium shrink-0">
-                  {g.quantity.toLocaleString("ru-RU")}
-                </span>
-              </li>
+          <div className="mt-3 divide-y divide-line-hairline">
+            {bucket.flowers.map((flower) => (
+              <AgeBucketFlowerRow key={flower.flowerType} flower={flower} />
             ))}
-          </ul>
-          <MoreToggle
-            expanded={expanded}
-            hidden={hidden}
-            onToggle={() => setExpanded((v) => !v)}
-            what={gradeWord(hidden)}
-            className="mt-2"
-          />
+          </div>
           <div className="text-[11px] text-ink-muted mt-2 pt-2 border-t border-line-hairline">
-            {bucket.grades.length} {gradeWord(bucket.grades.length)} · {bucket.batches}{" "}
+            {gradeCount(bucket)} {gradeWord(gradeCount(bucket))} · {bucket.batches}{" "}
             {batchWord(bucket.batches)}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function gradeCount(bucket: AgeBucketRow): number {
+  return bucket.flowers.reduce((sum, f) => sum + f.grades.length, 0);
+}
+
+/** Строка цветка внутри плитки: клик раскрывает ростовки. */
+function AgeBucketFlowerRow({ flower }: { flower: AgeBucketFlowerBlock }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="py-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 text-sm py-1 -mx-1 px-1 rounded hover:bg-surface-plane transition-colors"
+        aria-expanded={open}
+      >
+        <span className="text-[10px] text-ink-muted w-2 shrink-0" aria-hidden>
+          {open ? "▲" : "▼"}
+        </span>
+        <span
+          className={clsx("w-2 h-2 rounded-full shrink-0", STATUS_DOT[flower.status])}
+          title={STATUS_LABEL[flower.status]}
+        />
+        <span className="flex-1 text-left font-medium truncate">
+          {FLOWER_TYPE_LABELS_PLURAL[flower.flowerType] ?? flower.flowerType}
+        </span>
+        <span className="tabular-nums font-semibold shrink-0">
+          {flower.quantity.toLocaleString("ru-RU")}
+        </span>
+      </button>
+
+      {open && (
+        <ul className="pl-6 pb-1 space-y-1">
+          {flower.grades.map((g) => (
+            <li key={g.grade} className="flex items-baseline gap-2 text-sm text-ink-secondary">
+              <span
+                className={clsx("w-1.5 h-1.5 rounded-full shrink-0", STATUS_DOT[g.status])}
+                title={STATUS_LABEL[g.status]}
+              />
+              <span className="truncate flex-1">{formatGrade(g.grade)}</span>
+              <span className="tabular-nums text-ink-primary shrink-0">
+                {g.quantity.toLocaleString("ru-RU")}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -10,6 +10,7 @@
  */
 import { getStockSnapshot, ageBucketKeyOf, AGE_BUCKETS } from "../src/lib/stock";
 import { groupByGrade } from "../src/lib/stockByGrade";
+import { GRADES_BY_FLOWER_TYPE, gradeOrder } from "../src/lib/constants";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -76,6 +77,8 @@ async function main() {
 
   const snap = await getStockSnapshot(NOW, { batches, settings }, null);
   const bucket = (key: string) => snap.ageBuckets.find((b) => b.key === key)!;
+  /** Все ростовки диапазона одним списком — плитка складывает их по цветку. */
+  const gradesOf = (key: string) => bucket(key).flowers.flatMap((f) => f.grades);
 
   // --- Количества ----------------------------------------------------------
   check("всего на складе", snap.totalStems, 200 + 300 + 100 + 50 + 400 + 70 + 10 + 20);
@@ -90,30 +93,31 @@ async function main() {
   check("14+ дней", bucket("14+").quantity, 70);
 
   // --- Склейка градаций ----------------------------------------------------
-  check("две партии розы 60 см слились в одну строку", bucket("1-3").grades.filter((g) => g.grade === "60").length, 1);
-  check("строка диапазона — это градация", bucket("1-3").grades[0].grade, "60");
-  check("Роза 60: количество", bucket("1-3").grades[0].quantity, 500);
-  check("Роза 60: партий", bucket("1-3").grades[0].batches, 2);
-  check("строк в первом диапазоне", bucket("1-3").grades.length, 3);
-  check("пустая партия никуда не попала", bucket("4-7").grades.length, 1);
+  check("две партии розы 60 см слились в одну строку", gradesOf("1-3").filter((g) => g.grade === "60").length, 1);
+  check("строка диапазона — это градация", gradesOf("1-3").find((g) => g.grade === "60")!.grade, "60");
+  check("Роза 60: количество", gradesOf("1-3").find((g) => g.grade === "60")!.quantity, 500);
+  check("Роза 60: партий", gradesOf("1-3").find((g) => g.grade === "60")!.batches, 2);
+  check("ростовок в первом диапазоне", gradesOf("1-3").length, 3);
+  check("пустая партия никуда не попала", gradesOf("4-7").length, 1);
   check(
     "внутри диапазона одна строка на градацию",
-    snap.ageBuckets.every(
-      (b) => new Set(b.grades.map((g) => `${g.flowerType}:${g.grade}`)).size === b.grades.length
-    ),
+    snap.ageBuckets.every((b) => {
+      const all = b.flowers.flatMap((f) => f.grades);
+      return new Set(all.map((g) => `${g.flowerType}:${g.grade}`)).size === all.length;
+    }),
     true
   );
   check(
     "«50» у розы и у эустомы — разные строки",
-    bucket("1-3")
-      .grades.filter((g) => g.grade === "50")
+    gradesOf("1-3")
+      .filter((g) => g.grade === "50")
       .map((g) => `${g.flowerType}:${g.quantity}`)
       .sort(),
     ["eustoma:20", "rose:10"]
   );
 
   // --- Цвета: один диапазон, разные цветки, разные статусы ------------------
-  const nine = bucket("8-13").grades;
+  const nine = gradesOf("8-13");
   check("роза 9 дней — просрочена", nine.find((g) => g.flowerType === "rose")?.status, "critical");
   check(
     "хризантема 9 дней — в норме",
@@ -125,9 +129,21 @@ async function main() {
 
   // --- Сортировка и доли ---------------------------------------------------
   check(
-    "внутри диапазона сначала крупное",
-    nine.map((g) => g.quantity),
-    [400, 50]
+    "цветки в плитке идут от крупного",
+    bucket("8-13").flowers.map((f) => f.flowerType),
+    ["chrysanthemum", "rose"]
+  );
+  check(
+    "сумма по цветку = сумме его ростовок",
+    bucket("8-13").flowers.every(
+      (f) => f.grades.reduce((s, g) => s + g.quantity, 0) === f.quantity
+    ),
+    true
+  );
+  check(
+    "цветок красится по худшей ростовке",
+    bucket("8-13").flowers.find((f) => f.flowerType === "rose")?.status,
+    "critical"
   );
   check(
     "доли складываются в единицу",
@@ -138,14 +154,14 @@ async function main() {
   // --- Пустой склад --------------------------------------------------------
   const empty = await getStockSnapshot(NOW, { batches: [], settings }, null);
   check("пустой склад: диапазоны всё равно есть", empty.ageBuckets.length, 4);
-  check("пустой склад: строк внутри нет", empty.ageBuckets.every((b) => b.grades.length === 0), true);
+  check("пустой склад: цветков внутри нет", empty.ageBuckets.every((b) => b.flowers.length === 0), true);
   check("пустой склад: без деления на ноль", empty.ageBuckets.every((b) => b.share === 0), true);
 
   // --- Фильтр по производству ----------------------------------------------
   const roseFarm = await getStockSnapshot(NOW, { batches, settings }, "rose_farm");
   check(
     "у Rose Farm хризантемы в диапазонах нет",
-    roseFarm.ageBuckets.every((b) => b.grades.every((g) => g.flowerType !== "chrysanthemum")),
+    roseFarm.ageBuckets.every((b) => b.flowers.every((f) => f.flowerType !== "chrysanthemum")),
     true
   );
   check(
@@ -183,6 +199,55 @@ async function main() {
     true
   );
   check("пустой склад: разрез пустой", groupByGrade([]).length, 0);
+
+  // --- Порядок ростовок ----------------------------------------------------
+  // Он одинаковый везде: 40, 50, 60… мини-микс, второй сорт. Сортировать длины
+  // по количеству нельзя — глаз каждый раз ищет строку заново.
+  check("розы: 40 раньше 50", gradeOrder("rose", "40") < gradeOrder("rose", "50"), true);
+  check("розы: мини-микс после длин", gradeOrder("rose", "Мини-микс") > gradeOrder("rose", "100"), true);
+  check(
+    "розы: второй сорт после мини-микса",
+    gradeOrder("rose", "40 (2 сорт)") > gradeOrder("rose", "Мини-микс"),
+    true
+  );
+  check(
+    "розы: уценка в самом конце",
+    gradeOrder("rose", "Уценка"),
+    GRADES_BY_FLOWER_TYPE.rose.length - 1
+  );
+  check(
+    "хризантема: высшая → первая → вторая",
+    ["Высшая", "Первая", "Вторая", "Третья", "Четвёртая"].every(
+      (g, i, arr) => i === 0 || gradeOrder("chrysanthemum", arr[i - 1]) < gradeOrder("chrysanthemum", g)
+    ),
+    true
+  );
+  check(
+    "эустома: стандарт → 50 → мини-микс",
+    ["Стандарт", "50", "Мини-микс"].map((g) => gradeOrder("eustoma", g)),
+    [0, 1, 2]
+  );
+  check("незнакомая градация уходит в конец", gradeOrder("rose", "Что-то"), GRADES_BY_FLOWER_TYPE.rose.length);
+  check(
+    "в диапазоне ростовки идут в правильном порядке",
+    bucket("1-3")
+      .flowers.filter((f) => f.flowerType === "rose")
+      .every((f) =>
+        f.grades.every(
+          (g, i, arr) => i === 0 || gradeOrder("rose", arr[i - 1].grade) <= gradeOrder("rose", g.grade)
+        )
+      ),
+    true
+  );
+  check(
+    "в «Подробно по позициям» тот же порядок",
+    byGrade
+      .filter((c) => c.flowerType === "rose")
+      .every(
+        (c, i, arr) => i === 0 || gradeOrder("rose", arr[i - 1].grade) <= gradeOrder("rose", c.grade)
+      ),
+    true
+  );
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

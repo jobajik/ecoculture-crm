@@ -2,10 +2,18 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listBatches } from "./repo/batches";
 import { listWriteoffs } from "./repo/writeoffs";
 import { listPriceHistory } from "./repo/priceHistory";
+import { listHarvestForecast } from "./repo/harvestForecast";
 import { getSettings } from "./repo/settings";
 import { computeBatchStorageInfo, getMaxShelfLifeDays } from "./shelfLife";
 import { currentPrices, priceFor, type PriceRow } from "./priceList";
-import { FLOWER_TYPE_LABELS, formatGrade, getFarmFor, isTopGrade } from "./constants";
+import {
+  FLOWER_TYPE_LABELS,
+  compareGrades,
+  formatGrade,
+  getFarmFor,
+  isTopGrade,
+  monthOfWeek,
+} from "./constants";
 import { toIsoDate } from "./sheetDate";
 import { BENCHMARKS } from "./benchmarks";
 import type { OrderWithItems } from "./types";
@@ -109,26 +117,31 @@ export interface ManagerRow {
   collectPercent: number | null;
 }
 
+/** Строка приёмки по ростовке: что реально дало производство. */
+export interface ReceivedGradeRow {
+  flowerType: string;
+  grade: string;
+  label: string;
+  stems: Delta;
+  share: number;
+  /** Высшая ли это категория — по ней считается выход. */
+  top: boolean;
+}
+
+/** План срезки агронома против фактической приёмки, по текущему месяцу. */
+export interface HarvestPlanRow {
+  flowerType: string;
+  planStems: number;
+  receivedStems: number;
+  /** Сколько плана уже выполнено, %. null — плана нет. */
+  percentOfPlan: number | null;
+}
+
 export interface WriteoffReasonRow {
   reason: string;
   stems: number;
   money: number;
   share: number;
-}
-
-export interface StorageAlertRow {
-  batchId: string;
-  flowerType: string;
-  variety: string;
-  grade: string;
-  harvestDate: string;
-  daysInStorage: number;
-  maxDays: number;
-  percentUsed: number;
-  status: string;
-  quantityRemaining: number;
-  /** Во что оценивается остаток партии по действующему прайсу. */
-  money: number;
 }
 
 export interface AttentionRow {
@@ -159,6 +172,12 @@ export interface AnalyticsSummary {
   /** Оплачено из оформленного за период. */
   paidRevenue: number;
   collectPercent: number;
+  /** Отгружено от заказанного по заявкам, срок доставки которых уже прошёл, %. */
+  fillRatePercent: number | null;
+  /** Доля клиентов, которые покупали и в прошлом периоде, %. */
+  repeatClientPercent: number | null;
+  /** Сколько дней в среднем проходит от заявки до доставки. */
+  avgLeadDays: number | null;
   /** Долг по всей базе, а не только за период — как у бухгалтера. */
   debtTotal: number;
 
@@ -167,6 +186,16 @@ export interface AnalyticsSummary {
   discountPercent: number | null;
 
   receivedStems: Delta;
+  /** Сколько из принятого за период уже продано, %. */
+  soldOfReceivedPercent: number | null;
+  /** Во что принятое за период оценивается по действующему прайсу. */
+  receivedMoney: number;
+  /** Приёмка по ростовке: что реально дало производство. */
+  receivedByGrade: ReceivedGradeRow[];
+  /** План срезки агронома против факта приёмки, текущий месяц. */
+  harvestPlan: HarvestPlanRow[];
+  /** Какая доля месяца уже прошла — чтобы сравнивать план и факт честно. */
+  monthProgressPercent: number;
   writeoffStems: Delta;
   writeoffPercent: number | null;
   writeoffMoney: number;
@@ -188,7 +217,6 @@ export interface AnalyticsSummary {
   clientRows: ClientRow[];
   managers: ManagerRow[];
   writeoffReasons: WriteoffReasonRow[];
-  alerts: StorageAlertRow[];
   attention: AttentionRow[];
   weeks: WeekRow[];
 }
@@ -231,6 +259,13 @@ function share(part: number, total: number): number {
   return total > 0 ? (part / total) * 100 : 0;
 }
 
+/** Порядок цветков одинаковый везде — тот же, что на главной. */
+const FLOWER_ORDER = ["rose", "chrysanthemum", "eustoma"];
+function flowerRank(flowerType: string): number {
+  const i = FLOWER_ORDER.indexOf(flowerType);
+  return i === -1 ? FLOWER_ORDER.length : i;
+}
+
 /**
  * Сводка по продажам за окно. Считается по дате ОФОРМЛЕНИЯ заявки — так же, как
  * продажи менеджеров и финансы бухгалтера, чтобы цифры на разных страницах
@@ -241,6 +276,12 @@ function salesWindow(orders: OrderWithItems[], from: Date, to: Date) {
   let revenue = 0;
   let stems = 0;
   let paidRevenue = 0;
+  // Выполнение считаем только по заявкам, у которых дата доставки уже прошла:
+  // вчерашняя заявка на послезавтра не отгружена не потому, что подвели.
+  let dueOrdered = 0;
+  let dueShipped = 0;
+  let leadDaysSum = 0;
+  let leadDaysCount = 0;
   const clients = new Set<string>();
   const byFlower = new Map<string, { stems: number; revenue: number }>();
   const byGrade = new Map<string, { flowerType: string; grade: string; stems: number; revenue: number }>();
@@ -250,8 +291,22 @@ function salesWindow(orders: OrderWithItems[], from: Date, to: Date) {
     { orders: number; stems: number; revenue: number; paid: number }
   >();
 
+  const today = dayStart(new Date(to));
   for (const o of picked) {
     const amount = o.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    const delivery = parseDate(o.deliveryDate);
+    const created = parseDate(o.createdAt);
+    if (delivery && created) {
+      const lead = Math.round((delivery.getTime() - dayStart(created).getTime()) / 86400000);
+      if (lead >= 0 && lead < 90) {
+        leadDaysSum += lead;
+        leadDaysCount += 1;
+      }
+    }
+    if (delivery && delivery < today) {
+      dueOrdered += o.items.reduce((s, i) => s + i.quantity, 0);
+      dueShipped += o.items.reduce((s, i) => s + i.shippedQuantity, 0);
+    }
     revenue += amount;
     if (o.paid) paidRevenue += amount;
     if (o.clientName.trim()) clients.add(o.clientName.trim().toLowerCase());
@@ -304,6 +359,10 @@ function salesWindow(orders: OrderWithItems[], from: Date, to: Date) {
     stems,
     paidRevenue,
     clientCount: clients.size,
+    clients,
+    dueOrdered,
+    dueShipped,
+    avgLeadDays: leadDaysCount > 0 ? leadDaysSum / leadDaysCount : null,
     byFlower,
     byGrade,
     byVariety,
@@ -326,16 +385,25 @@ export async function getAnalyticsSummary(
     writeoffs: Awaited<ReturnType<typeof listWriteoffs>>;
     priceHistory: Awaited<ReturnType<typeof listPriceHistory>>;
     settings: Awaited<ReturnType<typeof getSettings>>;
+    forecast?: Awaited<ReturnType<typeof listHarvestForecast>>;
   }
 ): Promise<AnalyticsSummary> {
-  const [allOrders, allBatches, allWriteoffs, allPriceHistory, settings] = injected
-    ? [injected.orders, injected.batches, injected.writeoffs, injected.priceHistory, injected.settings]
+  const [allOrders, allBatches, allWriteoffs, allPriceHistory, settings, allForecast] = injected
+    ? [
+        injected.orders,
+        injected.batches,
+        injected.writeoffs,
+        injected.priceHistory,
+        injected.settings,
+        injected.forecast ?? [],
+      ]
     : await Promise.all([
         listOrdersWithItems(),
         listBatches(),
         listWriteoffs(),
         listPriceHistory(),
         getSettings(),
+        listHarvestForecast(),
       ]);
 
   const now = injected?.now ?? new Date();
@@ -425,6 +493,82 @@ export async function getAnalyticsSummary(
     .filter((b) => isTopGrade(b.flowerType, b.grade))
     .reduce((s, b) => s + b.quantityIn, 0);
   const topGradePercent = receivedStems > 0 ? share(topGradeStems, receivedStems) : null;
+  // Во что принятое оценивается по действующему прайсу — «на сколько вырастили».
+  const receivedMoney = receivedNow.reduce(
+    (sum, b) => sum + priceFor(pricesToday, b.flowerType, b.variety, b.grade) * b.quantityIn,
+    0
+  );
+
+  // Что дало производство в разрезе ростовки: длина у розы, категория у
+  // хризантемы. Это ответ на вопрос «какой цветок выходит», а не «сколько всего».
+  const receivedGradeMap = new Map<string, { flowerType: string; grade: string; now: number; prev: number }>();
+  const addReceived = (
+    list: typeof receivedNow,
+    field: "now" | "prev"
+  ) => {
+    for (const b of list) {
+      const key = `${b.flowerType}:${b.grade}`;
+      const row = receivedGradeMap.get(key) ?? {
+        flowerType: b.flowerType,
+        grade: b.grade,
+        now: 0,
+        prev: 0,
+      };
+      row[field] += b.quantityIn;
+      receivedGradeMap.set(key, row);
+    }
+  };
+  addReceived(receivedNow, "now");
+  addReceived(receivedPrev, "prev");
+
+  const receivedByGrade: ReceivedGradeRow[] = Array.from(receivedGradeMap.values())
+    .map((r) => ({
+      flowerType: r.flowerType,
+      grade: r.grade,
+      label: `${FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType} ${formatGrade(r.grade)}`,
+      stems: delta(r.now, r.prev),
+      share: share(r.now, receivedStems),
+      top: isTopGrade(r.flowerType, r.grade),
+    }))
+    .filter((r) => r.stems.value > 0 || r.stems.prev > 0)
+    .sort(
+      (a, b) =>
+        flowerRank(a.flowerType) - flowerRank(b.flowerType) ||
+        compareGrades(a.flowerType, a.grade, b.grade)
+    );
+
+  // --- План срезки против факта, текущий месяц -----------------------------
+  const monthCode = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86400000);
+  const monthProgressPercent = share(now.getDate(), daysInMonth);
+
+  const planMap = new Map<string, number>();
+  for (const row of allForecast) {
+    if (!mine(row.flowerType)) continue;
+    if (monthOfWeek(row.period) !== monthCode) continue;
+    planMap.set(row.flowerType, (planMap.get(row.flowerType) ?? 0) + row.targetStems);
+  }
+  const receivedThisMonth = new Map<string, number>();
+  for (const b of batches) {
+    if (!inRange(b.receivedAt || b.harvestDate, monthStart, monthEnd)) continue;
+    receivedThisMonth.set(b.flowerType, (receivedThisMonth.get(b.flowerType) ?? 0) + b.quantityIn);
+  }
+  const harvestPlan: HarvestPlanRow[] = Array.from(
+    new Set([...planMap.keys(), ...receivedThisMonth.keys()])
+  )
+    .map((flowerType) => {
+      const planStems = planMap.get(flowerType) ?? 0;
+      const receivedStemsMonth = receivedThisMonth.get(flowerType) ?? 0;
+      return {
+        flowerType,
+        planStems,
+        receivedStems: receivedStemsMonth,
+        percentOfPlan: planStems > 0 ? share(receivedStemsMonth, planStems) : null,
+      };
+    })
+    .sort((a, b) => flowerRank(a.flowerType) - flowerRank(b.flowerType));
 
   // --- Склад сейчас --------------------------------------------------------
   const activeBatches = batches.filter((b) => b.quantityRemaining > 0);
@@ -536,7 +680,13 @@ export async function getAnalyticsSummary(
         share: share(g.stems, nowSales.stems),
       };
     })
-    .sort((a, b) => b.stems - a.stems);
+    // Порядок ростовок такой же, как на складе: 40, 50, 60… мини-микс, второй
+    // сорт. Так строки таблицы продаж и таблицы склада читаются рядом.
+    .sort(
+      (a, b) =>
+        flowerRank(a.flowerType) - flowerRank(b.flowerType) ||
+        compareGrades(a.flowerType, a.grade, b.grade)
+    );
 
   // --- Топ сортов ----------------------------------------------------------
   const topVarieties: VarietyRow[] = Array.from(nowSales.byVariety.entries())
@@ -602,24 +752,6 @@ export async function getAnalyticsSummary(
       collectPercent: m.revenue > 0 ? share(m.paid, m.revenue) : null,
     }))
     .sort((a, b) => b.revenue.value - a.revenue.value);
-
-  // --- Партии на грани -----------------------------------------------------
-  const alerts: StorageAlertRow[] = storageInfos
-    .filter((s) => s.status === "warning" || s.status === "critical")
-    .sort((a, b) => b.percentUsed - a.percentUsed)
-    .map((s) => ({
-      batchId: s.batch.batchId,
-      flowerType: s.batch.flowerType,
-      variety: s.batch.variety,
-      grade: s.batch.grade,
-      harvestDate: s.batch.harvestDate,
-      daysInStorage: s.daysInStorage,
-      maxDays: s.maxDays,
-      percentUsed: s.percentUsed,
-      status: s.status,
-      quantityRemaining: s.batch.quantityRemaining,
-      money: batchMoney(s.batch),
-    }));
 
   // --- Недели (единственный график на странице) ----------------------------
   const weeks: WeekRow[] = [];
@@ -773,12 +905,27 @@ export async function getAnalyticsSummary(
 
     paidRevenue: nowSales.paidRevenue,
     collectPercent,
+    fillRatePercent:
+      nowSales.dueOrdered > 0 ? share(nowSales.dueShipped, nowSales.dueOrdered) : null,
+    repeatClientPercent:
+      nowSales.clients.size > 0
+        ? share(
+            Array.from(nowSales.clients).filter((c) => prevSales.clients.has(c)).length,
+            nowSales.clients.size
+          )
+        : null,
+    avgLeadDays: nowSales.avgLeadDays,
     debtTotal,
 
     listRevenue,
     discountPercent,
 
     receivedStems: delta(receivedStems, receivedStemsPrev),
+    soldOfReceivedPercent: receivedStems > 0 ? share(nowSales.stems, receivedStems) : null,
+    receivedMoney,
+    receivedByGrade,
+    harvestPlan,
+    monthProgressPercent,
     writeoffStems: delta(writeoffStems, writeoffStemsPrev),
     writeoffPercent,
     writeoffMoney,
@@ -800,7 +947,6 @@ export async function getAnalyticsSummary(
     clientRows,
     managers,
     writeoffReasons,
-    alerts,
     attention: attention.slice(0, ATTENTION_LIMIT),
     weeks,
   };

@@ -36,14 +36,15 @@ async function main() {
     console.log(
       `  ${b.label}: ${n(b.quantity)} шт (${Math.round(b.share * 100)}%), статус ${b.status}`
     );
-    for (const g of b.grades.slice(0, 6)) {
+    for (const g of b.flowers.flatMap((f) => f.grades).slice(0, 6)) {
       console.log(
         `      ${FLOWER_TYPE_LABELS_PLURAL[g.flowerType] ?? g.flowerType} ${g.grade} — ${n(
           g.quantity
         )} (${g.oldestDays} дн., ${g.status})`
       );
     }
-    if (b.grades.length > 6) console.log(`      … ещё ростовок: ${b.grades.length - 6}`);
+    const total = b.flowers.reduce((s, f) => s + f.grades.length, 0);
+    if (total > 6) console.log(`      … ещё ростовок: ${total - 6}`);
   }
 
   const sum = snap.ageBuckets.reduce((s, b) => s + b.quantity, 0);

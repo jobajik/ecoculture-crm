@@ -107,8 +107,16 @@ const settings = {
   warningThreshold: 0.7,
 } as never as Awaited<ReturnType<typeof import("../src/lib/repo/settings").getSettings>>;
 
+// Прогноз агронома на текущий месяц: недели складываются в месяц.
+const forecast = [
+  { period: "2026-09-W1", flowerType: "rose", variety: "Prestige", targetStems: 6000, updatedAt: "", updatedByEmail: "" },
+  { period: "2026-09-W2", flowerType: "rose", variety: "Prestige", targetStems: 6000, updatedAt: "", updatedByEmail: "" },
+  { period: "2026-08-W1", flowerType: "rose", variety: "Prestige", targetStems: 9999, updatedAt: "", updatedByEmail: "" },
+] as never as Awaited<ReturnType<typeof import("../src/lib/repo/harvestForecast").listHarvestForecast>>;
+
 const inj = () => ({
   now: NOW,
+  forecast,
   orders: orders as never,
   batches,
   writeoffs,
@@ -204,6 +212,51 @@ async function main() {
     0
   );
 
+  // --- Продажи: сервис и клиенты -------------------------------------------
+  // Выполнение считается только по заявкам, чья доставка уже прошла: у нас
+  // доставка = дате оформления, значит все три попадают, отгружено ноль.
+  check("выполнение по отгрузке", s.fillRatePercent, 0);
+  check("повторные клиенты", Math.round(s.repeatClientPercent!), 50);
+  check("срок от заявки до доставки", s.avgLeadDays, 0);
+
+  // --- Производство --------------------------------------------------------
+  check("продано от принятого", Math.round(s.soldOfReceivedPercent!), 25);
+  check(
+    "приёмка по ростовке идёт в правильном порядке",
+    s.receivedByGrade.map((r) => `${r.flowerType}:${r.grade}`),
+    // Порядок такой же, как на главной: сначала роза, потом хризантема.
+    ["rose:60", "rose:70", "chrysanthemum:Первая"]
+  );
+  check(
+    "ростовка, которую перестали срезать, из таблицы не исчезает",
+    s.receivedByGrade.find((r) => r.grade === "Первая")?.stems,
+    { value: 0, prev: 5000, changePercent: -100 }
+  );
+  check("высшая помечена", s.receivedByGrade.find((r) => r.grade === "70")?.top, true);
+  check("длина 60 высшей не считается", s.receivedByGrade.find((r) => r.grade === "60")?.top, false);
+  check("приёмка: доли складываются", Math.round(s.receivedByGrade.reduce((sum, r) => sum + r.share, 0)), 100);
+  check(
+    "план срезки на месяц берётся из недель этого месяца",
+    s.harvestPlan.find((h) => h.flowerType === "rose")?.planStems,
+    12_000
+  );
+  check(
+    "факт срезки — приёмка с начала месяца",
+    s.harvestPlan.find((h) => h.flowerType === "rose")?.receivedStems,
+    10_000
+  );
+  check(
+    "выполнение плана срезки",
+    Math.round(s.harvestPlan.find((h) => h.flowerType === "rose")!.percentOfPlan!),
+    83
+  );
+  check("прошло месяца, %", Math.round(s.monthProgressPercent), 100);
+  check(
+    "в план-факт попадает только то, что было в этом месяце",
+    s.harvestPlan.map((h) => h.flowerType),
+    ["rose"]
+  );
+
   // --- Подсветка -----------------------------------------------------------
   check("недель в графике", s.weeks.length, 8);
   check(
@@ -255,6 +308,10 @@ async function main() {
   check("пусто: списание неизвестно", empty.writeoffPercent, null);
   check("пусто: таблицы пустые", [empty.byFlower.length, empty.byGrade.length, empty.clientRows.length], [0, 0, 0]);
   check("пусто: недели всё равно есть", empty.weeks.length, 8);
+  check("пусто: выполнение неизвестно", empty.fillRatePercent, null);
+  check("пусто: повторных клиентов нет", empty.repeatClientPercent, null);
+  check("пусто: приёмка по ростовке пустая", empty.receivedByGrade.length, 0);
+  check("пусто: плана срезки нет", empty.harvestPlan.length, 0);
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);
