@@ -6,23 +6,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import clsx from "clsx";
 import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
-
-// В шапке — только разделы, по одному пункту на область работы. Всё, что внутри
-// раздела, живёт во вкладках на самой странице (SectionTabs). Иначе у админа
-// набегало десять пунктов и меню переставало читаться.
-const LINKS: { href: string; label: string; roles?: string[] }[] = [
-  { href: "/", label: "Главная" },
-  { href: "/orders", label: "Заявки" },
-  { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
-  { href: "/plans", label: "Планы", roles: ["sales_head", "admin"] },
-  // У администратора прогноз срезки живёт вкладкой внутри «Планов» — иначе
-  // верхнее меню снова разрастается до девяти пунктов.
-  { href: "/forecast", label: "Прогноз срезки", roles: ["agronomist"] },
-  { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },
-  { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
-  { href: "/analytics", label: "Аналитика" },
-  { href: "/admin", label: "Настройки", roles: ["admin"] },
-];
+import { navLinksFor } from "./navLinks";
 
 export default function Nav() {
   const { data: session } = useSession();
@@ -31,7 +15,7 @@ export default function Nav() {
 
   if (!session) return null;
 
-  const links = LINKS.filter((l) => !l.roles || l.roles.includes(role));
+  const links = navLinksFor(role);
 
   const initials = (session.user?.name ?? "?")
     .split(" ")
@@ -53,10 +37,12 @@ export default function Nav() {
             priority
             className="w-7 h-7 object-contain"
           />
-          <span className="font-semibold tracking-tight hidden sm:inline">Ecoculture-CRM</span>
+          <span className="font-semibold tracking-tight">Ecoculture-CRM</span>
         </Link>
 
-        <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto">
+        {/* На телефоне разделы живут в нижней панели (MobileNav): в шапке для
+            них остаётся полоска шириной в палец, по которой неудобно попадать. */}
+        <nav className="hidden sm:flex items-center gap-0.5 flex-1 overflow-x-auto">
           {links.map((l) => {
             // Раздел подсвечен, пока мы внутри него — включая вкладки.
             const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
@@ -77,7 +63,7 @@ export default function Nav() {
           })}
         </nav>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0 ml-auto">
           <div className="hidden md:block text-right leading-tight">
             <div className="text-sm font-medium">{session.user?.name}</div>
             <div className="text-xs text-ink-muted">
@@ -96,7 +82,7 @@ export default function Nav() {
           </span>
           <button
             onClick={() => signOut()}
-            className="text-sm text-ink-muted hover:text-ink-primary transition-colors"
+            className="hidden sm:block text-sm text-ink-muted hover:text-ink-primary transition-colors"
             title="Выйти"
           >
             Выйти

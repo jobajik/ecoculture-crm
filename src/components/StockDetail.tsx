@@ -89,6 +89,15 @@ const positionWord = (n: number) => plural(n, "позиция", "позиции"
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
+/** Плашка «сколько дней лежит»: один вид на телефоне и на компьютере. */
+function ageChipClass(status: StorageStatus): string {
+  return clsx(
+    "rounded-full px-2 py-0.5 text-xs font-medium tabular-nums whitespace-nowrap",
+    STATUS_CHIP[status],
+    STATUS_TEXT[status]
+  );
+}
+
 /** Что показать про сорт одной строкой: сколько дней лежит и худший статус. */
 function summarize(card: StockVarietyCard) {
   const oldest = Math.max(...card.grades.map((g) => g.oldestDays), 0);
@@ -158,7 +167,7 @@ export default function StockDetail({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
         <h3 className="font-medium">
           Подробно по позициям
           <span className="text-sm font-normal text-ink-muted">
@@ -167,7 +176,7 @@ export default function StockDetail({
           </span>
         </h3>
         <input
-          className="input !w-auto !py-1.5 min-w-[200px]"
+          className="input w-full sm:!w-auto sm:min-w-[220px]"
           placeholder="Поиск по сорту или длине"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -295,7 +304,7 @@ function VarietyRow({ card, forceOpen }: { card: StockVarietyCard; forceOpen: bo
         onClick={() => expandable && setOpen((v) => !v)}
         disabled={!expandable}
         className={clsx(
-          "w-full text-left px-4 py-2 flex items-center gap-3 transition-colors",
+          "w-full text-left px-4 py-2.5 sm:py-2 flex items-center gap-3 transition-colors",
           expandable ? "hover:bg-surface-plane" : "cursor-default"
         )}
         aria-expanded={expandable ? shown : undefined}
@@ -304,22 +313,31 @@ function VarietyRow({ card, forceOpen }: { card: StockVarietyCard; forceOpen: bo
           {expandable ? (shown ? "▲" : "▼") : ""}
         </span>
 
+        {/* На телефоне названию сорта нужна вся ширина строки, поэтому цифры
+            уходят к нему в пару: количество — к названию, срок — к длинам.
+            На компьютере всё возвращается в одну строку колонками. */}
         <span className="flex-1 min-w-0">
-          <span className="font-medium block truncate">{card.variety}</span>
-          <span className="text-xs text-ink-muted block truncate">{gradeHint(card.grades)}</span>
+          <span className="flex items-baseline gap-2">
+            <span className="font-medium truncate flex-1">{card.variety}</span>
+            <span className="sm:hidden tabular-nums font-semibold shrink-0">
+              {fmt(card.totalQuantity)}
+            </span>
+          </span>
+          <span className="flex items-baseline gap-2">
+            <span className="text-xs text-ink-muted truncate flex-1">
+              {gradeHint(card.grades)}
+            </span>
+            <span className={clsx("sm:hidden shrink-0", ageChipClass(card.status))}>
+              {spread ? `${newest}–${oldest}` : oldest} {dayWord(oldest)}
+            </span>
+          </span>
         </span>
 
-        <span className="tabular-nums font-semibold text-right w-20 shrink-0">
+        <span className="hidden sm:block tabular-nums font-semibold text-right w-20 shrink-0">
           {fmt(card.totalQuantity)}
         </span>
 
-        <span
-          className={clsx(
-            "rounded-full px-2 py-0.5 text-xs font-medium tabular-nums whitespace-nowrap shrink-0 w-24 text-center",
-            STATUS_CHIP[card.status],
-            STATUS_TEXT[card.status]
-          )}
-        >
+        <span className={clsx("hidden sm:inline-block w-24 text-center", ageChipClass(card.status))}>
           {spread ? `${newest}–${oldest}` : oldest} {dayWord(oldest)}
         </span>
 

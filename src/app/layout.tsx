@@ -8,6 +8,7 @@ import "@fontsource/arimo/700.css";
 import "./globals.css";
 import Providers from "./providers";
 import Nav from "@/components/Nav";
+import MobileNav from "@/components/MobileNav";
 
 export const metadata: Metadata = {
   title: "Ecoculture-CRM",
@@ -20,7 +21,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-sans antialiased">
         <Providers>
           <Nav />
-          <main className="max-w-6xl mx-auto px-4 sm:px-6 py-7">{children}</main>
+          {/* Отступ снизу — под нижнюю панель на телефоне, иначе она закрывает
+              последнюю строку списка. */}
+          <main className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 pb-24 sm:pb-7">
+            {children}
+          </main>
+          <MobileNav />
         </Providers>
       </body>
     </html>
