@@ -1,6 +1,7 @@
 import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./constants";
+import { isReadyToShip } from "./orderReady";
 import type { OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -226,7 +227,7 @@ export async function getFinanceSnapshot(
       overpaid: Math.max(0, paidAmount - amount),
       promisedAt: order.promisedAt,
       collectionNote: order.collectionNote,
-      readyToCollect: order.managerConfirmed && order.paid,
+      readyToCollect: isReadyToShip(order),
       positions: order.items.map((i) => `${i.variety} ${i.grade}`).join(", "),
     };
   };

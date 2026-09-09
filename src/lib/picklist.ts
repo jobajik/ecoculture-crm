@@ -2,6 +2,7 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listBatches } from "./repo/batches";
 import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, getFarmFor } from "./constants";
+import { isReadyToShip } from "./orderReady";
 import type { OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -113,7 +114,7 @@ export async function getPicklist(
     notes: order.notes,
     managerConfirmed: order.managerConfirmed,
     paid: order.paid,
-    readyToCollect: order.managerConfirmed && order.paid,
+    readyToCollect: isReadyToShip(order),
     totalStems: order.items
       .filter((i) => belongsToFarm(i.flowerType))
       .reduce((sum, i) => sum + i.quantity, 0),

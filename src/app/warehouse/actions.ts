@@ -8,6 +8,8 @@ import { parseBatchesWorkbook, type ParsedBatchRow, type ParseResult } from "@/l
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { getBatchById } from "@/lib/repo/batches";
 import { FLOWER_TYPE_LABELS, farmLabel, getFarmFor } from "@/lib/constants";
+import { getOrderById } from "@/lib/repo/orders";
+import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { createShipment, type NewShipmentInput } from "@/lib/repo/shipments";
 import { createWriteoff, type NewWriteoffInput } from "@/lib/repo/writeoffs";
 
@@ -114,6 +116,18 @@ export async function importBatchesAction(rows: ParsedBatchRow[]) {
 export async function createShipmentAction(input: Omit<NewShipmentInput, "warehouseEmail">) {
   const { email, farm } = await requireWarehouse();
   if (!input.quantity || input.quantity <= 0) throw new Error("Укажите количество к отгрузке");
+
+  // Цветок не уезжает раньше денег. Проверка стоит именно здесь, а не только
+  // в интерфейсе: кнопку можно не показать, а вот прямую ссылку на страницу
+  // отгрузки никто не отменял.
+  const order = await getOrderById(input.orderId);
+  if (!order) throw new Error("Заявка не найдена");
+  if (!isReadyToShip(order)) {
+    throw new Error(
+      `Отгружать пока нельзя: ${notReadyReason(order).toLowerCase()}. ` +
+        "Менеджер ставит свою галочку на заявке, оплату проводит бухгалтер."
+    );
+  }
 
   const batch = await getBatchById(input.batchId);
   if (!batch) throw new Error("Партия не найдена");

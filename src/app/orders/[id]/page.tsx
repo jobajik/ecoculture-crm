@@ -11,6 +11,7 @@ import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ReadyChecks from "@/components/ReadyChecks";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
+import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,13 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const canCreateClaim =
     role === ROLES.ADMIN ||
     (role === ROLES.MANAGER && order.managerEmail === session?.user?.email?.toLowerCase());
-  const canShip = (role === "warehouse" || role === "admin") && order.status !== "shipped" && order.status !== "cancelled";
+  // Отгружает только склад, и только по заявке, которую подтвердил менеджер и
+  // провёл бухгалтер. Менеджеру кнопка не нужна вовсе: он не собирает цветок.
+  const isWarehouse = role === "warehouse" || role === "admin";
+  const openOrder = order.status !== "shipped" && order.status !== "cancelled";
+  const ready = isReadyToShip(order);
+  const canShip = isWarehouse && openOrder && ready;
+  const shipBlockedReason = isWarehouse && openOrder && !ready ? notReadyReason(order) : "";
 
   return (
     <div className="max-w-3xl">
@@ -162,6 +169,14 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <Link href={`/warehouse/ship/${order.orderId}`} className="btn-primary mb-6 inline-flex">
           Отгрузить по этой заявке
         </Link>
+      )}
+
+      {shipBlockedReason && (
+        <div className="card mb-6 text-sm text-ink-secondary">
+          <span className="font-medium text-ink-primary">Отгрузка пока закрыта.</span>{" "}
+          {shipBlockedReason}. Как только обе галочки наверху станут зелёными, здесь появится
+          кнопка отгрузки.
+        </div>
       )}
 
       <h2 className="font-medium mb-2">История отгрузок</h2>

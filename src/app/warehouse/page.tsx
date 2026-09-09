@@ -11,6 +11,7 @@ import { authOptions } from "@/lib/auth";
 import SectionTabs from "@/components/SectionTabs";
 import { WAREHOUSE_TABS } from "./tabs";
 import { formatDay } from "@/lib/formatDate";
+import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,12 @@ export default async function WarehousePage() {
       const db = b.deliveryDate || "9999-12-31";
       return da < db ? -1 : da > db ? 1 : 0;
     });
+
+  // Заявку видно в обоих случаях — зав. складом должна знать, что готовится.
+  // Но собирать и выдавать можно только ту, где менеджер подтвердил и
+  // бухгалтер провёл оплату. Поэтому два списка, а не одна кнопка с отказом.
+  const readyToShip = pending.filter((o) => isReadyToShip(o));
+  const waiting = pending.filter((o) => !isReadyToShip(o));
 
   const alerts = batches
     .filter((b) => b.quantityRemaining > 0)
@@ -94,8 +101,8 @@ export default async function WarehousePage() {
         </div>
       )}
 
-      <h2 className="font-medium mb-2">Заявки к отгрузке</h2>
-      <div className="card !p-0 overflow-x-auto">
+      <h2 className="font-medium mb-2">Можно отгружать</h2>
+      <div className="card !p-0 overflow-x-auto mb-6">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -108,7 +115,7 @@ export default async function WarehousePage() {
             </tr>
           </thead>
           <tbody>
-            {pending.map((o) => (
+            {readyToShip.map((o) => (
               <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
                 <td className="px-4 py-3 font-medium">{o.orderId}</td>
                 <td className="px-4 py-3">{o.clientName}</td>
@@ -128,16 +135,63 @@ export default async function WarehousePage() {
                 </td>
               </tr>
             ))}
-            {pending.length === 0 && (
+            {readyToShip.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
-                  Нет заявок, ожидающих отгрузки
+                  {waiting.length > 0
+                    ? "Готовых заявок нет — те, что ниже, ещё ждут менеджера или бухгалтера"
+                    : "Нет заявок, ожидающих отгрузки"}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {waiting.length > 0 && (
+        <>
+          <h2 className="font-medium mb-1">Ждут подтверждения</h2>
+          <p className="text-sm text-ink-secondary mb-2">
+            Эти заявки уже заведены, но отгружать их рано: цветок не выдаём, пока менеджер не
+            согласовал заявку, а бухгалтер не провёл оплату.
+          </p>
+          <div className="card !p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                  <th className="px-4 py-3 font-medium">Заявка</th>
+                  <th className="px-4 py-3 font-medium">Клиент</th>
+                  <th className="px-4 py-3 font-medium">Доставка</th>
+                  <th className="px-4 py-3 font-medium">Позиции</th>
+                  <th className="px-4 py-3 font-medium">Чего ждём</th>
+                </tr>
+              </thead>
+              <tbody>
+                {waiting.map((o) => (
+                  <tr
+                    key={o.orderId}
+                    className="border-b border-line-hairline last:border-0 hover:bg-surface-plane"
+                  >
+                    <td className="px-4 py-3 font-medium whitespace-nowrap">
+                      <Link href={`/orders/${o.orderId}`} className="hover:underline">
+                        {o.orderId}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">{o.clientName}</td>
+                    <td className="px-4 py-3 text-ink-secondary">{formatDay(o.deliveryDate)}</td>
+                    <td className="px-4 py-3 text-ink-secondary">
+                      {o.items
+                        .map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)
+                        .join(", ")}
+                    </td>
+                    <td className="px-4 py-3 text-[#8a5a00] min-w-[200px]">{notReadyReason(o)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
