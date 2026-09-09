@@ -23,8 +23,15 @@
  *    новым данным (см. CLAUDE.md, грабли 1.9-bis — из-за этого дата
  *    возвращалась числом 46274).
  *
- * Запуск:  npx tsx scripts/clear-work-data.ts        — только показать
- *          npx tsx scripts/clear-work-data.ts --yes  — сделать копию и стереть
+ * Запуск:  npx tsx scripts/clear-work-data.ts               — только показать
+ *          npx tsx scripts/clear-work-data.ts --yes         — копия и очистка
+ *          npx tsx scripts/clear-work-data.ts --yes --with-stock
+ *                                            — то же плюс обнулить склад
+ *
+ * Весь вывод дублируется в `_temp/clear-work-data.log` — файл пишет сам скрипт,
+ * а не перенаправление в `.bat`: перенаправление уводит с экрана всё, и окно
+ * выглядит зависшим, а обёртка через PowerShell на этом компьютере запрещена
+ * политикой выполнения скриптов.
  */
 import * as dotenv from "dotenv";
 
@@ -33,12 +40,48 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+
 import { clearDataRows, readTable, rowToRecord, SHEET_TABS } from "../src/lib/sheets";
 import { returnBatchQuantity } from "../src/lib/repo/batches";
 import { createBackup } from "../src/lib/backup";
 
-/** Что стираем. Порядок сверху вниз — как о них думает человек. */
-const TO_CLEAR: { tab: string; what: string }[] = [
+/**
+ * Пишем и на экран, и в файл — сразу, строка за строкой.
+ *
+ * На экран, чтобы окно не выглядело мёртвым: копия боевой таблицы делается
+ * около минуты, и молчащее окно закрывают на середине (так уже случилось).
+ * В файл — чтобы вывод можно было переслать целиком, не переписывая с экрана.
+ *
+ * Пишет сам скрипт, а не перенаправление в `.bat`: перенаправление уводит с
+ * экрана ВЕСЬ вывод, а обёртка через PowerShell на этом компьютере запрещена
+ * политикой выполнения скриптов (`npx.ps1` не запускается).
+ *
+ * Дозапись идёт построчно, поэтому даже прерванный запуск оставляет читаемый
+ * лог до места остановки.
+ */
+const LOG_PATH = "_temp/clear-work-data.log";
+
+function startLog() {
+  try {
+    mkdirSync("_temp", { recursive: true });
+    writeFileSync(LOG_PATH, `Запуск ${new Date().toISOString()}\n`, "utf-8");
+  } catch {
+    // Не смогли завести файл — не повод не работать: экран остаётся.
+  }
+}
+
+function log(line = "") {
+  console.log(line);
+  try {
+    appendFileSync(LOG_PATH, `${line}\n`, "utf-8");
+  } catch {
+    // см. выше
+  }
+}
+
+/** Что стираем всегда. Порядок сверху вниз — как о них думает человек. */
+const ALWAYS: { tab: string; what: string }[] = [
   { tab: SHEET_TABS.ORDERS, what: "заявки" },
   { tab: SHEET_TABS.ORDER_ITEMS, what: "позиции заявок" },
   { tab: SHEET_TABS.SHIPMENTS, what: "отгрузки" },
@@ -47,9 +90,19 @@ const TO_CLEAR: { tab: string; what: string }[] = [
   { tab: SHEET_TABS.MONEY_LOG, what: "журнал действий по деньгам" },
 ];
 
-/** Что остаётся нетронутым — печатаем явно, чтобы не было сюрприза. */
+/**
+ * Склад стирается только по отдельному ключу `--with-stock`.
+ *
+ * Партии — это живой холодильник, и обнулять его вместе с заявками нельзя:
+ * заявки заводят заново за день, а пересчитать физический остаток — работа на
+ * несколько часов. Но перед самым запуском «в бою» владелец решил обнулить и
+ * его: зав. складом внесут настоящий остаток приёмкой сами, и это честнее,
+ * чем стартовать с цифрами, набранными для проверки.
+ */
+const STOCK = { tab: SHEET_TABS.BATCHES, what: "партии на складе" };
+
+/** Что остаётся нетронутым в любом случае — печатаем явно, чтобы не было сюрприза. */
 const KEPT = [
-  "партии на складе (текущие остатки)",
   "прайс-лист и история цен",
   "планы РОПа и план отгрузок",
   "прогноз срезки агронома",
@@ -98,68 +151,76 @@ async function countRows(tab: string): Promise<number> {
 
 async function main() {
   const confirmed = process.argv.includes("--yes");
+  const withStock = process.argv.includes("--with-stock");
+  startLog();
 
-  console.log("Будет стёрто:");
+  // Если склад обнуляется, возвращать в него стебли незачем — партий не станет.
+  const TO_CLEAR = withStock ? [...ALWAYS, STOCK] : ALWAYS;
+
+  log("Будет стёрто:");
   let total = 0;
   const counts: number[] = [];
   for (const item of TO_CLEAR) {
     const rows = await countRows(item.tab);
     counts.push(rows);
     total += rows;
-    console.log(`  ${item.what} (${item.tab}) — ${rows} строк`);
+    log(`  ${item.what} (${item.tab}) — ${rows} строк`);
   }
 
-  const back = await quantitiesToReturn();
+  const back = withStock ? new Map<string, number>() : await quantitiesToReturn();
   const backStems = Array.from(back.values()).reduce((sum, n) => sum + n, 0);
   if (backStems > 0) {
-    console.log(
+    log(
       `\nВ партии вернётся стеблей: ${backStems} (партий: ${back.size}) — их вычли отгрузки и`
     );
-    console.log("списания, которые мы стираем. Иначе склад показал бы меньше, чем лежит.");
+    log("списания, которые мы стираем. Иначе склад показал бы меньше, чем лежит.");
   }
 
-  console.log("\nОстанется без изменений:");
-  for (const line of KEPT) console.log(`  ${line}`);
+  if (!withStock) log("\nСклад НЕ трогаем: партии остаются как есть.");
+
+  log("\nОстанется без изменений:");
+  for (const line of KEPT) log(`  ${line}`);
+  if (!withStock) log("  партии на складе (текущие остатки)");
 
   if (total === 0) {
-    console.log("\nСтирать нечего — база уже чистая.");
+    log("\nСтирать нечего — база уже чистая.");
     return;
   }
 
   if (!confirmed) {
-    console.log(`\nВсего строк к удалению: ${total}.`);
-    console.log("Ничего не тронуто: это показ. Для очистки запустите с ключом --yes.");
+    log(`\nВсего строк к удалению: ${total}.`);
+    log("Ничего не тронуто: это показ. Для очистки запустите с ключом --yes.");
     return;
   }
 
-  console.log("\nДелаю резервную копию всей таблицы. Это самая долгая часть — до минуты.");
-  console.log("НЕ ЗАКРЫВАЙТЕ окно: пока копии нет, стирание не начнётся.\n");
-  const backup = await createBackup(new Date(), (message) => console.log(message));
-  console.log(`Копия готова: «${backup.title}» — ${backup.rows} строк, ${backup.tabs} вкладок`);
-  console.log(backup.url);
+  log("\nДелаю резервную копию всей таблицы. Это самая долгая часть — до минуты.");
+  log("НЕ ЗАКРЫВАЙТЕ окно: пока копии нет, стирание не начнётся.\n");
+  const backup = await createBackup(new Date(), log);
+  log(`Копия готова: «${backup.title}» — ${backup.rows} строк, ${backup.tabs} вкладок`);
+  log(backup.url);
 
   if (backStems > 0) {
-    console.log("\nВозвращаю остаток в партии…");
+    log("\nВозвращаю остаток в партии…");
     for (const [batchId, quantity] of back) {
       const ok = await returnBatchQuantity(batchId, quantity);
-      console.log(`  ${batchId}: +${quantity}${ok ? "" : " — партия не найдена, пропущена"}`);
+      log(`  ${batchId}: +${quantity}${ok ? "" : " — партия не найдена, пропущена"}`);
     }
   }
 
-  console.log("\nСтираю…");
+  log("\nСтираю…");
   let removed = 0;
   for (const item of TO_CLEAR) {
     const n = await clearDataRows(item.tab);
     removed += n;
-    console.log(`  ${item.what}: удалено строк ${n}`);
+    log(`  ${item.what}: удалено строк ${n}`);
   }
 
-  console.log(`\nГотово. Удалено строк: ${removed}. База чистая, можно работать.`);
-  console.log("Если что-то понадобится вернуть — данные лежат в копии по ссылке выше.");
+  log(`\nГотово. Удалено строк: ${removed}. База чистая, можно работать.`);
+  log("Если что-то понадобится вернуть — данные лежат в копии по ссылке выше.");
 }
 
 main().catch((error) => {
-  console.error("Не получилось:", error instanceof Error ? error.message : error);
-  console.error("Ничего не стёрто — при ошибке скрипт останавливается целиком.");
+  log(`Не получилось: ${error instanceof Error ? error.message : String(error)}`);
+  log("Ничего не стёрто — при ошибке скрипт останавливается целиком.");
   process.exit(1);
 });

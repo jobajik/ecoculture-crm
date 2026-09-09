@@ -12,6 +12,8 @@ import ReadyChecks from "@/components/ReadyChecks";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { cancelRefusal } from "@/lib/orderRules";
+import CancelOrder from "@/components/CancelOrder";
 
 export const dynamic = "force-dynamic";
 
@@ -30,11 +32,18 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     : loaded.items;
   if (farm && ownItems.length === 0) notFound();
 
+  // Заявка для зав. складом урезается до её позиций, и сумма пересчитывается.
+  // Полученные деньги надо урезать в той же пропорции: оплата приходит одной
+  // суммой за всю заявку, и оставить её целиком значило бы показать зав.
+  // складом Есентая «получено 800 000 из 300 000» — то есть деньги за розы.
+  const scopedTotal = ownItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const order = farm
     ? {
         ...loaded,
         items: ownItems,
-        totalAmount: ownItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
+        totalAmount: scopedTotal,
+        paidAmount:
+          loaded.totalAmount > 0 ? (loaded.paidAmount * scopedTotal) / loaded.totalAmount : 0,
       }
     : loaded;
 
@@ -70,6 +79,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const ready = isReadyToShip(order);
   const canShip = isWarehouse && openOrder && ready;
   const shipBlockedReason = isWarehouse && openOrder && !ready ? notReadyReason(order) : "";
+  // Кнопку отмены показываем только тому, кто действительно может отменить, —
+  // правила те же, что проверит сервер (src/lib/orderRules.ts).
+  const canCancel = cancelRefusal(order, role, session?.user?.email) === "";
 
   return (
     <div className="max-w-3xl">
@@ -176,6 +188,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <span className="font-medium text-ink-primary">Отгрузка пока закрыта.</span>{" "}
           {shipBlockedReason}. Как только обе галочки наверху станут зелёными, здесь появится
           кнопка отгрузки.
+        </div>
+      )}
+
+      {canCancel && (
+        <div className="mb-6">
+          <CancelOrder orderId={order.orderId} />
         </div>
       )}
 

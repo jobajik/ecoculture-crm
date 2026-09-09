@@ -2,13 +2,27 @@ import { readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import type { AppUser } from "../types";
 import type { Role } from "../constants";
 
+/**
+ * Что в колонке Active считается «отключён».
+ *
+ * Раньше отключённым был только тот, у кого написано ровно FALSE. Владелец,
+ * закрывая доступ уволенному, естественно СТИРАЕТ галочку или пишет «нет» — и
+ * человек продолжал заходить. Пустая ячейка по-прежнему означает «активен»
+ * (иначе новая строка не заработала бы), а вот все привычные способы сказать
+ * «нет» теперь понимаются.
+ */
+const INACTIVE = new Set(["FALSE", "НЕТ", "NO", "0", "-", "N", "Н"]);
+
 function toUser(record: Record<string, string>): AppUser {
+  const active = (record.Active || "").toString().trim().toUpperCase();
   return {
     email: (record.Email || "").trim().toLowerCase(),
     name: record.Name || "",
-    role: (record.Role || "manager").trim() as Role,
+    // Роли по умолчанию нет: пустая ячейка Role раньше давала права менеджера,
+    // то есть ошибка в таблице ОТКРЫВАЛА доступ вместо того, чтобы закрыть.
+    role: (record.Role || "").trim() as Role,
     farm: (record.Farm || "").trim().toLowerCase() || null,
-    active: (record.Active || "").toString().trim().toUpperCase() !== "FALSE",
+    active: !INACTIVE.has(active),
   };
 }
 

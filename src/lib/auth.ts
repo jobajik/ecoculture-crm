@@ -26,21 +26,37 @@ export const authOptions: AuthOptions = {
       }
       return true;
     },
+    // Роль и производство перечитываются из таблицы при каждом обновлении
+    // токена — иначе права нельзя было бы менять на ходу.
+    //
+    // Важна ветка else: раньше её не было, и если строку сотрудника удаляли из
+    // Users или ставили Active=FALSE, токен СОХРАНЯЛ прежнюю роль. Уволенный
+    // продолжал работать до истечения токена (по умолчанию 30 дней), а
+    // понижение из admin в manager не срабатывало, пока человек сам не выйдет.
+    // Теперь у такого пользователя роль обнуляется, и middleware отправляет его
+    // на вход: список сотрудников в таблице снова означает то, что обещает.
     async jwt({ token, user }) {
       const email = token.email ?? user?.email;
       if (email) {
         const appUser = await getUserByEmail(email);
-        if (appUser) {
+        if (appUser && appUser.active) {
           token.role = appUser.role;
           token.farm = appUser.farm ?? null;
           token.name = appUser.name || token.name;
+        } else {
+          token.role = undefined;
+          token.farm = null;
         }
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.role = (token.role as string) ?? "manager";
+        // Роли по умолчанию БОЛЬШЕ НЕТ. Раньше здесь стояло `?? "manager"`, и
+        // пустая или опечатанная ячейка Role давала права менеджера: заводить
+        // заявки, подтверждать их, подавать рекламации. Ошибка в таблице должна
+        // закрывать доступ, а не открывать.
+        session.user.role = (token.role as string) ?? "";
         session.user.farm = (token.farm as string | null) ?? null;
       }
       return session;

@@ -115,9 +115,13 @@ export async function getPicklist(
     managerConfirmed: order.managerConfirmed,
     paid: order.paid,
     readyToCollect: isReadyToShip(order),
+    // ПОТРЕБНОСТЬ, а не заказ: в строках печатной формы стоит «заказано минус
+    // отгружено», и если в шапке считать заказ целиком, зав. складом видит на
+    // одном листе два разных числа за одну заявку. Вчера отгрузили 600 из 1000
+    // — сегодня надо набрать 400, и в итогах должно стоять 400.
     totalStems: order.items
       .filter((i) => belongsToFarm(i.flowerType))
-      .reduce((sum, i) => sum + i.quantity, 0),
+      .reduce((sum, i) => sum + Math.max(0, i.quantity - (Number(i.shippedQuantity) || 0)), 0),
     totalAmount: order.totalAmount,
     items: order.items
       .filter((i) => belongsToFarm(i.flowerType))
@@ -148,7 +152,7 @@ export async function getPicklist(
         perOrder: [],
       };
       line.quantity += item.quantity;
-      line.shipped += item.shippedQuantity;
+      line.shipped += Number(item.shippedQuantity) || 0;
       line.perOrder.push({
         orderId: order.orderId,
         clientName: order.clientName,
@@ -189,7 +193,7 @@ export async function getPicklist(
     dateLabel,
     farm: farmFilter ?? null,
     totalOrders: picklistOrders.length,
-    totalStems: lines.reduce((sum, l) => sum + l.quantity, 0),
+    totalStems: lines.reduce((sum, l) => sum + Math.max(0, l.quantity - l.shipped), 0),
     totalAmount: picklistOrders.reduce((sum, o) => sum + o.totalAmount, 0),
     notReadyOrders: picklistOrders.filter((o) => !o.readyToCollect).length,
     notReadyStems: picklistOrders

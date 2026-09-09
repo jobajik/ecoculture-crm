@@ -40,10 +40,17 @@ async function requireAgronomist(): Promise<{ email: string; farm: string | null
   if (role !== ROLES.AGRONOMIST && role !== ROLES.ADMIN) {
     throw new Error("Недостаточно прав: прогноз срезки ведёт агроном");
   }
-  return {
-    email: session.user.email.toLowerCase(),
-    farm: role === ROLES.ADMIN ? null : session.user.farm ?? null,
-  };
+  const isAdmin = role === ROLES.ADMIN;
+  const farm = isAdmin ? null : session.user.farm ?? null;
+  // Пустая колонка Farm раньше означала «все производства»: проверка выходила
+  // на `if (!farm) return`, и агроном роз мог перезаписать прогноз хризантемы.
+  if (!isAdmin && !farm) {
+    throw new Error(
+      "У вас не указано производство. Попросите администратора заполнить колонку Farm " +
+        "на вкладке Users — без неё вести прогноз нельзя."
+    );
+  }
+  return { email: session.user.email.toLowerCase(), farm };
 }
 
 /**

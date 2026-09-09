@@ -19,11 +19,20 @@ async function requireWarehouse() {
   if (session.user.role !== "warehouse" && session.user.role !== "admin") {
     throw new Error("Недостаточно прав: действие доступно только зав. складом");
   }
-  return {
-    email: session.user.email,
-    // Администратор работает по всем производствам, зав. складом — только по своему.
-    farm: session.user.role === "admin" ? null : session.user.farm ?? null,
-  };
+  const isAdmin = session.user.role === "admin";
+  const farm = isAdmin ? null : session.user.farm ?? null;
+  // Пустая колонка Farm у зав. складом раньше означала «все производства»:
+  // `assertOwnFlowerType` выходил на `if (!farm) return`. То есть строка в
+  // Users, где Farm просто забыли дописать, открывала человеку чужой склад —
+  // принимать, отгружать и СПИСЫВАТЬ чужой цветок. Забыть последнюю колонку
+  // легко, и заметить это по поведению нельзя. Теперь такой доступ закрыт.
+  if (!isAdmin && !farm) {
+    throw new Error(
+      "У вас не указано производство. Попросите администратора заполнить колонку Farm " +
+        "на вкладке Users — без неё работать со складом нельзя."
+    );
+  }
+  return { email: session.user.email, farm };
 }
 
 /** Зав. складом не может принимать, отгружать и списывать чужой цветок. */

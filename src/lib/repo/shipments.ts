@@ -3,7 +3,8 @@ import { toIsoDateTime } from "../sheetDate";
 import { generateId } from "../id";
 import type { Shipment } from "../types";
 import { deductBatchQuantity, getBatchById } from "./batches";
-import { incrementItemShippedQuantity, recomputeOrderStatusFromItems } from "./orders";
+import { shipmentRefusal } from "../shipRules";
+import { getOrderById, incrementItemShippedQuantity, recomputeOrderStatusFromItems } from "./orders";
 
 function toShipment(record: Record<string, string>): Shipment {
   return {
@@ -44,13 +45,22 @@ export interface NewShipmentInput {
  * таблице (это осознанный компромисс для небольшой компании).
  */
 export async function createShipment(input: NewShipmentInput): Promise<string> {
-  const batch = await getBatchById(input.batchId);
-  if (!batch) throw new Error("Партия не найдена");
-  if (batch.quantityRemaining < input.quantity) {
-    throw new Error(
-      `В партии ${input.batchId} осталось ${batch.quantityRemaining} шт., запрошено ${input.quantity}`
-    );
-  }
+  const [batch, order] = await Promise.all([
+    getBatchById(input.batchId),
+    getOrderById(input.orderId),
+  ]);
+  if (!order) throw new Error("Заявка не найдена");
+
+  // Все проверки — на сервере и до первой записи: браузерная проверка считает
+  // остаток по странице, отрисованной когда-то раньше (см. src/lib/shipRules.ts).
+  const item = order.items.find((i) => i.itemId === input.itemId);
+  const refusal = shipmentRefusal({
+    orderId: input.orderId,
+    item: item ? { ...item, orderId: order.orderId } : null,
+    batch,
+    quantity: input.quantity,
+  });
+  if (refusal) throw new Error(refusal);
 
   await deductBatchQuantity(input.batchId, input.quantity);
   await incrementItemShippedQuantity(input.itemId, input.quantity);

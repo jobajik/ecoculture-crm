@@ -9,9 +9,11 @@ import {
   setOrderPayment,
   setOrderPromise,
   updateOrderItemAmounts,
+  recomputeOrderStatusFromItems,
 } from "@/lib/repo/orders";
 import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
+import { isClosed, moneyRefusal } from "@/lib/orderRules";
 import {
   CLAIM_REASONS,
   CLAIM_STATUSES,
@@ -59,6 +61,13 @@ export async function setPaymentAction(
 
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
+
+  // Снять оплату с ОТГРУЖЕННОЙ заявки — значит вернуть её в долги и в список
+  // звонков, обнулить бонус менеджера за уже уехавший товар и убрать деньги из
+  // календаря того дня. Если клиент вернул деньги, это рекламация, а не
+  // «снятая галочка». По отменённой заявке денег быть не должно вовсе.
+  const closed = moneyRefusal(order.status);
+  if (closed && Number(paidAmount) < order.paidAmount) throw new Error(closed);
 
   const amount = Number(paidAmount);
   if (!Number.isFinite(amount) || amount < 0) throw new Error("Сумма не может быть отрицательной");
@@ -195,6 +204,12 @@ export async function recalculateOrderAction(
   const newTotal = after?.totalAmount ?? order.totalAmount;
   await setOrderPayment(orderId, order.paidAmount, newTotal, email, order.paymentMethod);
 
+  // Статус тоже обязан пересчитаться. Без этого заявка застревала:
+  // уменьшили заказ ниже уже отгруженного — она вечно висела у зав. складом
+  // в «Можно отгружать», хотя отгружать нечего; увеличили после отгрузки —
+  // заявка осталась «отгружена», выпала из склада, и дослать было нечем.
+  await recomputeOrderStatusFromItems(orderId);
+
   await logMoney({
     actorEmail: email,
     orderId,
@@ -322,11 +337,34 @@ export async function setManagerConfirmedAction(orderId: string, confirmed: bool
     throw new Error("Это заявка другого менеджера");
   }
 
+  // Снятое подтверждение закрывает отгрузку. По уже отгруженной заявке это
+  // бессмысленно и только ломает отчёты, поэтому запрещено.
+  if (!confirmed && isClosed(order.status)) {
+    throw new Error(
+      order.status === ORDER_STATUSES.SHIPPED
+        ? "Заявка отгружена — снимать подтверждение поздно"
+        : "Заявка отменена"
+    );
+  }
+
   await setOrderManagerConfirmed(orderId, confirmed);
+
+  // Подтверждение открывает отгрузку — значит это действие с последствиями, и
+  // спор «я подтверждение не снимала» должен разбираться по записи, а не по
+  // памяти. Раньше единственное из «денежных» действий, что не попадало в журнал.
+  await logMoney({
+    actorEmail: session.user.email,
+    orderId,
+    action: MONEY_LOG_ACTIONS.MANAGER_CONFIRMED,
+    details: confirmed ? "Менеджер подтвердил заявку" : "Менеджер снял подтверждение",
+    amountBefore: order.totalAmount,
+    amountAfter: order.totalAmount,
+  });
 
   revalidatePath("/finance");
   revalidatePath("/orders");
   revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/warehouse");
   revalidatePath("/warehouse/picklist");
   return { ok: true };
 }

@@ -250,10 +250,14 @@ export const MONEY_LOG_ACTIONS = {
   CLAIM_ACCEPTED: "claim_accepted",
   CLAIM_REJECTED: "claim_rejected",
   PROMISE: "promise",
+  ORDER_CANCELLED: "order_cancelled",
+  MANAGER_CONFIRMED: "manager_confirmed",
 } as const;
 export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
 
 export const MONEY_LOG_LABELS: Record<string, string> = {
+  order_cancelled: "Заявка отменена",
+  manager_confirmed: "Подтверждение менеджера",
   payment: "Оплата",
   payment_cleared: "Оплата снята",
   recalculated: "Пересчёт заявки",

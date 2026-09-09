@@ -3,7 +3,6 @@ import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
 import type { Order, OrderItem, OrderWithItems } from "../types";
-import { addPriceHistoryEntry } from "./priceHistory";
 
 /** Пустая ячейка = «нет». Отмеченной считается только явная TRUE/ДА/1. */
 function toFlag(value: string | undefined): boolean {
@@ -147,17 +146,19 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
   }));
   await appendRows(SHEET_TABS.ORDER_ITEMS, itemRecords);
 
-  // Фиксируем цены в историю — понадобится для аналитики динамики цен.
-  const today = createdAt.slice(0, 10);
-  for (const item of input.items) {
-    await addPriceHistoryEntry({
-      date: today,
-      flowerType: item.flowerType,
-      variety: item.variety,
-      grade: item.grade,
-      price: item.unitPrice,
-    });
-  }
+  // ЗАЯВКА В ПРАЙС НЕ ПИШЕТ. Раньше писала: каждая цена из заявки уезжала во
+  // вкладку PriceHistory «для аналитики динамики цен». На деле PriceHistory —
+  // это и есть прайс-лист, а цена по конкретному сорту перебивает строку «Все
+  // сорта». Получалось так: РОП поставил розу 60 см по 300, менеджер один раз
+  // договорился с крупным клиентом на 240 — и с этой секунды 240 подставляется
+  // всем менеджерам как обычная цена, у РОПа на странице прайса тоже 240, а
+  // бенчмарк «отклонение от прайса» сравнивает факт с ценой, которую сама же
+  // заявка и записала, и всегда показывает нулевую скидку. Прайс полз бы вниз
+  // сам, а отчёт, ради которого владелец просил бенчмарк, ничего бы не заметил.
+  //
+  // Прайс задаёт РОП, и только через `savePricesAction` (requirePricer).
+  // Фактические цены сделок и так лежат в OrderItems — аналитика считает
+  // отклонение по ним, отдельная запись для этого не нужна.
 
   return orderId;
 }
