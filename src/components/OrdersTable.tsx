@@ -6,6 +6,7 @@ import { ORDER_STATUS_LABELS, FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { OrderWithItems } from "@/lib/types";
 import OrderStatusBadge from "./OrderStatusBadge";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import { formatDay } from "@/lib/formatDate";
 
 export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
   const [status, setStatus] = useState<string>("all");
@@ -71,7 +72,7 @@ export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
                     {o.orderId}
                   </Link>
                   <div className="text-xs text-ink-muted">
-                    {new Date(o.createdAt).toLocaleDateString("ru-RU")}
+                    {formatDay(o.createdAt)}
                   </div>
                 </td>
                 <td className="px-4 py-3">{o.clientName}</td>
@@ -83,7 +84,7 @@ export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
                 </td>
                 <td className="px-4 py-3 font-medium">{o.totalAmount.toLocaleString("ru-RU")} ₸</td>
                 <td className="px-4 py-3 text-ink-secondary">
-                  {o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString("ru-RU") : "—"}
+                  {formatDay(o.deliveryDate)}
                 </td>
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={o.status} />

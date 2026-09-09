@@ -10,6 +10,7 @@ import { authOptions } from "@/lib/auth";
 
 import SectionTabs from "@/components/SectionTabs";
 import { WAREHOUSE_TABS } from "./tabs";
+import { formatDay } from "@/lib/formatDate";
 
 export const dynamic = "force-dynamic";
 
@@ -112,7 +113,7 @@ export default async function WarehousePage() {
                 <td className="px-4 py-3 font-medium">{o.orderId}</td>
                 <td className="px-4 py-3">{o.clientName}</td>
                 <td className="px-4 py-3 text-ink-secondary">
-                  {o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString("ru-RU") : "—"}
+                  {formatDay(o.deliveryDate)}
                 </td>
                 <td className="px-4 py-3 text-ink-secondary">
                   {o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`).join(", ")}

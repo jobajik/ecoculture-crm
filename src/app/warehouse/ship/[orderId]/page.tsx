@@ -6,6 +6,7 @@ import { getOrderById } from "@/lib/repo/orders";
 import { listAvailableBatchesFor } from "@/lib/repo/batches";
 import ShipmentForm from "@/components/ShipmentForm";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
+import { formatDay } from "@/lib/formatDate";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
       <p className="text-ink-secondary mb-6">
         {farm && <>Производство: {farmLabel(farm)} · </>}
         Клиент: {order.clientName}
-        {order.deliveryDate && ` · доставка ${new Date(order.deliveryDate).toLocaleDateString("ru-RU")}`}
+        {order.deliveryDate && ` · доставка ${formatDay(order.deliveryDate)}`}
       </p>
       <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} />
     </div>

@@ -1,6 +1,7 @@
 import { appendRow, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
 import { generateId } from "../id";
 import { CLAIM_STATUSES } from "../constants";
+import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import type { Claim } from "../types";
 
 /**
@@ -17,13 +18,13 @@ import type { Claim } from "../types";
 function toClaim(record: Record<string, string>): Claim {
   return {
     claimId: record.ClaimID || "",
-    createdAt: record.CreatedAt || "",
+    createdAt: toIsoDateTime(record.CreatedAt),
     orderId: record.OrderID || "",
     managerEmail: (record.ManagerEmail || "").toLowerCase(),
     reason: record.Reason || "",
     comment: record.Comment || "",
     status: record.Status || CLAIM_STATUSES.NEW,
-    decidedAt: record.DecidedAt || "",
+    decidedAt: toIsoDateTime(record.DecidedAt),
     accountantEmail: (record.AccountantEmail || "").toLowerCase(),
     decision: record.Decision || "",
   };

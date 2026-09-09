@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { MONEY_LOG_ACTIONS, MONEY_LOG_LABELS } from "@/lib/constants";
+import { formatMoment } from "@/lib/formatDate";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import { money } from "./PaymentPanel";
 
@@ -117,12 +118,7 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
               return (
                 <tr key={r.logId} className="border-b border-line-hairline last:border-0">
                   <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                    {new Date(r.createdAt).toLocaleString("ru-RU", {
-                      day: "numeric",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatMoment(r.createdAt)}
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">{r.actorName}</td>
                   <td className="px-4 py-2.5">

@@ -87,3 +87,53 @@ export function toIsoDate(raw: unknown): string {
 
   return "";
 }
+
+/**
+ * То же для значений СО ВРЕМЕНЕМ: даты оформления заявки, отметки об оплате,
+ * записи журнала.
+ *
+ * Отдельная функция нужна потому, что `toIsoDate` время отбрасывает, а здесь
+ * оно важно: «оформлена 14:20» и «оформлена 09:30» — разные вещи, и в журнале
+ * действий по ним разбирают спор.
+ *
+ * Ломается это точно так же, как и обычная дата: если у ячейки числовой формат,
+ * «2026-09-05T09:30:00» возвращается серийником «46275,39», и `new Date()` от
+ * такой строки даёт 1 января 46275 года — именно это и увидел владелец в дате
+ * доставки. Дробная часть серийника — это доля суток, из неё и берётся время.
+ */
+export function toIsoDateTime(raw: unknown): string {
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString();
+
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+
+  // Настоящее ISO со временем оставляем как есть: это то, что пишет программа.
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{1,2}:\d{2}/.test(value)) return value;
+
+  // Серийник с дробной частью несёт и время: 46275,39 — это 09:22.
+  const serialMatch = /^(\d{5})(?:[.,](\d+))?$/.exec(value);
+  if (serialMatch) {
+    const date = toIsoDate(value);
+    if (!date) return "";
+    const fraction = serialMatch[2] ? Number(`0.${serialMatch[2]}`) : 0;
+    if (fraction === 0) return date;
+    const minutes = Math.round(fraction * 24 * 60);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date}T${pad(Math.floor(minutes / 60) % 24)}:${pad(minutes % 60)}:00`;
+  }
+
+  // Отображаемая дата со временем: «05.09.2026 9:30:00».
+  const parts = value.split(/\s+/);
+  if (parts.length >= 2) {
+    const date = toIsoDate(parts[0]);
+    const time = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(parts[1]);
+    if (date && time) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${date}T${pad(Number(time[1]))}:${time[2]}:${time[3] ?? "00"}`;
+    }
+    if (date) return date;
+  }
+
+  // Осталась просто дата — вернём её: время неизвестно, но день верный.
+  return toIsoDate(value);
+}

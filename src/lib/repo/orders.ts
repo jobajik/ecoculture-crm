@@ -1,6 +1,6 @@
 import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
 import { generateId } from "../id";
-import { toIsoDate } from "../sheetDate";
+import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
 import type { Order, OrderItem, OrderWithItems } from "../types";
 import { addPriceHistoryEntry } from "./priceHistory";
@@ -11,20 +11,33 @@ function toFlag(value: string | undefined): boolean {
   return v === "TRUE" || v === "ДА" || v === "1" || v === "YES";
 }
 
+/**
+ * Даты заявки приводятся к нормальному виду ПРИ ЧТЕНИИ — грабли 1.9-bis.
+ *
+ * Таблица отдаёт то, что отображается: у ячейки с числовым форматом дата
+ * доставки приходит как «46274», а `new Date("46274")` — это 1 января 46274
+ * года. Ровно это и показала страница заявки. Чинить в местах использования
+ * бесполезно: их полтора десятка, и следующее забудут.
+ *
+ * Если дату разобрать не удалось, поле остаётся пустым: «даты нет» честнее
+ * выдуманной, а по пустому полю сразу видно, что с ячейкой что-то не так.
+ */
 function toOrder(record: Record<string, string>): Order {
   return {
     orderId: record.OrderID,
-    createdAt: record.CreatedAt,
+    // Дата оформления не должна теряться совсем: по ней заявка попадает в
+    // списки и периоды. Если разобрать не вышло — оставляем как записано.
+    createdAt: toIsoDateTime(record.CreatedAt) || record.CreatedAt || "",
     managerEmail: (record.ManagerEmail || "").toLowerCase(),
     clientName: record.ClientName || "",
     clientPhone: record.ClientPhone || "",
-    deliveryDate: record.DeliveryDate || "",
+    deliveryDate: toIsoDate(record.DeliveryDate),
     status: (record.Status || ORDER_STATUSES.NEW) as OrderStatus,
     notes: record.Notes || "",
     managerConfirmed: toFlag(record.ManagerConfirmed),
-    managerConfirmedAt: record.ManagerConfirmedAt || "",
+    managerConfirmedAt: toIsoDateTime(record.ManagerConfirmedAt),
     paid: toFlag(record.Paid),
-    paidAt: record.PaidAt || "",
+    paidAt: toIsoDateTime(record.PaidAt),
     paymentMethod: record.PaymentMethod || "",
     accountantEmail: (record.AccountantEmail || "").toLowerCase(),
     paidAmount: toMoney(record.PaidAmount),

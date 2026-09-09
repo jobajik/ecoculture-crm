@@ -10,6 +10,7 @@ import { FLOWER_TYPE_LABELS, ROLES, farmLabel, formatGrade, getFarmFor } from "@
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ReadyChecks from "@/components/ReadyChecks";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
+import { formatDay, formatMoment } from "@/lib/formatDate";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +71,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <OrderStatusBadge status={order.status} />
       </div>
       <p className="text-sm text-ink-muted mb-6">
-        Создана {new Date(order.createdAt).toLocaleString("ru-RU")} · менеджер {order.managerEmail}
+        Создана {formatMoment(order.createdAt)} · менеджер {order.managerEmail}
         {farm && (
           <>
             {" · "}
@@ -108,7 +109,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </div>
         <div>
           <div className="label">Дата доставки</div>
-          <div>{order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("ru-RU") : "—"}</div>
+          <div>{formatDay(order.deliveryDate)}</div>
         </div>
         <div>
           <div className="label">Комментарий</div>
@@ -177,7 +178,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <tbody>
             {shipments.map((s) => (
               <tr key={s.shipmentId} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-3">{new Date(s.createdAt).toLocaleString("ru-RU")}</td>
+                <td className="px-4 py-3">{formatMoment(s.createdAt)}</td>
                 <td className="px-4 py-3">{s.batchId}</td>
                 <td className="px-4 py-3">{s.quantity}</td>
                 <td className="px-4 py-3 text-ink-secondary">{s.warehouseEmail}</td>

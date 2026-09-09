@@ -1,12 +1,13 @@
 import { appendRow, readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import { generateId } from "../id";
+import { toIsoDateTime } from "../sheetDate";
 import type { Writeoff } from "../types";
 import { deductBatchQuantity, getBatchById } from "./batches";
 
 function toWriteoff(record: Record<string, string>): Writeoff {
   return {
     writeoffId: record.WriteoffID,
-    createdAt: record.CreatedAt,
+    createdAt: toIsoDateTime(record.CreatedAt) || record.CreatedAt || "",
     batchId: record.BatchID,
     quantity: Number(record.Quantity) || 0,
     reason: record.Reason || "",

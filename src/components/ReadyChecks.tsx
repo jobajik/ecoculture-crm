@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { setManagerConfirmedAction } from "@/app/finance/actions";
+import { formatDay } from "@/lib/formatDate";
 
 /**
  * Две «зелёные галочки» готовности заявки к сборке.
@@ -113,7 +114,7 @@ export default function ReadyChecks({
             <div className="text-xs text-ink-muted">
               {paid
                 ? `${paymentMethod || "способ не указан"}${
-                    paidAt ? ` · ${new Date(paidAt).toLocaleDateString("ru-RU")}` : ""
+                    paidAt ? ` · ${formatDay(paidAt, "")}` : ""
                   }`
                 : partial
                   ? `Получено ${money(paidAmount)} из ${money(totalAmount)}`

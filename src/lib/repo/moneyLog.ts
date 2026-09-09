@@ -1,5 +1,6 @@
 import { appendRow, readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import { generateId } from "../id";
+import { toIsoDateTime } from "../sheetDate";
 import type { MoneyLogEntry } from "../types";
 
 /**
@@ -22,7 +23,7 @@ function toEntry(record: Record<string, string>): MoneyLogEntry {
   };
   return {
     logId: record.LogID || "",
-    createdAt: record.CreatedAt || "",
+    createdAt: toIsoDateTime(record.CreatedAt),
     actorEmail: (record.ActorEmail || "").toLowerCase(),
     orderId: record.OrderID || "",
     action: record.Action || "",

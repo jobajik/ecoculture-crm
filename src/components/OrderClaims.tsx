@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { createClaimAction } from "@/app/finance/actions";
 import { CLAIM_REASONS, CLAIM_STATUSES, CLAIM_STATUS_LABELS } from "@/lib/constants";
+import { formatDay } from "@/lib/formatDate";
 
 export interface OrderClaimRow {
   claimId: string;
@@ -143,14 +144,14 @@ export default function OrderClaims({
                   {CLAIM_STATUS_LABELS[c.status] ?? c.status}
                 </span>
                 <span className="text-xs text-ink-muted">
-                  {c.managerName} · {new Date(c.createdAt).toLocaleDateString("ru-RU")}
+                  {c.managerName} · {formatDay(c.createdAt)}
                 </span>
               </div>
               <div className="text-ink-secondary">{c.comment}</div>
               {c.decision && (
                 <div className="text-xs text-ink-muted">
                   Ответ бухгалтера: {c.decision}
-                  {c.decidedAt && ` · ${new Date(c.decidedAt).toLocaleDateString("ru-RU")}`}
+                  {c.decidedAt && ` · ${formatDay(c.decidedAt)}`}
                 </div>
               )}
             </li>

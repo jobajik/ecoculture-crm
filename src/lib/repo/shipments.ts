@@ -1,4 +1,5 @@
 import { appendRow, readTable, rowToRecord, SHEET_TABS } from "../sheets";
+import { toIsoDateTime } from "../sheetDate";
 import { generateId } from "../id";
 import type { Shipment } from "../types";
 import { deductBatchQuantity, getBatchById } from "./batches";
@@ -7,7 +8,7 @@ import { incrementItemShippedQuantity, recomputeOrderStatusFromItems } from "./o
 function toShipment(record: Record<string, string>): Shipment {
   return {
     shipmentId: record.ShipmentID,
-    createdAt: record.CreatedAt,
+    createdAt: toIsoDateTime(record.CreatedAt) || record.CreatedAt || "",
     orderId: record.OrderID,
     itemId: record.ItemID,
     batchId: record.BatchID,

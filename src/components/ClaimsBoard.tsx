@@ -9,6 +9,7 @@ import { CLAIM_STATUSES, CLAIM_STATUS_LABELS } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
 import MoreToggle from "./MoreToggle";
 import { money } from "./PaymentPanel";
+import { formatDay, formatMoment } from "@/lib/formatDate";
 
 /** Что бухгалтеру нужно знать о рекламации, чтобы решить прямо здесь. */
 export interface ClaimView {
@@ -98,7 +99,7 @@ export default function ClaimsBoard({
                 {shownDone.map((c) => (
                   <tr key={c.claimId} className="border-b border-line-hairline last:border-0">
                     <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                      {new Date(c.decidedAt || c.createdAt).toLocaleDateString("ru-RU")}
+                      {formatDay(c.decidedAt || c.createdAt)}
                     </td>
                     <td className="px-4 py-2.5">
                       <Link href={`/orders/${c.orderId}`} className="font-medium hover:underline">
@@ -209,7 +210,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
           </h3>
           <p className="text-sm text-ink-secondary mt-0.5">{claim.comment}</p>
           <p className="text-xs text-ink-muted mt-1">
-            Подал {claim.managerName} · {new Date(claim.createdAt).toLocaleString("ru-RU")} · счёт{" "}
+            Подал {claim.managerName} · {formatMoment(claim.createdAt)} · счёт{" "}
             {money(claim.orderTotal)}
             {claim.paidAmount > 0 && ` · получено ${money(claim.paidAmount)}`}
           </p>
