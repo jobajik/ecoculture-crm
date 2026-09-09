@@ -6,7 +6,7 @@ import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
-import { navLinksFor, type NavLink } from "./navLinks";
+import { navLinksFor, isActive as linkIsActive, type NavLink } from "./navLinks";
 
 /**
  * Нижнее меню для телефона.
@@ -49,8 +49,7 @@ export default function MobileNav() {
   const primary = links.slice(0, PRIMARY_COUNT);
   const rest = links.slice(PRIMARY_COUNT);
 
-  const isActive = (l: NavLink) =>
-    l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
+  const isActive = (l: NavLink) => linkIsActive(l, pathname);
   const restActive = rest.some(isActive);
 
   return (

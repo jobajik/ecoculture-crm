@@ -38,7 +38,18 @@ export interface BackupResult {
   rows: number;
 }
 
-export async function createBackup(now: Date = new Date()): Promise<BackupResult> {
+/**
+ * Куда сообщать о ходе работы. Нужно скриптам, которые запускает человек:
+ * копия боевой таблицы делается около минуты, и всё это время окно молчит —
+ * выглядит как зависание, и его закрывают на середине. Так уже случилось.
+ * В расписании Vercel обработчик не передаёт ничего, и вывода нет.
+ */
+export type BackupProgress = (message: string) => void;
+
+export async function createBackup(
+  now: Date = new Date(),
+  onProgress: BackupProgress = () => {}
+): Promise<BackupResult> {
   const sheets = client();
   const tabs = Object.values(SHEET_TABS);
 
@@ -46,13 +57,17 @@ export async function createBackup(now: Date = new Date()): Promise<BackupResult
   // не оставлять в диске пустую копию, которая выглядит как удачная.
   const data: { title: string; values: string[][] }[] = [];
   let rows = 0;
+  let done = 0;
   for (const tab of tabs) {
+    done++;
     try {
       const table = await readTable(tab);
       const values = [table.headers, ...table.rows];
       rows += table.rows.length;
       data.push({ title: tab, values });
+      onProgress(`  [${done}/${tabs.length}] ${tab} — ${table.rows.length} строк`);
     } catch {
+      onProgress(`  [${done}/${tabs.length}] ${tab} — вкладки нет, пропускаю`);
       // Вкладки может не быть — пропускаем, но не молча: в итоге видно, сколько
       // вкладок попало в копию.
     }
@@ -60,6 +75,8 @@ export async function createBackup(now: Date = new Date()): Promise<BackupResult
 
   const stamp = now.toISOString().slice(0, 16).replace("T", " ");
   const title = `Ecoculture-CRM — копия ${stamp}`;
+
+  onProgress(`  Создаю файл «${title}» (${rows} строк) — это самая долгая часть…`);
 
   const created = await sheets.spreadsheets.create({
     requestBody: {

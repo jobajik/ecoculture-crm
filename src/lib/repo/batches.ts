@@ -109,6 +109,31 @@ export async function deductBatchQuantity(batchId: string, quantity: number): Pr
   if (!ok) throw new Error(`Партия ${batchId} не найдена`);
 }
 
+/**
+ * Возвращает количество обратно в партию.
+ *
+ * Нужно ровно в одном месте — при очистке базы перед боевым стартом. Отгрузка
+ * уменьшает остаток партии, и если стереть отгрузки, а партии оставить, стебли
+ * так и останутся вычтенными: склад покажет меньше, чем лежит в холодильнике,
+ * и никакой записи, объясняющей разницу, уже не будет.
+ *
+ * Из интерфейса это не вызывается: отменять отгрузку задним числом в системе
+ * нельзя, склад правит остаток приёмкой и списанием.
+ */
+export async function returnBatchQuantity(batchId: string, quantity: number): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.BATCHES,
+    (record) => record.BatchID === batchId,
+    (record) => {
+      const remaining = Number(record.QuantityRemaining) || 0;
+      const total = Number(record.QuantityIn) || 0;
+      // Больше, чем приняли, в партии оказаться не может: если данные уже
+      // разъехались, упираемся в приход, а не раздуваем склад.
+      return { QuantityRemaining: total > 0 ? Math.min(total, remaining + quantity) : remaining + quantity };
+    }
+  );
+}
+
 /** Партии с положительным остатком для конкретного сорта/типа, отсортированные по дате сбора (сначала самые старые — FIFO, чтобы в первую очередь отгружать то, что дольше лежит). */
 export async function listAvailableBatchesFor(
   flowerType: FlowerType,

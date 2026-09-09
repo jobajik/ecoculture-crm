@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import clsx from "clsx";
 import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
-import { navLinksFor } from "./navLinks";
+import { navLinksFor, isActive } from "./navLinks";
 
 export default function Nav() {
   const { data: session } = useSession();
@@ -45,7 +45,7 @@ export default function Nav() {
         <nav className="hidden sm:flex items-center gap-0.5 flex-1 overflow-x-auto">
           {links.map((l) => {
             // Раздел подсвечен, пока мы внутри него — включая вкладки.
-            const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
+            const active = isActive(l, pathname);
             return (
               <Link
                 key={l.href}
