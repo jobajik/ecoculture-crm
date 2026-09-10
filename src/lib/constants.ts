@@ -70,6 +70,11 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Note",
     "ManagerEmail",
     "Active",
+    // Чем платит и куда. В конец строки, как и всё остальное (грабли 1.1).
+    "PaymentMethod",
+    "KaspiAccount",
+    "KaspiPhone1",
+    "KaspiPhone2",
   ],
   [SHEET_TABS.ORDER_ITEMS]: [
     "OrderID",
@@ -216,7 +221,7 @@ export function isFarmBoundRole(role: string | null | undefined): boolean {
 // ---------------------------------------------------------------------------
 
 /** Как принимают деньги. Список короткий намеренно — бухгалтеру меньше кликов. */
-export const PAYMENT_METHODS = ["Каспи", "Наличные"] as const;
+export const PAYMENT_METHODS = ["Каспи", "Наличные", "Оплата по реквизитам"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 /** Через сколько дней после даты доставки долг считается просроченным. */
@@ -958,3 +963,25 @@ export type ClientSource = (typeof CLIENT_SOURCES)[number];
  * бизнесовое, меняется одной строкой.
  */
 export const CLIENT_SLEEPING_DAYS = 30;
+
+/**
+ * На какой наш Kaspi Pay платит клиент.
+ *
+ * Счета выставляются от РАЗНЫХ компаний в зависимости от купленного цветка:
+ * роза и эустома — Rose Farm, хризантема — Есентай Агро Хим. Клиент, который
+ * берёт и то и другое, платит на оба, и бухгалтеру важно не гадать, а видеть
+ * это в карточке. Значения — «1», «2», «both», чтобы подписи можно было менять,
+ * не трогая записанные данные.
+ */
+export const KASPI_ACCOUNTS = ["1", "2", "both"] as const;
+export type KaspiAccount = (typeof KASPI_ACCOUNTS)[number];
+
+export const KASPI_ACCOUNT_LABELS: Record<string, string> = {
+  "1": `Каспи 1 — ${FARM_LABELS.rose_farm}`,
+  "2": `Каспи 2 — ${FARM_LABELS.esentai}`,
+  both: "Оба — по цветку в заявке",
+};
+
+/** Способ оплаты показывается в карточке клиента; каспи-поля нужны только ему. */
+export const KASPI_METHOD = "Каспи";
+

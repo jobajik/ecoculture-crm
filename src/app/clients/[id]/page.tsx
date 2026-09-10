@@ -100,6 +100,10 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             messenger: client.messenger,
             address: client.address,
             paymentTerms: client.paymentTerms,
+            paymentMethod: client.paymentMethod,
+            kaspiAccount: client.kaspiAccount,
+            kaspiPhone1: client.kaspiPhone1,
+            kaspiPhone2: client.kaspiPhone2,
             source: client.source,
             note: client.note,
           }}

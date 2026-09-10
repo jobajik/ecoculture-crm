@@ -10,7 +10,8 @@ import {
   updateClient,
   type NewClientInput,
 } from "@/lib/repo/clients";
-import { CLIENT_SOURCES, CLIENT_TYPES, PAYMENT_TERMS, ROLES } from "@/lib/constants";
+import { CLIENT_SOURCES, CLIENT_TYPES, PAYMENT_METHODS, PAYMENT_TERMS, ROLES } from "@/lib/constants";
+import { kaspiFieldsFor } from "@/lib/clientPick";
 
 /**
  * Клиентскую базу ведут те, кто продаёт.
@@ -42,6 +43,7 @@ function fromList(value: string, list: readonly string[]): string {
 }
 
 function clean(input: Partial<NewClientInput>) {
+  const method = fromList(input.paymentMethod ?? "", PAYMENT_METHODS);
   return {
     name: (input.name ?? "").trim(),
     city: (input.city ?? "").trim(),
@@ -54,6 +56,9 @@ function clean(input: Partial<NewClientInput>) {
     paymentTerms: fromList(input.paymentTerms ?? "", PAYMENT_TERMS),
     source: fromList(input.source ?? "", CLIENT_SOURCES),
     note: (input.note ?? "").trim(),
+    paymentMethod: method,
+    // Правило «каспи-поля только при оплате Каспи» — общее и проверено тестом.
+    ...kaspiFieldsFor(method, input),
   };
 }
 

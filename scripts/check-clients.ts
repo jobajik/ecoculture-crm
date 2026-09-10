@@ -8,6 +8,7 @@
  * Запуск: npx tsx scripts/check-clients.ts
  */
 import { buildClientStats } from "../src/lib/clientStats";
+import { kaspiFieldsFor, orderForPicker } from "../src/lib/clientPick";
 import { CLIENT_SLEEPING_DAYS, ORDER_STATUSES } from "../src/lib/constants";
 import type { Client, OrderWithItems } from "../src/lib/types";
 
@@ -40,6 +41,10 @@ function client(over: Partial<Client> & { clientId: string; name: string }): Cli
     messenger: "",
     address: "",
     paymentTerms: "По факту",
+    paymentMethod: "Каспи",
+    kaspiAccount: "1",
+    kaspiPhone1: "",
+    kaspiPhone2: "",
     source: "Сами нашли",
     note: "",
     managerEmail: "aliya@x.kz",
@@ -237,6 +242,64 @@ check(
   "пустая база: нули без деления на ноль",
   [empty.totals.clients, empty.totals.avgCheck, empty.totals.top3Share, empty.byCity.length],
   [0, 0, 0, 0]
+);
+
+// --- Порядок в подборщике заявки -------------------------------------------
+//
+// Менеджер девять раз из десяти оформляет заявку старому клиенту, с которым
+// работал недавно. Алфавит для этого бесполезен.
+
+const CANDIDATES = [
+  { name: "Азия-Флора", mine: true, orders: 12, daysSinceLast: 200 },
+  { name: "Вчерашний", mine: true, orders: 3, daysSinceLast: 1 },
+  { name: "Чужой свежий", mine: false, orders: 5, daysSinceLast: 0 },
+  { name: "Без заказов", mine: true, orders: 0, daysSinceLast: -1 },
+  { name: "Апрельский", mine: true, orders: 2, daysSinceLast: 1 },
+];
+
+check(
+  "свои недавние сверху, чужие ниже, без заказов в конце",
+  orderForPicker(CANDIDATES).map((c) => c.name),
+  ["Апрельский", "Вчерашний", "Азия-Флора", "Без заказов", "Чужой свежий"]
+);
+check(
+  "при равной свежести — по алфавиту, список не прыгает",
+  orderForPicker(CANDIDATES).slice(0, 2).map((c) => c.name),
+  ["Апрельский", "Вчерашний"]
+);
+check("пустой список не падает", orderForPicker([]).length, 0);
+
+// --- Каспи-реквизиты --------------------------------------------------------
+
+check(
+  "при оплате Каспи реквизиты сохраняются",
+  kaspiFieldsFor("Каспи", { kaspiAccount: "2", kaspiPhone1: " +7 701 ", kaspiPhone2: "+7 702" }),
+  { kaspiAccount: "2", kaspiPhone1: "+7 701", kaspiPhone2: "+7 702" }
+);
+check(
+  "при наличных каспи-поля стираются",
+  kaspiFieldsFor("Наличные", { kaspiAccount: "1", kaspiPhone1: "+7 701", kaspiPhone2: "" }),
+  { kaspiAccount: "", kaspiPhone1: "", kaspiPhone2: "" }
+);
+check(
+  "при оплате по реквизитам — тоже",
+  kaspiFieldsFor("Оплата по реквизитам", { kaspiAccount: "1", kaspiPhone1: "+7 701" }),
+  { kaspiAccount: "", kaspiPhone1: "", kaspiPhone2: "" }
+);
+check(
+  "выдуманный номер нашего счёта не проходит",
+  kaspiFieldsFor("Каспи", { kaspiAccount: "3", kaspiPhone1: "+7 701" }).kaspiAccount,
+  ""
+);
+check(
+  "«оба — по цветку» — допустимое значение",
+  kaspiFieldsFor("Каспи", { kaspiAccount: "both" }).kaspiAccount,
+  "both"
+);
+check(
+  "неизвестный способ оплаты каспи-поля не открывает",
+  kaspiFieldsFor("Биткоин", { kaspiAccount: "1", kaspiPhone1: "+7 701" }),
+  { kaspiAccount: "", kaspiPhone1: "", kaspiPhone2: "" }
 );
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);

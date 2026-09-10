@@ -1,8 +1,19 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { CLIENT_SOURCES, CLIENT_TYPES, PAYMENT_TERMS } from "@/lib/constants";
+import clsx from "clsx";
+import {
+  CLIENT_SOURCES,
+  CLIENT_TYPES,
+  KASPI_ACCOUNTS,
+  KASPI_ACCOUNT_LABELS,
+  KASPI_METHOD,
+  PAYMENT_METHODS,
+  PAYMENT_TERMS,
+} from "@/lib/constants";
 import { createClientAction } from "@/app/clients/actions";
+import { orderForPicker } from "@/lib/clientPick";
+import { days } from "@/lib/plural";
 
 export interface ClientOption {
   clientId: string;
@@ -11,15 +22,27 @@ export interface ClientOption {
   shopName: string;
   phone: string;
   managerName: string;
+  /** Свой ли это клиент — своих показываем первыми. */
+  mine: boolean;
+  /** Сколько заявок было. Ноль — карточка заведена, но ещё ничего не покупал. */
+  orders: number;
+  /** Дней с последнего заказа; -1 — заказов не было. */
+  daysSinceLast: number;
 }
 
 /**
  * Выбор клиента при оформлении заявки.
  *
  * Раньше менеджер вписывал имя руками, и «Цветы 24», «цветы-24» и «ТОО Цветы
- * 24» превращались в трёх разных клиентов: ни средний чек, ни история заказов,
- * ни ответ на вопрос «сколько возим в Караганду» после этого не считались.
- * Теперь клиент выбирается из базы.
+ * 24» превращались в трёх разных клиентов: ни средний чек, ни история заказов
+ * после этого не считались. Теперь клиент выбирается из базы.
+ *
+ * Порядок в списке — не алфавитный, и это главное для скорости.
+ * Менеджер девять раз из десяти оформляет заявку СТАРОМУ клиенту, причём
+ * тому, с кем работал недавно. Поэтому сверху идут свои клиенты, у которых
+ * заказ был на днях, а «Азия-Флора» из алфавита, у которой не покупали
+ * полгода, уходит вниз. При поиске порядок сохраняется — найденное свежее
+ * тоже стоит выше.
  *
  * Нового клиента заводят прямо здесь, не уходя со страницы: если для этого
  * пришлось бы бросать наполовину набранную заявку, менеджер в спешке нашёл бы
@@ -50,19 +73,37 @@ export default function ClientPicker({
     messenger: "",
     address: "",
     paymentTerms: PAYMENT_TERMS[1] as string,
+    paymentMethod: PAYMENT_METHODS[0] as string,
+    kaspiAccount: "" as string,
+    kaspiPhone1: "",
+    kaspiPhone2: "",
     source: CLIENT_SOURCES[0] as string,
     note: "",
   });
 
+  /**
+   * Порядок: свои перед чужими, недавние перед давними, покупавшие перед
+   * теми, кто ещё ничего не брал. Внутри равных — по алфавиту, чтобы список
+   * не прыгал.
+   */
+  const ordered = useMemo(() => orderForPicker(clients), [clients]);
+
   const found = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return clients.slice(0, 8);
-    return clients
+    if (!q) return ordered.slice(0, 8);
+    return ordered
       .filter((c) =>
         [c.name, c.shopName, c.city, c.phone].some((f) => f.toLowerCase().includes(q))
       )
-      .slice(0, 8);
-  }, [clients, search]);
+      .slice(0, 12);
+  }, [ordered, search]);
+
+  function hint(c: ClientOption): string {
+    if (c.orders === 0) return "заказов ещё не было";
+    if (c.daysSinceLast <= 0) return "заказ сегодня";
+    if (c.daysSinceLast === 1) return "заказ вчера";
+    return `заказ ${days(c.daysSinceLast)} назад`;
+  }
 
   function save() {
     setError(null);
@@ -78,6 +119,9 @@ export default function ClientPicker({
           shopName: form.shopName.trim(),
           phone: form.phone.trim(),
           managerName: "вы",
+          mine: true,
+          orders: 0,
+          daysSinceLast: -1,
         });
         setCreating(false);
       } catch (e) {
@@ -151,17 +195,22 @@ export default function ClientPicker({
           {field("WhatsApp / Instagram", "messenger", "@nickname или номер")}
           {field("Адрес доставки", "address", "Куда возить")}
           {select("Условия оплаты", "paymentTerms", PAYMENT_TERMS)}
-          {select("Как нашли", "source", CLIENT_SOURCES)}
+          {select("Чем платит", "paymentMethod", PAYMENT_METHODS)}
         </div>
-        <label className="text-sm block">
-          <span className="label">Заметка</span>
-          <input
-            className="input"
-            placeholder="Что берёт, когда звонить, о чём договорились"
-            value={form.note}
-            onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+
+        {form.paymentMethod === KASPI_METHOD && (
+          <KaspiFields
+            account={form.kaspiAccount}
+            phone1={form.kaspiPhone1}
+            phone2={form.kaspiPhone2}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
           />
-        </label>
+        )}
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          {select("Как нашли", "source", CLIENT_SOURCES)}
+          {field("Заметка", "note", "Что берёт, когда звонить")}
+        </div>
         {error && (
           <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
             {error}
@@ -197,16 +246,34 @@ export default function ClientPicker({
               <button
                 type="button"
                 onClick={() => onChange(c)}
-                className="w-full text-left px-3 py-2 hover:bg-surface-plane"
+                className="w-full text-left px-3 py-2 hover:bg-surface-plane flex flex-wrap items-baseline justify-between gap-x-3"
               >
-                <span className="font-medium">{c.name}</span>
-                <span className="block text-xs text-ink-muted">
-                  {[c.city, c.shopName, c.managerName].filter(Boolean).join(" · ")}
+                <span>
+                  <span className="font-medium">{c.name}</span>
+                  <span className="block text-xs text-ink-muted">
+                    {[c.city, c.shopName, c.mine ? "ваш клиент" : c.managerName]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </span>
+                <span
+                  className={clsx(
+                    "text-xs whitespace-nowrap",
+                    c.orders === 0 ? "text-ink-muted" : "text-ink-secondary"
+                  )}
+                >
+                  {hint(c)}
                 </span>
               </button>
             </li>
           ))}
         </ul>
+      )}
+      {!search.trim() && clients.length > found.length && (
+        <p className="text-xs text-ink-muted">
+          Показаны последние, с кем работали. Начните вводить название — найдётся любой из{" "}
+          {clients.length}.
+        </p>
       )}
       {search.trim() && found.length === 0 && (
         <p className="text-sm text-ink-muted">Такого клиента в базе нет.</p>
@@ -214,6 +281,72 @@ export default function ClientPicker({
       <button type="button" onClick={() => setCreating(true)} className="btn-secondary !py-1.5 text-sm">
         + Новый клиент
       </button>
+    </div>
+  );
+}
+
+/**
+ * Три каспи-ячейки. Показываются, только когда клиент платит Каспи, — иначе
+ * это три пустых поля, которые все обходят глазами.
+ *
+ * Счета выставляются от РАЗНЫХ компаний по цветку (роза и эустома — Rose Farm,
+ * хризантема — Есентай Агро Хим), а у клиента бывает несколько своих каспи, с
+ * которых приходят переводы. И то и другое бухгалтеру нужно, чтобы узнавать
+ * платёж, а не гадать, чей он.
+ */
+export function KaspiFields({
+  account,
+  phone1,
+  phone2,
+  onChange,
+}: {
+  account: string;
+  phone1: string;
+  phone2: string;
+  onChange: (patch: { kaspiAccount?: string; kaspiPhone1?: string; kaspiPhone2?: string }) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-line-hairline p-3 space-y-2">
+      <div className="text-sm font-medium">Kaspi Pay</div>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <label className="text-sm block">
+          <span className="label">На какой наш счёт платит</span>
+          <select
+            className="input"
+            value={account}
+            onChange={(e) => onChange({ kaspiAccount: e.target.value })}
+          >
+            <option value="">Не выбрано</option>
+            {KASPI_ACCOUNTS.map((a) => (
+              <option key={a} value={a}>
+                {KASPI_ACCOUNT_LABELS[a]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm block">
+          <span className="label">Каспи клиента</span>
+          <input
+            className="input"
+            placeholder="+7 ..."
+            value={phone1}
+            onChange={(e) => onChange({ kaspiPhone1: e.target.value })}
+          />
+        </label>
+        <label className="text-sm block">
+          <span className="label">Второй каспи</span>
+          <input
+            className="input"
+            placeholder="если платит с двух"
+            value={phone2}
+            onChange={(e) => onChange({ kaspiPhone2: e.target.value })}
+          />
+        </label>
+      </div>
+      <p className="text-xs text-ink-muted">
+        Счёт выставляется от той компании, чей цветок в заявке: роза и эустома — Rose Farm,
+        хризантема — Есентай Агро Хим. Номера нужны бухгалтеру, чтобы узнать перевод.
+      </p>
     </div>
   );
 }

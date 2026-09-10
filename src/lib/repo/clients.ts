@@ -32,6 +32,10 @@ function toClient(record: Record<string, string>): Client {
     source: record.Source || "",
     note: record.Note || "",
     managerEmail: (record.ManagerEmail || "").trim().toLowerCase(),
+    paymentMethod: record.PaymentMethod || "",
+    kaspiAccount: record.KaspiAccount || "",
+    kaspiPhone1: record.KaspiPhone1 || "",
+    kaspiPhone2: record.KaspiPhone2 || "",
     // Пустая ячейка — активен: новую строку в таблице заводят, не дописывая
     // галочку. Отключён только тот, у кого явно сказано «нет».
     active: !["FALSE", "НЕТ", "NO", "0", "-"].includes(
@@ -97,6 +101,10 @@ export async function createClient(input: NewClientInput): Promise<string> {
     Note: input.note,
     ManagerEmail: input.managerEmail,
     Active: "TRUE",
+    PaymentMethod: input.paymentMethod,
+    KaspiAccount: input.kaspiAccount,
+    KaspiPhone1: input.kaspiPhone1,
+    KaspiPhone2: input.kaspiPhone2,
   });
   return clientId;
 }
@@ -123,6 +131,10 @@ export async function updateClient(
   if (patch.source !== undefined) map.Source = patch.source;
   if (patch.note !== undefined) map.Note = patch.note;
   if (patch.managerEmail !== undefined) map.ManagerEmail = patch.managerEmail;
+  if (patch.paymentMethod !== undefined) map.PaymentMethod = patch.paymentMethod;
+  if (patch.kaspiAccount !== undefined) map.KaspiAccount = patch.kaspiAccount;
+  if (patch.kaspiPhone1 !== undefined) map.KaspiPhone1 = patch.kaspiPhone1;
+  if (patch.kaspiPhone2 !== undefined) map.KaspiPhone2 = patch.kaspiPhone2;
   if (patch.active !== undefined) map.Active = patch.active ? "TRUE" : "FALSE";
 
   if (Object.keys(map).length === 0) return false;

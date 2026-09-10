@@ -2,7 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CLIENT_SOURCES, CLIENT_TYPES, PAYMENT_TERMS } from "@/lib/constants";
+import {
+  CLIENT_SOURCES,
+  CLIENT_TYPES,
+  KASPI_ACCOUNT_LABELS,
+  KASPI_METHOD,
+  PAYMENT_METHODS,
+  PAYMENT_TERMS,
+} from "@/lib/constants";
+import { KaspiFields } from "./ClientPicker";
 import { updateClientAction } from "@/app/clients/actions";
 
 export interface ClientCardValues {
@@ -15,6 +23,10 @@ export interface ClientCardValues {
   messenger: string;
   address: string;
   paymentTerms: string;
+  paymentMethod: string;
+  kaspiAccount: string;
+  kaspiPhone1: string;
+  kaspiPhone2: string;
   source: string;
   note: string;
 }
@@ -69,9 +81,20 @@ export default function ClientCard({
       ["WhatsApp / Instagram", values.messenger],
       ["Адрес доставки", values.address],
       ["Условия оплаты", values.paymentTerms],
+      ["Чем платит", values.paymentMethod],
       ["Как нашли", values.source],
       ["Менеджер", managerName],
     ];
+    // Каспи-реквизиты показываем только тем, кто действительно платит Каспи:
+    // иначе это три прочерка, которые все обходят глазами.
+    const kaspi: [string, string][] =
+      values.paymentMethod === KASPI_METHOD
+        ? [
+            ["Наш счёт Kaspi Pay", KASPI_ACCOUNT_LABELS[values.kaspiAccount] ?? ""],
+            ["Каспи клиента", values.kaspiPhone1],
+            ["Второй каспи", values.kaspiPhone2],
+          ]
+        : [];
     return (
       <div className="card space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -92,6 +115,19 @@ export default function ClientCard({
             </div>
           ))}
         </dl>
+        {kaspi.length > 0 && (
+          <div className="border-t border-line-hairline pt-3">
+            <div className="text-sm font-medium mb-2">Kaspi Pay</div>
+            <dl className="grid sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+              {kaspi.map(([label, value]) => (
+                <div key={label}>
+                  <dt className="label">{label}</dt>
+                  <dd>{value || <span className="text-ink-muted">не заполнено</span>}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
         {values.note && (
           <div className="border-t border-line-hairline pt-3 text-sm">
             <div className="label">Заметка</div>
@@ -144,8 +180,18 @@ export default function ClientCard({
         {field("WhatsApp / Instagram", "messenger")}
         {field("Адрес доставки", "address")}
         {select("Условия оплаты", "paymentTerms", PAYMENT_TERMS)}
+        {select("Чем платит", "paymentMethod", PAYMENT_METHODS)}
         {select("Как нашли", "source", CLIENT_SOURCES)}
       </div>
+
+      {form.paymentMethod === KASPI_METHOD && (
+        <KaspiFields
+          account={form.kaspiAccount}
+          phone1={form.kaspiPhone1}
+          phone2={form.kaspiPhone2}
+          onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+        />
+      )}
       <label className="text-sm block">
         <span className="label">Заметка</span>
         <textarea
