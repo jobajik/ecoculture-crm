@@ -92,7 +92,7 @@ export default async function RetailDayPage({
           Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
         </h1>
         {canOrder && (
-          <Link href={`/orders/new?date=${date}`} className="btn-primary">
+          <Link href={`/orders/new?retail=1&date=${date}`} className="btn-primary">
             + Заявка магазину
           </Link>
         )}
@@ -171,7 +171,7 @@ export default async function RetailDayPage({
                       // заново на следующей странице. Одно нажатие, и остаётся
                       // ввести количество.
                       <Link
-                        href={`/orders/new?client=${row.clientId}&date=${date}`}
+                        href={`/orders/new?retail=1&client=${row.clientId}&date=${date}`}
                         className="btn-secondary !py-1 !px-2.5 text-xs"
                       >
                         Оформить
@@ -184,7 +184,7 @@ export default async function RetailDayPage({
                       <span className="text-xs text-status-good">✓ подтверждена</span>
                       {canOrder && (
                         <Link
-                          href={`/orders/new?client=${row.clientId}&date=${date}`}
+                          href={`/orders/new?retail=1&client=${row.clientId}&date=${date}`}
                           className="text-xs text-ink-secondary hover:underline"
                           title="Добор: вторая заявка на тот же день"
                         >

@@ -4,8 +4,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
-import { ORDER_STATUSES, RETAIL_ORDER } from "@/lib/constants";
-import { isRetailOrder, retailShortLabel, territoriesFor } from "@/lib/retail";
+import { ORDER_STATUSES, RETAIL_ORDER, ROLES } from "@/lib/constants";
+import { isRetailOrder, isRetailRole, retailShortLabel, territoriesFor } from "@/lib/retail";
 import { formatDay } from "@/lib/formatDate";
 import SectionTabs from "@/components/SectionTabs";
 import { RETAIL_TABS } from "../tabs";
@@ -22,8 +22,11 @@ const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
  */
 export default async function RetailShopsPage() {
   const session = await getServerSession(authOptions);
-  const territories = territoriesFor(session?.user?.role ?? "");
+  const role = session?.user?.role ?? "";
+  const territories = territoriesFor(role);
   if (territories.length === 0) redirect("/?error=forbidden");
+  // РОП магазины видит, но заявки за менеджера не оформляет — кнопки у него нет.
+  const canOrder = isRetailRole(role) || role === ROLES.ADMIN;
 
   const [clients, orders] = await Promise.all([listClients(), listOrdersWithItems()]);
 
@@ -78,6 +81,7 @@ export default async function RetailShopsPage() {
               <th className="px-4 py-3 font-medium text-right">Стеблей</th>
               <th className="px-4 py-3 font-medium text-right">По внутр. цене</th>
               <th className="px-4 py-3 font-medium">Последняя доставка</th>
+              {canOrder && <th className="px-4 py-3 font-medium" />}
             </tr>
           </thead>
           <tbody>
@@ -112,12 +116,22 @@ export default async function RetailShopsPage() {
                   <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
                     {row?.last ? formatDay(row.last) : "ещё не возили"}
                   </td>
+                  {canOrder && (
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <Link
+                        href={`/orders/new?retail=1&client=${shop.clientId}`}
+                        className="btn-secondary !py-1 !px-2.5 text-xs"
+                      >
+                        Заявка
+                      </Link>
+                    </td>
+                  )}
                 </tr>
               );
             })}
             {shops.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
+                <td colSpan={8} className="px-4 py-10 text-center text-ink-muted">
                   Пока пусто
                 </td>
               </tr>

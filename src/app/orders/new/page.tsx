@@ -22,9 +22,9 @@ import {
   buildAssortment,
   canOrderForShop,
   isOwnShop,
-  isRetailRole,
   retailTerritoryFor,
   shopDeliveries,
+  shopOrderForm,
 } from "@/lib/retail";
 
 export const dynamic = "force-dynamic";
@@ -39,12 +39,23 @@ const FLOWER_ORDER: string[] = [
 export default async function NewOrderPage({
   searchParams,
 }: {
-  /** Кому и на какой день — приходит из списка «Заявка на день» по магазинам. */
-  searchParams?: { client?: string; date?: string };
+  /**
+   * Кому и на какой день — приходит из списка «Заявка на день» по магазинам.
+   * `retail=1` означает «это заявка в наш магазин»: у менеджера розницы других
+   * заявок не бывает вовсе, а администратору нужны обе формы, и выбирает он их
+   * тем, откуда пришёл.
+   */
+  searchParams?: { client?: string; date?: string; retail?: string };
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
-  const retail = isRetailRole(role);
+
+  // Какую форму показывать. У розницы — всегда магазинную: клиентов у неё нет.
+  // Администратор работает и с клиентами, и с магазинами, поэтому для него это
+  // решает адрес: все ссылки из раздела «Розница» несут `retail=1`. Гадать по
+  // выбранной карточке нельзя — прайс (клиентский или внутренний) нужно знать
+  // ДО чтения данных, иначе в форму подставятся цены не того прайса.
+  const retail = shopOrderForm(role, searchParams?.retail);
 
   // У розницы свой прайс: цветок в наш магазин передаётся по внутренней цене,
   // и подставлять сюда клиентскую было бы прямой ошибкой в цифрах.
@@ -115,7 +126,9 @@ export default async function NewOrderPage({
 
     return (
       <div>
-        <h1 className="text-xl font-semibold mb-1">Заявка в магазин — {retailLabel(territory)}</h1>
+        <h1 className="text-xl font-semibold mb-1">
+          Заявка в магазин{territory ? ` — ${retailLabel(territory)}` : ""}
+        </h1>
         <p className="text-sm text-ink-secondary mb-4">
           Выберите магазин и проставьте количество. Это перемещение внутри компании: оплату по
           заявке никто не ждёт, а цены берутся из внутреннего прайса.

@@ -23,6 +23,7 @@ import {
   retailTerritoryFor,
   shopDeliveries,
   territoriesFor,
+  shopOrderForm,
 } from "../src/lib/retail";
 import { isReadyToShip, missingForShip, notReadyReason } from "../src/lib/orderReady";
 import { cancelRefusal } from "../src/lib/orderRules";
@@ -94,6 +95,20 @@ check("выдуманное направление не проходит", clean
 check("пустое остаётся пустым", cleanTerritory(undefined), "");
 check("известное проходит", cleanTerritory(" almaty "), "almaty");
 check("розничные роли опознаются", [isRetailRole(ROLES.RETAIL_REGIONS), isRetailRole(ROLES.MANAGER)], [true, false]);
+
+// --- Какая форма заявки открывается ---------------------------------------
+//
+// Владелец наступил на это первым: открыл «Новая заявка» под администратором и
+// увидел обычную клиентскую форму, решив, что обновление не доехало. У розницы
+// других заявок не бывает, а администратору нужны обе — и решает то, откуда он
+// пришёл: ссылки раздела «Розница» несут retail=1.
+
+check("менеджеру розницы всегда магазинная форма", shopOrderForm(ROLES.RETAIL_ALMATY, undefined), true);
+check("и региональному тоже", shopOrderForm(ROLES.RETAIL_REGIONS, ""), true);
+check("администратору по умолчанию клиентская", shopOrderForm(ROLES.ADMIN, undefined), false);
+check("а из раздела «Розница» — магазинная", shopOrderForm(ROLES.ADMIN, "1"), true);
+check("обычному менеджеру магазинной формы нет никогда", shopOrderForm(ROLES.MANAGER, "1"), false);
+check("и РОПу тоже — он заявки не оформляет", shopOrderForm(ROLES.SALES_HEAD, "1"), false);
 
 // --- Отгрузка: у розницы галочка одна -------------------------------------
 
