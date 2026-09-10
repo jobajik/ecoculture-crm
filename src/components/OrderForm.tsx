@@ -6,6 +6,7 @@ import { createOrderAction } from "@/app/orders/actions";
 import { FLOWER_TYPE_LABELS, GRADE_LABELS, formatGrade, getGradesFor } from "@/lib/constants";
 import type { FlowerType } from "@/lib/constants";
 import { priceFromMap } from "@/lib/priceList";
+import ClientPicker, { type ClientOption } from "./ClientPicker";
 
 interface DraftItem {
   flowerType: FlowerType;
@@ -34,13 +35,16 @@ function emptyItem(
 export default function OrderForm({
   varieties,
   prices = {},
+  clients = [],
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
   prices?: Record<string, number>;
+  /** Клиентская база: заявка заводится только на клиента из неё. */
+  clients?: ClientOption[];
 }) {
   const router = useRouter();
-  const [clientName, setClientName] = useState("");
+  const [client, setClient] = useState<ClientOption | null>(null);
   const [clientPhone, setClientPhone] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [notes, setNotes] = useState("");
@@ -101,7 +105,7 @@ export default function OrderForm({
     e.preventDefault();
     setError(null);
 
-    if (!clientName.trim()) return setError("Укажите имя клиента");
+    if (!client) return setError("Выберите клиента из базы или заведите нового");
     if (items.length === 0) return setError("Добавьте хотя бы одну позицию");
     for (const it of items) {
       if (!it.variety.trim()) return setError("У каждой позиции должен быть выбран сорт");
@@ -113,8 +117,11 @@ export default function OrderForm({
     setSubmitting(true);
     try {
       const orderId = await createOrderAction({
-        clientName: clientName.trim(),
-        clientPhone: clientPhone.trim(),
+        clientId: client.clientId,
+        // Имя записывается снимком: точка может переименоваться, а в старой
+        // заявке должно остаться то, что было написано тогда.
+        clientName: client.name,
+        clientPhone: (clientPhone || client.phone).trim(),
         deliveryDate,
         notes,
         items: items.map((it) => ({
@@ -136,13 +143,18 @@ export default function OrderForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
       <div className="card grid sm:grid-cols-2 gap-4">
-        <div>
+        <div className="sm:col-span-2">
           <label className="label">Клиент *</label>
-          <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} required />
+          <ClientPicker clients={clients} value={client} onChange={setClient} />
         </div>
         <div>
-          <label className="label">Телефон клиента</label>
-          <input className="input" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
+          <label className="label">Телефон для этой доставки</label>
+          <input
+            className="input"
+            placeholder={client?.phone || "Если отличается от карточки"}
+            value={clientPhone}
+            onChange={(e) => setClientPhone(e.target.value)}
+          />
         </div>
         <div>
           <label className="label">Дата доставки</label>

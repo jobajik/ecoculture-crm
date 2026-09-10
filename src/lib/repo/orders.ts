@@ -42,6 +42,7 @@ function toOrder(record: Record<string, string>): Order {
     paidAmount: toMoney(record.PaidAmount),
     promisedAt: toIsoDate(record.PromisedAt),
     collectionNote: record.CollectionNote || "",
+    clientId: record.ClientID || "",
   };
 }
 
@@ -75,6 +76,9 @@ export interface NewOrderItemInput {
 
 export interface NewOrderInput {
   managerEmail: string;
+  /** Клиент из базы — заявка без карточки больше не заводится. */
+  clientId: string;
+  /** Снимок имени на момент заявки: точка может переименоваться. */
   clientName: string;
   clientPhone: string;
   deliveryDate: string;
@@ -132,6 +136,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     PaidAmount: 0,
     PromisedAt: "",
     CollectionNote: "",
+    ClientID: input.clientId,
   });
 
   const itemRecords = input.items.map((item, idx) => ({

@@ -30,6 +30,9 @@ export interface NavLink {
 export const NAV_LINKS: NavLink[] = [
   { href: "/", label: "Главная" },
   { href: "/orders", label: "Заявки" },
+  // Клиентская база — рабочий инструмент продаж, поэтому стоит рядом с
+  // заявками. Складу и агроному она не нужна.
+  { href: "/clients", label: "Клиенты", roles: ["manager", "sales_head", "accountant", "admin"] },
   { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
   { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
   { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },

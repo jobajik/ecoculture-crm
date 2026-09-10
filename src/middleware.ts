@@ -20,6 +20,7 @@ const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // ему не нужны, а видел он их целиком по обоим производствам.
   { prefix: "/orders", roles: ["manager", "warehouse", "accountant", "sales_head", "admin"] },
   { prefix: "/analytics", roles: ["manager", "warehouse", "accountant", "sales_head", "admin"] },
+  { prefix: "/clients", roles: ["manager", "sales_head", "accountant", "admin"] },
   { prefix: "/admin", roles: ["admin"] },
 ];
 
@@ -59,6 +60,7 @@ export default withAuth(
 export const config = {
   matcher: [
     "/orders/:path*",
+    "/clients/:path*",
     "/plans/:path*",
     "/forecast/:path*",
     "/sales/:path*",
