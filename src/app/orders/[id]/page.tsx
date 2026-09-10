@@ -6,7 +6,14 @@ import { getOrderById } from "@/lib/repo/orders";
 import { listShipments } from "@/lib/repo/shipments";
 import { listClaims } from "@/lib/repo/claims";
 import { listUsers } from "@/lib/repo/users";
-import { FLOWER_TYPE_LABELS, ROLES, farmLabel, formatGrade, getFarmFor } from "@/lib/constants";
+import {
+  FLOWER_TYPE_LABELS,
+  KASPI_METHOD,
+  ROLES,
+  farmLabel,
+  formatGrade,
+  getFarmFor,
+} from "@/lib/constants";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ReadyChecks from "@/components/ReadyChecks";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
@@ -14,7 +21,7 @@ import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
 import { getClientById } from "@/lib/repo/clients";
-import { kaspiTargetsFor } from "@/lib/clientPick";
+import { farmPayments } from "@/lib/orderMoney";
 import CancelOrder from "@/components/CancelOrder";
 
 export const dynamic = "force-dynamic";
@@ -56,13 +63,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     loaded.clientId ? getClientById(loaded.clientId) : Promise.resolve(null),
   ]);
 
-  // На какой Kaspi Pay выставлять счёт. Компанию не выбирают руками: роза и
-  // эустома идут от Rose Farm, хризантема от Есентая, а в смешанной заявке
-  // счетов два. Показываем по полной заявке, а не по урезанной для склада:
-  // деньги приходят за всю заявку целиком.
-  const kaspiTargets = client
-    ? kaspiTargetsFor(client, loaded.items.map((i) => i.flowerType))
-    : [];
+  // Счёт по компаниям. Компанию не выбирают руками: роза и эустома идут от Rose
+  // Farm, хризантема от Есентая, а в смешанной заявке счетов два, и клиент
+  // платит двумя переводами. Считаем по ПОЛНОЙ заявке, а не по урезанной для
+  // склада, и зав. складом этот блок не показываем: чужие деньги её не
+  // касаются, а свои она видит в сумме своих позиций.
+  const invoice = farm ? [] : farmPayments(loaded);
+  const kaspiOfClient =
+    client && client.paymentMethod === KASPI_METHOD
+      ? [client.kaspiPay1, client.kaspiPay2].filter(Boolean)
+      : [];
   const shipments = allShipments.filter((s) => s.orderId === order.orderId);
 
   // Рекламации показываем всем, кто видит заявку: складу тоже полезно знать,
@@ -128,24 +138,44 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
       <OrderClaims orderId={order.orderId} claims={claims} canCreate={canCreateClaim} />
 
-      {kaspiTargets.length > 0 && (
+      {invoice.length > 0 && (
         <div className="card mb-6">
-          <div className="text-sm font-medium mb-2">Счёт на оплату — Kaspi Pay</div>
+          <div className="text-sm font-medium mb-2">
+            {invoice.length > 1 ? "Счета по компаниям" : "Счёт"}
+          </div>
           <div className="grid sm:grid-cols-2 gap-3 text-sm">
-            {kaspiTargets.map((t) => (
-              <div key={t.farm}>
-                <div className="label">{t.farmLabel}</div>
-                <div className={t.account ? "font-medium" : "text-ink-muted"}>
-                  {t.account || "каспи не заполнен в карточке клиента"}
+            {invoice.map((f) => {
+              const left = Math.max(0, f.amount - f.paidAmount);
+              return (
+                <div key={f.farm}>
+                  <div className="label">{f.farmLabel}</div>
+                  <div className="font-medium tabular-nums">
+                    {Math.round(f.amount).toLocaleString("ru-RU")} ₸
+                  </div>
+                  <div
+                    className={
+                      left <= 1
+                        ? "text-xs text-status-good"
+                        : f.paidAmount > 0
+                          ? "text-xs text-[#8a5a00]"
+                          : "text-xs text-ink-muted"
+                    }
+                  >
+                    {left <= 1
+                      ? "оплачено"
+                      : f.paidAmount > 0
+                        ? `получено ${Math.round(f.paidAmount).toLocaleString("ru-RU")} ₸ · остаток ${Math.round(left).toLocaleString("ru-RU")} ₸`
+                        : "не оплачено"}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <p className="text-xs text-ink-muted mt-2">
-            {kaspiTargets.length > 1
-              ? "В заявке цветок обоих производств — счёта два, клиент платит двумя переводами."
-              : "Компания определяется по цветку в заявке."}
-            {client?.kaspiClient && ` Клиент платит с ${client.kaspiClient}.`}
+            {invoice.length > 1
+              ? "В заявке цветок обоих производств — счёта два, и клиент платит двумя переводами. Бухгалтер отмечает каждый отдельно."
+              : "Компания определяется по цветку в заявке, выбирать её не нужно."}
+            {kaspiOfClient.length > 0 && ` Клиент платит с Kaspi ${kaspiOfClient.join(" / ")}.`}
           </p>
         </div>
       )}

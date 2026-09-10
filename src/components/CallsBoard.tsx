@@ -149,6 +149,7 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                             orderId={c.orderId}
                             totalAmount={c.amount}
                             paidAmount={c.paidAmount}
+                            farms={c.farms}
                             onDone={() => setOpenId(null)}
                           />
                         </div>

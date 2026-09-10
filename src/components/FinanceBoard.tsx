@@ -200,6 +200,7 @@ export default function FinanceBoard({
                         orderId={r.orderId}
                         totalAmount={r.amount}
                         paidAmount={r.paidAmount}
+                        farms={r.farms}
                         onDone={() => setOpenId(null)}
                       />
                     </td>

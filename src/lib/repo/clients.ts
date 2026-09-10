@@ -33,9 +33,8 @@ function toClient(record: Record<string, string>): Client {
     note: record.Note || "",
     managerEmail: (record.ManagerEmail || "").trim().toLowerCase(),
     paymentMethod: record.PaymentMethod || "",
-    kaspiRoseFarm: record.KaspiRoseFarm || "",
-    kaspiEsentai: record.KaspiEsentai || "",
-    kaspiClient: record.KaspiClient || "",
+    kaspiPay1: record.KaspiPay1 || "",
+    kaspiPay2: record.KaspiPay2 || "",
     // Пустая ячейка — активен: новую строку в таблице заводят, не дописывая
     // галочку. Отключён только тот, у кого явно сказано «нет».
     active: !["FALSE", "НЕТ", "NO", "0", "-"].includes(
@@ -102,9 +101,8 @@ export async function createClient(input: NewClientInput): Promise<string> {
     ManagerEmail: input.managerEmail,
     Active: "TRUE",
     PaymentMethod: input.paymentMethod,
-    KaspiRoseFarm: input.kaspiRoseFarm,
-    KaspiEsentai: input.kaspiEsentai,
-    KaspiClient: input.kaspiClient,
+    KaspiPay1: input.kaspiPay1,
+    KaspiPay2: input.kaspiPay2,
   });
   return clientId;
 }
@@ -132,9 +130,8 @@ export async function updateClient(
   if (patch.note !== undefined) map.Note = patch.note;
   if (patch.managerEmail !== undefined) map.ManagerEmail = patch.managerEmail;
   if (patch.paymentMethod !== undefined) map.PaymentMethod = patch.paymentMethod;
-  if (patch.kaspiRoseFarm !== undefined) map.KaspiRoseFarm = patch.kaspiRoseFarm;
-  if (patch.kaspiEsentai !== undefined) map.KaspiEsentai = patch.kaspiEsentai;
-  if (patch.kaspiClient !== undefined) map.KaspiClient = patch.kaspiClient;
+  if (patch.kaspiPay1 !== undefined) map.KaspiPay1 = patch.kaspiPay1;
+  if (patch.kaspiPay2 !== undefined) map.KaspiPay2 = patch.kaspiPay2;
   if (patch.active !== undefined) map.Active = patch.active ? "TRUE" : "FALSE";
 
   if (Object.keys(map).length === 0) return false;

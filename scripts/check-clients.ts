@@ -8,7 +8,7 @@
  * Запуск: npx tsx scripts/check-clients.ts
  */
 import { buildClientStats } from "../src/lib/clientStats";
-import { kaspiFieldsFor, kaspiTargetsFor, orderForPicker } from "../src/lib/clientPick";
+import { kaspiFieldsFor, orderForPicker } from "../src/lib/clientPick";
 import { CLIENT_SLEEPING_DAYS, ORDER_STATUSES } from "../src/lib/constants";
 import type { Client, OrderWithItems } from "../src/lib/types";
 
@@ -42,9 +42,8 @@ function client(over: Partial<Client> & { clientId: string; name: string }): Cli
     address: "",
     paymentTerms: "По факту",
     paymentMethod: "Каспи",
-    kaspiRoseFarm: "",
-    kaspiEsentai: "",
-    kaspiClient: "",
+    kaspiPay1: "",
+    kaspiPay2: "",
     source: "Сами нашли",
     note: "",
     managerEmail: "aliya@x.kz",
@@ -271,80 +270,34 @@ check("пустой список не падает", orderForPicker([]).length, 
 
 // --- Kaspi Pay --------------------------------------------------------------
 //
-// Компанию НЕ выбирают руками: она следует из цветка. Номер вписывается
-// свободно, потому что каспи-счетов бывает больше двух и появляются новые.
+// Это номера КЛИЕНТА, с которых приходит перевод. Их бывает несколько, поэтому
+// два поля со свободным вводом. Компанию, выставляющую счёт, здесь не выбирают:
+// она следует из цветка и считается по заявке (см. check-accounting.ts).
 
 check(
-  "при оплате Каспи реквизиты сохраняются",
-  kaspiFieldsFor("Каспи", {
-    kaspiRoseFarm: " +7 701 ",
-    kaspiEsentai: "+7 702",
-    kaspiClient: "+7 777",
-  }),
-  { kaspiRoseFarm: "+7 701", kaspiEsentai: "+7 702", kaspiClient: "+7 777" }
+  "при оплате Каспи номера сохраняются и подчищаются от пробелов",
+  kaspiFieldsFor("Каспи", { kaspiPay1: " +7 701 ", kaspiPay2: "+7 702" }),
+  { kaspiPay1: "+7 701", kaspiPay2: "+7 702" }
+);
+check(
+  "второй номер необязателен",
+  kaspiFieldsFor("Каспи", { kaspiPay1: "+7 701" }),
+  { kaspiPay1: "+7 701", kaspiPay2: "" }
 );
 check(
   "при наличных каспи-поля стираются",
-  kaspiFieldsFor("Наличные", { kaspiRoseFarm: "+7 701", kaspiClient: "+7 777" }),
-  { kaspiRoseFarm: "", kaspiEsentai: "", kaspiClient: "" }
+  kaspiFieldsFor("Наличные", { kaspiPay1: "+7 701", kaspiPay2: "+7 702" }),
+  { kaspiPay1: "", kaspiPay2: "" }
 );
 check(
   "при оплате по реквизитам — тоже",
-  kaspiFieldsFor("Оплата по реквизитам", { kaspiRoseFarm: "+7 701" }),
-  { kaspiRoseFarm: "", kaspiEsentai: "", kaspiClient: "" }
+  kaspiFieldsFor("Оплата по реквизитам", { kaspiPay1: "+7 701" }),
+  { kaspiPay1: "", kaspiPay2: "" }
 );
 check(
   "неизвестный способ оплаты каспи-поля не открывает",
-  kaspiFieldsFor("Биткоин", { kaspiRoseFarm: "+7 701" }),
-  { kaspiRoseFarm: "", kaspiEsentai: "", kaspiClient: "" }
-);
-
-const PAYER = {
-  paymentMethod: "Каспи",
-  kaspiRoseFarm: "+7 701 111 11 11",
-  kaspiEsentai: "+7 702 222 22 22",
-  kaspiClient: "+7 777 333 33 33",
-};
-
-check(
-  "роза — счёт от Rose Farm",
-  kaspiTargetsFor(PAYER, ["rose"]).map((t) => [t.farmLabel, t.account]),
-  [["Rose Farm", "+7 701 111 11 11"]]
-);
-check(
-  "эустома — тоже Rose Farm",
-  kaspiTargetsFor(PAYER, ["eustoma"]).map((t) => t.farm),
-  ["rose_farm"]
-);
-check(
-  "хризантема — счёт от Есентая",
-  kaspiTargetsFor(PAYER, ["chrysanthemum"]).map((t) => [t.farmLabel, t.account]),
-  [["Есентай Агро Хим", "+7 702 222 22 22"]]
-);
-check(
-  "смешанная заявка — два счёта, в порядке позиций",
-  kaspiTargetsFor(PAYER, ["chrysanthemum", "rose", "rose"]).map((t) => t.farm),
-  ["esentai", "rose_farm"]
-);
-check(
-  "одна компания не дублируется",
-  kaspiTargetsFor(PAYER, ["rose", "eustoma", "rose"]).length,
-  1
-);
-check(
-  "незаполненный реквизит виден как пустой, а не пропадает",
-  kaspiTargetsFor({ paymentMethod: "Каспи" }, ["rose"]).map((t) => t.account),
-  [""]
-);
-check(
-  "клиент платит не каспи — счетов нет",
-  kaspiTargetsFor({ ...PAYER, paymentMethod: "Наличные" }, ["rose"]).length,
-  0
-);
-check(
-  "неизвестный цветок счёт не создаёт",
-  kaspiTargetsFor(PAYER, ["tulip"]).length,
-  0
+  kaspiFieldsFor("Биткоин", { kaspiPay1: "+7 701" }),
+  { kaspiPay1: "", kaspiPay2: "" }
 );
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);

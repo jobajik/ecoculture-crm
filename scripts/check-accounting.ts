@@ -13,6 +13,7 @@
 import { getFinanceSnapshot } from "../src/lib/finance";
 import { getLeaderboard } from "../src/lib/leaderboard";
 import { MONEY_EPSILON } from "../src/lib/constants";
+import { invoiceByFarm, paidByFarm, spreadByInvoice, farmPayments } from "../src/lib/orderMoney";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -64,6 +65,10 @@ function order(
     paymentMethod: paidAmount > 0 ? "Каспи" : "",
     accountantEmail: "buh@x.kz",
     paidAmount,
+    // Разбивки по компаниям у этой заявки нет — как у всех, заведённых до её
+    // появления. Деньги должны раскладываться по счёту, а не пропадать.
+    paidRoseFarm: 0,
+    paidEsentai: 0,
     promisedAt: extra.promisedAt ?? "",
     collectionNote: extra.note ?? "",
     totalAmount: total,
@@ -189,6 +194,111 @@ async function main() {
   });
   check("копейка не держит заявку в долгах", rounded.orders[0].paid, true);
   check("и в звонки не попадает", rounded.calls.length, 0);
+
+
+  // --- Счёт по компаниям ---------------------------------------------------
+  //
+  // Розу и эустому продаёт Rose Farm, хризантему — Есентай Агро Хим. Счёта два,
+  // клиент платит двумя переводами, и бухгалтер отмечает каждый отдельно.
+  // Ошибиться тут можно тихо: раскидать деньги не по той компании, потерять
+  // тенге на округлении или показать «оплачено 0 + 0» по оплаченной заявке.
+
+  const MIXED_ITEMS = [
+    { flowerType: "rose", quantity: 1000, unitPrice: 300 },      // 300 000, Rose Farm
+    { flowerType: "eustoma", quantity: 100, unitPrice: 500 },    //  50 000, Rose Farm
+    { flowerType: "chrysanthemum", quantity: 500, unitPrice: 200 }, // 100 000, Есентай
+  ];
+
+  check(
+    "смешанная заявка — два счёта, суммы по компаниям",
+    invoiceByFarm(MIXED_ITEMS).map((f) => [f.farm, f.amount]),
+    [
+      ["rose_farm", 350_000],
+      ["esentai", 100_000],
+    ]
+  );
+  check(
+    "заявка только с розой — счёт один",
+    invoiceByFarm([{ flowerType: "rose", quantity: 10, unitPrice: 100 }]).map((f) => f.farm),
+    ["rose_farm"]
+  );
+  check(
+    "порядок компаний постоянный, а не по порядку позиций",
+    invoiceByFarm([
+      { flowerType: "chrysanthemum", quantity: 1, unitPrice: 100 },
+      { flowerType: "rose", quantity: 1, unitPrice: 100 },
+    ]).map((f) => f.farm),
+    ["rose_farm", "esentai"]
+  );
+  check(
+    "неизвестный цветок счёта не создаёт",
+    invoiceByFarm([{ flowerType: "tulip", quantity: 10, unitPrice: 100 }]).length,
+    0
+  );
+
+  const MIXED_INVOICE = invoiceByFarm(MIXED_ITEMS);
+  check(
+    "оплата целиком раскладывается по счетам",
+    spreadByInvoice(450_000, MIXED_INVOICE),
+    { rose_farm: 350_000, esentai: 100_000 }
+  );
+  check(
+    "частичная оплата делится пропорционально",
+    spreadByInvoice(45_000, MIXED_INVOICE),
+    { rose_farm: 35_000, esentai: 10_000 }
+  );
+  check(
+    "остаток от округления не теряется — сумма частей равна целому",
+    Object.values(spreadByInvoice(100_000 / 3, MIXED_INVOICE)).reduce((a, b) => a + b, 0),
+    Math.round((100_000 / 3) * 100) / 100
+  );
+  check("снятая оплата обнуляет обе компании", spreadByInvoice(0, MIXED_INVOICE), {
+    rose_farm: 0,
+    esentai: 0,
+  });
+
+  // Старая заявка: колонок по компаниям нет, а деньги есть. Показывать «0 и 0»
+  // по оплаченной заявке нельзя — раскладываем по счёту.
+  check(
+    "заявка без разбивки: деньги раскладываются по счёту",
+    paidByFarm({ paidAmount: 450_000, paidRoseFarm: 0, paidEsentai: 0 }, MIXED_INVOICE).map(
+      (f) => f.amount
+    ),
+    [350_000, 100_000]
+  );
+  // Самый важный случай: одно ТОО деньги получило, второе ещё нет. С общей
+  // суммой это выглядело как обычная недоплата.
+  check(
+    "разбивке верим, когда она сходится с итогом",
+    paidByFarm(
+      { paidAmount: 350_000, paidRoseFarm: 350_000, paidEsentai: 0 },
+      MIXED_INVOICE
+    ).map((f) => f.amount),
+    [350_000, 0]
+  );
+  check(
+    "разошедшейся разбивке не верим — считаем по счёту",
+    paidByFarm(
+      { paidAmount: 450_000, paidRoseFarm: 10_000, paidEsentai: 0 },
+      MIXED_INVOICE
+    ).map((f) => f.amount),
+    [350_000, 100_000]
+  );
+
+  const mixedOrder = {
+    paidAmount: 350_000,
+    paidRoseFarm: 350_000,
+    paidEsentai: 0,
+    items: MIXED_ITEMS,
+  };
+  check(
+    "панель бухгалтера видит счёт и оплату по каждой компании",
+    farmPayments(mixedOrder).map((f) => [f.farmLabel, f.amount, f.paidAmount]),
+    [
+      ["Rose Farm", 350_000, 350_000],
+      ["Есентай Агро Хим", 100_000, 0],
+    ]
+  );
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

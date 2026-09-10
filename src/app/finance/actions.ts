@@ -7,6 +7,7 @@ import {
   getOrderById,
   setOrderManagerConfirmed,
   setOrderPayment,
+  setOrderPaymentByFarm,
   setOrderPromise,
   updateOrderItemAmounts,
   recomputeOrderStatusFromItems,
@@ -14,6 +15,7 @@ import {
 import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { isClosed, moneyRefusal } from "@/lib/orderRules";
+import { invoiceByFarm } from "@/lib/orderMoney";
 import {
   CLAIM_REASONS,
   CLAIM_STATUSES,
@@ -77,7 +79,17 @@ export async function setPaymentAction(
   }
 
   const before = order.paidAmount;
-  await setOrderPayment(orderId, amount, order.totalAmount, email, amount > 0 ? paymentMethod : "");
+  // Разбивку по компаниям пересчитываем пропорционально счёту: сумма внесена
+  // одним числом, и оставить старую разбивку значило бы получить строку, где
+  // «получено всего» не сходится с суммой по ТОО.
+  await setOrderPayment(
+    orderId,
+    amount,
+    order.totalAmount,
+    email,
+    amount > 0 ? paymentMethod : "",
+    invoiceByFarm(order.items)
+  );
 
   await logMoney({
     actorEmail: email,
@@ -88,6 +100,88 @@ export async function setPaymentAction(
         ? `Получено ${Math.round(amount).toLocaleString("ru-RU")} ₸ из ${Math.round(
             order.totalAmount
           ).toLocaleString("ru-RU")} ₸${paymentMethod ? ` · ${paymentMethod}` : ""}`
+        : "Оплата снята",
+    amountBefore: before,
+    amountAfter: amount,
+  });
+
+  refreshMoneyPages(orderId);
+  return { ok: true };
+}
+
+/**
+ * Оплата ПО КОМПАНИЯМ — для смешанной заявки.
+ *
+ * Розу и эустому продаёт Rose Farm, хризантему — Есентай Агро Хим, счёта два, и
+ * клиент платит двумя переводами. Раньше здесь была одна общая сумма, и самый
+ * частый случай — «одно ТОО деньги получило, второе ещё нет» — выглядел как
+ * недоплата. Теперь бухгалтер отмечает каждую компанию отдельно, а «получено
+ * всего» складывается из частей, а не вводится вторым числом: два поля,
+ * отвечающие за одно и то же, рано или поздно разъезжаются.
+ */
+export async function setPaymentByFarmAction(
+  orderId: string,
+  byFarm: Record<string, number>,
+  paymentMethod: string
+) {
+  const email = await requireAccountant();
+
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+
+  const invoice = invoiceByFarm(order.items);
+  if (invoice.length === 0) throw new Error("В заявке нет позиций");
+
+  let amount = 0;
+  const clean: Record<string, number> = {};
+  for (const row of invoice) {
+    const value = Number(byFarm[row.farm] ?? 0);
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`${row.farmLabel}: сумма не может быть отрицательной`);
+    }
+    if (value > 1_000_000_000) throw new Error(`${row.farmLabel}: слишком большая сумма`);
+    clean[row.farm] = value;
+    amount += value;
+  }
+  // Компания, которой в заявке нет, оплаты получить не может: иначе деньги
+  // ушли бы в колонку ТОО, у которого по этой заявке счёта нет вовсе.
+  for (const farm of Object.keys(byFarm)) {
+    if (!invoice.some((row) => row.farm === farm)) {
+      throw new Error("Этой компании в заявке нет");
+    }
+  }
+
+  const closed = moneyRefusal(order.status);
+  if (closed && amount < order.paidAmount) throw new Error(closed);
+
+  if (amount > 0 && paymentMethod && !PAYMENT_METHODS.includes(paymentMethod as never)) {
+    throw new Error(`Неизвестный способ оплаты: ${paymentMethod}`);
+  }
+
+  const before = order.paidAmount;
+  await setOrderPaymentByFarm(
+    orderId,
+    clean,
+    invoice,
+    order.totalAmount,
+    email,
+    amount > 0 ? paymentMethod : ""
+  );
+
+  await logMoney({
+    actorEmail: email,
+    orderId,
+    action: amount > 0 ? MONEY_LOG_ACTIONS.PAYMENT : MONEY_LOG_ACTIONS.PAYMENT_CLEARED,
+    details:
+      amount > 0
+        ? `Получено ${invoice
+            .map(
+              (row) =>
+                `${row.farmLabel} ${Math.round(clean[row.farm] ?? 0).toLocaleString(
+                  "ru-RU"
+                )} из ${Math.round(row.amount).toLocaleString("ru-RU")} ₸`
+            )
+            .join(" · ")}${paymentMethod ? ` · ${paymentMethod}` : ""}`
         : "Оплата снята",
     amountBefore: before,
     amountAfter: amount,
@@ -202,7 +296,14 @@ export async function recalculateOrderAction(
   // Флаг «оплачено» пересчитываем всегда, иначе он остался бы от старой суммы.
   const after = await getOrderById(orderId);
   const newTotal = after?.totalAmount ?? order.totalAmount;
-  await setOrderPayment(orderId, order.paidAmount, newTotal, email, order.paymentMethod);
+  await setOrderPayment(
+    orderId,
+    order.paidAmount,
+    newTotal,
+    email,
+    order.paymentMethod,
+    invoiceByFarm(after?.items ?? order.items)
+  );
 
   // Статус тоже обязан пересчитаться. Без этого заявка застревала:
   // уменьшили заказ ниже уже отгруженного — она вечно висела у зав. складом

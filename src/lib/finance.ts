@@ -2,6 +2,7 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./constants";
 import { isReadyToShip } from "./orderReady";
+import { farmPayments, type FarmPayment } from "./orderMoney";
 import type { OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,12 @@ export interface FinanceOrderRow {
   /** Обе галочки — заявку можно собирать. */
   readyToCollect: boolean;
   positions: string;
+  /**
+   * Счёт и оплата в разрезе КОМПАНИЙ: розу и эустому продаёт Rose Farm,
+   * хризантему — Есентай, и в смешанной заявке клиент платит двумя переводами.
+   * Одна строка — заявка целиком у одного ТОО, две — смешанная.
+   */
+  farms: FarmPayment[];
 }
 
 /** Как обстоят дела с обещанием клиента заплатить. */
@@ -69,6 +76,8 @@ export interface CallRow {
   promisedAt: string;
   promiseState: PromiseState;
   collectionNote: string;
+  /** Счёт и оплата по компаниям — панель оплаты работает от них. */
+  farms: FarmPayment[];
   /** Почему строка стоит именно здесь — пишем словами, чтобы не гадать. */
   why: string;
 }
@@ -228,6 +237,7 @@ export async function getFinanceSnapshot(
       promisedAt: order.promisedAt,
       collectionNote: order.collectionNote,
       readyToCollect: isReadyToShip(order),
+      farms: farmPayments(order),
       positions: order.items.map((i) => `${i.variety} ${i.grade}`).join(", "),
     };
   };
@@ -373,6 +383,7 @@ export async function getFinanceSnapshot(
         promisedAt: r.promisedAt,
         promiseState,
         collectionNote: r.collectionNote,
+        farms: r.farms,
         why,
       };
     })

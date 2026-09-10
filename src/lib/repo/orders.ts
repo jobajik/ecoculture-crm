@@ -2,6 +2,7 @@ import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere 
 import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
+import { spreadByInvoice, type FarmMoney } from "../orderMoney";
 import type { Order, OrderItem, OrderWithItems } from "../types";
 
 /** Пустая ячейка = «нет». Отмеченной считается только явная TRUE/ДА/1. */
@@ -40,6 +41,8 @@ function toOrder(record: Record<string, string>): Order {
     paymentMethod: record.PaymentMethod || "",
     accountantEmail: (record.AccountantEmail || "").toLowerCase(),
     paidAmount: toMoney(record.PaidAmount),
+    paidRoseFarm: toMoney(record.PaidRoseFarm),
+    paidEsentai: toMoney(record.PaidEsentai),
     promisedAt: toIsoDate(record.PromisedAt),
     collectionNote: record.CollectionNote || "",
     clientId: record.ClientID || "",
@@ -137,6 +140,8 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     PromisedAt: "",
     CollectionNote: "",
     ClientID: input.clientId,
+    PaidRoseFarm: 0,
+    PaidEsentai: 0,
   });
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -200,9 +205,62 @@ export async function setOrderPayment(
   paidAmount: number,
   totalAmount: number,
   accountantEmail: string,
-  paymentMethod = ""
+  paymentMethod = "",
+  /**
+   * Счёт по компаниям — чтобы разложить внесённую сумму по ТОО. Пустой список
+   * значит «разбивки нет»: колонки компаний тогда не трогаем.
+   */
+  invoice: FarmMoney[] = []
 ): Promise<boolean> {
   const amount = Math.max(0, Math.round(paidAmount * 100) / 100);
+  const spread = spreadByInvoice(amount, invoice);
+  return writePayment(orderId, {
+    amount,
+    totalAmount,
+    accountantEmail,
+    paymentMethod,
+    byField: fieldAmounts(invoice, spread),
+  });
+}
+
+/**
+ * Оплата ПО КОМПАНИЯМ: бухгалтер отмечает Rose Farm и Есентай по отдельности.
+ *
+ * Общая сумма здесь не вводится, а складывается из частей — иначе два поля
+ * разошлись бы, и «получено всего» перестало бы отвечать за себя. Флаг
+ * «оплачено целиком» по-прежнему считается из итога.
+ */
+export async function setOrderPaymentByFarm(
+  orderId: string,
+  byFarm: Record<string, number>,
+  invoice: FarmMoney[],
+  totalAmount: number,
+  accountantEmail: string,
+  paymentMethod = ""
+): Promise<boolean> {
+  const byField: Partial<Record<FarmMoney["field"], number>> = {};
+  let amount = 0;
+  for (const row of invoice) {
+    const value = Math.max(0, Math.round((Number(byFarm[row.farm]) || 0) * 100) / 100);
+    byField[row.field] = value;
+    amount += value;
+  }
+  amount = Math.round(amount * 100) / 100;
+  return writePayment(orderId, { amount, totalAmount, accountantEmail, paymentMethod, byField });
+}
+
+/** Общая часть обеих записей оплаты: итог, флаг, дата, способ, кто внёс. */
+async function writePayment(
+  orderId: string,
+  input: {
+    amount: number;
+    totalAmount: number;
+    accountantEmail: string;
+    paymentMethod: string;
+    byField: Partial<Record<FarmMoney["field"], number>>;
+  }
+): Promise<boolean> {
+  const { amount, totalAmount, accountantEmail, paymentMethod, byField } = input;
   const fully = amount > 0 && amount >= totalAmount - MONEY_EPSILON;
 
   return updateWhere(
@@ -210,6 +268,8 @@ export async function setOrderPayment(
     (record) => record.OrderID === orderId,
     (record) => ({
       PaidAmount: amount,
+      ...(byField.paidRoseFarm !== undefined ? { PaidRoseFarm: byField.paidRoseFarm } : {}),
+      ...(byField.paidEsentai !== undefined ? { PaidEsentai: byField.paidEsentai } : {}),
       Paid: fully ? "TRUE" : "FALSE",
       // Дату первой оплаты не перетираем: она отвечает на вопрос «когда пришли
       // деньги», а не «когда бухгалтер последний раз трогала строку».
@@ -220,20 +280,32 @@ export async function setOrderPayment(
   );
 }
 
+/** Разложенную по производствам сумму — в имена колонок заявки. */
+function fieldAmounts(
+  invoice: FarmMoney[],
+  spread: Record<string, number>
+): Partial<Record<FarmMoney["field"], number>> {
+  const byField: Partial<Record<FarmMoney["field"], number>> = {};
+  for (const row of invoice) byField[row.field] = spread[row.farm] ?? 0;
+  return byField;
+}
+
 /** Оплата целиком или снятие оплаты — частый случай, обёртка над суммой. */
 export async function setOrderPaid(
   orderId: string,
   paid: boolean,
   accountantEmail: string,
   paymentMethod = "",
-  totalAmount = 0
+  totalAmount = 0,
+  invoice: FarmMoney[] = []
 ): Promise<boolean> {
   return setOrderPayment(
     orderId,
     paid ? totalAmount : 0,
     totalAmount,
     accountantEmail,
-    paymentMethod
+    paymentMethod,
+    invoice
   );
 }
 

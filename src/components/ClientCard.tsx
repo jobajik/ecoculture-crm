@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   CLIENT_SOURCES,
   CLIENT_TYPES,
-  FARM_LABELS,
   KASPI_METHOD,
   PAYMENT_METHODS,
   PAYMENT_TERMS,
@@ -24,9 +23,8 @@ export interface ClientCardValues {
   address: string;
   paymentTerms: string;
   paymentMethod: string;
-  kaspiRoseFarm: string;
-  kaspiEsentai: string;
-  kaspiClient: string;
+  kaspiPay1: string;
+  kaspiPay2: string;
   source: string;
   note: string;
 }
@@ -85,14 +83,13 @@ export default function ClientCard({
       ["Как нашли", values.source],
       ["Менеджер", managerName],
     ];
-    // Каспи-реквизиты показываем только тем, кто действительно платит Каспи:
-    // иначе это три прочерка, которые все обходят глазами.
+    // Каспи-номера показываем только тем, кто действительно платит Каспи:
+    // иначе это два прочерка, которые все обходят глазами.
     const kaspi: [string, string][] =
       values.paymentMethod === KASPI_METHOD
         ? [
-            [`Наш каспи — ${FARM_LABELS.rose_farm}`, values.kaspiRoseFarm],
-            [`Наш каспи — ${FARM_LABELS.esentai}`, values.kaspiEsentai],
-            ["Каспи клиента", values.kaspiClient],
+            ["Каспи Pay №1", values.kaspiPay1],
+            ["Каспи Pay №2", values.kaspiPay2],
           ]
         : [];
     return (
@@ -117,8 +114,8 @@ export default function ClientCard({
         </dl>
         {kaspi.length > 0 && (
           <div className="border-t border-line-hairline pt-3">
-            <div className="text-sm font-medium mb-2">Kaspi Pay</div>
-            <dl className="grid sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+            <div className="text-sm font-medium mb-2">Kaspi Pay клиента</div>
+            <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
               {kaspi.map(([label, value]) => (
                 <div key={label}>
                   <dt className="label">{label}</dt>
@@ -186,9 +183,8 @@ export default function ClientCard({
 
       {form.paymentMethod === KASPI_METHOD && (
         <KaspiFields
-          roseFarm={form.kaspiRoseFarm}
-          esentai={form.kaspiEsentai}
-          client={form.kaspiClient}
+          pay1={form.kaspiPay1}
+          pay2={form.kaspiPay2}
           onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
         />
       )}
