@@ -44,6 +44,7 @@ function client(over: Partial<Client> & { clientId: string; name: string }): Cli
     paymentMethod: "Каспи",
     kaspiPay1: "",
     kaspiPay2: "",
+    retail: "",
     source: "Сами нашли",
     note: "",
     managerEmail: "aliya@x.kz",
