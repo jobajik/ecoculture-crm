@@ -10,16 +10,13 @@ import { buildClientStats } from "@/lib/clientStats";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
-  FLOWER_TYPES,
   FLOWER_TYPE_LABELS,
   ORDER_STATUSES,
   formatGrade,
-  getGradesFor,
   retailLabel,
 } from "@/lib/constants";
-import { PRICE_KINDS, priceFor, priceMapForClient } from "@/lib/priceList";
+import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
 import {
-  buildAssortment,
   canOrderForShop,
   isOwnShop,
   retailTerritoryFor,
@@ -28,13 +25,6 @@ import {
 } from "@/lib/retail";
 
 export const dynamic = "force-dynamic";
-
-/** Порядок вкладок цветка в ассортименте — как везде в программе. */
-const FLOWER_ORDER: string[] = [
-  FLOWER_TYPES.ROSE,
-  FLOWER_TYPES.CHRYSANTHEMUM,
-  FLOWER_TYPES.EUSTOMA,
-];
 
 export default async function NewOrderPage({
   searchParams,
@@ -97,14 +87,6 @@ export default async function NewOrderPage({
       }
     }
 
-    const assortment = buildAssortment({
-      flowerTypes: FLOWER_ORDER,
-      varieties,
-      gradesFor: getGradesFor,
-      stock: stockMap,
-      priceFor: (flowerType, variety, grade) => priceFor(prices, flowerType, variety, grade),
-    });
-
     const delivered = shopDeliveries(orders, ORDER_STATUSES.CANCELLED);
     const shops = clients
       .filter((c) => c.active && canOrderForShop(role, c))
@@ -130,12 +112,14 @@ export default async function NewOrderPage({
           Заявка в магазин{territory ? ` — ${retailLabel(territory)}` : ""}
         </h1>
         <p className="text-sm text-ink-secondary mb-4">
-          Выберите магазин и проставьте количество. Это перемещение внутри компании: оплату по
-          заявке никто не ждёт, а цены берутся из внутреннего прайса.
+          Выберите магазин и добавьте позиции. Это перемещение внутри компании: оплату по заявке
+          никто не ждёт, а цены берутся из внутреннего прайса.
         </p>
         <RetailOrderForm
           shops={shops}
-          assortment={assortment}
+          varieties={varieties}
+          prices={priceMapForClient(prices)}
+          stock={stockMap}
           initialShopId={preselectedShop}
           initialDeliveryDate={preselectedDate}
         />
