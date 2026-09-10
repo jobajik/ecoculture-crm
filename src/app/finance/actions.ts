@@ -16,6 +16,7 @@ import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { isClosed, moneyRefusal } from "@/lib/orderRules";
 import { invoiceByFarm } from "@/lib/orderMoney";
+import { isRetailOrder, isRetailRole } from "@/lib/retail";
 import {
   CLAIM_REASONS,
   CLAIM_STATUSES,
@@ -24,6 +25,13 @@ import {
   PAYMENT_METHODS,
   ROLES,
 } from "@/lib/constants";
+
+/**
+ * Заявка в наш магазин деньгами не сопровождается вовсе: счёта нет, платить
+ * некому. Отметить по ней оплату значило бы создать выручку из воздуха.
+ */
+const RETAIL_MONEY_REFUSAL =
+  "Это заявка в наш магазин — внутреннее перемещение. Оплата по ней не проводится.";
 
 /** Деньгами распоряжается бухгалтер и администратор — больше никто. */
 async function requireAccountant() {
@@ -63,6 +71,7 @@ export async function setPaymentAction(
 
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
+  if (isRetailOrder(order)) throw new Error(RETAIL_MONEY_REFUSAL);
 
   // Снять оплату с ОТГРУЖЕННОЙ заявки — значит вернуть её в долги и в список
   // звонков, обнулить бонус менеджера за уже уехавший товар и убрать деньги из
@@ -427,15 +436,25 @@ export async function setManagerConfirmedAction(orderId: string, confirmed: bool
   if (!session?.user?.email) throw new Error("Не авторизован");
 
   const role = session.user.role;
-  if (role !== ROLES.MANAGER && role !== ROLES.ADMIN) {
+  if (role !== ROLES.MANAGER && role !== ROLES.ADMIN && !isRetailRole(role)) {
     throw new Error("Подтвердить заявку может только менеджер, который её оформил");
   }
 
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
 
-  if (role === ROLES.MANAGER && order.managerEmail !== session.user.email.toLowerCase()) {
+  if (role !== ROLES.ADMIN && order.managerEmail !== session.user.email.toLowerCase()) {
     throw new Error("Это заявка другого менеджера");
+  }
+  // У розницы эта галочка единственная — она и открывает отгрузку. Обычный
+  // менеджер розничную заявку не подтверждает, и наоборот: иначе «кто разрешил
+  // отгрузку» перестало бы иметь однозначный ответ.
+  if (isRetailOrder(order) !== isRetailRole(role) && role !== ROLES.ADMIN) {
+    throw new Error(
+      isRetailOrder(order)
+        ? "Заявку в наш магазин подтверждает менеджер розницы"
+        : "Менеджер розницы подтверждает только заявки в наши магазины"
+    );
   }
 
   // Снятое подтверждение закрывает отгрузку. По уже отгруженной заявке это

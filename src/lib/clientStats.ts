@@ -1,5 +1,6 @@
 import { CLIENT_SLEEPING_DAYS, MONEY_EPSILON, ORDER_STATUSES } from "./constants";
 import type { Client, OrderWithItems } from "./types";
+import { isOwnShop, isRetailOrder } from "./retail";
 
 /**
  * Аналитика по клиентской базе.
@@ -137,7 +138,11 @@ export function buildClientStats(input: {
   positionLabel: (flowerType: string, grade: string) => string;
 }): ClientStats {
   const now = input.now ?? new Date();
-  const counted = input.orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED);
+  // Наш магазин — не клиент, и его заявки не продажи. Иначе средний чек,
+  // выручка и «доля трёх крупнейших клиентов» считались бы по самим себе.
+  const counted = input.orders.filter(
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && !isRetailOrder(o)
+  );
 
   const byClient = new Map<string, OrderWithItems[]>();
   let ordersWithoutClient = 0;
@@ -151,7 +156,10 @@ export function buildClientStats(input: {
     byClient.set(order.clientId, list);
   }
 
-  const rows: ClientStatRow[] = input.clients.map((client) => {
+  // Карточки наших магазинов из клиентской базы убираются целиком: это не
+  // «клиент, который ничего не покупал», а вообще другая сущность, и в разрезах
+  // по городам и менеджерам ей делать нечего.
+  const rows: ClientStatRow[] = input.clients.filter((c) => !isOwnShop(c)).map((client) => {
     const orders = byClient.get(client.clientId) ?? [];
 
     let revenue = 0;

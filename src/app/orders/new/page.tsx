@@ -7,16 +7,22 @@ import { listUsers } from "@/lib/repo/users";
 import { buildClientStats } from "@/lib/clientStats";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
-import { priceMapForClient } from "@/lib/priceList";
+import { FLOWER_TYPE_LABELS, formatGrade, retailLabel } from "@/lib/constants";
+import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
+import { canOrderForShop, isOwnShop, isRetailRole, retailTerritoryFor } from "@/lib/retail";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewOrderPage() {
-  const [session, varieties, prices, clients, orders, users] = await Promise.all([
-    getServerSession(authOptions),
+  const session = await getServerSession(authOptions);
+  const role = session?.user?.role ?? "";
+  const retail = isRetailRole(role);
+
+  // У розницы свой прайс: цветок в наш магазин передаётся по внутренней цене,
+  // и подставлять сюда клиентскую было бы прямой ошибкой в цифрах.
+  const [varieties, prices, clients, orders, users] = await Promise.all([
     listVarietiesByType(),
-    getCurrentPrices(),
+    getCurrentPrices(undefined, retail ? PRICE_KINDS.RETAIL : PRICE_KINDS.CLIENT),
     listClients(),
     listOrdersWithItems(),
     listUsers(),
@@ -24,6 +30,7 @@ export default async function NewOrderPage() {
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
+  const territory = retailTerritoryFor(role);
 
   // Подборщику нужна свежесть заказов: сверху идут те, с кем работали недавно,
   // а не первые по алфавиту. Считаем тем же расчётом, что и страница клиентов,
@@ -39,14 +46,27 @@ export default async function NewOrderPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">Новая заявка</h1>
+      <h1 className="text-xl font-semibold mb-4">
+        {retail ? `Новая заявка — ${retailLabel(territory)}` : "Новая заявка"}
+      </h1>
+      {retail && (
+        <p className="text-sm text-ink-secondary mb-4">
+          Заявка в наш магазин. Оплату по ней никто не ждёт — как только вы её подтвердите, склад
+          сможет собирать. Цены подставляются из внутреннего прайса.
+        </p>
+      )}
       <OrderForm
         varieties={varieties}
         prices={priceMapForClient(prices)}
         // Отключённые карточки в выбор не идут: снятая галочка означает «больше
         // не работаем», но историю заказов такого клиента она не трогает.
+        //
+        // Менеджеру розницы видны ТОЛЬКО магазины его направления, обычному
+        // менеджеру — только клиенты: наши точки не клиенты, и смешивать их в
+        // одном подборщике значит однажды выписать магазину счёт.
         clients={clients
           .filter((c) => c.active)
+          .filter((c) => (retail ? canOrderForShop(role, c) : !isOwnShop(c)))
           .map((c) => ({
             clientId: c.clientId,
             name: c.name,

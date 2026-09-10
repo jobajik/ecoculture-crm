@@ -14,6 +14,34 @@
  * (браузер) — см. CLAUDE.md, грабли 1.8.
  */
 
+/**
+ * Прайсов два, и это не удвоение справочника, а два разных договора.
+ *
+ * Клиентский прайс — то, по чему продают наружу. Внутренний — по какой цене
+ * цветок передаётся в НАШ магазин; продажей это не считается, но цену знать
+ * надо, иначе не сказать, на сколько тенге ушло в розницу. Ставит оба РОП.
+ *
+ * Разделение сделано колонкой `Kind`, а не второй вкладкой: механика поиска
+ * цены («сорт перебивает „Все сорта“», «берём самую свежую на дату») ровно та
+ * же, и разъехаться двум её копиям было бы делом времени.
+ */
+export const PRICE_KINDS = {
+  CLIENT: "",
+  RETAIL: "retail",
+} as const;
+export type PriceKind = (typeof PRICE_KINDS)[keyof typeof PRICE_KINDS];
+
+export const PRICE_KIND_LABELS: Record<string, string> = {
+  "": "Прайс для клиентов",
+  retail: "Внутренний прайс — наши магазины",
+};
+
+/** Пустая ячейка — клиентский прайс. Неизвестное значение тоже: см. грабли 1.10. */
+export function cleanPriceKind(value: string | null | undefined): string {
+  const clean = (value ?? "").trim().toLowerCase();
+  return clean === PRICE_KINDS.RETAIL ? PRICE_KINDS.RETAIL : PRICE_KINDS.CLIENT;
+}
+
 /** Значение колонки Variety для строки «на все сорта». */
 export const BASE_VARIETY = "";
 
@@ -28,6 +56,13 @@ export interface PriceRow {
   variety: string;
   grade: string;
   price: number;
+  /**
+   * Какой это прайс: пусто — клиентский, «retail» — внутренний. Поле
+   * необязательное намеренно: отбор по виду делается один раз при чтении
+   * (`listPrices`), а всё, что считает цену, о видах прайса знать не должно —
+   * иначе одно и то же правило подстановки пришлось бы держать в двух копиях.
+   */
+  kind?: string;
 }
 
 export function priceKey(flowerType: string, variety: string, grade: string): string {

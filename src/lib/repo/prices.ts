@@ -1,9 +1,13 @@
 import { appendRows, readTable, rowToRecord, updateRows, SHEET_TABS } from "../sheets";
 import { toIsoDate } from "../sheetDate";
-import { currentPrices, priceKey, type PriceRow } from "../priceList";
+import { cleanPriceKind, currentPrices, PRICE_KINDS, priceKey, type PriceRow } from "../priceList";
 
 /**
- * Прайс-лист во вкладке PriceHistory: Date | FlowerType | Variety | Grade | Price.
+ * Прайс-лист во вкладке PriceHistory: Date | FlowerType | Variety | Grade | Price | Kind.
+ *
+ * Прайсов два: клиентский (Kind пустой) и внутренний для наших магазинов
+ * (Kind = «retail»). Живут в одной вкладке намеренно — правила поиска цены у
+ * них одни и те же, а две копии одной механики рано или поздно разъезжаются.
  *
  * История не перезаписывается: каждая правка в другой день добавляет строку, а
  * правка в тот же день перезаписывает сегодняшнюю. Так видно, когда и на сколько
@@ -20,24 +24,29 @@ function toRow(record: Record<string, string>): PriceRow {
     variety: (record.Variety || "").trim(),
     grade: (record.Grade || "").trim(),
     price: Number(String(record.Price ?? "").replace(/\s/g, "").replace(",", ".")) || 0,
+    kind: cleanPriceKind(record.Kind),
   };
 }
 
-export async function listPrices(): Promise<PriceRow[]> {
+export async function listPrices(kind: string = PRICE_KINDS.CLIENT): Promise<PriceRow[]> {
+  const want = cleanPriceKind(kind);
   try {
     const table = await readTable(SHEET_TABS.PRICE_HISTORY);
     return table.rows
       .map((row) => toRow(rowToRecord(SHEET_TABS.PRICE_HISTORY, row)))
-      .filter((r) => r.flowerType && r.grade && r.date);
+      .filter((r) => r.flowerType && r.grade && r.date && r.kind === want);
   } catch {
     return [];
   }
 }
 
-/** Действующий прайс на дату (по умолчанию — на сегодня). */
-export async function getCurrentPrices(asOf?: string): Promise<Map<string, PriceRow>> {
+/** Действующий прайс на дату (по умолчанию — клиентский, на сегодня). */
+export async function getCurrentPrices(
+  asOf?: string,
+  kind: string = PRICE_KINDS.CLIENT
+): Promise<Map<string, PriceRow>> {
   const date = asOf ?? new Date().toISOString().slice(0, 10);
-  return currentPrices(await listPrices(), date);
+  return currentPrices(await listPrices(kind), date);
 }
 
 export interface PriceInput {
@@ -54,16 +63,21 @@ export interface PriceInput {
  */
 export async function savePrices(
   inputs: PriceInput[],
-  date?: string
+  date?: string,
+  kind: string = PRICE_KINDS.CLIENT
 ): Promise<{ updated: number; created: number }> {
   if (inputs.length === 0) return { updated: 0, created: 0 };
   const day = date ?? new Date().toISOString().slice(0, 10);
+  const want = cleanPriceKind(kind);
 
   const table = await readTable(SHEET_TABS.PRICE_HISTORY);
   const rowByKey = new Map<string, number>();
   table.rows.forEach((row, idx) => {
     const record = rowToRecord(SHEET_TABS.PRICE_HISTORY, row);
     if (toIsoDate(record.Date) !== day) return;
+    // Вид прайса — часть ключа строки. Без него правка внутренней цены
+    // переписала бы клиентскую цену той же позиции за тот же день.
+    if (cleanPriceKind(record.Kind) !== want) return;
     const key = priceKey(
       (record.FlowerType || "").trim(),
       (record.Variety || "").trim(),
@@ -82,6 +96,7 @@ export async function savePrices(
       Variety: input.variety,
       Grade: input.grade,
       Price: input.price,
+      Kind: want,
     };
     const rowNumber = rowByKey.get(priceKey(input.flowerType, input.variety, input.grade));
     if (rowNumber) updates.push({ rowNumber, record });

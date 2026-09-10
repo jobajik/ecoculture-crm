@@ -30,12 +30,15 @@ export default function PriceBoard({
   varieties,
   initial,
   canEdit,
+  kind = "",
 }: {
   flowerTypes: string[];
   varieties: Record<string, string[]>;
   /** Ключ — «цветок|сорт|градация», пустой сорт = строка «Все сорта». */
   initial: Record<string, number>;
   canEdit: boolean;
+  /** Какой прайс правим: пусто — клиентский, «retail» — внутренний. */
+  kind?: string;
 }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
@@ -60,7 +63,7 @@ export default function PriceBoard({
     setSaving(true);
     setError(null);
     try {
-      await savePricesAction(changed);
+      await savePricesAction(changed, kind);
       setSaved(`Сохранено цен: ${changed.length}`);
       router.refresh();
     } catch (err) {

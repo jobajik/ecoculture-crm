@@ -35,6 +35,7 @@ function toClient(record: Record<string, string>): Client {
     paymentMethod: record.PaymentMethod || "",
     kaspiPay1: record.KaspiPay1 || "",
     kaspiPay2: record.KaspiPay2 || "",
+    retail: (record.Retail || "").trim(),
     // Пустая ячейка — активен: новую строку в таблице заводят, не дописывая
     // галочку. Отключён только тот, у кого явно сказано «нет».
     active: !["FALSE", "НЕТ", "NO", "0", "-"].includes(
@@ -103,6 +104,7 @@ export async function createClient(input: NewClientInput): Promise<string> {
     PaymentMethod: input.paymentMethod,
     KaspiPay1: input.kaspiPay1,
     KaspiPay2: input.kaspiPay2,
+    Retail: input.retail || "",
   });
   return clientId;
 }
@@ -132,6 +134,7 @@ export async function updateClient(
   if (patch.paymentMethod !== undefined) map.PaymentMethod = patch.paymentMethod;
   if (patch.kaspiPay1 !== undefined) map.KaspiPay1 = patch.kaspiPay1;
   if (patch.kaspiPay2 !== undefined) map.KaspiPay2 = patch.kaspiPay2;
+  if (patch.retail !== undefined) map.Retail = patch.retail;
   if (patch.active !== undefined) map.Active = patch.active ? "TRUE" : "FALSE";
 
   if (Object.keys(map).length === 0) return false;

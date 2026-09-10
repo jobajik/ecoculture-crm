@@ -4,6 +4,7 @@ import { getPlansForPeriod } from "./repo/plans";
 import { ORDER_STATUSES, bonusRateFor, getFarmFor } from "./constants";
 import { periodRange, type FinancePeriod } from "./finance";
 import type { OrderWithItems } from "./types";
+import { isRetailOrder } from "./retail";
 
 // ---------------------------------------------------------------------------
 // Лидерборд менеджеров: кто сколько продал, чего именно и какой бонус заработал.
@@ -95,7 +96,11 @@ export async function getLeaderboard(
     : await Promise.all([listOrdersWithItems(), listUsers(), getPlansForPeriod(monthKey(from))]);
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
-  const counted = orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt);
+  // Розница — не продажа, и бонус за неё не платится: менеджер не продал
+  // цветок, а передал его в наш же магазин.
+  const counted = orders.filter(
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !isRetailOrder(o)
+  );
   const inPeriod = counted.filter((o) => {
     const key = dayKey(new Date(o.createdAt));
     return key >= from && key <= to;

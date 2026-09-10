@@ -6,20 +6,43 @@ import { authOptions } from "@/lib/auth";
 import { createOrder, getOrderById, type NewOrderInput, updateOrderStatus } from "@/lib/repo/orders";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { cancelRefusal } from "@/lib/orderRules";
-import { MONEY_LOG_ACTIONS, ORDER_STATUSES } from "@/lib/constants";
+import { getClientById } from "@/lib/repo/clients";
+import { canOrderForShop, isOwnShop, isRetailRole } from "@/lib/retail";
+import { MONEY_LOG_ACTIONS, ORDER_STATUSES, ROLES } from "@/lib/constants";
 
 export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail">) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
-  if (session.user.role !== "manager" && session.user.role !== "admin") {
+  const role = session.user.role;
+  if (role !== ROLES.MANAGER && role !== ROLES.ADMIN && !isRetailRole(role)) {
     throw new Error("Недостаточно прав: заявки создают менеджеры");
   }
   if (!input.items || input.items.length === 0) {
     throw new Error("Добавьте хотя бы одну позицию в заявку");
   }
 
-  const orderId = await createOrder({ ...input, managerEmail: session.user.email });
+  // На кого оформлена заявка — на клиента или на наш магазин, — решает КАРТОЧКА,
+  // а не то, что прислал браузер (грабли 1.11). Отсюда же берётся направление
+  // розницы: подставить его руками нельзя, иначе обычную продажу можно было бы
+  // объявить внутренним перемещением и вывести из выручки и долгов.
+  const client = input.clientId ? await getClientById(input.clientId) : null;
+  if (!client) throw new Error("Выберите клиента из базы");
+
+  const shop = isOwnShop(client);
+  if (shop && !canOrderForShop(role, client)) {
+    throw new Error("Это магазин другого направления");
+  }
+  if (!shop && isRetailRole(role)) {
+    throw new Error("Менеджер розницы оформляет заявки только на наши магазины");
+  }
+
+  const orderId = await createOrder({
+    ...input,
+    retail: shop ? client.retail : "",
+    managerEmail: session.user.email,
+  });
   revalidatePath("/orders");
+  revalidatePath("/retail");
   return orderId;
 }
 

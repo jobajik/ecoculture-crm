@@ -1,4 +1,5 @@
 import { MONEY_EPSILON } from "./constants";
+import { isRetailOrder } from "./retail";
 
 /**
  * Готовность заявки к отгрузке — одно правило на всю программу.
@@ -16,6 +17,12 @@ import { MONEY_EPSILON } from "./constants";
  * страница заявки, список склада, страница отгрузки и серверное действие.
  * Разъедься эти проверки по местам — рано или поздно одна отстанет, и дыра
  * вернётся именно там.
+ *
+ * У ЗАЯВКИ В НАШ МАГАЗИН галочка одна. Счёт своему магазину не выставляют,
+ * денег между нами нет, и вторая галочка ждала бы оплаты, которой никогда не
+ * будет: заявка зависла бы навсегда, а бухгалтер каждый день закрывала бы
+ * несуществующие платежи, чтобы её расшевелить. Разрешает отгрузку менеджер
+ * розницы — тот, кто заявку и собрал.
  */
 
 export interface ShipGateOrder {
@@ -23,11 +30,14 @@ export interface ShipGateOrder {
   paid: boolean;
   paidAmount: number;
   totalAmount: number;
+  /** Направление собственной розницы; пусто — обычная продажа наружу. */
+  retail?: string;
 }
 
 /** Заявку можно отгружать. */
 export function isReadyToShip(order: ShipGateOrder): boolean {
-  return order.managerConfirmed && order.paid;
+  if (!order.managerConfirmed) return false;
+  return isRetailOrder(order) ? true : order.paid;
 }
 
 /**
@@ -36,8 +46,11 @@ export function isReadyToShip(order: ShipGateOrder): boolean {
  */
 export function missingForShip(order: ShipGateOrder): string[] {
   const missing: string[] = [];
-  if (!order.managerConfirmed) missing.push("подтверждения менеджера");
-  if (!order.paid) {
+  if (!order.managerConfirmed) {
+    missing.push(isRetailOrder(order) ? "подтверждения менеджера розницы" : "подтверждения менеджера");
+  }
+  // Своему магазину счёт не выставляют — оплату здесь не ждут вовсе.
+  if (!isRetailOrder(order) && !order.paid) {
     const rest = order.totalAmount - order.paidAmount;
     // Частичная оплата — это тоже «не оплачено», но зав. складом полезно
     // видеть, что деньги уже идут, а не думать, что клиент молчит.

@@ -10,6 +10,10 @@ import { formatDay } from "@/lib/formatDate";
  * Две «зелёные галочки» готовности заявки к сборке.
  * Первую ставит менеджер (согласовал с клиентом), вторую — бухгалтер (увидел деньги).
  * Здесь менеджер может переключить свою; галочка оплаты только показывается.
+ *
+ * У заявки в НАШ магазин галочка одна. Счёт своему магазину не выставляют, и
+ * вторая клетка означала бы «ждём оплату», которой не будет никогда: пустая
+ * серая ячейка на каждой розничной заявке читалась бы как недоделка.
  */
 export default function ReadyChecks({
   orderId,
@@ -19,6 +23,7 @@ export default function ReadyChecks({
   paymentMethod,
   paidAmount,
   totalAmount,
+  retail = "",
   canConfirm,
 }: {
   orderId: string;
@@ -29,13 +34,16 @@ export default function ReadyChecks({
   /** Сколько денег получено и сколько всего по счёту — оплата бывает частичной. */
   paidAmount: number;
   totalAmount: number;
+  /** Направление собственной розницы; пусто — обычная продажа наружу. */
+  retail?: string;
   canConfirm: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const ready = managerConfirmed && paid;
+  const isRetail = !!retail.trim();
+  const ready = managerConfirmed && (isRetail || paid);
   const partial = !paid && paidAmount > 0;
   const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 
@@ -57,17 +65,19 @@ export default function ReadyChecks({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-medium">
-            {ready ? "✓✓ Готова к сборке" : "Ещё не готова к сборке"}
+            {ready ? (isRetail ? "✓ Готова к сборке" : "✓✓ Готова к сборке") : "Ещё не готова к сборке"}
           </h2>
           <p className="text-sm text-ink-secondary mt-0.5">
             {ready
-              ? "Менеджер согласовал заявку и бухгалтер подтвердил оплату — склад может собирать."
+              ? isRetail
+                ? "Менеджер розницы подтвердил заявку — склад может собирать. Это наш магазин, оплата по заявке не нужна."
+                : "Менеджер согласовал заявку и бухгалтер подтвердил оплату — склад может собирать."
               : "Склад увидит заявку, но она будет помечена как неготовая."}
           </p>
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-3 mt-4">
+      <div className={clsx("grid gap-3 mt-4", !isRetail && "sm:grid-cols-2")}>
         <div className="flex items-start gap-3 rounded-lg border border-line-hairline p-3">
           <span
             className={clsx(
@@ -80,8 +90,14 @@ export default function ReadyChecks({
             {managerConfirmed ? "✓" : "—"}
           </span>
           <div className="min-w-0">
-            <div className="text-sm font-medium">Менеджер подтвердил</div>
-            <div className="text-xs text-ink-muted">Заявка окончательно согласована с клиентом</div>
+            <div className="text-sm font-medium">
+              {isRetail ? "Менеджер розницы подтвердил" : "Менеджер подтвердил"}
+            </div>
+            <div className="text-xs text-ink-muted">
+              {isRetail
+                ? "Заявка на магазин собрана окончательно — склад может собирать"
+                : "Заявка окончательно согласована с клиентом"}
+            </div>
             {canConfirm && (
               <button
                 onClick={toggle}
@@ -94,6 +110,7 @@ export default function ReadyChecks({
           </div>
         </div>
 
+        {!isRetail && (
         <div className="flex items-start gap-3 rounded-lg border border-line-hairline p-3">
           <span
             className={clsx(
@@ -127,6 +144,7 @@ export default function ReadyChecks({
             )}
           </div>
         </div>
+        )}
       </div>
 
       {error && <div className="text-sm text-status-critical mt-3">{error}</div>}

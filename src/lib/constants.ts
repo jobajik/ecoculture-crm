@@ -61,6 +61,12 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     // иначе у уже заполненных заявок ClientID уехал бы на две клетки.
     "PaidRoseFarm",
     "PaidEsentai",
+    // Заявка в наш магазин: пусто — обычная продажа, иначе направление розницы.
+    // Это СНИМОК на момент заявки, как и ClientName: если точку потом закроют
+    // или переведут в другое направление, старая заявка обязана остаться такой,
+    // какой была. И, что важнее, деньги считаются по этой колонке — без похода
+    // в карточку клиента из каждого расчёта.
+    "Retail",
   ],
   // Клиентская база. Заводит менеджер, правит свой менеджер, РОП и админ.
   [SHEET_TABS.CLIENTS]: [
@@ -84,6 +90,11 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "PaymentMethod",
     "KaspiPay1",
     "KaspiPay2",
+    // Наш ли это магазин и чей. Пустая ячейка — обычный клиент; «almaty» или
+    // «regions» — собственная точка соответствующего направления. Одна колонка
+    // вместо двух намеренно: «наш магазин без направления» — состояние, которое
+    // ничего не значит и только плодит вопросы, кто им занимается.
+    "Retail",
   ],
   [SHEET_TABS.ORDER_ITEMS]: [
     "OrderID",
@@ -125,7 +136,10 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Reason",
     "WarehouseEmail",
   ],
-  [SHEET_TABS.PRICE_HISTORY]: ["Date", "FlowerType", "Variety", "Grade", "Price"],
+  // Kind в конце (грабли 1.1): пустая ячейка — обычный прайс для клиентов,
+  // «retail» — внутренняя цена для наших магазинов. Так старые строки прайса
+  // остаются клиентскими без единой правки.
+  [SHEET_TABS.PRICE_HISTORY]: ["Date", "FlowerType", "Variety", "Grade", "Price", "Kind"],
   [SHEET_TABS.VARIETIES]: ["FlowerType", "Variety", "Active"],
   [SHEET_TABS.PLANS]: ["Period", "ManagerEmail", "TargetAmount", "TargetStems"],
   // План отгрузок РОПа: одна строка — одно направление и один цветок в месяце.
@@ -201,6 +215,13 @@ export const ROLES = {
   ACCOUNTANT: "accountant",
   SALES_HEAD: "sales_head",
   AGRONOMIST: "agronomist",
+  // Розница — НАШИ СОБСТВЕННЫЕ магазины. Это не продажа наружу, а перемещение
+  // цветка внутри компании, поэтому роль отдельная: у неё нет ни счёта, ни
+  // долга, ни бонуса, и оплату ждать не от кого. Две роли, а не одна, потому
+  // что владелец хочет жёсткую границу: алматинец не должен видеть заявки по
+  // регионам и наоборот.
+  RETAIL_ALMATY: "retail_almaty",
+  RETAIL_REGIONS: "retail_regions",
 } as const;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
@@ -211,7 +232,57 @@ export const ROLE_LABELS: Record<string, string> = {
   accountant: "Бухгалтер",
   sales_head: "Руководитель отдела продаж",
   agronomist: "Агроном",
+  retail_almaty: "Менеджер розницы (Алматы)",
+  retail_regions: "Менеджер розницы (регионы)",
 };
+
+// ---------------------------------------------------------------------------
+// Собственная розница.
+//
+// «Наш магазин» — не клиент. Цветок в него не продаётся, а перемещается: денег
+// между нами нет, счёта нет, оплаты ждать не от кого. Выручка появится тогда,
+// когда магазин продаст букет покупателю, — а это уже не про эту программу.
+//
+// Отсюда всё остальное: заявка в свой магазин не идёт ни в выручку, ни в
+// долги, ни в бонусы менеджеров, отгрузку открывает один менеджер розницы без
+// бухгалтера, и цена берётся из отдельного внутреннего прайса.
+// ---------------------------------------------------------------------------
+
+export const RETAIL_TERRITORIES = {
+  ALMATY: "almaty",
+  REGIONS: "regions",
+} as const;
+export type RetailTerritory = (typeof RETAIL_TERRITORIES)[keyof typeof RETAIL_TERRITORIES];
+
+export const RETAIL_LABELS: Record<string, string> = {
+  almaty: "Розница Алматы",
+  regions: "Розница регионы",
+};
+
+/** Короткая подпись — для строки в таблице, где длинная не помещается. */
+export const RETAIL_SHORT_LABELS: Record<string, string> = {
+  almaty: "Алматы",
+  regions: "Регионы",
+};
+
+/**
+ * Какой розницей заведует роль. У остальных ролей — null, и это значит «не
+ * розничный менеджер», а не «вся розница»: право видеть чужие магазины должно
+ * появляться явно, а не по умолчанию (грабли 1.10 — ошибка закрывает доступ).
+ */
+export const RETAIL_TERRITORY_BY_ROLE: Record<string, RetailTerritory> = {
+  [ROLES.RETAIL_ALMATY]: RETAIL_TERRITORIES.ALMATY,
+  [ROLES.RETAIL_REGIONS]: RETAIL_TERRITORIES.REGIONS,
+};
+
+export const RETAIL_ROLES: string[] = [ROLES.RETAIL_ALMATY, ROLES.RETAIL_REGIONS];
+
+export const RETAIL_ORDER: string[] = [RETAIL_TERRITORIES.ALMATY, RETAIL_TERRITORIES.REGIONS];
+
+export function retailLabel(territory: string | null | undefined): string {
+  if (!territory) return "";
+  return RETAIL_LABELS[territory] ?? territory;
+}
 
 /**
  * Роли, у которых колонка Farm в таблице Users имеет смысл: они работают по

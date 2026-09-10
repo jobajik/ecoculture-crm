@@ -7,6 +7,7 @@ import { listUsers } from "@/lib/repo/users";
 import { buildClientStats } from "@/lib/clientStats";
 import { FLOWER_TYPE_LABELS, ROLES, formatGrade } from "@/lib/constants";
 import ClientsBoard from "@/components/ClientsBoard";
+import { isRetailRole } from "@/lib/retail";
 import { clients as clientsWord, orders as ordersWord } from "@/lib/plural";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
 export default async function ClientsPage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджеру розницы клиентская база не нужна: его рабочее место — «Розница».
+  if (isRetailRole(role)) redirect("/retail");
   if (role !== ROLES.MANAGER && role !== ROLES.SALES_HEAD && role !== ROLES.ADMIN) {
     redirect("/?error=forbidden");
   }

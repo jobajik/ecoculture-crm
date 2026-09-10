@@ -2,6 +2,7 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, getFarmFor } from "./constants";
 import type { OrderWithItems } from "./types";
+import { isRetailOrder } from "./retail";
 
 // ---------------------------------------------------------------------------
 // Дневной срез продаж: кто из менеджеров что продал сегодня, каких цветов и
@@ -92,7 +93,11 @@ export async function getDailySalesSnapshot(
     : await Promise.all([listOrdersWithItems(), listUsers()]);
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
-  const counted = orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt);
+  // «Сколько продали сегодня» — про продажи наружу. Розница считается
+  // отдельно, в своём разделе.
+  const counted = orders.filter(
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !isRetailOrder(o)
+  );
 
   const dayOrders = counted.filter((o) => dayKey(new Date(o.createdAt)) === targetDate);
 

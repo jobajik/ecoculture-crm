@@ -2,6 +2,7 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./constants";
 import { isReadyToShip } from "./orderReady";
+import { isRetailOrder } from "./retail";
 import { farmPayments, type FarmPayment } from "./orderMoney";
 import type { OrderWithItems } from "./types";
 
@@ -206,7 +207,12 @@ export async function getFinanceSnapshot(
     : await Promise.all([listOrdersWithItems(), listUsers()]);
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
-  const counted = orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt);
+  // Заявки в наши магазины сюда не попадают вовсе. Это внутреннее перемещение:
+  // счёта нет, долга нет, звонить некому. Попади они в этот расчёт — бухгалтер
+  // каждый день видела бы в списке звонков собственные магазины.
+  const counted = orders.filter(
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !isRetailOrder(o)
+  );
 
   const { from, to, label } = periodRange(period, anchor);
 

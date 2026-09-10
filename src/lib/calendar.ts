@@ -14,6 +14,7 @@ import {
   periodLabel,
 } from "./constants";
 import type { OrderWithItems } from "./types";
+import { isRetailOrder } from "./retail";
 
 // ---------------------------------------------------------------------------
 // Календарь месяца: что срезали, что продали, что отгрузили и сколько денег
@@ -217,6 +218,10 @@ export function buildCalendarMonth(input: {
   // --- Продажи и деньги ----------------------------------------------------
   for (const order of input.orders) {
     if (order.status === ORDER_STATUSES.CANCELLED) continue;
+    // Розница в «продажах и деньгах» дня не участвует: перемещение в наш
+    // магазин выручкой не является, а посчиталось бы дважды — сейчас и когда
+    // магазин продаст букет покупателю.
+    if (isRetailOrder(order)) continue;
 
     const created = isoOf(order.createdAt);
     const day = byDate.get(created);

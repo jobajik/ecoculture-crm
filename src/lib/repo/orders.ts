@@ -46,6 +46,7 @@ function toOrder(record: Record<string, string>): Order {
     promisedAt: toIsoDate(record.PromisedAt),
     collectionNote: record.CollectionNote || "",
     clientId: record.ClientID || "",
+    retail: (record.Retail || "").trim(),
   };
 }
 
@@ -79,6 +80,12 @@ export interface NewOrderItemInput {
 
 export interface NewOrderInput {
   managerEmail: string;
+  /**
+   * Направление розницы, если заявка в наш магазин. Пишется снимком: карточку
+   * магазина потом могут перевести в другое направление или закрыть, а старая
+   * заявка обязана остаться такой, какой была, — по ней считают деньги.
+   */
+  retail?: string;
   /** Клиент из базы — заявка без карточки больше не заводится. */
   clientId: string;
   /** Снимок имени на момент заявки: точка может переименоваться. */
@@ -142,6 +149,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     ClientID: input.clientId,
     PaidRoseFarm: 0,
     PaidEsentai: 0,
+    Retail: input.retail || "",
   });
 
   const itemRecords = input.items.map((item, idx) => ({

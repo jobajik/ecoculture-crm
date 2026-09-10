@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 
 // Кто какие разделы может открывать. "admin" по умолчанию имеет доступ всюду.
 const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
-  { prefix: "/orders/new", roles: ["manager", "admin"] },
+  // Собственная розница. Менеджеры розницы живут в своём разделе и в заявках;
+  // клиентская база, деньги, планы и склад им не нужны и закрыты.
+  { prefix: "/retail", roles: ["retail_almaty", "retail_regions", "sales_head", "admin"] },
+  { prefix: "/orders/new", roles: ["manager", "retail_almaty", "retail_regions", "admin"] },
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
   // Рекламацию заводит менеджер, а решение по ней видит у бухгалтера. Раньше
   // весь /finance был закрыт от менеджера, и он не мог узнать, чем кончилась
@@ -18,9 +21,33 @@ const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   { prefix: "/forecast", roles: ["agronomist", "admin"] },
   // Агроном отвечает за срезку, а не за деньги: заявки и аналитика хозяйства
   // ему не нужны, а видел он их целиком по обоим производствам.
-  { prefix: "/orders", roles: ["manager", "warehouse", "accountant", "sales_head", "admin"] },
+  {
+    prefix: "/orders",
+    roles: [
+      "manager",
+      "warehouse",
+      "accountant",
+      "sales_head",
+      "admin",
+      "retail_almaty",
+      "retail_regions",
+    ],
+  },
   { prefix: "/analytics", roles: ["manager", "warehouse", "accountant", "sales_head", "admin"] },
-  { prefix: "/clients", roles: ["manager", "sales_head", "accountant", "admin"] },
+  // Карточка магазина — та же карточка клиента, и держать её вторую копию в
+  // разделе розницы значило бы чинить потом обе. Список клиентов менеджеру
+  // розницы всё равно не показывается: страница разворачивает его в «Розницу».
+  {
+    prefix: "/clients",
+    roles: [
+      "manager",
+      "sales_head",
+      "accountant",
+      "admin",
+      "retail_almaty",
+      "retail_regions",
+    ],
+  },
   { prefix: "/admin", roles: ["admin"] },
 ];
 
@@ -60,6 +87,7 @@ export default withAuth(
 export const config = {
   matcher: [
     "/orders/:path*",
+    "/retail/:path*",
     "/clients/:path*",
     "/plans/:path*",
     "/forecast/:path*",

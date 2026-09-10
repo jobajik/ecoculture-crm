@@ -33,6 +33,14 @@ export const NAV_LINKS: NavLink[] = [
   // Клиентская база — рабочий инструмент продаж, поэтому стоит рядом с
   // заявками. Складу и агроному она не нужна.
   { href: "/clients", label: "Клиенты", roles: ["manager", "sales_head", "accountant", "admin"] },
+  // Собственная розница — свой раздел, а не вкладка в клиентах: у менеджера
+  // розницы это единственное рабочее место, и прятать его внутрь чужого
+  // раздела значило бы заставлять его каждый раз проходить мимо клиентов.
+  {
+    href: "/retail",
+    label: "Розница",
+    roles: ["retail_almaty", "retail_regions", "sales_head", "admin"],
+  },
   { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
   { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
   { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },
@@ -40,7 +48,13 @@ export const NAV_LINKS: NavLink[] = [
   // У администратора прогноз срезки живёт вкладкой внутри «Планов» — иначе
   // верхнее меню снова разрастается до девяти пунктов.
   { href: "/forecast", label: "Прогноз срезки", short: "Срезка", roles: ["agronomist"] },
-  { href: "/analytics", label: "Аналитика", short: "Аналит." },
+  // Менеджеру розницы аналитика хозяйства не нужна: его цифры — в его разделе.
+  {
+    href: "/analytics",
+    label: "Аналитика",
+    short: "Аналит.",
+    roles: ["manager", "warehouse", "accountant", "sales_head", "admin"],
+  },
   { href: "/admin", label: "Настройки", short: "Настр.", roles: ["admin"] },
 ];
 

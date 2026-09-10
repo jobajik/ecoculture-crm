@@ -39,6 +39,12 @@ export interface PicklistOrder {
   /** Две «зелёные галочки»: менеджер согласовал и бухгалтер увидел деньги. */
   managerConfirmed: boolean;
   paid: boolean;
+  /**
+   * Направление собственной розницы; пусто — обычная продажа наружу. Складу это
+   * видно на листе: заявка в наш магазин готова к сборке по одному
+   * подтверждению, и пустая галочка оплаты у неё не признак «денег нет».
+   */
+  retail: string;
   readyToCollect: boolean;
   totalStems: number;
   totalAmount: number;
@@ -124,6 +130,7 @@ export async function getPicklist(
     notes: order.notes,
     managerConfirmed: order.managerConfirmed,
     paid: order.paid,
+    retail: order.retail || "",
     readyToCollect: isReadyToShip(order),
     // ПОТРЕБНОСТЬ, а не заказ: в строках печатной формы стоит «заказано минус
     // отгружено», и если в шапке считать заказ целиком, зав. складом видит на

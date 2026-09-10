@@ -22,6 +22,7 @@ import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
 import { getClientById } from "@/lib/repo/clients";
 import { farmPayments } from "@/lib/orderMoney";
+import { isRetailOrder, isRetailRole, retailLabel, retailTerritoryFor } from "@/lib/retail";
 import CancelOrder from "@/components/CancelOrder";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,15 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
   const role = session?.user?.role;
   const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
+
+  // Розница и продажи наружу разделены и здесь, иначе прямая ссылка обходила бы
+  // фильтр списка. Менеджер розницы видит только своё направление; обычный
+  // менеджер и бухгалтер розничную заявку не открывают вовсе — им в ней нечего
+  // делать, а бухгалтеру ещё и незачем: денег по ней не бывает.
+  const territory = retailTerritoryFor(role);
+  const retail = isRetailOrder(loaded);
+  if (territory && (!retail || loaded.retail !== territory)) notFound();
+  if (retail && (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT)) notFound();
 
   // Зав. складом видит в заявке только свои позиции. Если своего цветка в заявке
   // нет — заявка для неё не существует, чтобы нельзя было открыть её по прямой ссылке.
@@ -68,7 +78,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // платит двумя переводами. Считаем по ПОЛНОЙ заявке, а не по урезанной для
   // склада, и зав. складом этот блок не показываем: чужие деньги её не
   // касаются, а свои она видит в сумме своих позиций.
-  const invoice = farm ? [] : farmPayments(loaded);
+  // По заявке в наш магазин счетов нет вовсе — показывать нечего.
+  const invoice = farm || retail ? [] : farmPayments(loaded);
   const kaspiOfClient =
     client && client.paymentMethod === KASPI_METHOD
       ? [client.kaspiPay1, client.kaspiPay2].filter(Boolean)
@@ -111,6 +122,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <OrderStatusBadge status={order.status} />
       </div>
       <p className="text-sm text-ink-muted mb-6">
+        {retail && (
+          <>
+            <span className="text-ink-secondary">{retailLabel(order.retail)} · наш магазин</span>
+            {" · "}
+          </>
+        )}
         Создана {formatMoment(order.createdAt)} · менеджер {order.managerEmail}
         {farm && (
           <>
@@ -130,9 +147,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         paymentMethod={order.paymentMethod}
         paidAmount={order.paidAmount}
         totalAmount={order.totalAmount}
+        retail={order.retail}
         canConfirm={
           role === "admin" ||
-          (role === "manager" && order.managerEmail === session?.user?.email?.toLowerCase())
+          ((role === "manager" || isRetailRole(role)) &&
+            order.managerEmail === session?.user?.email?.toLowerCase())
         }
       />
 

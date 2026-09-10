@@ -1,4 +1,5 @@
 import { ORDER_STATUSES, ROLES } from "./constants";
+import { isRetailRole } from "./retail";
 
 /**
  * Правила жизненного цикла заявки — в одном месте и без обращений к таблице,
@@ -16,6 +17,8 @@ export interface CancelCheckOrder {
   status: string;
   managerEmail: string;
   items: { shippedQuantity: number }[];
+  /** Направление собственной розницы; пусто — обычная продажа наружу. */
+  retail?: string;
 }
 
 /** Заявка закрыта: отменять и трогать её больше нельзя. */
@@ -28,7 +31,9 @@ export function isClosed(status: string): boolean {
  * пустую строку, если можно.
  *
  * Три правила, и каждое стоило бы дорого:
- * 1) отменяет свой менеджер или администратор — чужую заявку не трогают;
+ * 1) отменяет свой менеджер или администратор — чужую заявку не трогают.
+ *    Для розницы «свой менеджер» — это менеджер розницы, оформивший заявку:
+ *    ждать здесь обычного менеджера не от кого, заявку заводил не он;
  * 2) уже отгруженную или отменённую не отменяют повторно;
  * 3) заявку, по которой хоть что-то уехало, отменить нельзя: цветок у клиента,
  *    а отмена вычеркнула бы заявку из выручки, долгов и бонусов — стебли ушли
@@ -40,7 +45,11 @@ export function cancelRefusal(
   email: string | null | undefined
 ): string {
   const mine = order.managerEmail === (email || "").trim().toLowerCase();
-  if (role !== ROLES.ADMIN && !(role === ROLES.MANAGER && mine)) {
+  // Заявку заводит либо обычный менеджер, либо менеджер розницы — отменяет её
+  // тот же человек. Чьё это направление, проверять отдельно не нужно: почта в
+  // заявке и так принадлежит ровно одному из них.
+  const ownRole = role === ROLES.MANAGER || isRetailRole(role);
+  if (role !== ROLES.ADMIN && !(ownRole && mine)) {
     return "Отменить заявку может только её менеджер или администратор";
   }
   if (order.status === ORDER_STATUSES.CANCELLED) return "Заявка уже отменена";

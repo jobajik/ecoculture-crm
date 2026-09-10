@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { savePrices, getCurrentPrices, type PriceInput } from "@/lib/repo/prices";
 import { ROLES, getGradesFor, FLOWER_TYPE_LABELS } from "@/lib/constants";
 import { listVarietiesByType } from "@/lib/repo/varieties";
-import { BASE_VARIETY, priceMapForClient } from "@/lib/priceList";
+import { BASE_VARIETY, PRICE_KINDS, cleanPriceKind, priceMapForClient } from "@/lib/priceList";
 import { parsePriceWorkbook, type ParsedPriceRow, type PriceParseResult } from "@/lib/excel";
 
 /** Прайс ведут РОП и администратор: цена — это решение о деньгах. */
@@ -19,8 +19,14 @@ async function requirePricer(): Promise<void> {
   }
 }
 
-export async function savePricesAction(rows: PriceInput[]) {
+/**
+ * Прайсов два: клиентский и внутренний для наших магазинов. Вид приходит
+ * параметром и приводится к известному значению — неизвестное считается
+ * клиентским (грабли 1.10: ошибка не должна открывать «какой-то третий прайс»).
+ */
+export async function savePricesAction(rows: PriceInput[], kind: string = PRICE_KINDS.CLIENT) {
   await requirePricer();
+  const priceKind = cleanPriceKind(kind);
 
   const catalog = await listVarietiesByType();
 
@@ -47,7 +53,7 @@ export async function savePricesAction(rows: PriceInput[]) {
     return { flowerType, variety, grade, price: Math.round(price * 100) / 100 };
   });
 
-  const result = await savePrices(cleaned);
+  const result = await savePrices(cleaned, undefined, priceKind);
   revalidatePath("/prices");
   revalidatePath("/orders/new");
   return result;
@@ -59,7 +65,10 @@ export async function savePricesAction(rows: PriceInput[]) {
  * Молча уехавшая в таблицу неверная цена — худший вид ошибки: о ней узнают из
  * выставленного счёта.
  */
-export async function parsePriceFileAction(formData: FormData): Promise<PriceParseResult> {
+export async function parsePriceFileAction(
+  formData: FormData,
+  kind: string = PRICE_KINDS.CLIENT
+): Promise<PriceParseResult> {
   await requirePricer();
 
   const file = formData.get("file");
@@ -67,7 +76,10 @@ export async function parsePriceFileAction(formData: FormData): Promise<PricePar
     return { rows: [], validCount: 0, errorCount: 0, sameCount: 0, fatalError: "Файл не получен" };
   }
 
-  const [catalog, current] = await Promise.all([listVarietiesByType(), getCurrentPrices()]);
+  const [catalog, current] = await Promise.all([
+    listVarietiesByType(),
+    getCurrentPrices(undefined, cleanPriceKind(kind)),
+  ]);
   const buffer = await (file as File).arrayBuffer();
   return parsePriceWorkbook(buffer, catalog, priceMapForClient(current));
 }
@@ -77,7 +89,10 @@ export async function parsePriceFileAction(formData: FormData): Promise<PricePar
  * отбрасываются здесь же, а не только в интерфейсе: запрос можно послать и в
  * обход страницы.
  */
-export async function importPricesAction(rows: ParsedPriceRow[]) {
+export async function importPricesAction(
+  rows: ParsedPriceRow[],
+  kind: string = PRICE_KINDS.CLIENT
+) {
   const good = rows.filter((r) => !r.error && r.flowerType && r.grade);
   if (good.length === 0) return { updated: 0, created: 0 };
   return savePricesAction(
@@ -86,6 +101,7 @@ export async function importPricesAction(rows: ParsedPriceRow[]) {
       variety: r.variety,
       grade: r.grade,
       price: r.price,
-    }))
+    })),
+    kind
   );
 }

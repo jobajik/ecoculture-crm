@@ -312,7 +312,9 @@ export default function PicklistView({
                               : undefined
                           }
                         >
-                          {c.clientName}
+                          {/* Наш магазин помечаем прямо в шапке колонки: на
+                              погрузке это разные машины и разные накладные. */}
+                          {c.retail ? `★ ${c.clientName}` : c.clientName}
                         </span>
                       </div>
                     </th>
@@ -339,16 +341,21 @@ export default function PicklistView({
                       )}
                       title={
                         c.readyToCollect
-                          ? "Согласовано менеджером и оплачено"
+                          ? c.retail
+                            ? "Наш магазин — подтверждено менеджером розницы, оплата не нужна"
+                            : "Согласовано менеджером и оплачено"
                           : [
                               c.managerConfirmed ? null : "менеджер не подтвердил",
-                              c.paid ? null : "не оплачено",
+                              // По заявке в наш магазин оплаты не бывает вовсе:
+                              // писать «не оплачено» значило бы отправить зав.
+                              // складом к бухгалтеру, которой там нечего делать.
+                              c.retail || c.paid ? null : "не оплачено",
                             ]
                               .filter(Boolean)
                               .join(", ")
                       }
                     >
-                      {c.readyToCollect ? "✓✓" : "✗"}
+                      {c.readyToCollect ? (c.retail ? "✓" : "✓✓") : "✗"}
                     </th>
                   ))}
                   <th colSpan={3}></th>

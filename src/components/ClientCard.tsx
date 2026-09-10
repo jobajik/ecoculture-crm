@@ -8,6 +8,8 @@ import {
   KASPI_METHOD,
   PAYMENT_METHODS,
   PAYMENT_TERMS,
+  RETAIL_LABELS,
+  RETAIL_ORDER,
 } from "@/lib/constants";
 import { KaspiFields } from "./ClientPicker";
 import { updateClientAction } from "@/app/clients/actions";
@@ -25,6 +27,8 @@ export interface ClientCardValues {
   paymentMethod: string;
   kaspiPay1: string;
   kaspiPay2: string;
+  /** Направление розницы, если это наш магазин. Меняет только РОП. */
+  retail: string;
   source: string;
   note: string;
 }
@@ -44,11 +48,14 @@ export default function ClientCard({
   values,
   canEdit,
   managerName,
+  canSetRetail = false,
 }: {
   clientId: string;
   values: ClientCardValues;
   canEdit: boolean;
   managerName: string;
+  /** Отмечать карточку нашим магазином и менять направление может только РОП. */
+  canSetRetail?: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -83,6 +90,11 @@ export default function ClientCard({
       ["Как нашли", values.source],
       ["Менеджер", managerName],
     ];
+    if (values.retail) {
+      // Для нашего магазина «условия оплаты» и «чем платит» смысла не имеют:
+      // счёта нет. Показываем направление, оно здесь главное.
+      rows.splice(2, 0, ["Направление", RETAIL_LABELS[values.retail] ?? values.retail]);
+    }
     // Каспи-номера показываем только тем, кто действительно платит Каспи:
     // иначе это два прочерка, которые все обходят глазами.
     const kaspi: [string, string][] =
@@ -179,6 +191,23 @@ export default function ClientCard({
         {select("Условия оплаты", "paymentTerms", PAYMENT_TERMS)}
         {select("Чем платит", "paymentMethod", PAYMENT_METHODS)}
         {select("Как нашли", "source", CLIENT_SOURCES)}
+        {canSetRetail && (
+          <label className="text-sm block">
+            <span className="label">Наш магазин</span>
+            <select
+              className="input"
+              value={form.retail}
+              onChange={(e) => setForm((f) => ({ ...f, retail: e.target.value }))}
+            >
+              <option value="">Нет, это клиент</option>
+              {RETAIL_ORDER.map((t) => (
+                <option key={t} value={t}>
+                  {RETAIL_LABELS[t] ?? t}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {form.paymentMethod === KASPI_METHOD && (

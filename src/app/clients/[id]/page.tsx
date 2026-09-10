@@ -10,6 +10,7 @@ import { FLOWER_TYPE_LABELS, ROLES, formatGrade } from "@/lib/constants";
 import { formatDay } from "@/lib/formatDate";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ClientCard from "@/components/ClientCard";
+import { canSeeShop, isOwnShop, isRetailRole, retailLabel } from "@/lib/retail";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +19,25 @@ const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 export default async function ClientDetailPage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
-  if (role !== ROLES.MANAGER && role !== ROLES.SALES_HEAD && role !== ROLES.ADMIN) {
+  if (
+    role !== ROLES.MANAGER &&
+    role !== ROLES.SALES_HEAD &&
+    role !== ROLES.ADMIN &&
+    !isRetailRole(role)
+  ) {
     redirect("/?error=forbidden");
   }
 
   const client = await getClientById(params.id);
   if (!client) notFound();
+
+  // Карточка магазина открыта только своей рознице, РОПу и админу; менеджеру
+  // розницы, наоборот, доступны ТОЛЬКО магазины его направления.
+  const shop = isOwnShop(client);
+  if (shop && role !== ROLES.ADMIN && role !== ROLES.SALES_HEAD && !canSeeShop(role, client)) {
+    notFound();
+  }
+  if (!shop && isRetailRole(role)) notFound();
 
   const [clients, orders, users] = await Promise.all([
     listClients(),
@@ -48,17 +62,27 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
 
   const email = session?.user?.email?.toLowerCase() ?? "";
   const canEdit =
-    role === ROLES.ADMIN || role === ROLES.SALES_HEAD || client.managerEmail === email;
+    role === ROLES.ADMIN ||
+    role === ROLES.SALES_HEAD ||
+    client.managerEmail === email ||
+    // Магазин ведёт вся розница своего направления, а не только тот, кто завёл
+    // карточку: людей там мало, и «чужая карточка» между двумя коллегами одного
+    // направления означала бы просто неисправимую опечатку.
+    (shop && canSeeShop(role, client));
 
   return (
     <div className="max-w-4xl">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <h1 className="text-xl font-semibold">{client.name}</h1>
-        <Link href="/clients" className="text-sm text-ink-secondary hover:underline">
-          ← Ко всем клиентам
+        <Link
+          href={shop ? "/retail/shops" : "/clients"}
+          className="text-sm text-ink-secondary hover:underline"
+        >
+          {shop ? "← Ко всем магазинам" : "← Ко всем клиентам"}
         </Link>
       </div>
       <p className="text-sm text-ink-muted mb-6">
+        {shop && <span className="text-ink-secondary">{retailLabel(client.retail)} · наш магазин · </span>}
         {[client.city, client.shopName, client.clientType].filter(Boolean).join(" · ") || "—"}
         {row && !row.neverOrdered && ` · первый заказ ${formatDay(row.firstOrderDate)}`}
       </p>
@@ -89,6 +113,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         <ClientCard
           clientId={client.clientId}
           canEdit={canEdit}
+          canSetRetail={role === ROLES.ADMIN || role === ROLES.SALES_HEAD}
           managerName={nameByEmail.get(client.managerEmail) ?? client.managerEmail}
           values={{
             name: client.name,
@@ -103,6 +128,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             paymentMethod: client.paymentMethod,
             kaspiPay1: client.kaspiPay1,
             kaspiPay2: client.kaspiPay2,
+            retail: client.retail,
             source: client.source,
             note: client.note,
           }}

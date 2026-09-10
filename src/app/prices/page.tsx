@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getCurrentPrices, listPrices } from "@/lib/repo/prices";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { FLOWER_TYPES, ROLES } from "@/lib/constants";
-import { priceMapForClient } from "@/lib/priceList";
+import { PRICE_KINDS, PRICE_KIND_LABELS, cleanPriceKind, priceMapForClient } from "@/lib/priceList";
 import { priceChangeDays, daysSinceLastChange } from "@/lib/priceChanges";
 import PriceBoard from "@/components/PriceBoard";
 import PriceImportForm from "@/components/PriceImportForm";
@@ -21,7 +22,11 @@ const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPE
 /** После скольких дней без правок прайс считаем залежавшимся. */
 const STALE_DAYS = 30;
 
-export default async function PricesPage() {
+export default async function PricesPage({
+  searchParams,
+}: {
+  searchParams?: { kind?: string };
+}) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
   // Смотреть прайс полезно и менеджеру — он по нему продаёт. Заносить цену
@@ -32,10 +37,16 @@ export default async function PricesPage() {
   }
   const canEdit = role === ROLES.SALES_HEAD || role === ROLES.ADMIN;
 
+  // Прайса два: по клиентскому продают наружу, по внутреннему цветок передаётся
+  // в наши магазины. Механика у них одна, поэтому это переключатель, а не
+  // вторая страница: иначе одно и то же правило подстановки цены пришлось бы
+  // чинить в двух местах.
+  const kind = cleanPriceKind(searchParams?.kind);
+
   const [varieties, prices, all] = await Promise.all([
     listVarietiesByType(),
-    getCurrentPrices(),
-    listPrices(),
+    getCurrentPrices(undefined, kind),
+    listPrices(kind),
   ]);
 
   const changeDays = priceChangeDays(all);
@@ -46,11 +57,13 @@ export default async function PricesPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Прайс-лист</h1>
+        <h1 className="text-xl font-semibold">{PRICE_KIND_LABELS[kind] ?? "Прайс-лист"}</h1>
         <p className="text-sm text-ink-secondary">
-          {canEdit
-            ? "Цену задаёт руководитель отдела продаж — файлом или прямо в таблице ниже. Менеджер по этой цене продаёт и может поправить цифру в заявке вручную, но отклонение от прайса видно в аналитике."
-            : "Цена за стебель, её задаёт руководитель отдела продаж. В заявке цена подставляется сама; если договорились на другую, её можно поправить вручную — отклонение от прайса видно в аналитике."}
+          {kind === PRICE_KINDS.RETAIL
+            ? "Цена, по которой цветок передаётся в наши магазины. Задаёт её руководитель отдела продаж — файлом или прямо в таблице ниже."
+            : canEdit
+              ? "Цену задаёт руководитель отдела продаж — файлом или прямо в таблице ниже. Менеджер по этой цене продаёт и может поправить цифру в заявке вручную, но отклонение от прайса видно в аналитике."
+              : "Цена за стебель, её задаёт руководитель отдела продаж. В заявке цена подставляется сама; если договорились на другую, её можно поправить вручную — отклонение от прайса видно в аналитике."}
         </p>
       </div>
 
@@ -73,13 +86,38 @@ export default async function PricesPage() {
         {!canEdit && " · у вас доступ только на просмотр"}
       </p>
 
-      {canEdit && <PriceImportForm />}
+      <div className="flex flex-wrap gap-2">
+        {[PRICE_KINDS.CLIENT, PRICE_KINDS.RETAIL].map((k) => (
+          <Link
+            key={k || "client"}
+            href={k ? `/prices?kind=${k}` : "/prices"}
+            className={
+              k === kind
+                ? "px-3 py-1.5 rounded-lg text-sm border border-accent bg-accent-soft font-medium"
+                : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline text-ink-secondary hover:text-ink-primary"
+            }
+          >
+            {PRICE_KIND_LABELS[k]}
+          </Link>
+        ))}
+      </div>
+
+      {kind === PRICE_KINDS.RETAIL && (
+        <p className="text-sm text-ink-secondary">
+          По этой цене цветок передаётся в НАШИ магазины. Продажей это не считается: в выручку,
+          долги и бонусы такие заявки не идут — цена нужна, чтобы видеть, на сколько тенге ушло в
+          розницу.
+        </p>
+      )}
+
+      {canEdit && <PriceImportForm kind={kind} />}
 
       <PriceBoard
         flowerTypes={FLOWER_ORDER as unknown as string[]}
         varieties={varieties}
         initial={priceMapForClient(prices)}
         canEdit={canEdit}
+        kind={kind}
       />
 
       <PriceChangesView days={changeDays} />

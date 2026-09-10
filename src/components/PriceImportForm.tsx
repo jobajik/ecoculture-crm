@@ -19,7 +19,7 @@ const VISIBLE_ROWS = 12;
  * деньги, и разница между 250 и 25 замечается только тогда, когда старая цена
  * стоит рядом.
  */
-export default function PriceImportForm() {
+export default function PriceImportForm({ kind = "" }: { kind?: string }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -40,7 +40,7 @@ export default function PriceImportForm() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      setResult(await parsePriceFileAction(formData));
+      setResult(await parsePriceFileAction(formData, kind));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
     } finally {
@@ -53,7 +53,7 @@ export default function PriceImportForm() {
     setError(null);
     setImporting(true);
     try {
-      setDone(await importPricesAction(result.rows.filter((r) => !r.error)));
+      setDone(await importPricesAction(result.rows.filter((r) => !r.error), kind));
       setResult(null);
       setFileName(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -87,7 +87,10 @@ export default function PriceImportForm() {
             «цену не трогаем», ноль — «цены нет». Дата изменения запомнится сама.
           </p>
         </div>
-        <a href="/api/prices/template" className="btn-secondary !py-1.5">
+        <a
+          href={kind ? `/api/prices/template?kind=${kind}` : "/api/prices/template"}
+          className="btn-secondary !py-1.5"
+        >
           ↓ Скачать текущий прайс
         </a>
       </div>
