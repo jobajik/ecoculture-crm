@@ -87,7 +87,13 @@ async function main() {
   check("ставка эустома", bonusRateFor("eustoma"), 0.015);
   check("ставка хризантема", bonusRateFor("chrysanthemum"), 0.02);
   check("неизвестный тип даёт 0", bonusRateFor("tulip"), 0);
-  check("способы оплаты", [...PAYMENT_METHODS], ["Каспи", "Наличные"]);
+  // Список закрытый и короткий намеренно: свободный ввод способа оплаты
+  // за месяц даёт «каспи», «Каспи» и «kaspi» — три несводимые строки.
+  check(
+    "способы оплаты",
+    [...PAYMENT_METHODS],
+    ["Каспи", "Наличные", "Оплата по реквизитам"]
+  );
 
   const inj = { orders, users, plans };
 
