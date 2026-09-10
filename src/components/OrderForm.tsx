@@ -36,17 +36,26 @@ export default function OrderForm({
   varieties,
   prices = {},
   clients = [],
+  initialClient = null,
+  initialDeliveryDate = "",
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
   prices?: Record<string, number>;
   /** Клиентская база: заявка заводится только на клиента из неё. */
   clients?: ClientOption[];
+  /**
+   * Кому и на какой день — если человек пришёл сюда из списка, где это уже
+   * выбрано. Так менеджер розницы жмёт «оформить» напротив магазина и сразу
+   * вводит количество, а не выбирает заново то, на что уже нажал.
+   */
+  initialClient?: ClientOption | null;
+  initialDeliveryDate?: string;
 }) {
   const router = useRouter();
-  const [client, setClient] = useState<ClientOption | null>(null);
-  const [clientPhone, setClientPhone] = useState("");
-  const [deliveryDate, setDeliveryDate] = useState("");
+  const [client, setClient] = useState<ClientOption | null>(initialClient);
+  const [clientPhone, setClientPhone] = useState(initialClient?.phone ?? "");
+  const [deliveryDate, setDeliveryDate] = useState(initialDeliveryDate);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties, prices)]);
   const [submitting, setSubmitting] = useState(false);

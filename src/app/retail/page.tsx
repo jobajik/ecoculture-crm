@@ -92,7 +92,7 @@ export default async function RetailDayPage({
           Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
         </h1>
         {canOrder && (
-          <Link href="/orders/new" className="btn-primary">
+          <Link href={`/orders/new?date=${date}`} className="btn-primary">
             + Заявка магазину
           </Link>
         )}
@@ -167,14 +167,31 @@ export default async function RetailDayPage({
                 <td className="px-4 py-2.5 align-top">
                   {row.empty ? (
                     canOrder ? (
-                      <Link href="/orders/new" className="text-xs hover:underline text-accent">
-                        оформить
+                      // Магазин и день уже выбраны здесь — незачем выбирать их
+                      // заново на следующей странице. Одно нажатие, и остаётся
+                      // ввести количество.
+                      <Link
+                        href={`/orders/new?client=${row.clientId}&date=${date}`}
+                        className="btn-secondary !py-1 !px-2.5 text-xs"
+                      >
+                        Оформить
                       </Link>
                     ) : (
                       <span className="text-xs text-ink-muted">—</span>
                     )
                   ) : row.orders.every((o) => o.managerConfirmed) ? (
-                    <span className="text-xs text-status-good">✓ подтверждена</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-status-good">✓ подтверждена</span>
+                      {canOrder && (
+                        <Link
+                          href={`/orders/new?client=${row.clientId}&date=${date}`}
+                          className="text-xs text-ink-secondary hover:underline"
+                          title="Добор: вторая заявка на тот же день"
+                        >
+                          добавить
+                        </Link>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-xs text-[#8a5a00]">ждёт вашего подтверждения</span>
                   )}

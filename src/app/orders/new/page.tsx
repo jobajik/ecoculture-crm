@@ -13,7 +13,12 @@ import { canOrderForShop, isOwnShop, isRetailRole, retailTerritoryFor } from "@/
 
 export const dynamic = "force-dynamic";
 
-export default async function NewOrderPage() {
+export default async function NewOrderPage({
+  searchParams,
+}: {
+  /** Кому и на какой день — приходит из списка «Заявка на день» по магазинам. */
+  searchParams?: { client?: string; date?: string };
+}) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
   const retail = isRetailRole(role);
@@ -44,6 +49,37 @@ export default async function NewOrderPage() {
   });
   const statByClient = new Map(stats.rows.map((r) => [r.client.clientId, r]));
 
+  // Отключённые карточки в выбор не идут: снятая галочка означает «больше не
+  // работаем», но историю заказов такого клиента она не трогает.
+  //
+  // Менеджеру розницы видны ТОЛЬКО магазины его направления, обычному
+  // менеджеру — только клиенты: наши точки не клиенты, и смешивать их в одном
+  // подборщике значит однажды выписать магазину счёт.
+  const options = clients
+    .filter((c) => c.active)
+    .filter((c) => (retail ? canOrderForShop(role, c) : !isOwnShop(c)))
+    .map((c) => ({
+      clientId: c.clientId,
+      name: c.name,
+      city: c.city,
+      shopName: c.shopName,
+      phone: c.phone,
+      managerName: nameByEmail.get(c.managerEmail) ?? c.managerEmail,
+      mine: c.managerEmail === myEmail,
+      orders: statByClient.get(c.clientId)?.orders ?? 0,
+      daysSinceLast: statByClient.get(c.clientId)?.daysSinceLast ?? -1,
+    }));
+
+  // Пришли из списка «Заявка на день»: магазин и дата уже выбраны — подставляем
+  // их, чтобы человек сразу вводил количество. Чужой или несуществующий клиент
+  // молча игнорируется: подборщик открывается как обычно (грабли 1.11 — то, что
+  // пришло из адреса, проверяется по тому же списку, что и всё остальное).
+  const preselected = searchParams?.client
+    ? options.find((c) => c.clientId === searchParams.client) ?? null
+    : null;
+  const preselectedDate =
+    searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : "";
+
   return (
     <div>
       <h1 className="text-xl font-semibold mb-4">
@@ -58,26 +94,9 @@ export default async function NewOrderPage() {
       <OrderForm
         varieties={varieties}
         prices={priceMapForClient(prices)}
-        // Отключённые карточки в выбор не идут: снятая галочка означает «больше
-        // не работаем», но историю заказов такого клиента она не трогает.
-        //
-        // Менеджеру розницы видны ТОЛЬКО магазины его направления, обычному
-        // менеджеру — только клиенты: наши точки не клиенты, и смешивать их в
-        // одном подборщике значит однажды выписать магазину счёт.
-        clients={clients
-          .filter((c) => c.active)
-          .filter((c) => (retail ? canOrderForShop(role, c) : !isOwnShop(c)))
-          .map((c) => ({
-            clientId: c.clientId,
-            name: c.name,
-            city: c.city,
-            shopName: c.shopName,
-            phone: c.phone,
-            managerName: nameByEmail.get(c.managerEmail) ?? c.managerEmail,
-            mine: c.managerEmail === myEmail,
-            orders: statByClient.get(c.clientId)?.orders ?? 0,
-            daysSinceLast: statByClient.get(c.clientId)?.daysSinceLast ?? -1,
-          }))}
+        initialClient={preselected}
+        initialDeliveryDate={preselectedDate}
+        clients={options}
       />
     </div>
   );
