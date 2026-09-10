@@ -62,6 +62,16 @@ export interface Picklist {
   orders: PicklistOrder[];
   /** Заявки без даты доставки — чтобы они не потерялись. */
   ordersWithoutDate: PicklistOrder[];
+  /**
+   * Даты, на которые заявки ЕСТЬ, — ближайшие к выбранной.
+   *
+   * Лист открывается на сегодня, а менеджер обычно ставит доставку на завтра
+   * или послезавтра. Зав. складом видела пустой лист и вывод «программа не
+   * работает», хотя заявки лежали в базе через день. Теперь пустая страница не
+   * тупик: под ней стоят ближайшие даты с числом заявок, и на них можно
+   * перейти одним нажатием.
+   */
+  nearbyDates: { date: string; orders: number; stems: number }[];
 }
 
 function toDateKey(value: string): string {
@@ -174,6 +184,30 @@ export async function getPicklist(
     0
   );
 
+  // Ближайшие даты с заявками: пять до и пять после выбранной. Считаем по тем же
+  // активным заявкам и с тем же фильтром производства, что и сам лист, — иначе
+  // подсказка звала бы на день, где у этого склада всё равно пусто.
+  const nearbyMap = new Map<string, { orders: number; stems: number }>();
+  for (const order of active) {
+    const key = toDateKey(order.deliveryDate);
+    if (!key || key === date) continue;
+    const own = order.items.filter((i) => belongsToFarm(i.flowerType));
+    if (own.length === 0) continue;
+    const entry = nearbyMap.get(key) ?? { orders: 0, stems: 0 };
+    entry.orders += 1;
+    entry.stems += own.reduce(
+      (sum, i) => sum + Math.max(0, i.quantity - (Number(i.shippedQuantity) || 0)),
+      0
+    );
+    nearbyMap.set(key, entry);
+  }
+  const allDates = Array.from(nearbyMap.entries())
+    .map(([d, v]) => ({ date: d, ...v }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const before = allDates.filter((d) => d.date < date).slice(-5);
+  const after = allDates.filter((d) => d.date > date).slice(0, 5);
+  const nearbyDates = [...before, ...after];
+
   const picklistOrders = forDate
     .map(toPicklistOrder)
     .filter((o) => o.items.length > 0)
@@ -203,5 +237,6 @@ export async function getPicklist(
     lines,
     orders: picklistOrders,
     ordersWithoutDate: withoutDate.map(toPicklistOrder).filter((o) => o.items.length > 0),
+    nearbyDates,
   };
 }

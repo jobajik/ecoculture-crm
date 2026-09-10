@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { FARM_ORDER, FLOWER_TYPE_LABELS_PLURAL, farmLabel, formatGrade } from "@/lib/constants";
 import type { Picklist, PicklistLine, PicklistOrder } from "@/lib/picklist";
+import { orders as orderWord } from "@/lib/plural";
 
 const TYPE_ORDER = ["rose", "chrysanthemum", "eustoma"];
 
@@ -21,6 +22,17 @@ function shortName(full: string): string {
 // ужимается ровно настолько, чтобы влезть на один лист целиком.
 const PAGE_WIDTH = 1052;
 const PAGE_HEIGHT = 724;
+
+/** «11 сент., чт» — коротко, но с днём недели: по нему и ориентируются. */
+function shortDate(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return key;
+  return new Date(y, m - 1, d).toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "short",
+    weekday: "short",
+  });
+}
 
 export default function PicklistView({
   picklist,
@@ -151,11 +163,46 @@ export default function PicklistView({
       )}
 
       {picklist.totalOrders === 0 ? (
-        <div className="card text-center py-10 no-print">
+        <div className="card py-8 no-print text-center">
           <p className="font-medium">На эту дату заявок нет</p>
-          <p className="text-sm text-ink-secondary mt-1">
-            Выберите другую дату — или проверьте, проставили ли менеджеры дату доставки.
-          </p>
+          {picklist.nearbyDates.length > 0 ? (
+            <>
+              <p className="text-sm text-ink-secondary mt-1">
+                Лист открывается на сегодня, а доставку чаще ставят на другой день. Вот когда
+                заявки есть — нажмите на дату:
+              </p>
+              <div className="flex flex-wrap justify-center gap-2 mt-3">
+                {picklist.nearbyDates.map((d) => (
+                  <button
+                    key={d.date}
+                    onClick={() =>
+                      router.push(
+                        `/warehouse/picklist?date=${d.date}` +
+                          (picklist.farm ? `&farm=${picklist.farm}` : "")
+                      )
+                    }
+                    className="btn-secondary !py-1.5 text-sm"
+                  >
+                    {shortDate(d.date)}
+                    <span className="text-ink-muted">
+                      {" · "}
+                      {orderWord(d.orders)}, {d.stems.toLocaleString("ru-RU")} шт.
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : picklist.ordersWithoutDate.length > 0 ? (
+            <p className="text-sm text-ink-secondary mt-1">
+              Заявки есть, но у них не проставлена дата доставки — они перечислены ниже. Дату
+              ставит менеджер на своей заявке.
+            </p>
+          ) : (
+            <p className="text-sm text-ink-secondary mt-1">
+              Заявок пока нет вовсе — ни на этот день, ни на другие. Лист появится, как только
+              менеджеры оформят первые.
+            </p>
+          )}
         </div>
       ) : (
         <div className="doc-frame overflow-x-auto">

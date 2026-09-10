@@ -96,6 +96,28 @@ async function main() {
   check("picklist без фильтра: стеблей = сумма двух", allList.totalStems, 120 + 250);
   check("picklist без фильтра: заявок", allList.totalOrders, 3);
 
+  // Пустой день не должен быть тупиком: подсказка обязана показать ближайшие
+  // даты, где заявки есть, — и только по своему производству.
+  const emptyDay = await getPicklist("2000-01-01", NOW, { orders, batches, users }, "rose_farm");
+  check("пустой день: заявок нет", emptyDay.totalOrders, 0);
+  check(
+    "пустой день: подсказка ведёт на день с заявками",
+    emptyDay.nearbyDates.map((d) => d.date),
+    [TODAY]
+  );
+  check(
+    "подсказка считает стебли своего производства",
+    emptyDay.nearbyDates[0]?.stems,
+    120
+  );
+  const emptyEsentai = await getPicklist("2000-01-01", NOW, { orders, batches, users }, "esentai");
+  check("подсказка у другого склада — свои стебли", emptyEsentai.nearbyDates[0]?.stems, 250);
+  check(
+    "на выбранный день подсказка не показывает сам этот день",
+    (await getPicklist(TODAY, NOW, { orders, batches, users }, "rose_farm")).nearbyDates.length,
+    0
+  );
+
   // --- Остатки ---
   const settings = { shelfLifeDays: { rose: 7, chrysanthemum: 18, eustoma: 10 }, warningThreshold: 0.7 } as never as Awaited<
     ReturnType<typeof import("../src/lib/repo/settings").getSettings>
