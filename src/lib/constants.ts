@@ -71,10 +71,12 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "ManagerEmail",
     "Active",
     // Чем платит и куда. В конец строки, как и всё остальное (грабли 1.1).
+    // Kaspi Pay — по одному на компанию: счёт выставляет то ТОО, чей цветок в
+    // заявке, и подставляться он должен сам, а не выбираться руками.
     "PaymentMethod",
-    "KaspiAccount",
-    "KaspiPhone1",
-    "KaspiPhone2",
+    "KaspiRoseFarm",
+    "KaspiEsentai",
+    "KaspiClient",
   ],
   [SHEET_TABS.ORDER_ITEMS]: [
     "OrderID",
@@ -965,21 +967,21 @@ export type ClientSource = (typeof CLIENT_SOURCES)[number];
 export const CLIENT_SLEEPING_DAYS = 30;
 
 /**
- * На какой наш Kaspi Pay платит клиент.
+ * Kaspi Pay — по одному на компанию, и вписывается СВОБОДНО.
  *
- * Счета выставляются от РАЗНЫХ компаний в зависимости от купленного цветка:
- * роза и эустома — Rose Farm, хризантема — Есентай Агро Хим. Клиент, который
- * берёт и то и другое, платит на оба, и бухгалтеру важно не гадать, а видеть
- * это в карточке. Значения — «1», «2», «both», чтобы подписи можно было менять,
- * не трогая записанные данные.
+ * Счёт выставляет то ТОО, чей цветок в заявке: роза и эустома — Rose Farm,
+ * хризантема — Есентай Агро Хим. Раньше здесь стоял выбор «1 или 2», и это
+ * было неверно дважды: во-первых, номеров бывает больше двух и появляются
+ * новые, во-вторых, компанию не выбирают руками — она однозначно следует из
+ * цветка. Поэтому теперь два поля для ввода (по одному на компанию), а какой
+ * из них показать, система решает сама.
+ *
+ * Ключ — код производства, чтобы связь с `FARM_BY_FLOWER_TYPE` была прямой и
+ * не разъехалась при добавлении третьей компании.
  */
-export const KASPI_ACCOUNTS = ["1", "2", "both"] as const;
-export type KaspiAccount = (typeof KASPI_ACCOUNTS)[number];
-
-export const KASPI_ACCOUNT_LABELS: Record<string, string> = {
-  "1": `Каспи 1 — ${FARM_LABELS.rose_farm}`,
-  "2": `Каспи 2 — ${FARM_LABELS.esentai}`,
-  both: "Оба — по цветку в заявке",
+export const KASPI_FIELD_BY_FARM: Record<string, "kaspiRoseFarm" | "kaspiEsentai"> = {
+  [FARMS.ROSE_FARM]: "kaspiRoseFarm",
+  [FARMS.ESENTAI]: "kaspiEsentai",
 };
 
 /** Способ оплаты показывается в карточке клиента; каспи-поля нужны только ему. */

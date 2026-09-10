@@ -1,11 +1,17 @@
-import { KASPI_ACCOUNTS, KASPI_METHOD, PAYMENT_METHODS } from "./constants";
+import {
+  FARM_LABELS,
+  KASPI_FIELD_BY_FARM,
+  KASPI_METHOD,
+  PAYMENT_METHODS,
+  getFarmFor,
+} from "./constants";
 
 /**
- * Порядок клиентов в подборщике заявки и правила каспи-реквизитов.
+ * Порядок клиентов в подборщике заявки и правила Kaspi Pay.
  *
- * Обе вещи чистые и живут здесь, а не внутри компонента: их проверяет тест
- * (`scripts/check-clients.ts`), а «удобно выбирать» и «в карточке не остаётся
- * мусор» — ровно то, что ломается незаметно.
+ * Всё чистое и живёт здесь, а не внутри компонентов: это проверяет тест
+ * (`scripts/check-clients.ts`), а «удобно выбирать» и «счёт ушёл от той
+ * компании» — ровно то, что ломается незаметно.
  */
 
 export interface PickCandidate {
@@ -40,28 +46,66 @@ export function orderForPicker<T extends PickCandidate>(clients: T[]): T[] {
 }
 
 export interface KaspiFieldValues {
-  kaspiAccount: string;
-  kaspiPhone1: string;
-  kaspiPhone2: string;
+  kaspiRoseFarm: string;
+  kaspiEsentai: string;
+  kaspiClient: string;
 }
 
 /**
- * Каспи-реквизиты имеют смысл только при оплате Каспи.
+ * Каспи-поля имеют смысл только при оплате Каспи.
  *
- * Если способ другой, они стираются: иначе в карточке остались бы номера, по
- * которым платить уже не будут, и бухгалтер сверял бы перевод не с тем. Номер
- * нашего счёта дополнительно проверяется по закрытому списку — выдуманное «3»
- * означало бы компанию, которой нет.
+ * Если способ другой, они стираются: иначе в карточке остались бы реквизиты,
+ * по которым платить уже не будут, и бухгалтер сверял бы перевод не с тем.
  */
 export function kaspiFieldsFor(method: string, input: Partial<KaspiFieldValues>): KaspiFieldValues {
   const known = (PAYMENT_METHODS as readonly string[]).includes(method) ? method : "";
   if (known !== KASPI_METHOD) {
-    return { kaspiAccount: "", kaspiPhone1: "", kaspiPhone2: "" };
+    return { kaspiRoseFarm: "", kaspiEsentai: "", kaspiClient: "" };
   }
-  const account = (input.kaspiAccount ?? "").trim();
   return {
-    kaspiAccount: (KASPI_ACCOUNTS as readonly string[]).includes(account) ? account : "",
-    kaspiPhone1: (input.kaspiPhone1 ?? "").trim(),
-    kaspiPhone2: (input.kaspiPhone2 ?? "").trim(),
+    kaspiRoseFarm: (input.kaspiRoseFarm ?? "").trim(),
+    kaspiEsentai: (input.kaspiEsentai ?? "").trim(),
+    kaspiClient: (input.kaspiClient ?? "").trim(),
   };
+}
+
+export interface KaspiTarget {
+  farm: string;
+  farmLabel: string;
+  /** Куда платить. Пустая строка — реквизит в карточке не заполнен. */
+  account: string;
+}
+
+/**
+ * На какой Kaspi Pay выставлять счёт по этой заявке.
+ *
+ * Компанию НЕ выбирают руками: она однозначно следует из цветка — роза и
+ * эустома идут от Rose Farm, хризантема от Есентай Агро Хим. В смешанной
+ * заявке счетов два, и это нормально: клиент платит двумя переводами, по
+ * одному каждому ТОО. Раньше это выбиралось галочкой «1 или 2», и в смешанной
+ * заявке любой выбор был наполовину неверным.
+ *
+ * Порядок — как в заявке: сначала тот цветок, что стоит первой позицией, чтобы
+ * бухгалтер читал сверху вниз и не сверялся с порядком компаний в коде.
+ */
+export function kaspiTargetsFor(
+  client: Partial<KaspiFieldValues> & { paymentMethod?: string },
+  flowerTypes: string[]
+): KaspiTarget[] {
+  if ((client.paymentMethod ?? "") !== KASPI_METHOD) return [];
+
+  const seen: string[] = [];
+  for (const flowerType of flowerTypes) {
+    const farm = getFarmFor(flowerType);
+    if (farm && !seen.includes(farm)) seen.push(farm);
+  }
+
+  return seen.map((farm) => {
+    const key = KASPI_FIELD_BY_FARM[farm];
+    return {
+      farm,
+      farmLabel: FARM_LABELS[farm] ?? farm,
+      account: key ? ((client[key] ?? "") as string).trim() : "",
+    };
+  });
 }

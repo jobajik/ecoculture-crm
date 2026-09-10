@@ -13,6 +13,8 @@ import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
+import { getClientById } from "@/lib/repo/clients";
+import { kaspiTargetsFor } from "@/lib/clientPick";
 import CancelOrder from "@/components/CancelOrder";
 
 export const dynamic = "force-dynamic";
@@ -47,11 +49,20 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       }
     : loaded;
 
-  const [allShipments, allClaims, users] = await Promise.all([
+  const [allShipments, allClaims, users, client] = await Promise.all([
     listShipments(),
     listClaims(),
     listUsers(),
+    loaded.clientId ? getClientById(loaded.clientId) : Promise.resolve(null),
   ]);
+
+  // На какой Kaspi Pay выставлять счёт. Компанию не выбирают руками: роза и
+  // эустома идут от Rose Farm, хризантема от Есентая, а в смешанной заявке
+  // счетов два. Показываем по полной заявке, а не по урезанной для склада:
+  // деньги приходят за всю заявку целиком.
+  const kaspiTargets = client
+    ? kaspiTargetsFor(client, loaded.items.map((i) => i.flowerType))
+    : [];
   const shipments = allShipments.filter((s) => s.orderId === order.orderId);
 
   // Рекламации показываем всем, кто видит заявку: складу тоже полезно знать,
@@ -117,10 +128,40 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
       <OrderClaims orderId={order.orderId} claims={claims} canCreate={canCreateClaim} />
 
+      {kaspiTargets.length > 0 && (
+        <div className="card mb-6">
+          <div className="text-sm font-medium mb-2">Счёт на оплату — Kaspi Pay</div>
+          <div className="grid sm:grid-cols-2 gap-3 text-sm">
+            {kaspiTargets.map((t) => (
+              <div key={t.farm}>
+                <div className="label">{t.farmLabel}</div>
+                <div className={t.account ? "font-medium" : "text-ink-muted"}>
+                  {t.account || "каспи не заполнен в карточке клиента"}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-ink-muted mt-2">
+            {kaspiTargets.length > 1
+              ? "В заявке цветок обоих производств — счёта два, клиент платит двумя переводами."
+              : "Компания определяется по цветку в заявке."}
+            {client?.kaspiClient && ` Клиент платит с ${client.kaspiClient}.`}
+          </p>
+        </div>
+      )}
+
       <div className="card grid sm:grid-cols-2 gap-4 mb-6">
         <div>
           <div className="label">Клиент</div>
-          <div>{order.clientName}</div>
+          <div>
+            {order.clientId ? (
+              <Link href={`/clients/${order.clientId}`} className="hover:underline">
+                {order.clientName}
+              </Link>
+            ) : (
+              order.clientName
+            )}
+          </div>
         </div>
         <div>
           <div className="label">Телефон</div>

@@ -5,8 +5,7 @@ import clsx from "clsx";
 import {
   CLIENT_SOURCES,
   CLIENT_TYPES,
-  KASPI_ACCOUNTS,
-  KASPI_ACCOUNT_LABELS,
+  FARM_LABELS,
   KASPI_METHOD,
   PAYMENT_METHODS,
   PAYMENT_TERMS,
@@ -74,9 +73,9 @@ export default function ClientPicker({
     address: "",
     paymentTerms: PAYMENT_TERMS[1] as string,
     paymentMethod: PAYMENT_METHODS[0] as string,
-    kaspiAccount: "" as string,
-    kaspiPhone1: "",
-    kaspiPhone2: "",
+    kaspiRoseFarm: "",
+    kaspiEsentai: "",
+    kaspiClient: "",
     source: CLIENT_SOURCES[0] as string,
     note: "",
   });
@@ -200,9 +199,9 @@ export default function ClientPicker({
 
         {form.paymentMethod === KASPI_METHOD && (
           <KaspiFields
-            account={form.kaspiAccount}
-            phone1={form.kaspiPhone1}
-            phone2={form.kaspiPhone2}
+            roseFarm={form.kaspiRoseFarm}
+            esentai={form.kaspiEsentai}
+            client={form.kaspiClient}
             onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
           />
         )}
@@ -286,66 +285,71 @@ export default function ClientPicker({
 }
 
 /**
- * Три каспи-ячейки. Показываются, только когда клиент платит Каспи, — иначе
- * это три пустых поля, которые все обходят глазами.
+ * Три каспи-ячейки, все — со свободным вводом.
  *
- * Счета выставляются от РАЗНЫХ компаний по цветку (роза и эустома — Rose Farm,
- * хризантема — Есентай Агро Хим), а у клиента бывает несколько своих каспи, с
- * которых приходят переводы. И то и другое бухгалтеру нужно, чтобы узнавать
- * платёж, а не гадать, чей он.
+ * Раньше здесь стоял выбор «Каспи 1 или Каспи 2», и это было неверно дважды:
+ * номеров бывает больше двух и появляются новые, а компанию вообще не выбирают
+ * руками — она однозначно следует из цветка. Роза и эустома идут от Rose Farm,
+ * хризантема от Есентай Агро Хим, поэтому здесь два поля для наших реквизитов
+ * (по одному на компанию), а какой из них показать в заявке, система решает
+ * сама. В смешанной заявке показываются оба — клиент платит двумя переводами.
+ *
+ * Третье поле — каспи самого клиента: по нему бухгалтер узнаёт входящий платёж.
+ *
+ * Показываются, только когда клиент платит Каспи, — иначе это три пустых поля,
+ * которые все обходят глазами.
  */
 export function KaspiFields({
-  account,
-  phone1,
-  phone2,
+  roseFarm,
+  esentai,
+  client,
   onChange,
 }: {
-  account: string;
-  phone1: string;
-  phone2: string;
-  onChange: (patch: { kaspiAccount?: string; kaspiPhone1?: string; kaspiPhone2?: string }) => void;
+  roseFarm: string;
+  esentai: string;
+  client: string;
+  onChange: (patch: {
+    kaspiRoseFarm?: string;
+    kaspiEsentai?: string;
+    kaspiClient?: string;
+  }) => void;
 }) {
   return (
     <div className="rounded-xl border border-line-hairline p-3 space-y-2">
       <div className="text-sm font-medium">Kaspi Pay</div>
       <div className="grid sm:grid-cols-3 gap-3">
         <label className="text-sm block">
-          <span className="label">На какой наш счёт платит</span>
-          <select
+          <span className="label">Наш каспи — {FARM_LABELS.rose_farm}</span>
+          <input
             className="input"
-            value={account}
-            onChange={(e) => onChange({ kaspiAccount: e.target.value })}
-          >
-            <option value="">Не выбрано</option>
-            {KASPI_ACCOUNTS.map((a) => (
-              <option key={a} value={a}>
-                {KASPI_ACCOUNT_LABELS[a]}
-              </option>
-            ))}
-          </select>
+            placeholder="роза и эустома"
+            value={roseFarm}
+            onChange={(e) => onChange({ kaspiRoseFarm: e.target.value })}
+          />
+        </label>
+        <label className="text-sm block">
+          <span className="label">Наш каспи — {FARM_LABELS.esentai}</span>
+          <input
+            className="input"
+            placeholder="хризантема"
+            value={esentai}
+            onChange={(e) => onChange({ kaspiEsentai: e.target.value })}
+          />
         </label>
         <label className="text-sm block">
           <span className="label">Каспи клиента</span>
           <input
             className="input"
-            placeholder="+7 ..."
-            value={phone1}
-            onChange={(e) => onChange({ kaspiPhone1: e.target.value })}
-          />
-        </label>
-        <label className="text-sm block">
-          <span className="label">Второй каспи</span>
-          <input
-            className="input"
-            placeholder="если платит с двух"
-            value={phone2}
-            onChange={(e) => onChange({ kaspiPhone2: e.target.value })}
+            placeholder="откуда приходит перевод"
+            value={client}
+            onChange={(e) => onChange({ kaspiClient: e.target.value })}
           />
         </label>
       </div>
       <p className="text-xs text-ink-muted">
-        Счёт выставляется от той компании, чей цветок в заявке: роза и эустома — Rose Farm,
-        хризантема — Есентай Агро Хим. Номера нужны бухгалтеру, чтобы узнать перевод.
+        Счёт выставляет то ТОО, чей цветок в заявке: роза и эустома — {FARM_LABELS.rose_farm},
+        хризантема — {FARM_LABELS.esentai}. В смешанной заявке будут оба счёта, и это нормально:
+        клиент платит двумя переводами. Выбирать компанию руками не нужно.
       </p>
     </div>
   );

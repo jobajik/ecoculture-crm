@@ -8,7 +8,7 @@
  * Запуск: npx tsx scripts/check-clients.ts
  */
 import { buildClientStats } from "../src/lib/clientStats";
-import { kaspiFieldsFor, orderForPicker } from "../src/lib/clientPick";
+import { kaspiFieldsFor, kaspiTargetsFor, orderForPicker } from "../src/lib/clientPick";
 import { CLIENT_SLEEPING_DAYS, ORDER_STATUSES } from "../src/lib/constants";
 import type { Client, OrderWithItems } from "../src/lib/types";
 
@@ -42,9 +42,9 @@ function client(over: Partial<Client> & { clientId: string; name: string }): Cli
     address: "",
     paymentTerms: "По факту",
     paymentMethod: "Каспи",
-    kaspiAccount: "1",
-    kaspiPhone1: "",
-    kaspiPhone2: "",
+    kaspiRoseFarm: "",
+    kaspiEsentai: "",
+    kaspiClient: "",
     source: "Сами нашли",
     note: "",
     managerEmail: "aliya@x.kz",
@@ -269,37 +269,82 @@ check(
 );
 check("пустой список не падает", orderForPicker([]).length, 0);
 
-// --- Каспи-реквизиты --------------------------------------------------------
+// --- Kaspi Pay --------------------------------------------------------------
+//
+// Компанию НЕ выбирают руками: она следует из цветка. Номер вписывается
+// свободно, потому что каспи-счетов бывает больше двух и появляются новые.
 
 check(
   "при оплате Каспи реквизиты сохраняются",
-  kaspiFieldsFor("Каспи", { kaspiAccount: "2", kaspiPhone1: " +7 701 ", kaspiPhone2: "+7 702" }),
-  { kaspiAccount: "2", kaspiPhone1: "+7 701", kaspiPhone2: "+7 702" }
+  kaspiFieldsFor("Каспи", {
+    kaspiRoseFarm: " +7 701 ",
+    kaspiEsentai: "+7 702",
+    kaspiClient: "+7 777",
+  }),
+  { kaspiRoseFarm: "+7 701", kaspiEsentai: "+7 702", kaspiClient: "+7 777" }
 );
 check(
   "при наличных каспи-поля стираются",
-  kaspiFieldsFor("Наличные", { kaspiAccount: "1", kaspiPhone1: "+7 701", kaspiPhone2: "" }),
-  { kaspiAccount: "", kaspiPhone1: "", kaspiPhone2: "" }
+  kaspiFieldsFor("Наличные", { kaspiRoseFarm: "+7 701", kaspiClient: "+7 777" }),
+  { kaspiRoseFarm: "", kaspiEsentai: "", kaspiClient: "" }
 );
 check(
   "при оплате по реквизитам — тоже",
-  kaspiFieldsFor("Оплата по реквизитам", { kaspiAccount: "1", kaspiPhone1: "+7 701" }),
-  { kaspiAccount: "", kaspiPhone1: "", kaspiPhone2: "" }
-);
-check(
-  "выдуманный номер нашего счёта не проходит",
-  kaspiFieldsFor("Каспи", { kaspiAccount: "3", kaspiPhone1: "+7 701" }).kaspiAccount,
-  ""
-);
-check(
-  "«оба — по цветку» — допустимое значение",
-  kaspiFieldsFor("Каспи", { kaspiAccount: "both" }).kaspiAccount,
-  "both"
+  kaspiFieldsFor("Оплата по реквизитам", { kaspiRoseFarm: "+7 701" }),
+  { kaspiRoseFarm: "", kaspiEsentai: "", kaspiClient: "" }
 );
 check(
   "неизвестный способ оплаты каспи-поля не открывает",
-  kaspiFieldsFor("Биткоин", { kaspiAccount: "1", kaspiPhone1: "+7 701" }),
-  { kaspiAccount: "", kaspiPhone1: "", kaspiPhone2: "" }
+  kaspiFieldsFor("Биткоин", { kaspiRoseFarm: "+7 701" }),
+  { kaspiRoseFarm: "", kaspiEsentai: "", kaspiClient: "" }
+);
+
+const PAYER = {
+  paymentMethod: "Каспи",
+  kaspiRoseFarm: "+7 701 111 11 11",
+  kaspiEsentai: "+7 702 222 22 22",
+  kaspiClient: "+7 777 333 33 33",
+};
+
+check(
+  "роза — счёт от Rose Farm",
+  kaspiTargetsFor(PAYER, ["rose"]).map((t) => [t.farmLabel, t.account]),
+  [["Rose Farm", "+7 701 111 11 11"]]
+);
+check(
+  "эустома — тоже Rose Farm",
+  kaspiTargetsFor(PAYER, ["eustoma"]).map((t) => t.farm),
+  ["rose_farm"]
+);
+check(
+  "хризантема — счёт от Есентая",
+  kaspiTargetsFor(PAYER, ["chrysanthemum"]).map((t) => [t.farmLabel, t.account]),
+  [["Есентай Агро Хим", "+7 702 222 22 22"]]
+);
+check(
+  "смешанная заявка — два счёта, в порядке позиций",
+  kaspiTargetsFor(PAYER, ["chrysanthemum", "rose", "rose"]).map((t) => t.farm),
+  ["esentai", "rose_farm"]
+);
+check(
+  "одна компания не дублируется",
+  kaspiTargetsFor(PAYER, ["rose", "eustoma", "rose"]).length,
+  1
+);
+check(
+  "незаполненный реквизит виден как пустой, а не пропадает",
+  kaspiTargetsFor({ paymentMethod: "Каспи" }, ["rose"]).map((t) => t.account),
+  [""]
+);
+check(
+  "клиент платит не каспи — счетов нет",
+  kaspiTargetsFor({ ...PAYER, paymentMethod: "Наличные" }, ["rose"]).length,
+  0
+);
+check(
+  "неизвестный цветок счёт не создаёт",
+  kaspiTargetsFor(PAYER, ["tulip"]).length,
+  0
 );
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);

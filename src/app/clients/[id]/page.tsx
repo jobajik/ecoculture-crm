@@ -101,9 +101,9 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             address: client.address,
             paymentTerms: client.paymentTerms,
             paymentMethod: client.paymentMethod,
-            kaspiAccount: client.kaspiAccount,
-            kaspiPhone1: client.kaspiPhone1,
-            kaspiPhone2: client.kaspiPhone2,
+            kaspiRoseFarm: client.kaspiRoseFarm,
+            kaspiEsentai: client.kaspiEsentai,
+            kaspiClient: client.kaspiClient,
             source: client.source,
             note: client.note,
           }}

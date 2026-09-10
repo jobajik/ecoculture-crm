@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   CLIENT_SOURCES,
   CLIENT_TYPES,
-  KASPI_ACCOUNT_LABELS,
+  FARM_LABELS,
   KASPI_METHOD,
   PAYMENT_METHODS,
   PAYMENT_TERMS,
@@ -24,9 +24,9 @@ export interface ClientCardValues {
   address: string;
   paymentTerms: string;
   paymentMethod: string;
-  kaspiAccount: string;
-  kaspiPhone1: string;
-  kaspiPhone2: string;
+  kaspiRoseFarm: string;
+  kaspiEsentai: string;
+  kaspiClient: string;
   source: string;
   note: string;
 }
@@ -90,9 +90,9 @@ export default function ClientCard({
     const kaspi: [string, string][] =
       values.paymentMethod === KASPI_METHOD
         ? [
-            ["Наш счёт Kaspi Pay", KASPI_ACCOUNT_LABELS[values.kaspiAccount] ?? ""],
-            ["Каспи клиента", values.kaspiPhone1],
-            ["Второй каспи", values.kaspiPhone2],
+            [`Наш каспи — ${FARM_LABELS.rose_farm}`, values.kaspiRoseFarm],
+            [`Наш каспи — ${FARM_LABELS.esentai}`, values.kaspiEsentai],
+            ["Каспи клиента", values.kaspiClient],
           ]
         : [];
     return (
@@ -186,9 +186,9 @@ export default function ClientCard({
 
       {form.paymentMethod === KASPI_METHOD && (
         <KaspiFields
-          account={form.kaspiAccount}
-          phone1={form.kaspiPhone1}
-          phone2={form.kaspiPhone2}
+          roseFarm={form.kaspiRoseFarm}
+          esentai={form.kaspiEsentai}
+          client={form.kaspiClient}
           onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
         />
       )}
