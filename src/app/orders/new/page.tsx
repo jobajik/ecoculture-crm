@@ -1,15 +1,25 @@
 import OrderForm from "@/components/OrderForm";
+import RetailOrderForm from "@/components/RetailOrderForm";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { getCurrentPrices } from "@/lib/repo/prices";
 import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
+import { getStockSnapshot } from "@/lib/stock";
 import { buildClientStats } from "@/lib/clientStats";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { FLOWER_TYPE_LABELS, ORDER_STATUSES, formatGrade, retailLabel } from "@/lib/constants";
-import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
 import {
+  FLOWER_TYPES,
+  FLOWER_TYPE_LABELS,
+  ORDER_STATUSES,
+  formatGrade,
+  getGradesFor,
+  retailLabel,
+} from "@/lib/constants";
+import { PRICE_KINDS, priceFor, priceMapForClient } from "@/lib/priceList";
+import {
+  buildAssortment,
   canOrderForShop,
   isOwnShop,
   isRetailRole,
@@ -18,6 +28,13 @@ import {
 } from "@/lib/retail";
 
 export const dynamic = "force-dynamic";
+
+/** Порядок вкладок цветка в ассортименте — как везде в программе. */
+const FLOWER_ORDER: string[] = [
+  FLOWER_TYPES.ROSE,
+  FLOWER_TYPES.CHRYSANTHEMUM,
+  FLOWER_TYPES.EUSTOMA,
+];
 
 export default async function NewOrderPage({
   searchParams,
@@ -43,6 +60,80 @@ export default async function NewOrderPage({
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
   const territory = retailTerritoryFor(role);
 
+  const preselectedDate =
+    searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : "";
+
+  // -------------------------------------------------------------------------
+  // РОЗНИЦА — своя форма: магазин и ассортимент, больше ничего.
+  //
+  // Обычная форма спрашивает клиента, телефон, комментарий и цену каждой
+  // позиции. Для перемещения в наш магазин это всё лишнее: контрагент — одна из
+  // шести наших точек, телефон записан в её карточке, цену задаёт внутренний
+  // прайс. Поэтому здесь другой компонент, а не тот же с выключенными полями:
+  // форма с половиной скрытых полей рано или поздно обрастает условиями и
+  // ломается то у одних, то у других.
+  // -------------------------------------------------------------------------
+  if (retail) {
+    // Остаток склада нужен, чтобы менеджер видела, чего сколько лежит: она не
+    // продаёт, а перекладывает, и заказывать 500 стеблей, когда есть 40, —
+    // просто испорченная заявка. Считаем по всем производствам: у розницы нет
+    // привязки к одному, она возит и розу, и хризантему.
+    const stock = await getStockSnapshot();
+    const stockMap: Record<string, number> = {};
+    for (const card of stock.varieties) {
+      for (const grade of card.grades) {
+        stockMap[`${card.flowerType}|${card.variety}|${grade.grade}`] = grade.quantity;
+      }
+    }
+
+    const assortment = buildAssortment({
+      flowerTypes: FLOWER_ORDER,
+      varieties,
+      gradesFor: getGradesFor,
+      stock: stockMap,
+      priceFor: (flowerType, variety, grade) => priceFor(prices, flowerType, variety, grade),
+    });
+
+    const delivered = shopDeliveries(orders, ORDER_STATUSES.CANCELLED);
+    const shops = clients
+      .filter((c) => c.active && canOrderForShop(role, c))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+      .map((c) => ({
+        clientId: c.clientId,
+        name: c.name,
+        address: c.address,
+        city: c.city,
+        orders: delivered.get(c.clientId)?.orders ?? 0,
+        daysSinceLast: delivered.get(c.clientId)?.daysSinceLast ?? -1,
+      }));
+
+    // Магазин из адреса проверяется по тому же списку, что и всё остальное:
+    // чужая точка молча игнорируется, и открывается обычный выбор (грабли 1.11).
+    const preselectedShop = shops.some((s) => s.clientId === searchParams?.client)
+      ? (searchParams?.client as string)
+      : "";
+
+    return (
+      <div>
+        <h1 className="text-xl font-semibold mb-1">Заявка в магазин — {retailLabel(territory)}</h1>
+        <p className="text-sm text-ink-secondary mb-4">
+          Выберите магазин и проставьте количество. Это перемещение внутри компании: оплату по
+          заявке никто не ждёт, а цены берутся из внутреннего прайса.
+        </p>
+        <RetailOrderForm
+          shops={shops}
+          assortment={assortment}
+          initialShopId={preselectedShop}
+          initialDeliveryDate={preselectedDate}
+        />
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Обычная заявка клиенту — как была.
+  // -------------------------------------------------------------------------
+
   // Подборщику нужна свежесть заказов: сверху идут те, с кем работали недавно,
   // а не первые по алфавиту. Считаем тем же расчётом, что и страница клиентов,
   // чтобы «последний заказ» в двух местах не разошёлся.
@@ -55,21 +146,11 @@ export default async function NewOrderPage({
   });
   const statByClient = new Map(stats.rows.map((r) => [r.client.clientId, r]));
 
-  // У магазинов своя статистика: из клиентской они вычищены целиком, и без
-  // этого у точки, куда возят каждый день, стояло бы «ещё не возили».
-  const shopStat = retail
-    ? shopDeliveries(orders, ORDER_STATUSES.CANCELLED)
-    : new Map<string, { orders: number; daysSinceLast: number }>();
-
   // Отключённые карточки в выбор не идут: снятая галочка означает «больше не
-  // работаем», но историю заказов такого клиента она не трогает.
-  //
-  // Менеджеру розницы видны ТОЛЬКО магазины его направления, обычному
-  // менеджеру — только клиенты: наши точки не клиенты, и смешивать их в одном
-  // подборщике значит однажды выписать магазину счёт.
+  // работаем», но историю заказов такого клиента она не трогает. Наши магазины
+  // сюда не попадают вовсе — они не клиенты.
   const options = clients
-    .filter((c) => c.active)
-    .filter((c) => (retail ? canOrderForShop(role, c) : !isOwnShop(c)))
+    .filter((c) => c.active && !isOwnShop(c))
     .map((c) => ({
       clientId: c.clientId,
       name: c.name,
@@ -78,41 +159,22 @@ export default async function NewOrderPage({
       phone: c.phone,
       managerName: nameByEmail.get(c.managerEmail) ?? c.managerEmail,
       mine: c.managerEmail === myEmail,
-      orders: (retail ? shopStat.get(c.clientId)?.orders : statByClient.get(c.clientId)?.orders) ?? 0,
-      daysSinceLast:
-        (retail
-          ? shopStat.get(c.clientId)?.daysSinceLast
-          : statByClient.get(c.clientId)?.daysSinceLast) ?? -1,
+      orders: statByClient.get(c.clientId)?.orders ?? 0,
+      daysSinceLast: statByClient.get(c.clientId)?.daysSinceLast ?? -1,
     }));
 
-  // Пришли из списка «Заявка на день»: магазин и дата уже выбраны — подставляем
-  // их, чтобы человек сразу вводил количество. Чужой или несуществующий клиент
-  // молча игнорируется: подборщик открывается как обычно (грабли 1.11 — то, что
-  // пришло из адреса, проверяется по тому же списку, что и всё остальное).
   const preselected = searchParams?.client
     ? options.find((c) => c.clientId === searchParams.client) ?? null
     : null;
-  const preselectedDate =
-    searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : "";
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">
-        {retail ? `Новая заявка — ${retailLabel(territory)}` : "Новая заявка"}
-      </h1>
-      {retail && (
-        <p className="text-sm text-ink-secondary mb-4">
-          Заявка в наш магазин: выберите точку из списка и укажите количество. Оплату по ней никто
-          не ждёт — как только вы подтвердите заявку, склад сможет собирать. Цены подставляются из
-          внутреннего прайса.
-        </p>
-      )}
+      <h1 className="text-xl font-semibold mb-4">Новая заявка</h1>
       <OrderForm
         varieties={varieties}
         prices={priceMapForClient(prices)}
         initialClient={preselected}
         initialDeliveryDate={preselectedDate}
-        shopsOnly={retail}
         clients={options}
       />
     </div>

@@ -436,3 +436,78 @@ export function shopDeliveries(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Ассортимент для заявки в магазин.
+//
+// Менеджер розницы не «оформляет заявку клиенту» — она перекладывает цветок из
+// холодильника в свои точки. Значит и выбирать она должна не из справочника
+// сортов вообще, а из того, что реально можно дать: что лежит на складе и что
+// заведено во внутреннем прайсе.
+//
+// Если не отобрано ничего (склад пуст, прайс не заполнен), возвращается ВЕСЬ
+// справочник этого цветка. Пустой список — тупик: человек решит, что программа
+// сломалась, ровно как это было с пустым листом сборки.
+// ---------------------------------------------------------------------------
+
+export interface AssortmentRow {
+  key: string;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  /** Сколько лежит на складе. Ноль — нет, но выбрать всё равно можно. */
+  stock: number;
+  /** Цена стебля по внутреннему прайсу. Ноль — цены нет, сумма не посчитается. */
+  price: number;
+}
+
+export interface AssortmentGroup {
+  flowerType: string;
+  rows: AssortmentRow[];
+  /** Справочник целиком, потому что ни склада, ни прайса по этому цветку нет. */
+  fallback: boolean;
+}
+
+export function buildAssortment(input: {
+  flowerTypes: string[];
+  /** Сорта по цветку — справочник Varieties. */
+  varieties: Record<string, string[]>;
+  /** Градации по цветку, в «правильном» порядке. */
+  gradesFor: (flowerType: string) => readonly string[];
+  /** Остаток склада: «цветок|сорт|градация» → стебли. */
+  stock: Record<string, number>;
+  /** Внутренний прайс: та же форма ключа. */
+  priceFor: (flowerType: string, variety: string, grade: string) => number;
+}): AssortmentGroup[] {
+  return input.flowerTypes.map((flowerType) => {
+    const varieties = input.varieties[flowerType] ?? [];
+    const grades = input.gradesFor(flowerType);
+
+    const all: AssortmentRow[] = [];
+    for (const variety of varieties) {
+      for (const grade of grades) {
+        const key = `${flowerType}|${variety}|${grade}`;
+        all.push({
+          key,
+          flowerType,
+          variety,
+          grade,
+          stock: Number(input.stock[key]) || 0,
+          price: input.priceFor(flowerType, variety, grade),
+        });
+      }
+    }
+
+    const usable = all.filter((r) => r.stock > 0 || r.price > 0);
+    // Сначала то, что есть на складе, и внутри — по остатку: возить начинают с
+    // того, что лежит дольше и чего больше.
+    const rows = (usable.length > 0 ? usable : all).sort((a, b) => {
+      if (a.stock > 0 !== b.stock > 0) return a.stock > 0 ? -1 : 1;
+      const byVariety = a.variety.localeCompare(b.variety, "ru");
+      if (byVariety !== 0) return byVariety;
+      return grades.indexOf(a.grade) - grades.indexOf(b.grade);
+    });
+
+    return { flowerType, rows, fallback: usable.length === 0 };
+  });
+}

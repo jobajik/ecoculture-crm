@@ -38,7 +38,6 @@ export default function OrderForm({
   clients = [],
   initialClient = null,
   initialDeliveryDate = "",
-  shopsOnly = false,
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -52,12 +51,6 @@ export default function OrderForm({
    */
   initialClient?: ClientOption | null;
   initialDeliveryDate?: string;
-  /**
-   * Розница: в списке только НАШИ магазины, и заводить новые карточки отсюда
-   * нельзя. Магазин — это точка компании, а не клиент, которого встретили в
-   * поле: он появляется, когда его открыли, и заводит его РОП.
-   */
-  shopsOnly?: boolean;
 }) {
   const router = useRouter();
   const [client, setClient] = useState<ClientOption | null>(initialClient);
@@ -160,13 +153,8 @@ export default function OrderForm({
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
       <div className="card grid sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
-          <label className="label">{shopsOnly ? "Магазин *" : "Клиент *"}</label>
-          <ClientPicker
-            clients={clients}
-            value={client}
-            onChange={setClient}
-            shopsOnly={shopsOnly}
-          />
+          <label className="label">Клиент *</label>
+          <ClientPicker clients={clients} value={client} onChange={setClient} />
         </div>
         <div>
           <label className="label">Телефон для этой доставки</label>

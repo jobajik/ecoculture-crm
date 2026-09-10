@@ -51,20 +51,10 @@ export default function ClientPicker({
   clients,
   value,
   onChange,
-  shopsOnly = false,
 }: {
   clients: ClientOption[];
   value: ClientOption | null;
   onChange: (client: ClientOption | null) => void;
-  /**
-   * Розница: в списке НАШИ магазины и ничего больше, завести новую точку
-   * отсюда нельзя. Магазин — это точка компании, а не клиент, которого
-   * встретили в поле: он появляется, когда его открыли, и карточку заводит РОП.
-   * Позволить менеджеру розницы набрать её руками значило бы получить
-   * «Цветочник Достык», «Достык 27» и «Цветочник, Достык, 27» — три магазина
-   * вместо одного, и историю поставок по каждому в треть.
-   */
-  shopsOnly?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
@@ -99,37 +89,17 @@ export default function ClientPicker({
    */
   const ordered = useMemo(() => orderForPicker(clients), [clients]);
 
-  /**
-   * Список магазинов короткий и постоянный — его показываем ЦЕЛИКОМ и по
-   * алфавиту, а не «последние, с кем работали». Точек шесть, все на экране, и
-   * порядок один и тот же каждый день: глаз запоминает, где какая, и выбор
-   * становится движением, а не чтением. Для клиентов, которых триста, всё
-   * наоборот — там сверху свежие (`orderForPicker`).
-   */
-  const listed = useMemo(
-    () => (shopsOnly ? [...clients].sort((a, b) => a.name.localeCompare(b.name, "ru")) : ordered),
-    [shopsOnly, clients, ordered]
-  );
-
   const found = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return shopsOnly ? listed : listed.slice(0, 8);
-    return listed
+    if (!q) return ordered.slice(0, 8);
+    return ordered
       .filter((c) =>
         [c.name, c.shopName, c.city, c.phone].some((f) => f.toLowerCase().includes(q))
       )
-      .slice(0, shopsOnly ? 50 : 12);
-  }, [listed, search, shopsOnly]);
+      .slice(0, 12);
+  }, [ordered, search]);
 
   function hint(c: ClientOption): string {
-    if (shopsOnly) {
-      if (c.orders === 0) return "ещё не возили";
-      // Ноль — это и «привезли сегодня», и «заявка на завтра уже оформлена»:
-      // для менеджера это один и тот же сигнал «не отправляй второй раз».
-      if (c.daysSinceLast <= 0) return "заявка уже есть";
-      if (c.daysSinceLast === 1) return "возили вчера";
-      return `возили ${days(c.daysSinceLast)} назад`;
-    }
     if (c.orders === 0) return "заказов ещё не было";
     if (c.daysSinceLast <= 0) return "заказ сегодня";
     if (c.daysSinceLast === 1) return "заказ вчера";
@@ -171,7 +141,7 @@ export default function ClientPicker({
           </div>
         </div>
         <button type="button" onClick={() => onChange(null)} className="btn-secondary !py-1 text-sm">
-          {shopsOnly ? "Выбрать другой магазин" : "Выбрать другого"}
+          Выбрать другого
         </button>
       </div>
     );
@@ -263,18 +233,12 @@ export default function ClientPicker({
 
   return (
     <div className="space-y-2">
-      {/* Поле поиска при шести магазинах — лишний шаг: список и так весь на
-          экране. Появляется, только когда точек становится много. */}
-      {(!shopsOnly || clients.length > 10) && (
-        <input
-          className="input"
-          placeholder={
-            shopsOnly ? "Найти магазин" : "Начните вводить название, город или телефон"
-          }
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      )}
+      <input
+        className="input"
+        placeholder="Начните вводить название, город или телефон"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
       {found.length > 0 && (
         <ul className="border border-line-hairline rounded-xl divide-y divide-line-hairline overflow-hidden">
           {found.map((c) => (
@@ -287,13 +251,9 @@ export default function ClientPicker({
                 <span>
                   <span className="font-medium">{c.name}</span>
                   <span className="block text-xs text-ink-muted">
-                    {shopsOnly
-                      ? // У магазина полезен адрес доставки, а не «чей клиент»:
-                        // все точки наши, и менеджер у них один и тот же.
-                        [c.city, c.phone].filter(Boolean).join(" · ")
-                      : [c.city, c.shopName, c.mine ? "ваш клиент" : c.managerName]
-                          .filter(Boolean)
-                          .join(" · ")}
+                    {[c.city, c.shopName, c.mine ? "ваш клиент" : c.managerName]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </span>
                 <span
@@ -309,33 +269,24 @@ export default function ClientPicker({
           ))}
         </ul>
       )}
-      {!shopsOnly && !search.trim() && clients.length > found.length && (
+      {!search.trim() && clients.length > found.length && (
         <p className="text-xs text-ink-muted">
           Показаны последние, с кем работали. Начните вводить название — найдётся любой из{" "}
           {clients.length}.
         </p>
       )}
       {search.trim() && found.length === 0 && (
-        <p className="text-sm text-ink-muted">
-          {shopsOnly ? "Такого магазина в списке нет." : "Такого клиента в базе нет."}
-        </p>
+        <p className="text-sm text-ink-muted">Такого клиента в базе нет.</p>
       )}
-      {shopsOnly && clients.length === 0 && (
-        <p className="text-sm text-ink-muted">
-          Магазинов в вашем направлении пока нет. Новую точку заводит руководитель отдела продаж.
-        </p>
-      )}
-      {/* Кнопки «Новый клиент» в рознице нет намеренно: список магазинов
-          закрытый, и заводить точки из формы заявки нельзя. */}
-      {!shopsOnly && (
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="btn-secondary !py-1.5 text-sm"
-        >
-          + Новый клиент
-        </button>
-      )}
+      {/* Розница сюда не заходит вовсе — у неё своя форма (RetailOrderForm) со
+          списком магазинов: заводить точки из заявки нельзя. */}
+      <button
+        type="button"
+        onClick={() => setCreating(true)}
+        className="btn-secondary !py-1.5 text-sm"
+      >
+        + Новый клиент
+      </button>
     </div>
   );
 }

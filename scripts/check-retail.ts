@@ -10,6 +10,7 @@
  * Запуск: npx tsx scripts/check-retail.ts
  */
 import {
+  buildAssortment,
   buildRetailSummary,
   buildShopDay,
   canCreateCard,
@@ -381,6 +382,65 @@ check(
     cancelledStatus: ORDER_STATUSES.CANCELLED,
   }).totals.stems,
   800
+);
+
+// --- Ассортимент заявки в магазин -----------------------------------------
+//
+// Менеджер розницы не «оформляет заявку клиенту», а перекладывает цветок в свои
+// точки. Значит и выбирает она из того, что реально можно дать: что лежит на
+// складе и что заведено во внутреннем прайсе. Пустой список — тупик: человек
+// решит, что программа сломалась (ровно это было с пустым листом сборки).
+
+const CATALOG = {
+  rose: ["Prestige", "Avalanche"],
+  chrysanthemum: ["Altaj"],
+};
+const GRADES: Record<string, string[]> = {
+  rose: ["40", "50", "60"],
+  chrysanthemum: ["Высшая", "Первая"],
+};
+
+const assortment = buildAssortment({
+  flowerTypes: ["rose", "chrysanthemum"],
+  varieties: CATALOG,
+  gradesFor: (f) => GRADES[f] ?? [],
+  stock: { "rose|Prestige|60": 1200, "rose|Avalanche|50": 40 },
+  // У розы цена есть только на 60, у хризантемы нет вовсе.
+  priceFor: (f, v, g) => (f === "rose" && g === "60" ? 137 : 0),
+});
+
+const rose = assortment.find((g) => g.flowerType === "rose")!;
+const chrys = assortment.find((g) => g.flowerType === "chrysanthemum")!;
+
+// Prestige 60 и Avalanche 50 есть на складе; Avalanche 60 попадает потому, что
+// цена «на все сорта 60» в прайсе есть, — дать её со склада нельзя, но это и
+// видно по нулевому остатку. Prestige 40/50 не проходят ни по чему.
+check(
+  "в ассортимент идёт то, что есть на складе или в прайсе",
+  rose.rows.map((r) => `${r.variety} ${r.grade}`),
+  ["Avalanche 50", "Prestige 60", "Avalanche 60"]
+);
+check("остаток подставлен", rose.rows.map((r) => r.stock), [40, 1200, 0]);
+check("цена подставлена из внутреннего прайса", rose.rows.map((r) => r.price), [0, 137, 137]);
+check(
+  "то, что лежит на складе, стоит выше того, чего нет",
+  [rose.rows[0].stock > 0, rose.rows[1].stock > 0, rose.rows[2].stock > 0],
+  [true, true, false]
+);
+check(
+  "позиция без склада и без цены в список не идёт",
+  rose.rows.some((r) => r.variety === "Prestige" && r.grade === "40"),
+  false
+);
+check("это не запасной список", rose.fallback, false);
+
+// Ни склада, ни цены — показываем весь справочник, а не пустоту.
+check("пустой цветок не даёт пустого списка", chrys.rows.length, 2);
+check("и помечен как запасной", chrys.fallback, true);
+check(
+  "в запасном списке сорт × градация",
+  chrys.rows.map((r) => `${r.variety} ${r.grade}`),
+  ["Altaj Высшая", "Altaj Первая"]
 );
 
 // --- Два прайса -----------------------------------------------------------
