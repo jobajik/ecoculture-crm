@@ -7,14 +7,21 @@ import { createOrder, getOrderById, type NewOrderInput, updateOrderStatus } from
 import { logMoney } from "@/lib/repo/moneyLog";
 import { cancelRefusal } from "@/lib/orderRules";
 import { getClientById } from "@/lib/repo/clients";
-import { canOrderForShop, isOwnShop, isRetailRole } from "@/lib/retail";
+import { canFillRegions, canOrderForShop, isOwnShop, isRetailRole } from "@/lib/retail";
 import { MONEY_LOG_ACTIONS, ORDER_STATUSES, ROLES } from "@/lib/constants";
 
 export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail">) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role;
-  if (role !== ROLES.MANAGER && role !== ROLES.ADMIN && !isRetailRole(role)) {
+  // Зав. складом производства заводит заявки в регионы — пока так решил
+  // владелец. Что именно ей разрешено, проверяется ниже по самой карточке.
+  if (
+    role !== ROLES.MANAGER &&
+    role !== ROLES.ADMIN &&
+    !isRetailRole(role) &&
+    !canFillRegions(role)
+  ) {
     throw new Error("Недостаточно прав: заявки создают менеджеры");
   }
   if (!input.items || input.items.length === 0) {
@@ -32,8 +39,8 @@ export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail
   if (shop && !canOrderForShop(role, client)) {
     throw new Error("Это магазин другого направления");
   }
-  if (!shop && isRetailRole(role)) {
-    throw new Error("Менеджер розницы оформляет заявки только на наши магазины");
+  if (!shop && (isRetailRole(role) || role === ROLES.WAREHOUSE)) {
+    throw new Error("Эта роль оформляет заявки только на наши магазины");
   }
 
   const orderId = await createOrder({

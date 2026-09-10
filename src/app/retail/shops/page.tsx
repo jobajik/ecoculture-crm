@@ -8,7 +8,7 @@ import { ORDER_STATUSES, RETAIL_ORDER, ROLES } from "@/lib/constants";
 import { isRetailOrder, isRetailRole, retailShortLabel, territoriesFor } from "@/lib/retail";
 import { formatDay } from "@/lib/formatDate";
 import SectionTabs from "@/components/SectionTabs";
-import { RETAIL_TABS } from "../tabs";
+import { retailTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +62,7 @@ export default async function RetailShopsPage() {
           Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
         </h1>
       </div>
-      <SectionTabs tabs={RETAIL_TABS} />
+      <SectionTabs tabs={retailTabsFor(role)} />
 
       <p className="text-sm text-ink-secondary mt-4 mb-4">
         {shops.length === 0

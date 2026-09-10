@@ -1,5 +1,6 @@
 import {
   RETAIL_ORDER,
+  RETAIL_REGION_CITIES,
   RETAIL_ROLES,
   RETAIL_SHORT_LABELS,
   RETAIL_TERRITORY_BY_ROLE,
@@ -62,8 +63,45 @@ export function isRetailRole(role: string | null | undefined): boolean {
 export function canSeeShop(role: string | null | undefined, shop: { retail?: string | null }): boolean {
   if (!isOwnShop(shop)) return false;
   if (role === ROLES.ADMIN || role === ROLES.SALES_HEAD) return true;
+  // Регионы заказывает зав. складом производства — пока так решил владелец
+  // (Разия и Диана). Значит и видеть эти карточки она обязана.
+  if (isRegionShop(shop) && canFillRegions(role)) return true;
   const territory = retailTerritoryFor(role);
   return !!territory && territory === (shop.retail ?? "").trim();
+}
+
+/** Региональная точка — та, где контрагент город целиком. */
+export function isRegionShop(shop: { retail?: string | null }): boolean {
+  return (shop.retail ?? "").trim() === RETAIL_TERRITORIES.REGIONS;
+}
+
+/** Город из закрытого списка или пустая строка — выдуманного не пропускаем. */
+export function cleanRegionCity(value: string | null | undefined): string {
+  const clean = (value ?? "").trim();
+  return (RETAIL_REGION_CITIES as readonly string[]).includes(clean) ? clean : "";
+}
+
+/**
+ * Кто заполняет региональные заявки.
+ *
+ * Сейчас это зав. складом ПРОИЗВОДСТВА — так решил владелец: «пока сами
+ * зав.склады, то есть Разия и Диана». Роль отдельная не заводится, потому что
+ * это временный порядок; когда в городах появятся свои люди, здесь добавится
+ * одна строка, а не переписывается раздел.
+ *
+ * Менеджер розницы по регионам — тоже: это его направление.
+ */
+export function canFillRegions(role: string | null | undefined): boolean {
+  return (
+    role === ROLES.WAREHOUSE ||
+    role === ROLES.RETAIL_REGIONS ||
+    role === ROLES.ADMIN
+  );
+}
+
+/** Кто смотрит вкладку «Регионы». РОП смотрит, но заявки не заводит. */
+export function canSeeRegions(role: string | null | undefined): boolean {
+  return canFillRegions(role) || role === ROLES.SALES_HEAD;
 }
 
 /**
@@ -79,6 +117,8 @@ export function canOrderForShop(
 ): boolean {
   if (!isOwnShop(shop)) return false;
   if (role === ROLES.ADMIN) return true;
+  // Регион заказывает зав. складом производства, а не менеджер розницы Алматы.
+  if (isRegionShop(shop)) return canFillRegions(role);
   const territory = retailTerritoryFor(role);
   return !!territory && territory === (shop.retail ?? "").trim();
 }
@@ -117,7 +157,36 @@ export function shopOrderForm(
   retailParam: string | null | undefined
 ): boolean {
   if (isRetailRole(role)) return true;
-  return role === ROLES.ADMIN && (retailParam ?? "") === "1";
+  // У зав. складом и админа есть и другие заявки, поэтому решает адрес: все
+  // ссылки раздела «Розница» несут retail=1.
+  if (role === ROLES.WAREHOUSE || role === ROLES.ADMIN) {
+    return (retailParam ?? "") === "1";
+  }
+  return false;
+}
+
+/**
+ * По какому производству резать заявку зав. складом.
+ *
+ * Правило 1.1-ter: зав. складом видит только свой цветок. Но у СВОЕЙ заявки в
+ * регион исключение — она её и составила, включая чужой цветок. Без исключения
+ * получалось бы дико: Разия отправляет заявку в Астану с хризантемой, и тут же
+ * не может её открыть, потому что своих роз в ней нет.
+ *
+ * Возвращает производство для фильтра или null, если резать не надо.
+ */
+export function farmScopeFor(input: {
+  role: string | null | undefined;
+  farm: string | null | undefined;
+  order: { managerEmail: string; retail?: string | null };
+  email: string | null | undefined;
+}): string | null {
+  if (input.role !== ROLES.WAREHOUSE) return null;
+  const mine =
+    (input.order.managerEmail || "").trim().toLowerCase() ===
+    (input.email || "").trim().toLowerCase();
+  if (isRetailOrder(input.order) && mine) return null;
+  return input.farm ?? null;
 }
 
 /**

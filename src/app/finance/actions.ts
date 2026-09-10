@@ -14,7 +14,7 @@ import {
 } from "@/lib/repo/orders";
 import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
-import { isClosed, moneyRefusal } from "@/lib/orderRules";
+import { confirmRefusal, moneyRefusal } from "@/lib/orderRules";
 import { invoiceByFarm } from "@/lib/orderMoney";
 import { isRetailOrder, isRetailRole } from "@/lib/retail";
 import {
@@ -435,37 +435,19 @@ export async function setManagerConfirmedAction(orderId: string, confirmed: bool
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
 
-  const role = session.user.role;
-  if (role !== ROLES.MANAGER && role !== ROLES.ADMIN && !isRetailRole(role)) {
-    throw new Error("Подтвердить заявку может только менеджер, который её оформил");
-  }
-
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
 
-  if (role !== ROLES.ADMIN && order.managerEmail !== session.user.email.toLowerCase()) {
-    throw new Error("Это заявка другого менеджера");
-  }
-  // У розницы эта галочка единственная — она и открывает отгрузку. Обычный
-  // менеджер розничную заявку не подтверждает, и наоборот: иначе «кто разрешил
-  // отгрузку» перестало бы иметь однозначный ответ.
-  if (isRetailOrder(order) !== isRetailRole(role) && role !== ROLES.ADMIN) {
-    throw new Error(
-      isRetailOrder(order)
-        ? "Заявку в наш магазин подтверждает менеджер розницы"
-        : "Менеджер розницы подтверждает только заявки в наши магазины"
-    );
-  }
-
-  // Снятое подтверждение закрывает отгрузку. По уже отгруженной заявке это
-  // бессмысленно и только ломает отчёты, поэтому запрещено.
-  if (!confirmed && isClosed(order.status)) {
-    throw new Error(
-      order.status === ORDER_STATUSES.SHIPPED
-        ? "Заявка отгружена — снимать подтверждение поздно"
-        : "Заявка отменена"
-    );
-  }
+  // Все правила — одной чистой функцией (`orderRules.ts`), покрытой тестом.
+  // Раньше они лежали здесь тремя `if`, и каждая новая роль означала правку
+  // условия, которую никто не проверял.
+  const refusal = confirmRefusal(
+    order,
+    session.user.role,
+    session.user.email.toLowerCase(),
+    confirmed
+  );
+  if (refusal) throw new Error(refusal);
 
   await setOrderManagerConfirmed(orderId, confirmed);
 

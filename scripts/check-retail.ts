@@ -13,9 +13,14 @@ import {
   buildRetailSummary,
   buildShopDay,
   canCreateCard,
+  canFillRegions,
   canOrderForShop,
+  canSeeRegions,
   canSeeShop,
+  cleanRegionCity,
   cleanTerritory,
+  farmScopeFor,
+  isRegionShop,
   isOwnShop,
   isRetailOrder,
   isRetailRole,
@@ -25,7 +30,7 @@ import {
   shopOrderForm,
 } from "../src/lib/retail";
 import { isReadyToShip, missingForShip, notReadyReason } from "../src/lib/orderReady";
-import { cancelRefusal } from "../src/lib/orderRules";
+import { cancelRefusal, confirmRefusal } from "../src/lib/orderRules";
 import { buildClientStats } from "../src/lib/clientStats";
 import { getFinanceSnapshot } from "../src/lib/finance";
 import { getLeaderboard } from "../src/lib/leaderboard";
@@ -108,6 +113,77 @@ check("администратору по умолчанию клиентская
 check("а из раздела «Розница» — магазинная", shopOrderForm(ROLES.ADMIN, "1"), true);
 check("обычному менеджеру магазинной формы нет никогда", shopOrderForm(ROLES.MANAGER, "1"), false);
 check("и РОПу тоже — он заявки не оформляет", shopOrderForm(ROLES.SALES_HEAD, "1"), false);
+
+// --- Регионы: Астана, Семей, Усть-Каменогорск -----------------------------
+//
+// Контрагент — ГОРОД ЦЕЛИКОМ, а заявки заполняют пока сами зав. складом
+// производства (решение владельца, временное). Отсюда исключения, которых
+// больше нигде нет, — и именно они ломаются молча.
+
+const REGION_CARD = { retail: "regions" };
+
+check("город — региональная карточка", isRegionShop(REGION_CARD), true);
+check("магазин Алматы — нет", isRegionShop(SHOP_ALMATY), false);
+check("выдуманный город не проходит", cleanRegionCity("Париж"), "");
+check("известный проходит", cleanRegionCity(" Семей "), "Семей");
+
+check("зав. складом заполняет регионы", canFillRegions(ROLES.WAREHOUSE), true);
+check("и менеджер розницы по регионам", canFillRegions(ROLES.RETAIL_REGIONS), true);
+check("а алматинская розница — нет", canFillRegions(ROLES.RETAIL_ALMATY), false);
+check("РОП регионы смотрит, но не заполняет", [canSeeRegions(ROLES.SALES_HEAD), canFillRegions(ROLES.SALES_HEAD)], [true, false]);
+check("бухгалтер регионы не видит", canSeeRegions(ROLES.ACCOUNTANT), false);
+
+check("зав. складом оформляет заявку в город", canOrderForShop(ROLES.WAREHOUSE, REGION_CARD), true);
+check("но не в магазин Алматы", canOrderForShop(ROLES.WAREHOUSE, SHOP_ALMATY), false);
+check("и не клиенту", canOrderForShop(ROLES.WAREHOUSE, CLIENT), false);
+check("зав. складом видит карточку города", canSeeShop(ROLES.WAREHOUSE, REGION_CARD), true);
+
+// Правило 1.1-ter: зав. складом видит только свой цветок. Исключение — её
+// СОБСТВЕННАЯ заявка в регион: она её и составила, вместе с чужим цветком.
+const MY_REGION_ORDER = { managerEmail: "razia@x.kz", retail: "regions" };
+check(
+  "свою заявку в регион зав. складом видит целиком",
+  farmScopeFor({ role: ROLES.WAREHOUSE, farm: "rose_farm", order: MY_REGION_ORDER, email: "razia@x.kz" }),
+  null
+);
+check(
+  "чужую розничную — уже по своему цветку",
+  farmScopeFor({ role: ROLES.WAREHOUSE, farm: "rose_farm", order: { managerEmail: "diana@x.kz", retail: "regions" }, email: "razia@x.kz" }),
+  "rose_farm"
+);
+check(
+  "обычную заявку клиента — тоже по своему цветку",
+  farmScopeFor({ role: ROLES.WAREHOUSE, farm: "rose_farm", order: { managerEmail: "razia@x.kz", retail: "" }, email: "razia@x.kz" }),
+  "rose_farm"
+);
+check(
+  "у остальных ролей фильтра производства нет",
+  farmScopeFor({ role: ROLES.MANAGER, farm: "rose_farm", order: MY_REGION_ORDER, email: "razia@x.kz" }),
+  null
+);
+
+// Подтверждение открывает отгрузку — ставит его тот, кто заявку завёл.
+const REGION_ORDER = { status: ORDER_STATUSES.NEW, managerEmail: "razia@x.kz", retail: "regions" };
+check("свою заявку в регион зав. складом подтверждает", confirmRefusal(REGION_ORDER, ROLES.WAREHOUSE, "razia@x.kz", true), "");
+check("чужую — нет", confirmRefusal(REGION_ORDER, ROLES.WAREHOUSE, "diana@x.kz", true) !== "", true);
+check("оптовый менеджер розничную не подтверждает", confirmRefusal(REGION_ORDER, ROLES.MANAGER, "razia@x.kz", true) !== "", true);
+check("бухгалтер тем более", confirmRefusal(REGION_ORDER, ROLES.ACCOUNTANT, "razia@x.kz", true) !== "", true);
+check("админ может", confirmRefusal(REGION_ORDER, ROLES.ADMIN, "admin@x.kz", true), "");
+check(
+  "снять подтверждение с отгруженной нельзя даже админу",
+  confirmRefusal({ ...REGION_ORDER, status: ORDER_STATUSES.SHIPPED }, ROLES.ADMIN, "admin@x.kz", false) !== "",
+  true
+);
+check(
+  "обычную заявку подтверждает свой оптовый менеджер",
+  confirmRefusal({ status: ORDER_STATUSES.NEW, managerEmail: "m1@x.kz", retail: "" }, ROLES.MANAGER, "m1@x.kz", true),
+  ""
+);
+check("зав. складом обычную заявку не подтверждает", confirmRefusal({ status: ORDER_STATUSES.NEW, managerEmail: "m1@x.kz", retail: "" }, ROLES.WAREHOUSE, "m1@x.kz", true) !== "", true);
+
+// Форма заявки: зав. складом попадает в магазинную только из раздела «Розница».
+check("зав. складом из «Розницы» — магазинная форма", shopOrderForm(ROLES.WAREHOUSE, "1"), true);
+check("а из «Заявок» — нет (её туда и не пустят)", shopOrderForm(ROLES.WAREHOUSE, undefined), false);
 
 // --- Отгрузка: у розницы галочка одна -------------------------------------
 

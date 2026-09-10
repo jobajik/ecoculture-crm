@@ -17,7 +17,12 @@
  */
 import * as dotenv from "dotenv";
 import { readTable, appendRows, rowToRecord, updateWhere, SHEET_TABS } from "../src/lib/sheets";
-import { RETAIL_TERRITORIES, RETAIL_LABELS, CLIENT_TYPES } from "../src/lib/constants";
+import {
+  RETAIL_TERRITORIES,
+  RETAIL_LABELS,
+  RETAIL_REGION_CITIES,
+  CLIENT_TYPES,
+} from "../src/lib/constants";
 import { generateId } from "../src/lib/id";
 
 dotenv.config({ path: ".env.local" });
@@ -79,14 +84,33 @@ const SHOPS: ShopInput[] = [
 ];
 
 function shopName(shop: ShopInput): string {
-  return `${BRAND}, ${shop.shortAddress}`;
+  return shop.territory === RETAIL_TERRITORIES.REGIONS
+    ? `Розница, ${shop.city}`
+    : `${BRAND}, ${shop.shortAddress}`;
 }
+
+/**
+ * Регионы: контрагент — ГОРОД ЦЕЛИКОМ, а не отдельные точки. Так решил
+ * владелец: зав. складом заказывает на весь город одной заявкой, а дальше
+ * развозит сама. Города берутся из закрытого списка в константах — там же, где
+ * из них строятся вкладки, чтобы список и вкладки не разъехались.
+ */
+const REGIONS: ShopInput[] = RETAIL_REGION_CITIES.map((city) => ({
+  shortAddress: city,
+  address: city,
+  city,
+  territory: RETAIL_TERRITORIES.REGIONS,
+  note: "Заявка на весь город",
+}));
+
+/** Всё, что заводим за один запуск: точки Алматы и города регионов. */
+const ALL: ShopInput[] = [...SHOPS, ...REGIONS];
 
 async function main() {
   // Проверяем ВСЁ до первой записи: упасть на целой таблице лучше, чем на
   // наполовину заполненной.
   const known = Object.values(RETAIL_TERRITORIES) as string[];
-  for (const shop of SHOPS) {
+  for (const shop of ALL) {
     if (!known.includes(shop.territory)) {
       throw new Error(`Неизвестное направление розницы: «${shop.territory}»`);
     }
@@ -106,7 +130,7 @@ async function main() {
   const creates: Record<string, unknown>[] = [];
   let updated = 0;
 
-  for (const shop of SHOPS) {
+  for (const shop of ALL) {
     const name = shopName(shop);
     const clientId = existing.get(name.toLowerCase());
 
@@ -160,7 +184,8 @@ async function main() {
 
   console.log(
     `\nГотово: создано ${creates.length}, обновлено ${updated}. ` +
-      `Направление — ${RETAIL_LABELS[RETAIL_TERRITORIES.ALMATY]}.`
+      `${SHOPS.length} точек — ${RETAIL_LABELS[RETAIL_TERRITORIES.ALMATY]}, ` +
+      `${REGIONS.length} городов — ${RETAIL_LABELS[RETAIL_TERRITORIES.REGIONS]}.`
   );
   if (!MANAGER_EMAIL) {
     console.log(

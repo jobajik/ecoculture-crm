@@ -11,7 +11,24 @@ import clsx from "clsx";
  * два клика по календарю ради этого — лишние. Поле остаётся для редкого
  * случая, когда нужен день подальше.
  */
-export default function RetailDayNav({ date, today }: { date: string; today: string }) {
+export default function RetailDayNav({
+  date,
+  today,
+  basePath = "/retail",
+  extra,
+}: {
+  date: string;
+  today: string;
+  /** Куда ведут ссылки: лист по магазинам или страница региона. */
+  basePath?: string;
+  /** Что дотащить в адрес, кроме даты, — например выбранный город. */
+  extra?: Record<string, string>;
+}) {
+  const query = (day: string) => {
+    const params = new URLSearchParams(extra ?? {});
+    params.set("date", day);
+    return `${basePath}?${params.toString()}`;
+  };
   const base = new Date(`${today}T00:00:00`);
   const days: string[] = [];
   for (let i = 0; i < 5; i++) {
@@ -36,7 +53,7 @@ export default function RetailDayNav({ date, today }: { date: string; today: str
       {days.map((key, idx) => (
         <Link
           key={key}
-          href={`/retail?date=${key}`}
+          href={query(key)}
           className={clsx(
             "px-3 py-1.5 rounded-lg text-sm border transition-colors",
             key === date
@@ -47,7 +64,10 @@ export default function RetailDayNav({ date, today }: { date: string; today: str
           {label(key, idx)}
         </Link>
       ))}
-      <form action="/retail" className="flex items-center gap-2">
+      <form action={basePath} className="flex items-center gap-2">
+        {Object.entries(extra ?? {}).map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
         <input
           type="date"
           name="date"

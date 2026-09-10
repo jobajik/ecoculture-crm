@@ -7,11 +7,13 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { getStockSnapshot } from "@/lib/stock";
 import { buildClientStats } from "@/lib/clientStats";
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
   FLOWER_TYPE_LABELS,
   ORDER_STATUSES,
+  ROLES,
   formatGrade,
   retailLabel,
 } from "@/lib/constants";
@@ -46,6 +48,10 @@ export default async function NewOrderPage({
   // выбранной карточке нельзя — прайс (клиентский или внутренний) нужно знать
   // ДО чтения данных, иначе в форму подставятся цены не того прайса.
   const retail = shopOrderForm(role, searchParams?.retail);
+
+  // Зав. складом заводит только заявки в регионы. Без этой строки она попадала
+  // бы на клиентскую форму, где ей нечего делать: чужие клиенты и чужой прайс.
+  if (role === ROLES.WAREHOUSE && !retail) redirect("/retail/regions");
 
   // У розницы свой прайс: цветок в наш магазин передаётся по внутренней цене,
   // и подставлять сюда клиентскую было бы прямой ошибкой в цифрах.

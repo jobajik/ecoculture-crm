@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { ROLES, farmLabel, getFarmFor, retailLabel } from "@/lib/constants";
-import { isRetailOrder, isRetailRole, retailTerritoryFor } from "@/lib/retail";
+import { farmScopeFor, isRetailOrder, isRetailRole, retailTerritoryFor } from "@/lib/retail";
 import OrdersTable from "@/components/OrdersTable";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export default async function OrdersPage() {
   // Позиции чужого производства вырезаются, а заявки, где своего цветка нет,
   // не показываются вовсе. Сумма пересчитывается по оставшимся позициям,
   // иначе в списке висела бы чужая выручка.
-  const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
+  const myEmail = session?.user?.email?.toLowerCase() ?? "";
 
   // Розница и продажи наружу — два разных потока, и мешать их в одном списке
   // нельзя. Менеджер розницы видит только своё направление; менеджер и
@@ -30,18 +30,22 @@ export default async function OrdersPage() {
     return true;
   });
 
-  const orders = farm
-    ? visible
-        .map((order) => {
-          const items = order.items.filter((i) => getFarmFor(i.flowerType) === farm);
-          return {
-            ...order,
-            items,
-            totalAmount: items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
-          };
-        })
-        .filter((order) => order.items.length > 0)
-    : visible;
+  // Резать по производству нужно у зав. складом — но НЕ её собственную заявку в
+  // регион: её она составила сама, вместе с чужим цветком (`farmScopeFor`).
+  const orders = visible
+    .map((order) => {
+      const scope = farmScopeFor({ role, farm: session?.user?.farm, order, email: myEmail });
+      if (!scope) return order;
+      const items = order.items.filter((i) => getFarmFor(i.flowerType) === scope);
+      return {
+        ...order,
+        items,
+        totalAmount: items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
+      };
+    })
+    .filter((order) => order.items.length > 0);
+
+  const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
 
   return (
     <div>

@@ -279,6 +279,21 @@ export const RETAIL_ROLES: string[] = [ROLES.RETAIL_ALMATY, ROLES.RETAIL_REGIONS
 
 export const RETAIL_ORDER: string[] = [RETAIL_TERRITORIES.ALMATY, RETAIL_TERRITORIES.REGIONS];
 
+/**
+ * Города, где у нас есть своя розница в регионах.
+ *
+ * Список ЗАКРЫТЫЙ и лежит в коде, а не в таблице, — по той же причине, что и
+ * направления отгрузки: свободный ввод за месяц даёт «Усть-Каменогорск»,
+ * «Усть-каменогорск» и «УКА», и разрез перестаёт считаться. Новый город
+ * дописывается в конец списка одной строкой, и по нему сразу появляется
+ * вкладка.
+ *
+ * Контрагент здесь — ГОРОД ЦЕЛИКОМ, а не отдельные точки: зав. складом заказывает
+ * на весь город одной заявкой, а дальше развозит сама. Так решил владелец.
+ */
+export const RETAIL_REGION_CITIES = ["Астана", "Семей", "Усть-Каменогорск"] as const;
+export type RetailRegionCity = (typeof RETAIL_REGION_CITIES)[number];
+
 export function retailLabel(territory: string | null | undefined): string {
   if (!territory) return "";
   return RETAIL_LABELS[territory] ?? territory;

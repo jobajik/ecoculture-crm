@@ -1,5 +1,5 @@
 import { ORDER_STATUSES, ROLES } from "./constants";
-import { isRetailRole } from "./retail";
+import { canFillRegions, isRetailOrder, isRetailRole } from "./retail";
 
 /**
  * Правила жизненного цикла заявки — в одном месте и без обращений к таблице,
@@ -45,10 +45,13 @@ export function cancelRefusal(
   email: string | null | undefined
 ): string {
   const mine = order.managerEmail === (email || "").trim().toLowerCase();
-  // Заявку заводит либо обычный менеджер, либо менеджер розницы — отменяет её
-  // тот же человек. Чьё это направление, проверять отдельно не нужно: почта в
-  // заявке и так принадлежит ровно одному из них.
-  const ownRole = role === ROLES.MANAGER || isRetailRole(role);
+  // Заявку заводит обычный менеджер, менеджер розницы или зав. складом (по
+  // регионам) — отменяет её тот же человек. Чьё это направление, проверять
+  // отдельно не нужно: почта в заявке и так принадлежит ровно одному из них.
+  const ownRole =
+    role === ROLES.MANAGER ||
+    isRetailRole(role) ||
+    (isRetailOrder(order) && canFillRegions(role));
   if (role !== ROLES.ADMIN && !(ownRole && mine)) {
     return "Отменить заявку может только её менеджер или администратор";
   }
@@ -64,6 +67,48 @@ export function cancelRefusal(
     );
   }
   return "";
+}
+
+/**
+ * Кто ставит «зелёную галочку» подтверждения — и когда её ставить уже нельзя.
+ *
+ * Подтверждение открывает отгрузку, поэтому правило то же, что и у отмены:
+ * ставит ТОТ, КТО ЗАЯВКУ ЗАВЁЛ, и никто больше (админ — по любой, он и чинит).
+ * Проверка «своя заявка» идёт по почте, а не по роли: у розничной заявки
+ * менеджером записан менеджер розницы или зав. складом производства, у обычной —
+ * оптовый менеджер, и одна и та же почта не бывает и там, и там.
+ *
+ * Снятое подтверждение по закрытой заявке запрещено: цветок уехал, а отчёты
+ * пересчитались бы задним числом.
+ */
+export function confirmRefusal(
+  order: { status: string; managerEmail: string; retail?: string },
+  role: string | null | undefined,
+  email: string | null | undefined,
+  confirmed: boolean
+): string {
+  const closed =
+    !confirmed && isClosed(order.status)
+      ? order.status === ORDER_STATUSES.SHIPPED
+        ? "Заявка отгружена — снимать подтверждение поздно"
+        : "Заявка отменена"
+      : "";
+
+  if (role === ROLES.ADMIN) return closed;
+
+  const mine = order.managerEmail === (email || "").trim().toLowerCase();
+  // Кому вообще положено подтверждать заявку такого рода.
+  const rightRole = isRetailOrder(order)
+    ? isRetailRole(role) || canFillRegions(role)
+    : role === ROLES.MANAGER;
+
+  if (!rightRole) {
+    return isRetailOrder(order)
+      ? "Заявку в наш магазин подтверждает тот, кто её составил"
+      : "Подтвердить заявку может только менеджер, который её оформил";
+  }
+  if (!mine) return "Это заявка другого менеджера";
+  return closed;
 }
 
 /**

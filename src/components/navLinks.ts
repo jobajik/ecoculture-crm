@@ -39,7 +39,8 @@ export const NAV_LINKS: NavLink[] = [
   {
     href: "/retail",
     label: "Розница",
-    roles: ["retail_almaty", "retail_regions", "sales_head", "admin"],
+    roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse"],
+    match: "/retail",
   },
   { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
   { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
@@ -76,12 +77,27 @@ const ANALYTICS_HREF_BY_ROLE: Record<string, string> = {
   admin: "/analytics/calendar",
 };
 
+/**
+ * У зав. складом производства «Розница» открывается сразу на «Регионах».
+ *
+ * Первая вкладка раздела — заявка по магазинам Алматы, а её она не ведёт: без
+ * подмены адреса пункт меню вёл бы на страницу, которая её же и разворачивает.
+ * Подсветка работает по началу адреса, поэтому `match` оставляем прежним.
+ */
+const RETAIL_HREF_BY_ROLE: Record<string, string> = {
+  warehouse: "/retail/regions",
+};
+
 export function navLinksFor(role: string): NavLink[] {
-  return NAV_LINKS.filter((l) => !l.roles || l.roles.includes(role)).map((link) =>
-    link.href === "/analytics" && ANALYTICS_HREF_BY_ROLE[role]
-      ? { ...link, href: ANALYTICS_HREF_BY_ROLE[role], match: "/analytics" }
-      : link
-  );
+  return NAV_LINKS.filter((l) => !l.roles || l.roles.includes(role)).map((link) => {
+    if (link.href === "/analytics" && ANALYTICS_HREF_BY_ROLE[role]) {
+      return { ...link, href: ANALYTICS_HREF_BY_ROLE[role], match: "/analytics" };
+    }
+    if (link.href === "/retail" && RETAIL_HREF_BY_ROLE[role]) {
+      return { ...link, href: RETAIL_HREF_BY_ROLE[role], match: "/retail" };
+    }
+    return link;
+  });
 }
 
 /**

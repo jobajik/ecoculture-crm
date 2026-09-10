@@ -6,7 +6,7 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { FLOWER_TYPE_LABELS, ORDER_STATUSES, formatGrade } from "@/lib/constants";
 import { buildRetailSummary, retailShortLabel, territoriesFor } from "@/lib/retail";
 import SectionTabs from "@/components/SectionTabs";
-import { RETAIL_TABS } from "../tabs";
+import { retailTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,8 @@ function dayKey(d: Date): string {
  */
 export default async function RetailSummaryPage() {
   const session = await getServerSession(authOptions);
-  const territories = territoriesFor(session?.user?.role ?? "");
+  const role = session?.user?.role ?? "";
+  const territories = territoriesFor(role);
   if (territories.length === 0) redirect("/?error=forbidden");
 
   const to = new Date();
@@ -69,7 +70,7 @@ export default async function RetailSummaryPage() {
       <h1 className="text-xl font-semibold mb-1">
         Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
       </h1>
-      <SectionTabs tabs={RETAIL_TABS} />
+      <SectionTabs tabs={retailTabsFor(role)} />
 
       <p className="text-sm text-ink-secondary mt-4 mb-4">
         За последние {DAYS} дней, по дате оформления заявки. Суммы посчитаны по внутреннему прайсу:

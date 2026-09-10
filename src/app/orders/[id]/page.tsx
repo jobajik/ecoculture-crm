@@ -22,7 +22,14 @@ import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
 import { getClientById } from "@/lib/repo/clients";
 import { farmPayments } from "@/lib/orderMoney";
-import { isRetailOrder, isRetailRole, retailLabel, retailTerritoryFor } from "@/lib/retail";
+import {
+  canFillRegions,
+  farmScopeFor,
+  isRetailOrder,
+  isRetailRole,
+  retailLabel,
+  retailTerritoryFor,
+} from "@/lib/retail";
 import CancelOrder from "@/components/CancelOrder";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +40,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!loaded) notFound();
 
   const role = session?.user?.role;
-  const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
+  const myEmail = session?.user?.email?.toLowerCase() ?? "";
+  // Зав. складом видит только свой цветок — кроме СВОЕЙ заявки в регион: её она
+  // составила сама, включая чужой цветок, и прятать от неё собственную заявку
+  // было бы просто поломкой (`farmScopeFor`).
+  const farm = farmScopeFor({ role, farm: session?.user?.farm, order: loaded, email: myEmail });
 
   // Розница и продажи наружу разделены и здесь, иначе прямая ссылка обходила бы
   // фильтр списка. Менеджер розницы видит только своё направление; обычный
@@ -150,8 +161,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         retail={order.retail}
         canConfirm={
           role === "admin" ||
-          ((role === "manager" || isRetailRole(role)) &&
-            order.managerEmail === session?.user?.email?.toLowerCase())
+          ((role === "manager" || isRetailRole(role) || (retail && canFillRegions(role))) &&
+            order.managerEmail === myEmail)
         }
       />
 

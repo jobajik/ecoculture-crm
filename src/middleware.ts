@@ -5,8 +5,17 @@ import { NextResponse } from "next/server";
 const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // Собственная розница. Менеджеры розницы живут в своём разделе и в заявках;
   // клиентская база, деньги, планы и склад им не нужны и закрыты.
-  { prefix: "/retail", roles: ["retail_almaty", "retail_regions", "sales_head", "admin"] },
-  { prefix: "/orders/new", roles: ["manager", "retail_almaty", "retail_regions", "admin"] },
+  // Зав. складом производства сюда пускаем ради вкладки «Регионы»: пока
+  // заявки по Астане, Семею и Усть-Каменогорску заводит она. Что именно ей
+  // видно внутри раздела, решают вкладки (`retailTabsFor`) и сами страницы.
+  {
+    prefix: "/retail",
+    roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse"],
+  },
+  {
+    prefix: "/orders/new",
+    roles: ["manager", "retail_almaty", "retail_regions", "admin", "warehouse"],
+  },
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
   // Рекламацию заводит менеджер, а решение по ней видит у бухгалтера. Раньше
   // весь /finance был закрыт от менеджера, и он не мог узнать, чем кончилась

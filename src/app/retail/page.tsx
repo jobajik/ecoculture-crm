@@ -8,7 +8,7 @@ import { ORDER_STATUSES, formatGrade } from "@/lib/constants";
 import { buildShopDay, isRetailRole, retailShortLabel, territoriesFor } from "@/lib/retail";
 import { formatDay } from "@/lib/formatDate";
 import SectionTabs from "@/components/SectionTabs";
-import { RETAIL_TABS } from "./tabs";
+import { retailTabsFor } from "./tabs";
 import RetailDayNav from "@/components/RetailDayNav";
 import { ROLES } from "@/lib/constants";
 
@@ -97,7 +97,7 @@ export default async function RetailDayPage({
           </Link>
         )}
       </div>
-      <SectionTabs tabs={RETAIL_TABS} />
+      <SectionTabs tabs={retailTabsFor(role)} />
 
       <p className="text-sm text-ink-secondary mt-4 mb-3">
         Заявки на доставку {formatDay(date)}. Это наши магазины: оплата по таким заявкам не
