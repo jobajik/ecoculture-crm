@@ -7,9 +7,15 @@ import { listUsers } from "@/lib/repo/users";
 import { buildClientStats } from "@/lib/clientStats";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { FLOWER_TYPE_LABELS, formatGrade, retailLabel } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, ORDER_STATUSES, formatGrade, retailLabel } from "@/lib/constants";
 import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
-import { canOrderForShop, isOwnShop, isRetailRole, retailTerritoryFor } from "@/lib/retail";
+import {
+  canOrderForShop,
+  isOwnShop,
+  isRetailRole,
+  retailTerritoryFor,
+  shopDeliveries,
+} from "@/lib/retail";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +55,12 @@ export default async function NewOrderPage({
   });
   const statByClient = new Map(stats.rows.map((r) => [r.client.clientId, r]));
 
+  // У магазинов своя статистика: из клиентской они вычищены целиком, и без
+  // этого у точки, куда возят каждый день, стояло бы «ещё не возили».
+  const shopStat = retail
+    ? shopDeliveries(orders, ORDER_STATUSES.CANCELLED)
+    : new Map<string, { orders: number; daysSinceLast: number }>();
+
   // Отключённые карточки в выбор не идут: снятая галочка означает «больше не
   // работаем», но историю заказов такого клиента она не трогает.
   //
@@ -66,8 +78,11 @@ export default async function NewOrderPage({
       phone: c.phone,
       managerName: nameByEmail.get(c.managerEmail) ?? c.managerEmail,
       mine: c.managerEmail === myEmail,
-      orders: statByClient.get(c.clientId)?.orders ?? 0,
-      daysSinceLast: statByClient.get(c.clientId)?.daysSinceLast ?? -1,
+      orders: (retail ? shopStat.get(c.clientId)?.orders : statByClient.get(c.clientId)?.orders) ?? 0,
+      daysSinceLast:
+        (retail
+          ? shopStat.get(c.clientId)?.daysSinceLast
+          : statByClient.get(c.clientId)?.daysSinceLast) ?? -1,
     }));
 
   // Пришли из списка «Заявка на день»: магазин и дата уже выбраны — подставляем
@@ -87,8 +102,9 @@ export default async function NewOrderPage({
       </h1>
       {retail && (
         <p className="text-sm text-ink-secondary mb-4">
-          Заявка в наш магазин. Оплату по ней никто не ждёт — как только вы её подтвердите, склад
-          сможет собирать. Цены подставляются из внутреннего прайса.
+          Заявка в наш магазин: выберите точку из списка и укажите количество. Оплату по ней никто
+          не ждёт — как только вы подтвердите заявку, склад сможет собирать. Цены подставляются из
+          внутреннего прайса.
         </p>
       )}
       <OrderForm
@@ -96,6 +112,7 @@ export default async function NewOrderPage({
         prices={priceMapForClient(prices)}
         initialClient={preselected}
         initialDeliveryDate={preselectedDate}
+        shopsOnly={retail}
         clients={options}
       />
     </div>

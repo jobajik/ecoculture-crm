@@ -12,6 +12,7 @@
 import {
   buildRetailSummary,
   buildShopDay,
+  canCreateCard,
   canOrderForShop,
   canSeeShop,
   cleanTerritory,
@@ -19,6 +20,7 @@ import {
   isRetailOrder,
   isRetailRole,
   retailTerritoryFor,
+  shopDeliveries,
   territoriesFor,
 } from "../src/lib/retail";
 import { isReadyToShip, missingForShip, notReadyReason } from "../src/lib/orderReady";
@@ -79,6 +81,13 @@ check("РОП заявку в магазин не оформляет", canOrderF
 check("алматинец оформляет в свой", canOrderForShop(ROLES.RETAIL_ALMATY, SHOP_ALMATY), true);
 check("но не в чужой", canOrderForShop(ROLES.RETAIL_ALMATY, SHOP_REGION), false);
 check("админ может всё", canOrderForShop(ROLES.ADMIN, SHOP_REGION), true);
+
+// Список магазинов закрытый: менеджер розницы выбирает из готового, а не
+// набирает руками. Иначе одна точка появится под тремя написаниями.
+check("менеджер розницы карточек не заводит", canCreateCard(ROLES.RETAIL_ALMATY), false);
+check("и региональный тоже", canCreateCard(ROLES.RETAIL_REGIONS), false);
+check("РОП заводит", canCreateCard(ROLES.SALES_HEAD), true);
+check("обычный менеджер заводит клиента", canCreateCard(ROLES.MANAGER), true);
 
 check("выдуманное направление не проходит", cleanTerritory("moscow"), "");
 check("пустое остаётся пустым", cleanTerritory(undefined), "");
@@ -275,6 +284,33 @@ check(
   ["S1", "S2", "S3"]
 );
 check("клиент в лист розницы не попадает", both.rows.some((r) => r.clientId === "C1"), false);
+
+// --- Когда магазину последний раз возили ----------------------------------
+//
+// Подпись «возили вчера» отвечает на вопрос, который менеджер задаёт себе перед
+// оформлением: не отправила ли она этой точке уже сегодня. Через клиентскую
+// статистику это не посчитать — магазины оттуда вычищены целиком.
+
+const DELIVERIES = shopDeliveries(
+  [
+    { clientId: "S1", status: ORDER_STATUSES.NEW, retail: "almaty", deliveryDate: day(-1), createdAt: `${day(-3)}T10:00:00` },
+    { clientId: "S1", status: ORDER_STATUSES.NEW, retail: "almaty", deliveryDate: day(-5), createdAt: `${day(-7)}T10:00:00` },
+    // Завтрашняя доставка — заявка уже есть, отрицательных дней быть не должно.
+    { clientId: "S2", status: ORDER_STATUSES.NEW, retail: "almaty", deliveryDate: day(1), createdAt: `${day(0)}T10:00:00` },
+    // Отменённая не считается.
+    { clientId: "S3", status: ORDER_STATUSES.CANCELLED, retail: "regions", deliveryDate: day(-1), createdAt: `${day(-2)}T10:00:00` },
+    // Обычная продажа клиенту в счёт магазинов не идёт.
+    { clientId: "C1", status: ORDER_STATUSES.NEW, retail: "", deliveryDate: day(-1), createdAt: `${day(-2)}T10:00:00` },
+  ],
+  ORDER_STATUSES.CANCELLED,
+  NOW
+);
+
+check("берётся САМАЯ свежая доставка, а не последняя в списке", DELIVERIES.get("S1")?.daysSinceLast, 1);
+check("и считаются все заявки точки", DELIVERIES.get("S1")?.orders, 2);
+check("будущая доставка — это «сегодня», а не минус день", DELIVERIES.get("S2")?.daysSinceLast, 0);
+check("отменённая заявка магазин не отмечает", DELIVERIES.has("S3"), false);
+check("клиент в счёт магазинов не идёт", DELIVERIES.has("C1"), false);
 
 // --- Сводка за период -----------------------------------------------------
 

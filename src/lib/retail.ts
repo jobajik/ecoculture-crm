@@ -84,6 +84,23 @@ export function canOrderForShop(
 }
 
 /**
+ * Может ли роль заводить карточки в базе.
+ *
+ * Менеджер розницы — НЕТ, и это главное правило этого раздела. Список магазинов
+ * закрытый: точка появляется, когда её открыли, и заводит её РОП. Разреши
+ * набирать её руками из формы заявки — и через месяц в базе будут «Цветочник
+ * Достык», «Достык 27» и «Цветочник, Достык, 27»: три магазина вместо одного, и
+ * история поставок по каждому в треть. Ровно от этого клиентскую базу и делали.
+ *
+ * Обычный менеджер, наоборот, клиента заводит: тот появляется в момент первого
+ * разговора, и заставлять ждать РОПа — верный способ получить заявки без
+ * карточек.
+ */
+export function canCreateCard(role: string | null | undefined): boolean {
+  return !isRetailRole(role);
+}
+
+/**
  * Какие направления розницы человек видит. Пустой список — розницы у него нет.
  * Порядок постоянный (`RETAIL_ORDER`), чтобы вкладки не прыгали.
  */
@@ -366,4 +383,56 @@ export function buildRetailSummary(input: RetailSummaryInput): RetailSummary {
       shops: byShop.length,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Когда магазину последний раз возили.
+//
+// Нужно для подписи в подборщике: «возили вчера» отвечает на вопрос, который
+// менеджер задаёт себе перед оформлением, — не отправила ли она этой точке уже
+// сегодня. Считать это через клиентскую статистику нельзя: магазины оттуда
+// вычищены целиком, и получилось бы «ещё не возили» у точки, куда возят каждый
+// день. Дни считаются по дате ДОСТАВКИ: она и есть «когда цветок приехал».
+// ---------------------------------------------------------------------------
+
+export interface ShopDelivery {
+  orders: number;
+  /** Дней с последней доставки; -1 — ещё ни разу не возили. */
+  daysSinceLast: number;
+}
+
+export function shopDeliveries(
+  orders: {
+    clientId: string;
+    status: string;
+    retail: string;
+    deliveryDate: string;
+    createdAt: string;
+  }[],
+  cancelledStatus: string,
+  now: Date = new Date()
+): Map<string, ShopDelivery> {
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const out = new Map<string, ShopDelivery>();
+
+  for (const order of orders) {
+    if (order.status === cancelledStatus) continue;
+    if (!isRetailOrder(order)) continue;
+    if (!order.clientId) continue;
+
+    const day = (order.deliveryDate || (order.createdAt || "").slice(0, 10)).slice(0, 10);
+    const row = out.get(order.clientId) ?? { orders: 0, daysSinceLast: -1 };
+    row.orders += 1;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      const [y, m, d] = day.split("-").map(Number);
+      // Будущая доставка приравнивается к нулю: для менеджера «привезли
+      // сегодня» и «на завтра заявка уже есть» — один и тот же сигнал «второй
+      // раз не отправляй». Отрицательные дни в подписи выглядели бы поломкой.
+      const diff = Math.max(0, Math.round((today - Date.UTC(y, m - 1, d)) / 86_400_000));
+      if (row.daysSinceLast < 0 || diff < row.daysSinceLast) row.daysSinceLast = diff;
+    }
+    out.set(order.clientId, row);
+  }
+  return out;
 }

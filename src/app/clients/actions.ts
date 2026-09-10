@@ -12,7 +12,7 @@ import {
 } from "@/lib/repo/clients";
 import { CLIENT_SOURCES, CLIENT_TYPES, PAYMENT_METHODS, PAYMENT_TERMS, ROLES } from "@/lib/constants";
 import { kaspiFieldsFor } from "@/lib/clientPick";
-import { canSeeShop, cleanTerritory, isOwnShop, retailTerritoryFor } from "@/lib/retail";
+import { canCreateCard, canSeeShop, cleanTerritory, isOwnShop, retailTerritoryFor } from "@/lib/retail";
 
 /**
  * Клиентскую базу ведут те, кто продаёт.
@@ -77,17 +77,25 @@ function clean(input: Partial<NewClientInput>) {
 }
 
 export async function createClientAction(input: Omit<NewClientInput, "managerEmail">) {
-  const { email, all, territory } = await requireSales();
+  const { email, all, role } = await requireSales();
+
+  // Список магазинов ЗАКРЫТЫЙ: точку заводит РОП, а не менеджер розницы из
+  // формы заявки. Иначе одна и та же точка появится под тремя написаниями, и
+  // история поставок по ней развалится на три. Проверка на сервере, а не в
+  // интерфейсе: кнопки нет, но запрос можно послать и мимо страницы (1.11).
+  if (!canCreateCard(role)) {
+    throw new Error(
+      "Новый магазин заводит руководитель отдела продаж — выберите точку из списка"
+    );
+  }
+
   const data = clean(input);
 
   // Кем заводится карточка — клиентом или нашим магазином — решает роль, а не
-  // то, что пришло из браузера. Менеджер розницы заводит только точку своего
-  // направления (открылся магазин — карточка нужна сразу, ждать РОПа незачем),
-  // РОП и админ могут завести любую, обычный менеджер — только клиента.
+  // то, что пришло из браузера.
   const asked = cleanTerritory(input.retail);
   let retail = "";
-  if (territory) retail = territory;
-  else if (asked && all) retail = asked;
+  if (asked && all) retail = asked;
   else if (asked) throw new Error("Отметить карточку нашим магазином может только РОП");
 
   if (!data.name) throw new Error("Укажите название клиента");
