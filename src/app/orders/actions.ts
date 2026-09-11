@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import {
   createOrder,
+  deleteOrder,
   getOrderById,
   saveOrderItems,
   setOrderManagerConfirmed,
@@ -14,6 +15,9 @@ import {
 } from "@/lib/repo/orders";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { cancelRefusal } from "@/lib/orderRules";
+import { deleteOrderRefusal, describeDeletedOrder } from "@/lib/orderDelete";
+import { listShipments } from "@/lib/repo/shipments";
+import { listClaims } from "@/lib/repo/claims";
 import {
   cleanDeliveryDate,
   describeItemChanges,
@@ -290,6 +294,73 @@ export async function cancelOrderAction(orderId: string, reason: string) {
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/warehouse");
   revalidatePath("/finance");
+  revalidatePath("/analytics");
+}
+
+/**
+ * Удаление заявки СОВСЕМ — только администратору и только «чистой».
+ *
+ * Обычный путь — отмена: заявка остаётся в базе, помечается отменённой и
+ * выходит из выручки, долгов и бонусов. Но заявку, заведённую по ошибке или
+ * дважды, отмена не убирает — она копится в списках и каждый раз заставляет
+ * вспоминать, что это было. Владелец попросил дать возможность убирать такие
+ * совсем.
+ *
+ * Вернуть удалённое НЕЛЬЗЯ: в Google-таблице нет корзины. Поэтому границы —
+ * в `src/lib/orderDelete.ts`, чистой функцией под тестом, а здесь остаётся
+ * порядок действий и запись в журнал.
+ */
+export async function deleteOrderAction(orderId: string, reason: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+
+  // Отгрузки и рекламации читаем ЗДЕСЬ, а не доверяем присланному: правило
+  // «по заявке ничего не происходило» держится именно на них (грабли 1.11).
+  const [shipments, claims] = await Promise.all([listShipments(), listClaims()]);
+  const refusal = deleteOrderRefusal({
+    order,
+    role: session.user.role,
+    shipments: shipments.filter((s) => s.orderId === orderId).length,
+    claims: claims.filter((c) => c.orderId === orderId).length,
+    shippedStatus: ORDER_STATUSES.SHIPPED,
+  });
+  if (refusal) throw new Error(refusal);
+
+  const why = (reason || "").trim();
+  if (!why) throw new Error("Напишите, почему удаляете заявку");
+
+  // Запись в журнал идёт ПОСЛЕ удаления: если удалить не получится, в журнале
+  // не должно остаться следа о том, чего не было. Журнал только дописывается —
+  // он и будет единственным, что останется от этой заявки.
+  await deleteOrder(orderId);
+
+  await logMoney({
+    actorEmail: session.user.email,
+    orderId,
+    action: MONEY_LOG_ACTIONS.ORDER_DELETED,
+    details: describeDeletedOrder({
+      orderId,
+      clientName: order.clientName,
+      managerEmail: order.managerEmail,
+      totalAmount: order.totalAmount,
+      items: order.items,
+      reason: why,
+    }),
+    amountBefore: order.totalAmount,
+    amountAfter: 0,
+  });
+
+  revalidatePath("/orders");
+  revalidatePath("/retail");
+  revalidatePath("/warehouse");
+  revalidatePath("/warehouse/picklist");
+  revalidatePath("/finance");
+  revalidatePath("/finance/log");
+  revalidatePath("/plans/regions");
+  revalidatePath("/sales");
   revalidatePath("/analytics");
 }
 

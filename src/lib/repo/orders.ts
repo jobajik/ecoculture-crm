@@ -508,6 +508,23 @@ export async function setOrderInvoiceSent(orderId: string, sent: boolean): Promi
   );
 }
 
+/**
+ * Удаляет заявку вместе с её позициями. Вернуть нельзя — корзины в
+ * Google-таблице нет, поэтому КОМУ и ЧТО можно удалять решает
+ * `src/lib/orderDelete.ts`, а здесь только запись.
+ *
+ * Порядок важен: сначала исчезает строка заявки, потом её позиции. Если второй
+ * запрос не дойдёт, останутся «осиротевшие» позиции — их никто никогда не
+ * прочитает (позиции всегда берутся по номеру существующей заявки), и это куда
+ * лучше обратного порядка, при котором в списках повисла бы пустая заявка без
+ * единой позиции, и человеку пришлось бы гадать, что с ней случилось.
+ */
+export async function deleteOrder(orderId: string): Promise<{ orders: number; items: number }> {
+  const orders = await deleteWhere(SHEET_TABS.ORDERS, (record) => record.OrderID === orderId);
+  const items = await deleteWhere(SHEET_TABS.ORDER_ITEMS, (record) => record.OrderID === orderId);
+  return { orders, items };
+}
+
 /** Первая «зелёная галочка»: менеджер согласовал заявку с клиентом окончательно. */
 export async function setOrderManagerConfirmed(orderId: string, confirmed: boolean): Promise<boolean> {
   return updateWhere(

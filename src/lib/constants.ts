@@ -456,6 +456,7 @@ export const MONEY_LOG_ACTIONS = {
   MANAGER_CONFIRMED: "manager_confirmed",
   ORDER_EDITED: "order_edited",
   INVOICE_SENT: "invoice_sent",
+  ORDER_DELETED: "order_deleted",
 } as const;
 export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
 
@@ -464,6 +465,7 @@ export const MONEY_LOG_LABELS: Record<string, string> = {
   manager_confirmed: "Подтверждение менеджера",
   order_edited: "Заявка изменена",
   invoice_sent: "Счёт клиенту",
+  order_deleted: "Заявка удалена",
   payment: "Оплата",
   payment_cleared: "Оплата снята",
   recalculated: "Пересчёт заявки",

@@ -9,6 +9,7 @@ import { listUsers } from "@/lib/repo/users";
 import {
   FLOWER_TYPE_LABELS,
   KASPI_METHOD,
+  ORDER_STATUSES,
   ROLES,
   farmLabel,
   formatGrade,
@@ -34,6 +35,8 @@ import {
   retailTerritoryFor,
 } from "@/lib/retail";
 import CancelOrder from "@/components/CancelOrder";
+import DeleteOrder from "@/components/DeleteOrder";
+import { canDeleteOrder } from "@/lib/orderDelete";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +139,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // заявку, и «сохранить» стёрло бы чужие позиции. Поэтому правила спрашиваем
   // по ПОЛНОЙ заявке, а кнопку показываем, только когда показана она вся.
   const canEdit = !farm && canEditOrder(loaded, role, session?.user?.email);
+  // Удалять заявку совсем может только администратор, и только «чистую»:
+  // без отгрузок, без денег, без рекламаций. Правило то же, что проверит
+  // сервер (src/lib/orderDelete.ts), и считается по ПОЛНОЙ заявке.
+  const canDelete = canDeleteOrder({
+    order: loaded,
+    role,
+    shipments: allShipments.filter((s) => s.orderId === loaded.orderId).length,
+    claims: allClaims.filter((c) => c.orderId === loaded.orderId).length,
+    shippedStatus: ORDER_STATUSES.SHIPPED,
+  });
 
   return (
     <div className="max-w-3xl">
@@ -370,9 +383,10 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </div>
       )}
 
-      {canCancel && (
-        <div className="mb-6">
-          <CancelOrder orderId={order.orderId} />
+      {(canCancel || canDelete) && (
+        <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
+          {canCancel && <CancelOrder orderId={order.orderId} />}
+          {canDelete && <DeleteOrder orderId={order.orderId} />}
         </div>
       )}
 
