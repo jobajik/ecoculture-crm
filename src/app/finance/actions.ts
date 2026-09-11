@@ -17,6 +17,7 @@ import { logMoney } from "@/lib/repo/moneyLog";
 import { confirmRefusal, moneyRefusal } from "@/lib/orderRules";
 import { invoiceByFarm } from "@/lib/orderMoney";
 import { isRetailOrder, isRetailRole } from "@/lib/retail";
+import { isRegionOrder } from "@/lib/orderKind";
 import {
   CLAIM_REASONS,
   CLAIM_STATUSES,
@@ -72,6 +73,14 @@ export async function setPaymentAction(
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
   if (isRetailOrder(order)) throw new Error(RETAIL_MONEY_REFUSAL);
+  // По городской заявке счёта нет — деньги отмечаются отдельной суммой
+  // поступлений на самой заявке, а не обычной оплатой по счёту.
+  if (isRegionOrder(order)) {
+    throw new Error(
+      "Это объём на город: счёта по нему нет. Впишите поступившую сумму в блоке " +
+        "«Поступления по городу» на самой заявке."
+    );
+  }
 
   // Снять оплату с ОТГРУЖЕННОЙ заявки — значит вернуть её в долги и в список
   // звонков, обнулить бонус менеджера за уже уехавший товар и убрать деньги из

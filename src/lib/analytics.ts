@@ -2,6 +2,7 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listBatches } from "./repo/batches";
 import { listWriteoffs } from "./repo/writeoffs";
 import { listStaffTakeouts } from "./repo/staffTakeouts";
+import { hasNoClientInvoice } from "./orderKind";
 import { listPriceHistory } from "./repo/priceHistory";
 import { listHarvestForecast } from "./repo/harvestForecast";
 import { getSettings } from "./repo/settings";
@@ -67,6 +68,15 @@ export interface FlowerRow {
   sold: number;
   /** Списано за период, стеблей. */
   writeoff: number;
+  /**
+   * Ушло без счёта клиенту: в наши магазины и объёмом в регионы, стеблей.
+   *
+   * Эти стебли — не продажа: счёта нет ни там, ни там. В выручку они не идут,
+   * иначе средняя цена поехала бы (у перемещения внутренняя цена, у городской
+   * заявки цены нет вовсе). Но со склада они уходят, поэтому в таблице им
+   * нужна своя колонка — иначе строка не сходится.
+   */
+  transfer: number;
   /**
    * Выдано сотрудникам в счёт зарплаты за период, стеблей.
    *
@@ -523,8 +533,28 @@ export async function getAnalyticsSummary(
   const takeouts = allTakeouts.filter((t) => mine(t.flowerType));
   const takeoutNow = takeouts.filter((t) => inRange(t.date, from, to));
 
-  const nowSales = salesWindow(orders, from, to);
-  const prevSales = salesWindow(orders, prevFrom, from);
+  // Заявки без счёта клиенту в продажи НЕ идут: перемещение в наш магазин
+  // считается по внутренней цене, а у городской заявки цены нет вовсе, и
+  // обе тянули бы среднюю цену вниз, не будучи продажей.
+  //
+  // Эту ошибку я сам и допустил, когда делал розницу: исключения расставил в
+  // шести расчётах, а в главном отчёте — забыл. Нашлось при добавлении
+  // городских заявок, потому что у них цена ноль и перекос стал очевиден.
+  const sellable = orders.filter((o) => !hasNoClientInvoice(o));
+  const transfers = orders.filter((o) => hasNoClientInvoice(o));
+
+  const nowSales = salesWindow(sellable, from, to);
+  const prevSales = salesWindow(sellable, prevFrom, from);
+
+  // Стебли, ушедшие без продажи, — по цветку и за то же окно.
+  const transferNow = new Map<string, number>();
+  for (const order of transfers) {
+    if (order.status === "cancelled") continue;
+    if (!inRange(order.createdAt, from, to)) continue;
+    for (const item of order.items) {
+      transferNow.set(item.flowerType, (transferNow.get(item.flowerType) ?? 0) + item.quantity);
+    }
+  }
 
   // --- Цены: действующий прайс и во что заявки оценивались бы по нему -------
   const priceRows: PriceRow[] = priceHistory.map((p) => ({
@@ -779,6 +809,7 @@ export async function getAnalyticsSummary(
       ...Array.from(nowSales.byFlower.keys()),
       ...Array.from(prevSales.byFlower.keys()),
       ...takeoutNow.map((t) => t.flowerType),
+      ...Array.from(transferNow.keys()),
     ])
   ).filter(mine);
 
@@ -802,6 +833,7 @@ export async function getAnalyticsSummary(
         writeoff: writeoffNow
           .filter((w) => batchById.get(w.batchId)?.flowerType === flowerType)
           .reduce((s, w) => s + w.quantity, 0),
+        transfer: transferNow.get(flowerType) ?? 0,
         takeout: takeoutNow
           .filter((t) => t.flowerType === flowerType)
           .reduce((s, t) => s + t.quantity, 0),

@@ -1,6 +1,7 @@
 import { CLIENT_SLEEPING_DAYS, MONEY_EPSILON, ORDER_STATUSES } from "./constants";
 import type { Client, OrderWithItems } from "./types";
-import { isOwnShop, isRetailOrder } from "./retail";
+import { isOwnShop } from "./retail";
+import { hasNoClientInvoice } from "./orderKind";
 
 /**
  * Аналитика по клиентской базе.
@@ -141,7 +142,7 @@ export function buildClientStats(input: {
   // Наш магазин — не клиент, и его заявки не продажи. Иначе средний чек,
   // выручка и «доля трёх крупнейших клиентов» считались бы по самим себе.
   const counted = input.orders.filter(
-    (o) => o.status !== ORDER_STATUSES.CANCELLED && !isRetailOrder(o)
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && !hasNoClientInvoice(o)
   );
 
   const byClient = new Map<string, OrderWithItems[]>();

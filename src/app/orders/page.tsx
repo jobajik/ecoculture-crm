@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { ROLES, farmLabel, getFarmFor, retailLabel } from "@/lib/constants";
 import { farmScopeFor, isRetailOrder, isRetailRole, retailTerritoryFor } from "@/lib/retail";
+import { isRegionOrder } from "@/lib/orderKind";
 import OrdersTable from "@/components/OrdersTable";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,10 @@ export default async function OrdersPage() {
   const territory = retailTerritoryFor(role);
   const visible = all.filter((o) => {
     if (territory) return isRetailOrder(o) && o.retail === territory;
-    if (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT) return !isRetailOrder(o);
+    // Менеджеру городская заявка не нужна: она не его и клиента в ней нет.
+    // Бухгалтеру нужна — по ней она подтверждает поступления.
+    if (role === ROLES.MANAGER) return !isRetailOrder(o) && !isRegionOrder(o);
+    if (role === ROLES.ACCOUNTANT) return !isRetailOrder(o);
     return true;
   });
 

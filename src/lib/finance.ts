@@ -2,7 +2,7 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./constants";
 import { isReadyToShip } from "./orderReady";
-import { isRetailOrder } from "./retail";
+import { hasNoClientInvoice } from "./orderKind";
 import { farmPayments, type FarmPayment } from "./orderMoney";
 import type { OrderWithItems } from "./types";
 
@@ -211,7 +211,7 @@ export async function getFinanceSnapshot(
   // счёта нет, долга нет, звонить некому. Попади они в этот расчёт — бухгалтер
   // каждый день видела бы в списке звонков собственные магазины.
   const counted = orders.filter(
-    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !isRetailOrder(o)
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !hasNoClientInvoice(o)
   );
 
   const { from, to, label } = periodRange(period, anchor);

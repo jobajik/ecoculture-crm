@@ -24,6 +24,7 @@ export default function ReadyChecks({
   paidAmount,
   totalAmount,
   retail = "",
+  kind = "",
   canConfirm,
 }: {
   orderId: string;
@@ -36,14 +37,21 @@ export default function ReadyChecks({
   totalAmount: number;
   /** Направление собственной розницы; пусто — обычная продажа наружу. */
   retail?: string;
+  /** Вид заявки: «region» — оптовый объём на город, счёта по нему нет. */
+  kind?: string;
   canConfirm: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // Счёта клиенту нет у двух видов заявок: перемещение в наш магазин и объём
+  // на город. Галочка у обеих одна, но говорить о них надо разными словами —
+  // иначе РОП прочитает про «наш магазин» и решит, что открыл чужую заявку.
   const isRetail = !!retail.trim();
-  const ready = managerConfirmed && (isRetail || paid);
+  const isRegion = kind.trim().toLowerCase() === "region";
+  const noInvoice = isRetail || isRegion;
+  const ready = managerConfirmed && (noInvoice || paid);
   const partial = !paid && paidAmount > 0;
   const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 
@@ -65,19 +73,25 @@ export default function ReadyChecks({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-medium">
-            {ready ? (isRetail ? "✓ Готова к сборке" : "✓✓ Готова к сборке") : "Ещё не готова к сборке"}
+            {ready
+              ? noInvoice
+                ? "✓ Готова к сборке"
+                : "✓✓ Готова к сборке"
+              : "Ещё не готова к сборке"}
           </h2>
           <p className="text-sm text-ink-secondary mt-0.5">
             {ready
-              ? isRetail
-                ? "Менеджер розницы подтвердил заявку — склад может собирать. Это наш магазин, оплата по заявке не нужна."
-                : "Менеджер согласовал заявку и бухгалтер подтвердил оплату — склад может собирать."
+              ? isRegion
+                ? "Заявка подтверждена — склад может собирать. Это объём на город: счёта нет, поступления бухгалтер отметит отдельно."
+                : isRetail
+                  ? "Менеджер розницы подтвердил заявку — склад может собирать. Это наш магазин, оплата по заявке не нужна."
+                  : "Менеджер согласовал заявку и бухгалтер подтвердил оплату — склад может собирать."
               : "Склад увидит заявку, но она будет помечена как неготовая."}
           </p>
         </div>
       </div>
 
-      <div className={clsx("grid gap-3 mt-4", !isRetail && "sm:grid-cols-2")}>
+      <div className={clsx("grid gap-3 mt-4", !noInvoice && "sm:grid-cols-2")}>
         <div className="flex items-start gap-3 rounded-lg border border-line-hairline p-3">
           <span
             className={clsx(
@@ -91,12 +105,18 @@ export default function ReadyChecks({
           </span>
           <div className="min-w-0">
             <div className="text-sm font-medium">
-              {isRetail ? "Менеджер розницы подтвердил" : "Менеджер подтвердил"}
+              {isRegion
+                ? "РОП подтвердил объём"
+                : isRetail
+                  ? "Менеджер розницы подтвердил"
+                  : "Менеджер подтвердил"}
             </div>
             <div className="text-xs text-ink-muted">
-              {isRetail
-                ? "Заявка на магазин собрана окончательно — склад может собирать"
-                : "Заявка окончательно согласована с клиентом"}
+              {isRegion
+                ? "Объём на город окончательный — склад может собирать"
+                : isRetail
+                  ? "Заявка на магазин собрана окончательно — склад может собирать"
+                  : "Заявка окончательно согласована с клиентом"}
             </div>
             {canConfirm && (
               <button
@@ -110,7 +130,7 @@ export default function ReadyChecks({
           </div>
         </div>
 
-        {!isRetail && (
+        {!noInvoice && (
         <div className="flex items-start gap-3 rounded-lg border border-line-hairline p-3">
           <span
             className={clsx(

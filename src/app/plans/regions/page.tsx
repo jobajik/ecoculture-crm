@@ -26,6 +26,7 @@ import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
 import { plansTabsFor } from "../tabs";
 import DirectionFixRow from "@/components/DirectionFixRow";
+import { buildRegionIncome, isRegionOrder } from "@/lib/orderKind";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -144,12 +145,28 @@ export default async function RegionSalesPage({
         direction: o.direction,
         stems: items.reduce((s, i) => s + i.quantity, 0),
         shipped: items.reduce((s, i) => s + i.shippedQuantity, 0),
-        amount: items.reduce((s, i) => s + i.quantity * i.unitPrice, 0),
+        // У городской заявки цены нет — показываем то, что подтвердил
+        // бухгалтер. У обычной клиентской заявки в регион это сумма счёта.
+        amount: isRegionOrder(o)
+          ? o.paidAmount
+          : items.reduce((s, i) => s + i.quantity * i.unitPrice, 0),
         items: items.length,
       };
     })
     .filter((o) => o.items > 0)
     .sort((a, b) => (a.deliveryDate < b.deliveryDate ? -1 : 1));
+
+  // Поступления по городам — их подтверждает бухгалтер, и к плану в стеблях
+  // они отношения не имеют: объём ставит РОП сразу, деньги приходят потом.
+  const income = buildRegionIncome({
+    orders,
+    from,
+    to,
+    cancelledStatus: ORDER_STATUSES.CANCELLED,
+  });
+  const incomeByDirection = new Map(income.map((r) => [r.direction, r]));
+  const incomeTotal = income.reduce((s, r) => s + r.income, 0);
+  const waitingIncome = income.reduce((s, r) => s + r.waitingIncome, 0);
 
   const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
   const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v)} %`);
@@ -158,13 +175,14 @@ export default async function RegionSalesPage({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <h1 className="text-xl font-semibold">Оптовые отгрузки по регионам</h1>
-        <Link href="/orders/new?direction=" className="btn-primary">
-          + Заявка в регион
+        <Link href="/orders/new?region=1" className="btn-primary">
+          + Объём в регион
         </Link>
       </div>
       <p className="text-ink-secondary mb-3">
-        План отгрузок против того, что реально ушло. Заявки по Алматы сюда не входят: направления
-        «Алматы» нет, и это сделано намеренно.
+        План отгрузок против того, что реально ушло. Заявка в регион — это объём на город:
+        количество и сорт, без клиента. Алматы здесь нет намеренно: такого направления в плане не
+        существует.
       </p>
 
       <div className="mb-4">
@@ -233,6 +251,24 @@ export default async function RegionSalesPage({
         />
       </div>
 
+      <div className="grid sm:grid-cols-2 gap-3 mb-5">
+        <Tile
+          title="Поступило"
+          value={`${nf(incomeTotal)} ₸`}
+          hint={
+            waitingIncome > 0
+              ? `${waitingIncome} заявок ждут суммы от бухгалтера`
+              : "суммы подтверждены"
+          }
+          warn={waitingIncome > 0}
+        />
+        <Tile
+          title="Заявок по регионам"
+          value={String(income.reduce((s, r) => s + r.orders, 0))}
+          hint="объём на города за период"
+        />
+      </div>
+
       {missing.length > 0 && (
         <div className="card mb-5 border-[#d9b25c]">
           <h2 className="font-medium mb-1">Похоже на регион, но направление не стоит</h2>
@@ -264,7 +300,6 @@ export default async function RegionSalesPage({
               <th className="px-3 py-2.5 font-medium text-right">Заказано</th>
               <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
               <th className="px-3 py-2.5 font-medium text-right">Выполнение</th>
-              <th className="px-3 py-2.5 font-medium text-right">Сумма</th>
             </tr>
           </thead>
           <tbody>
@@ -302,9 +337,6 @@ export default async function RegionSalesPage({
                 >
                   {pct(f.donePercent)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">
-                  {f.amount > 0 ? `${nf(f.amount)} ₸` : "—"}
-                </td>
               </tr>
             ))}
           </tbody>
@@ -324,7 +356,7 @@ export default async function RegionSalesPage({
               <th className="px-3 py-2.5 font-medium text-right">Заказано</th>
               <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
               <th className="px-3 py-2.5 font-medium text-right">Выполнение</th>
-              <th className="px-3 py-2.5 font-medium text-right">Сумма</th>
+              <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
               <th className="px-3 py-2.5 font-medium text-right">Заявок</th>
             </tr>
           </thead>
@@ -375,7 +407,14 @@ export default async function RegionSalesPage({
                         {pct(r.donePercent)}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">
-                        {r.amount > 0 ? `${nf(r.amount)} ₸` : "—"}
+                        {(incomeByDirection.get(r.direction)?.income ?? 0) > 0
+                          ? `${nf(incomeByDirection.get(r.direction)!.income)} ₸`
+                          : "—"}
+                        {(incomeByDirection.get(r.direction)?.waitingIncome ?? 0) > 0 && (
+                          <span className="block text-[11px] text-[#8a5a00]">
+                            ждёт суммы: {incomeByDirection.get(r.direction)!.waitingIncome}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
                         {r.orders || "—"}
@@ -412,7 +451,7 @@ export default async function RegionSalesPage({
                 {pct(fact.donePercent)}
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums font-medium">
-                {nf(fact.amount)} ₸
+                {nf(incomeTotal)} ₸
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums font-medium">{fact.orders}</td>
             </tr>
@@ -434,7 +473,7 @@ export default async function RegionSalesPage({
               <th className="px-3 py-2.5 font-medium">Заявка</th>
               <th className="px-3 py-2.5 font-medium text-right">Стеблей</th>
               <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
-              <th className="px-3 py-2.5 font-medium text-right">Сумма</th>
+              <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
             </tr>
           </thead>
           <tbody>

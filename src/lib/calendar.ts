@@ -14,7 +14,7 @@ import {
   periodLabel,
 } from "./constants";
 import type { OrderWithItems } from "./types";
-import { isRetailOrder } from "./retail";
+import { hasNoClientInvoice } from "./orderKind";
 
 // ---------------------------------------------------------------------------
 // Календарь месяца: что срезали, что продали, что отгрузили и сколько денег
@@ -221,7 +221,7 @@ export function buildCalendarMonth(input: {
     // Розница в «продажах и деньгах» дня не участвует: перемещение в наш
     // магазин выручкой не является, а посчиталось бы дважды — сейчас и когда
     // магазин продаст букет покупателю.
-    if (isRetailOrder(order)) continue;
+    if (hasNoClientInvoice(order)) continue;
 
     const created = isoOf(order.createdAt);
     const day = byDate.get(created);

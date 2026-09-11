@@ -1,5 +1,6 @@
 import { ORDER_STATUSES, ROLES } from "./constants";
 import { canFillRegions, isRetailOrder, isRetailRole } from "./retail";
+import { canFillRegionOrders, hasNoClientInvoice, isRegionOrder } from "./orderKind";
 
 /**
  * Правила жизненного цикла заявки — в одном месте и без обращений к таблице,
@@ -19,6 +20,8 @@ export interface CancelCheckOrder {
   items: { shippedQuantity: number }[];
   /** Направление собственной розницы; пусто — обычная продажа наружу. */
   retail?: string;
+  /** Вид заявки: «region» — оптовый объём на город. */
+  kind?: string;
 }
 
 /** Заявка закрыта: отменять и трогать её больше нельзя. */
@@ -51,7 +54,9 @@ export function cancelRefusal(
   const ownRole =
     role === ROLES.MANAGER ||
     isRetailRole(role) ||
-    (isRetailOrder(order) && canFillRegions(role));
+    (isRetailOrder(order) && canFillRegions(role)) ||
+    // Городскую заявку заводит РОП — он же её и отменяет.
+    (isRegionOrder(order) && canFillRegionOrders(role));
   if (role !== ROLES.ADMIN && !(ownRole && mine)) {
     return "Отменить заявку может только её менеджер или администратор";
   }
@@ -82,7 +87,7 @@ export function cancelRefusal(
  * пересчитались бы задним числом.
  */
 export function confirmRefusal(
-  order: { status: string; managerEmail: string; retail?: string },
+  order: { status: string; managerEmail: string; retail?: string; kind?: string },
   role: string | null | undefined,
   email: string | null | undefined,
   confirmed: boolean
@@ -98,13 +103,15 @@ export function confirmRefusal(
 
   const mine = order.managerEmail === (email || "").trim().toLowerCase();
   // Кому вообще положено подтверждать заявку такого рода.
-  const rightRole = isRetailOrder(order)
-    ? isRetailRole(role) || canFillRegions(role)
-    : role === ROLES.MANAGER;
+  const rightRole = isRegionOrder(order)
+    ? canFillRegionOrders(role)
+    : isRetailOrder(order)
+      ? isRetailRole(role) || canFillRegions(role)
+      : role === ROLES.MANAGER;
 
   if (!rightRole) {
-    return isRetailOrder(order)
-      ? "Заявку в наш магазин подтверждает тот, кто её составил"
+    return hasNoClientInvoice(order)
+      ? "Эту заявку подтверждает тот, кто её составил"
       : "Подтвердить заявку может только менеджер, который её оформил";
   }
   if (!mine) return "Это заявка другого менеджера";

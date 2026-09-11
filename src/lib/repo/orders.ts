@@ -4,6 +4,7 @@ import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
 import { spreadByInvoice, type FarmMoney } from "../orderMoney";
 import { cleanDirection } from "../direction";
+import { cleanOrderKind } from "../orderKind";
 import type { Order, OrderItem, OrderWithItems } from "../types";
 
 /** Пустая ячейка = «нет». Отмеченной считается только явная TRUE/ДА/1. */
@@ -52,6 +53,7 @@ function toOrder(record: Record<string, string>): Order {
     // список, и опечатка в ячейке не должна заводить новое «направление»
     // на одну заявку (грабли 1.10 — ошибка закрывает, а не открывает).
     direction: cleanDirection(record.Direction),
+    kind: cleanOrderKind(record.Kind),
   };
 }
 
@@ -96,7 +98,15 @@ export interface NewOrderInput {
    * заявка в регион — его работа.
    */
   direction?: string;
-  /** Клиент из базы — заявка без карточки больше не заводится. */
+  /**
+   * Вид заявки. Пусто — обычная продажа; «region» — оптовый объём на город,
+   * и тогда клиента нет вовсе.
+   */
+  kind?: string;
+  /**
+   * Клиент из базы — заявка без карточки не заводится. Единственное исключение
+   * — городская оптовая заявка: там контрагента нет по замыслу.
+   */
   clientId: string;
   /** Снимок имени на момент заявки: точка может переименоваться. */
   clientName: string;
@@ -161,6 +171,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     PaidEsentai: 0,
     Retail: input.retail || "",
     Direction: input.direction || "",
+    Kind: input.kind || "",
   });
 
   const itemRecords = input.items.map((item, idx) => ({

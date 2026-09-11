@@ -3,7 +3,7 @@ import { listUsers } from "./repo/users";
 import { getPlansForPeriod } from "./repo/plans";
 import { ORDER_STATUSES, getFarmFor } from "./constants";
 import type { OrderWithItems } from "./types";
-import { isRetailOrder } from "./retail";
+import { hasNoClientInvoice } from "./orderKind";
 
 // ---------------------------------------------------------------------------
 // Продажи менеджеров: факт за день и за месяц против плана.
@@ -105,7 +105,7 @@ export async function getSalesSnapshot(
   // Внутренние перемещения в наши магазины продажами не считаются — иначе
   // план-факт менеджеров выполнялся бы за счёт собственной розницы.
   const counted = orders.filter(
-    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !isRetailOrder(o)
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !hasNoClientInvoice(o)
   );
   const monthOrders = counted.filter((o) => monthKey(new Date(o.createdAt)) === targetPeriod);
   const todayKey = dayKey(now);

@@ -11,6 +11,8 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canSetDirection, cleanDirection } from "@/lib/direction";
+import { REGION_ORDER_DIRECTIONS, canFillRegionOrders } from "@/lib/orderKind";
+import RegionOrderForm from "@/components/RegionOrderForm";
 import {
   FLOWER_TYPE_LABELS,
   ORDER_STATUSES,
@@ -38,7 +40,13 @@ export default async function NewOrderPage({
    * заявок не бывает вовсе, а администратору нужны обе формы, и выбирает он их
    * тем, откуда пришёл.
    */
-  searchParams?: { client?: string; date?: string; retail?: string; direction?: string };
+  searchParams?: {
+    client?: string;
+    date?: string;
+    retail?: string;
+    direction?: string;
+    region?: string;
+  };
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
@@ -54,6 +62,33 @@ export default async function NewOrderPage({
   // бы на клиентскую форму, где ей нечего делать: чужие клиенты и чужой прайс.
   if (role === ROLES.WAREHOUSE && !retail) redirect("/retail/regions");
 
+  // Дата из адреса — общая для всех форм на этой странице.
+  const preselectedDate =
+    searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : "";
+
+  // Оптовый объём на город — своя форма: регион, дата, количество. У РОПа
+  // других заявок не бывает вовсе, поэтому его сюда пускаем всегда.
+  const regionForm = canFillRegionOrders(role) && (searchParams?.region === "1" || role === ROLES.SALES_HEAD);
+  if (regionForm) {
+    const varietiesForRegion = await listVarietiesByType();
+    const preset = cleanDirection(searchParams?.direction);
+    return (
+      <div>
+        <h1 className="text-xl font-semibold mb-1">Объём в регион</h1>
+        <p className="text-sm text-ink-secondary mb-4">
+          Оптовая отгрузка в город: количество и сорт, без клиента. Сумму поступлений подтвердит
+          бухгалтер позже.
+        </p>
+        <RegionOrderForm
+          directions={REGION_ORDER_DIRECTIONS}
+          varieties={varietiesForRegion}
+          initialDirection={preset}
+          initialDate={preselectedDate}
+        />
+      </div>
+    );
+  }
+
   // У розницы свой прайс: цветок в наш магазин передаётся по внутренней цене,
   // и подставлять сюда клиентскую было бы прямой ошибкой в цифрах.
   const [varieties, prices, clients, orders, users] = await Promise.all([
@@ -67,9 +102,6 @@ export default async function NewOrderPage({
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
   const territory = retailTerritoryFor(role);
-
-  const preselectedDate =
-    searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : "";
 
   // -------------------------------------------------------------------------
   // РОЗНИЦА — своя форма: магазин и ассортимент, больше ничего.
