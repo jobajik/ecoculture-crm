@@ -12,6 +12,8 @@ import { getOrderById } from "@/lib/repo/orders";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { createShipment, type NewShipmentInput } from "@/lib/repo/shipments";
 import { createWriteoff, type NewWriteoffInput } from "@/lib/repo/writeoffs";
+import { createStaffTakeout, type NewStaffTakeoutInput } from "@/lib/repo/staffTakeouts";
+import { cleanStaffName, takeoutRefusal } from "@/lib/staffTakeout";
 
 async function requireWarehouse() {
   const session = await getServerSession(authOptions);
@@ -164,4 +166,54 @@ export async function createWriteoffAction(input: Omit<NewWriteoffInput, "wareho
   revalidatePath("/warehouse/batches");
   revalidatePath("/analytics");
   return writeoffId;
+}
+
+/**
+ * Выдача цветка сотруднику в счёт зарплаты.
+ *
+ * Все правила — одной чистой функцией `takeoutRefusal()`: и роль, и своё
+ * производство, и остаток партии, и дата не из будущего. Расписывать их здесь
+ * вложенными `if` означало бы, что проверить их можно только на живой базе, —
+ * ровно так до сентября жила отмена заявки.
+ */
+export async function createStaffTakeoutAction(
+  input: Omit<NewStaffTakeoutInput, "warehouseEmail">
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const role = session.user.role ?? "";
+  const farm = role === "warehouse" ? session.user.farm ?? null : null;
+
+  const batch = await getBatchById(input.batchId);
+  const refusal = takeoutRefusal({
+    role,
+    farm,
+    staffName: input.staffName,
+    quantity: input.quantity,
+    unitPrice: input.unitPrice,
+    date: input.date,
+    today: todayKey(),
+    batch: batch ? { flowerType: batch.flowerType, quantityRemaining: batch.quantityRemaining } : null,
+  });
+  if (refusal) throw new Error(refusal);
+
+  const takeoutId = await createStaffTakeout({
+    ...input,
+    staffName: cleanStaffName(input.staffName),
+    warehouseEmail: session.user.email,
+  });
+
+  revalidatePath("/warehouse/takeouts");
+  revalidatePath("/warehouse/batches");
+  revalidatePath("/finance/takeouts");
+  revalidatePath("/analytics");
+  return takeoutId;
+}
+
+/** Сегодняшний день по местному времени — «ГГГГ-ММ-ДД». */
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
 }

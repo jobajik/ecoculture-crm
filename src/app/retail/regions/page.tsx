@@ -15,7 +15,7 @@ import {
 import { formatDay } from "@/lib/formatDate";
 import SectionTabs from "@/components/SectionTabs";
 import { retailTabsFor } from "../tabs";
-import RetailDayNav from "@/components/RetailDayNav";
+import DayNav from "@/components/DayNav";
 import CityTabs from "@/components/CityTabs";
 
 export const dynamic = "force-dynamic";
@@ -127,7 +127,7 @@ export default async function RetailRegionsPage({
         перемещение внутри компании, и отгрузку открывает подтверждение того, кто заявку составил.
       </p>
 
-      <RetailDayNav date={date} today={dayKey(new Date())} basePath="/retail/regions" extra={{ city }} />
+      <DayNav date={date} today={dayKey(new Date())} basePath="/retail/regions" extra={{ city }} />
 
       {!card ? (
         <div className="card mt-4 text-sm text-ink-secondary">

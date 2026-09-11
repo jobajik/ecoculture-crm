@@ -91,6 +91,7 @@ const ALWAYS: { tab: string; what: string }[] = [
   { tab: SHEET_TABS.ORDER_ITEMS, what: "позиции заявок" },
   { tab: SHEET_TABS.SHIPMENTS, what: "отгрузки" },
   { tab: SHEET_TABS.WRITEOFFS, what: "списания" },
+  { tab: SHEET_TABS.STAFF_TAKEOUTS, what: "выдачи сотрудникам в счёт зарплаты" },
   { tab: SHEET_TABS.CLAIMS, what: "рекламации" },
   { tab: SHEET_TABS.MONEY_LOG, what: "журнал действий по деньгам" },
 ];
@@ -144,7 +145,10 @@ const ALWAYS_KEPT = [
  */
 async function quantitiesToReturn(): Promise<Map<string, number>> {
   const back = new Map<string, number>();
-  for (const tab of [SHEET_TABS.SHIPMENTS, SHEET_TABS.WRITEOFFS]) {
+  // Выдачи сотрудникам снимают остаток так же, как отгрузка и списание, —
+  // значит и возвращать их надо так же. Забыть эту вкладку здесь означало бы
+  // молча уменьшить склад на всё, что люди брали домой.
+  for (const tab of [SHEET_TABS.SHIPMENTS, SHEET_TABS.WRITEOFFS, SHEET_TABS.STAFF_TAKEOUTS]) {
     try {
       const table = await readTable(tab);
       for (const row of table.rows) {

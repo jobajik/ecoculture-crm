@@ -9,6 +9,10 @@ export const FINANCE_TABS = [
   { href: "/finance", label: "Оплаты" },
   { href: "/finance/debts", label: "Долги и звонки" },
   { href: "/finance/claims", label: "Рекламации" },
+  // Цветы в счёт зарплаты — тоже деньги, но с другой стороны: не «нам должны»,
+  // а «удержим с сотрудника». Заходят сюда раз в месяц, к расчёту зарплаты,
+  // поэтому стоит после ежедневного и перед журналом.
+  { href: "/finance/takeouts", label: "Цветы в счёт зп" },
   { href: "/finance/log", label: "Журнал" },
   { href: "/finance/report", label: "Отчёт" },
 ];

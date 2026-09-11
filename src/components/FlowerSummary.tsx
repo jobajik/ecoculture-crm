@@ -36,6 +36,7 @@ export default function FlowerSummary({
     received: rows.reduce((s, r) => s + r.received, 0),
     sold: rows.reduce((s, r) => s + r.sold, 0),
     writeoff: rows.reduce((s, r) => s + r.writeoff, 0),
+    takeout: rows.reduce((s, r) => s + r.takeout, 0),
     stock: rows.reduce((s, r) => s + r.stock, 0),
   };
 
@@ -49,13 +50,17 @@ export default function FlowerSummary({
       </div>
 
       <div className="card !p-0 overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
+        <table className="w-full text-sm min-w-[720px]">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
               <th className="px-4 py-2.5 font-medium">Цветок</th>
               <th className="px-3 py-2.5 font-medium text-right">Срезано</th>
               <th className="px-3 py-2.5 font-medium text-right">Продано</th>
               <th className="px-3 py-2.5 font-medium text-right">Списано</th>
+              {/* Сотрудникам — цветы в счёт зарплаты. Без этой колонки строка
+                  не сходится: стебли ушли со склада, а ни в продажах, ни в
+                  списаниях их нет, и разница выглядит как ошибка в данных. */}
+              <th className="px-3 py-2.5 font-medium text-right">Сотрудникам</th>
               <th className="px-3 py-2.5 font-medium text-right">На складе</th>
               <th className="px-3 py-2.5 font-medium text-right">Запас</th>
               <th className="px-3 py-2.5 font-medium text-right">Ср. цена</th>
@@ -77,6 +82,7 @@ export default function FlowerSummary({
                   <td className="px-3 py-2.5 text-right tabular-nums">{num(f.received)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{num(f.sold)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{num(f.writeoff)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{num(f.takeout)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums font-medium">
                     {num(f.stock)}
                   </td>
@@ -111,6 +117,9 @@ export default function FlowerSummary({
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {num(totals.writeoff)}
+              </td>
+              <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                {num(totals.takeout)}
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {num(totals.stock)}

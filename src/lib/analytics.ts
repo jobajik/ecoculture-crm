@@ -1,6 +1,7 @@
 import { listOrdersWithItems } from "./repo/orders";
 import { listBatches } from "./repo/batches";
 import { listWriteoffs } from "./repo/writeoffs";
+import { listStaffTakeouts } from "./repo/staffTakeouts";
 import { listPriceHistory } from "./repo/priceHistory";
 import { listHarvestForecast } from "./repo/harvestForecast";
 import { getSettings } from "./repo/settings";
@@ -66,6 +67,15 @@ export interface FlowerRow {
   sold: number;
   /** Списано за период, стеблей. */
   writeoff: number;
+  /**
+   * Выдано сотрудникам в счёт зарплаты за период, стеблей.
+   *
+   * Колонка нужна, чтобы строка сходилась. Стебли уходят со склада без продажи
+   * и без списания, и без этой цифры «приняли 1000, продали 700, списали 50, на
+   * складе 50» выглядело бы ошибкой в данных — той самой необъяснённой
+   * разницей, из-за которой не стирают отгрузки, оставляя партии.
+   */
+  takeout: number;
   /** Лежит на складе сейчас. */
   stock: number;
   /** На сколько дней хватит склада при нынешнем темпе продаж. */
@@ -421,36 +431,54 @@ function salesWindow(orders: OrderWithItems[], from: Date, to: Date) {
  * не должен видеть чужой цветок ни в остатках, ни в продажах, ни в ценах.
  * Фильтруем на входе — тогда все расчёты ниже автоматически считаются по своему.
  */
+export interface AnalyticsInput {
+  now?: Date;
+  orders: OrderWithItems[];
+  batches: Awaited<ReturnType<typeof listBatches>>;
+  writeoffs: Awaited<ReturnType<typeof listWriteoffs>>;
+  takeouts?: Awaited<ReturnType<typeof listStaffTakeouts>>;
+  priceHistory: Awaited<ReturnType<typeof listPriceHistory>>;
+  settings: Awaited<ReturnType<typeof getSettings>>;
+  forecast?: Awaited<ReturnType<typeof listHarvestForecast>>;
+}
+
+/**
+ * Всё, что аналитике нужно из таблицы, — ОДНИМ списком и в одном месте.
+ *
+ * Список был в двух местах: здесь и в `getAnalyticsByFarm`, который читает
+ * данные один раз и прогоняет расчёт трижды. Новый источник (выдачи
+ * сотрудникам) я добавил только в одно из них, и колонка «Сотрудникам» на
+ * живом сайте осталась бы всегда пустой — при полностью исправном расчёте.
+ * Поймал это на демо-данных, а не в бою, и вместо «не забыть в следующий раз»
+ * список сведён в одну функцию: забыть больше негде.
+ */
+async function loadAnalyticsInput(): Promise<AnalyticsInput> {
+  const [orders, batches, writeoffs, priceHistory, settings, forecast, takeouts] =
+    await Promise.all([
+      listOrdersWithItems(),
+      listBatches(),
+      listWriteoffs(),
+      listPriceHistory(),
+      getSettings(),
+      listHarvestForecast(),
+      listStaffTakeouts(),
+    ]);
+  return { orders, batches, writeoffs, priceHistory, settings, forecast, takeouts };
+}
+
 export async function getAnalyticsSummary(
   farmFilter?: string | null,
   /** Для тестов: подставить данные и «сегодня» вместо чтения из Google-таблицы. */
-  injected?: {
-    now?: Date;
-    orders: OrderWithItems[];
-    batches: Awaited<ReturnType<typeof listBatches>>;
-    writeoffs: Awaited<ReturnType<typeof listWriteoffs>>;
-    priceHistory: Awaited<ReturnType<typeof listPriceHistory>>;
-    settings: Awaited<ReturnType<typeof getSettings>>;
-    forecast?: Awaited<ReturnType<typeof listHarvestForecast>>;
-  }
+  injected?: AnalyticsInput
 ): Promise<AnalyticsSummary> {
-  const [allOrders, allBatches, allWriteoffs, allPriceHistory, settings, allForecast] = injected
-    ? [
-        injected.orders,
-        injected.batches,
-        injected.writeoffs,
-        injected.priceHistory,
-        injected.settings,
-        injected.forecast ?? [],
-      ]
-    : await Promise.all([
-        listOrdersWithItems(),
-        listBatches(),
-        listWriteoffs(),
-        listPriceHistory(),
-        getSettings(),
-        listHarvestForecast(),
-      ]);
+  const input = injected ?? (await loadAnalyticsInput());
+  const allOrders = input.orders;
+  const allBatches = input.batches;
+  const allWriteoffs = input.writeoffs;
+  const allPriceHistory = input.priceHistory;
+  const settings = input.settings;
+  const allForecast = input.forecast ?? [];
+  const allTakeouts = input.takeouts ?? [];
 
   const now = injected?.now ?? new Date();
   const to = shiftDays(dayStart(now), 1); // включая сегодня
@@ -489,6 +517,11 @@ export async function getAnalyticsSummary(
     const b = batchById.get(w.batchId);
     return b ? mine(b.flowerType) : false;
   });
+
+  // Выдачи сотрудникам несут тип цветка снимком в самой строке — заглядывать
+  // в партию не нужно, и строка читается даже после очистки склада.
+  const takeouts = allTakeouts.filter((t) => mine(t.flowerType));
+  const takeoutNow = takeouts.filter((t) => inRange(t.date, from, to));
 
   const nowSales = salesWindow(orders, from, to);
   const prevSales = salesWindow(orders, prevFrom, from);
@@ -745,6 +778,7 @@ export async function getAnalyticsSummary(
       ...batches.map((b) => b.flowerType),
       ...Array.from(nowSales.byFlower.keys()),
       ...Array.from(prevSales.byFlower.keys()),
+      ...takeoutNow.map((t) => t.flowerType),
     ])
   ).filter(mine);
 
@@ -768,6 +802,9 @@ export async function getAnalyticsSummary(
         writeoff: writeoffNow
           .filter((w) => batchById.get(w.batchId)?.flowerType === flowerType)
           .reduce((s, w) => s + w.quantity, 0),
+        takeout: takeoutNow
+          .filter((t) => t.flowerType === flowerType)
+          .reduce((s, t) => s + t.quantity, 0),
         stock,
         coverDays: perDay > 0 ? stock / perDay : null,
         shelfLifeDays: getMaxShelfLifeDays(flowerType, settings),
@@ -1194,15 +1231,9 @@ export async function getAnalyticsByFarm(
   /** Зав. складом видит только своё производство: тогда считаем одну колонку. */
   onlyFarm?: string | null
 ): Promise<{ all: AnalyticsSummary; byFarm: { farm: string; summary: AnalyticsSummary }[] }> {
-  const [orders, batches, writeoffs, priceHistory, settings, forecast] = await Promise.all([
-    listOrdersWithItems(),
-    listBatches(),
-    listWriteoffs(),
-    listPriceHistory(),
-    getSettings(),
-    listHarvestForecast(),
-  ]);
-  const injected = { orders, batches, writeoffs, priceHistory, settings, forecast };
+  // Читаем таблицу ОДИН раз и прогоняем расчёт трижды с разными фильтрами:
+  // три колонки не должны означать тройное чтение Google Sheets.
+  const injected = await loadAnalyticsInput();
 
   if (onlyFarm) {
     const summary = await getAnalyticsSummary(onlyFarm, injected);

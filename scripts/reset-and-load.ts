@@ -59,6 +59,9 @@ const TABS_TO_CLEAR = [
   SHEET_TABS.BATCHES,
   SHEET_TABS.SHIPMENTS,
   SHEET_TABS.WRITEOFFS,
+  // Выдачи сотрудникам ссылаются на партии, а партии здесь заводятся заново:
+  // оставить старые выдачи значило бы получить строки, указывающие в пустоту.
+  SHEET_TABS.STAFF_TAKEOUTS,
   SHEET_TABS.PRICE_HISTORY,
   SHEET_TABS.PLANS,
   SHEET_TABS.SHIPMENT_PLANS,

@@ -9,7 +9,7 @@ import { buildShopDay, isRetailRole, retailShortLabel, territoriesFor } from "@/
 import { formatDay } from "@/lib/formatDate";
 import SectionTabs from "@/components/SectionTabs";
 import { retailTabsFor } from "./tabs";
-import RetailDayNav from "@/components/RetailDayNav";
+import DayNav from "@/components/DayNav";
 import { ROLES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +104,7 @@ export default async function RetailDayPage({
         проводится — отгрузку открывает ваше подтверждение.
       </p>
 
-      <RetailDayNav date={date} today={todayKey()} />
+      <DayNav date={date} today={todayKey()} />
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 my-4">
         <Tile title="Магазинов" value={String(totals.shops)} hint="В вашем направлении" />

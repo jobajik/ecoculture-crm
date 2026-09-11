@@ -181,6 +181,31 @@ export interface Writeoff {
   warehouseEmail: string;
 }
 
+/**
+ * Цветок, который сотрудник взял в счёт зарплаты.
+ *
+ * Со склада стебли уходят так же, как при отгрузке, а денег в кассу не
+ * приходит: сумма — это то, что бухгалтер удержит из зарплаты.
+ */
+export interface StaffTakeout {
+  takeoutId: string;
+  /** Когда запись сделали (след для разбора спорных случаев). */
+  createdAt: string;
+  /** День самой выдачи — по нему и собирается таблица за день. */
+  date: string;
+  /** Фамилия и имя так, как их вписал зав. складом. */
+  staffName: string;
+  batchId: string;
+  flowerType: FlowerType;
+  variety: string;
+  grade: string;
+  quantity: number;
+  /** Цена за стебель — её вписывает зав. складом. */
+  unitPrice: number;
+  warehouseEmail: string;
+  note: string;
+}
+
 export interface PriceHistoryEntry {
   date: string;
   flowerType: FlowerType;
