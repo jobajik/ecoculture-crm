@@ -1,5 +1,6 @@
 import {
   DIRECTION_GROUPS,
+  FLOWER_TYPES,
   ROLES,
   SHIPMENT_DIRECTIONS,
   isKnownDirection,
@@ -136,12 +137,14 @@ export interface DirectionFactOrder {
   /** Направление собственной розницы — такие заявки в опт не идут. */
   retail?: string;
   managerEmail: string;
-  items: { quantity: number; shippedQuantity: number; unitPrice: number }[];
+  items: { flowerType: string; quantity: number; shippedQuantity: number; unitPrice: number }[];
 }
 
 export interface DirectionPlanRow {
   period: string;
   direction: string;
+  /** План отгрузок ведётся по цветкам — разрез в нём есть с самого начала. */
+  flowerType: string;
   targetStems: number;
   targetAmount: number;
 }
@@ -170,8 +173,29 @@ export interface DirectionGroupRow {
   amount: number;
 }
 
+/** Одна строка сводки «по цветку»: план и факт по всем направлениям сразу. */
+export interface FlowerFactRow {
+  flowerType: string;
+  planStems: number;
+  planAmount: number;
+  orderedStems: number;
+  shippedStems: number;
+  amount: number;
+  donePercent: number | null;
+}
+
 export interface DirectionFact {
   groups: DirectionGroupRow[];
+  /**
+   * Разрез по цветку — Розы, Хризантемы, Эустома.
+   *
+   * Владелец попросил его отдельно, и правильно: девять направлений на три
+   * цветка в одной таблице — это двадцать семь строк, а вопрос «сколько роз мы
+   * должны отгрузить в регионы» задают чаще, чем «сколько роз в Караганду».
+   * Строки идут в порядке цветков, принятом в системе, и показываются ВСЕ три,
+   * даже пустые: пустая строка здесь — это «плана нет», и её надо видеть.
+   */
+  byFlower: FlowerFactRow[];
   planStems: number;
   planAmount: number;
   orderedStems: number;
@@ -217,21 +241,38 @@ export function buildDirectionFact(input: {
   /** Коды периодов плана (недели), попадающие в отрезок. */
   planPeriods: string[];
   cancelledStatus: string;
+  /**
+   * Считать только по одному цветку. Пусто — по всем.
+   *
+   * Фильтр стоит ЗДЕСЬ, а не на странице: иначе «план» отфильтровали бы, а
+   * «факт» забыли, и выполнение выглядело бы втрое лучше, чем есть.
+   */
+  flowerType?: string;
 }): DirectionFact {
   const periods = new Set(input.planPeriods);
+  const onlyFlower = (input.flowerType || "").trim();
+  const mineFlower = (flowerType: string) => !onlyFlower || flowerType === onlyFlower;
 
   const plan = new Map<string, { stems: number; amount: number }>();
+  const planByFlower = new Map<string, { stems: number; amount: number }>();
   for (const row of input.plans) {
     if (!periods.has(row.period)) continue;
+    if (!mineFlower(row.flowerType)) continue;
     const direction = cleanDirection(row.direction);
     if (!direction) continue;
     const acc = plan.get(direction) ?? { stems: 0, amount: 0 };
     acc.stems += row.targetStems;
     acc.amount += row.targetAmount;
     plan.set(direction, acc);
+
+    const byFlower = planByFlower.get(row.flowerType) ?? { stems: 0, amount: 0 };
+    byFlower.stems += row.targetStems;
+    byFlower.amount += row.targetAmount;
+    planByFlower.set(row.flowerType, byFlower);
   }
 
   const fact = new Map<string, { ordered: number; shipped: number; amount: number; orders: number }>();
+  const factByFlower = new Map<string, { ordered: number; shipped: number; amount: number }>();
   for (const order of input.orders) {
     if (!countsAsWholesale(order, input.cancelledStatus)) continue;
     const direction = cleanDirection(order.direction);
@@ -239,11 +280,23 @@ export function buildDirectionFact(input: {
     if (!order.deliveryDate || order.deliveryDate < input.from || order.deliveryDate > input.to) {
       continue;
     }
+
+    const items = order.items.filter((i) => mineFlower(i.flowerType));
+    // Заявка без позиций выбранного цветка в счёт не идёт вовсе — иначе
+    // «заявок: 5» стояло бы там, где роз не везли ни одной.
+    if (items.length === 0) continue;
+
     const acc = fact.get(direction) ?? { ordered: 0, shipped: 0, amount: 0, orders: 0 };
-    for (const item of order.items) {
+    for (const item of items) {
       acc.ordered += item.quantity;
       acc.shipped += item.shippedQuantity;
       acc.amount += item.quantity * item.unitPrice;
+
+      const byFlower = factByFlower.get(item.flowerType) ?? { ordered: 0, shipped: 0, amount: 0 };
+      byFlower.ordered += item.quantity;
+      byFlower.shipped += item.shippedQuantity;
+      byFlower.amount += item.quantity * item.unitPrice;
+      factByFlower.set(item.flowerType, byFlower);
     }
     acc.orders += 1;
     fact.set(direction, acc);
@@ -277,11 +330,31 @@ export function buildDirectionFact(input: {
     };
   });
 
+  // Все три цветка показываем всегда, даже пустые: пустая строка здесь значит
+  // «плана по этому цветку в регионы нет», и её надо видеть, а не искать.
+  const flowerOrder = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+  const byFlower: FlowerFactRow[] = flowerOrder
+    .filter((flowerType) => mineFlower(flowerType))
+    .map((flowerType) => {
+      const p = planByFlower.get(flowerType) ?? { stems: 0, amount: 0 };
+      const f = factByFlower.get(flowerType) ?? { ordered: 0, shipped: 0, amount: 0 };
+      return {
+        flowerType,
+        planStems: p.stems,
+        planAmount: p.amount,
+        orderedStems: f.ordered,
+        shippedStems: f.shipped,
+        amount: f.amount,
+        donePercent: p.stems > 0 ? (f.ordered / p.stems) * 100 : null,
+      };
+    });
+
   const planStems = groups.reduce((s, g) => s + g.planStems, 0);
   const orderedStems = groups.reduce((s, g) => s + g.orderedStems, 0);
 
   return {
     groups,
+    byFlower,
     planStems,
     planAmount: Array.from(plan.values()).reduce((s, p) => s + p.amount, 0),
     orderedStems,

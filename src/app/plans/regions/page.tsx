@@ -7,6 +7,8 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listClients } from "@/lib/repo/clients";
 import { listShipmentPlans } from "@/lib/repo/shipmentPlans";
 import {
+  FLOWER_TYPES,
+  FLOWER_TYPE_LABELS_PLURAL,
   ORDER_STATUSES,
   isValidPeriod,
   periodLabel,
@@ -50,7 +52,7 @@ export const revalidate = 0;
 export default async function RegionSalesPage({
   searchParams,
 }: {
-  searchParams?: { period?: string; week?: string };
+  searchParams?: { period?: string; week?: string; flower?: string };
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
@@ -68,6 +70,23 @@ export default async function RegionSalesPage({
   const to = week ? week.to : weeks[weeks.length - 1]?.to ?? `${month}-31`;
   const planPeriods = week ? [week.code] : weeks.map((w) => w.code);
 
+  // Цветок — переключатель, а не ещё три колонки. Девять направлений на три
+  // цветка в одной таблице дают двадцать семь строк; так же решено и в сетке
+  // плана отгрузок, где цветок тоже переключается.
+  const FLOWER_ORDER: string[] = [
+    FLOWER_TYPES.ROSE,
+    FLOWER_TYPES.CHRYSANTHEMUM,
+    FLOWER_TYPES.EUSTOMA,
+  ];
+  const flower = FLOWER_ORDER.includes(searchParams?.flower ?? "") ? searchParams!.flower! : "";
+  // Что дотащить в адрес при переключении месяца и недели, чтобы выбранный
+  // цветок не сбрасывался на каждом нажатии.
+  const keep = (extra: Record<string, string>) => {
+    const params = new URLSearchParams({ period: month, ...extra });
+    if (flower) params.set("flower", flower);
+    return `/plans/regions?${params.toString()}`;
+  };
+
   const [orders, plans, clients] = await Promise.all([
     listOrdersWithItems(),
     listShipmentPlans(),
@@ -81,7 +100,21 @@ export default async function RegionSalesPage({
     to,
     planPeriods,
     cancelledStatus: ORDER_STATUSES.CANCELLED,
+    flowerType: flower,
   });
+  // Сводка по цветкам всегда считается по ВСЕМ цветкам: она и нужна для того,
+  // чтобы сравнить их между собой. Если считать её с тем же фильтром, при
+  // выбранной розе в ней осталась бы одна строка — и сравнивать стало бы не с чем.
+  const allFlowers = flower
+    ? buildDirectionFact({
+        orders,
+        plans,
+        from,
+        to,
+        planPeriods,
+        cancelledStatus: ORDER_STATUSES.CANCELLED,
+      })
+    : fact;
 
   const cityByClient = new Map(clients.map((c) => [c.clientId, c.city]));
   const cityByOrder = new Map(
@@ -95,10 +128,27 @@ export default async function RegionSalesPage({
     cancelledStatus: ORDER_STATUSES.CANCELLED,
   });
 
+  // Список заявок считается с тем же фильтром, что и таблицы выше. Показывать
+  // под таблицей «только розы» все заявки подряд — верный способ получить
+  // вопрос «почему цифры не сходятся»: сходятся, просто считают разное.
   const regionOrders = orders
     .filter((o) => countsAsWholesale(o, ORDER_STATUSES.CANCELLED))
     .filter((o) => o.direction)
     .filter((o) => o.deliveryDate >= from && o.deliveryDate <= to)
+    .map((o) => {
+      const items = flower ? o.items.filter((i) => i.flowerType === flower) : o.items;
+      return {
+        orderId: o.orderId,
+        clientName: o.clientName,
+        deliveryDate: o.deliveryDate,
+        direction: o.direction,
+        stems: items.reduce((s, i) => s + i.quantity, 0),
+        shipped: items.reduce((s, i) => s + i.shippedQuantity, 0),
+        amount: items.reduce((s, i) => s + i.quantity * i.unitPrice, 0),
+        items: items.length,
+      };
+    })
+    .filter((o) => o.items > 0)
     .sort((a, b) => (a.deliveryDate < b.deliveryDate ? -1 : 1));
 
   const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
@@ -121,19 +171,40 @@ export default async function RegionSalesPage({
         <SectionTabs tabs={plansTabsFor(role)} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-3">
         <PeriodPicker period={month} />
         <div className="flex flex-wrap gap-2">
-          <WeekPill href={`/plans/regions?period=${month}`} active={!week} label="Весь месяц" />
+          <WeekPill href={keep({})} active={!week} label="Весь месяц" />
           {weeks.map((w) => (
             <WeekPill
               key={w.code}
-              href={`/plans/regions?period=${month}&week=${w.code}`}
+              href={keep({ week: w.code })}
               active={week?.code === w.code}
               label={w.shortLabel}
             />
           ))}
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="text-sm text-ink-secondary">Цветок:</span>
+        <WeekPill
+          href={`/plans/regions?period=${month}${week ? `&week=${week.code}` : ""}`}
+          active={!flower}
+          label="Все"
+        />
+        {FLOWER_ORDER.map((f) => {
+          const params = new URLSearchParams({ period: month, flower: f });
+          if (week) params.set("week", week.code);
+          return (
+            <WeekPill
+              key={f}
+              href={`/plans/regions?${params.toString()}`}
+              active={flower === f}
+              label={FLOWER_TYPE_LABELS_PLURAL[f] ?? f}
+            />
+          );
+        })}
       </div>
 
       <p className="text-xs text-ink-muted mb-3">
@@ -183,7 +254,67 @@ export default async function RegionSalesPage({
         </div>
       )}
 
-      <h2 className="font-medium mb-2">По направлениям</h2>
+      <h2 className="font-medium mb-2">По цветку</h2>
+      <div className="card !p-0 overflow-x-auto mb-6">
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+              <th className="px-4 py-2.5 font-medium">Цветок</th>
+              <th className="px-3 py-2.5 font-medium text-right">План, шт</th>
+              <th className="px-3 py-2.5 font-medium text-right">Заказано</th>
+              <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
+              <th className="px-3 py-2.5 font-medium text-right">Выполнение</th>
+              <th className="px-3 py-2.5 font-medium text-right">Сумма</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allFlowers.byFlower.map((f) => (
+              <tr
+                key={f.flowerType}
+                className={
+                  "border-b border-line-hairline last:border-0 " +
+                  (flower && flower !== f.flowerType ? "opacity-45" : "")
+                }
+              >
+                <td className="px-4 py-2.5 font-medium whitespace-nowrap">
+                  {FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                  {f.planStems > 0 ? nf(f.planStems) : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                  {f.orderedStems > 0 ? nf(f.orderedStems) : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums">
+                  {f.shippedStems > 0 ? nf(f.shippedStems) : "—"}
+                </td>
+                <td
+                  className={
+                    "px-3 py-2.5 text-right tabular-nums " +
+                    (f.donePercent === null
+                      ? "text-ink-muted"
+                      : f.donePercent >= 100
+                        ? "text-status-good"
+                        : f.donePercent >= 80
+                          ? ""
+                          : "text-[#8a5a00]")
+                  }
+                >
+                  {pct(f.donePercent)}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums">
+                  {f.amount > 0 ? `${nf(f.amount)} ₸` : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className="font-medium mb-2">
+        По направлениям
+        {flower ? ` · ${FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower}` : ""}
+      </h2>
       <div className="card !p-0 overflow-x-auto mb-6">
         <table className="w-full text-sm min-w-[720px]">
           <thead>
@@ -289,7 +420,10 @@ export default async function RegionSalesPage({
         </table>
       </div>
 
-      <h2 className="font-medium mb-2">Заявки периода</h2>
+      <h2 className="font-medium mb-2">
+        Заявки периода
+        {flower ? ` · только ${(FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower).toLowerCase()}` : ""}
+      </h2>
       <div className="card !p-0 overflow-x-auto">
         <table className="w-full text-sm min-w-[680px]">
           <thead>
@@ -304,33 +438,31 @@ export default async function RegionSalesPage({
             </tr>
           </thead>
           <tbody>
-            {regionOrders.map((o) => {
-              const stems = o.items.reduce((s, i) => s + i.quantity, 0);
-              const shipped = o.items.reduce((s, i) => s + i.shippedQuantity, 0);
-              return (
-                <tr key={o.orderId} className="border-b border-line-hairline last:border-0">
-                  <td className="px-4 py-2.5 whitespace-nowrap text-ink-secondary">
-                    {formatDay(o.deliveryDate)}
-                  </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap font-medium">{o.direction}</td>
-                  <td className="px-3 py-2.5">{o.clientName}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <Link href={`/orders/${o.orderId}`} className="hover:underline">
-                      {o.orderId}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{nf(stems)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
-                    {shipped > 0 ? nf(shipped) : "—"}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{nf(o.totalAmount)} ₸</td>
-                </tr>
-              );
-            })}
+            {regionOrders.map((o) => (
+              <tr key={o.orderId} className="border-b border-line-hairline last:border-0">
+                <td className="px-4 py-2.5 whitespace-nowrap text-ink-secondary">
+                  {formatDay(o.deliveryDate)}
+                </td>
+                <td className="px-3 py-2.5 whitespace-nowrap font-medium">{o.direction}</td>
+                <td className="px-3 py-2.5">{o.clientName}</td>
+                <td className="px-3 py-2.5 whitespace-nowrap">
+                  <Link href={`/orders/${o.orderId}`} className="hover:underline">
+                    {o.orderId}
+                  </Link>
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{nf(o.stems)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                  {o.shipped > 0 ? nf(o.shipped) : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{nf(o.amount)} ₸</td>
+              </tr>
+            ))}
             {regionOrders.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
-                  Заявок в регионы за этот период нет.
+                  {flower
+                    ? `Заявок в регионы по этому цветку за период нет.`
+                    : "Заявок в регионы за этот период нет."}
                 </td>
               </tr>
             )}

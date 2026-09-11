@@ -123,11 +123,14 @@ check(
 // --- План против факта ------------------------------------------------------
 
 const PLANS: DirectionPlanRow[] = [
-  { period: "2026-09-W2", direction: "Астана", targetStems: 1000, targetAmount: 500_000 },
-  { period: "2026-09-W2", direction: "Караганда", targetStems: 500, targetAmount: 250_000 },
-  { period: "2026-09-W3", direction: "Астана", targetStems: 800, targetAmount: 400_000 },
+  // План отгрузок ведётся по цветкам — разрез в нём был с самого начала, на
+  // странице регионов его просто не показывали.
+  { period: "2026-09-W2", direction: "Астана", flowerType: "rose", targetStems: 700, targetAmount: 350_000 },
+  { period: "2026-09-W2", direction: "Астана", flowerType: "chrysanthemum", targetStems: 300, targetAmount: 150_000 },
+  { period: "2026-09-W2", direction: "Караганда", flowerType: "chrysanthemum", targetStems: 500, targetAmount: 250_000 },
+  { period: "2026-09-W3", direction: "Астана", flowerType: "rose", targetStems: 800, targetAmount: 400_000 },
   // Чужая неделя в счёт не идёт.
-  { period: "2026-10-W1", direction: "Астана", targetStems: 9999, targetAmount: 1 },
+  { period: "2026-10-W1", direction: "Астана", flowerType: "rose", targetStems: 9999, targetAmount: 1 },
 ];
 
 const ORDERS: DirectionFactOrder[] = [
@@ -138,7 +141,7 @@ const ORDERS: DirectionFactOrder[] = [
     status: ORDER_STATUSES.NEW,
     direction: "Астана",
     managerEmail: "rop@ecoculture.kz",
-    items: [{ quantity: 600, shippedQuantity: 600, unitPrice: 500 }],
+    items: [{ flowerType: "rose", quantity: 600, shippedQuantity: 600, unitPrice: 500 }],
   },
   {
     orderId: "O-2",
@@ -147,7 +150,7 @@ const ORDERS: DirectionFactOrder[] = [
     status: ORDER_STATUSES.NEW,
     direction: "Караганда",
     managerEmail: "rop@ecoculture.kz",
-    items: [{ quantity: 500, shippedQuantity: 200, unitPrice: 400 }],
+    items: [{ flowerType: "chrysanthemum", quantity: 500, shippedQuantity: 200, unitPrice: 400 }],
   },
   {
     // Наш собственный магазин в Астане: стебли уехали, но это не продажа.
@@ -158,7 +161,7 @@ const ORDERS: DirectionFactOrder[] = [
     direction: "Астана",
     retail: "regions",
     managerEmail: "sklad.rose@ecoculture.kz",
-    items: [{ quantity: 3000, shippedQuantity: 3000, unitPrice: 100 }],
+    items: [{ flowerType: "rose", quantity: 3000, shippedQuantity: 3000, unitPrice: 100 }],
   },
   {
     orderId: "O-4",
@@ -167,7 +170,7 @@ const ORDERS: DirectionFactOrder[] = [
     status: ORDER_STATUSES.CANCELLED,
     direction: "Астана",
     managerEmail: "rop@ecoculture.kz",
-    items: [{ quantity: 5000, shippedQuantity: 0, unitPrice: 500 }],
+    items: [{ flowerType: "rose", quantity: 5000, shippedQuantity: 0, unitPrice: 500 }],
   },
   {
     orderId: "O-5",
@@ -176,7 +179,7 @@ const ORDERS: DirectionFactOrder[] = [
     status: ORDER_STATUSES.NEW,
     direction: "",
     managerEmail: "emil@ecoculture.kz",
-    items: [{ quantity: 400, shippedQuantity: 400, unitPrice: 300 }],
+    items: [{ flowerType: "rose", quantity: 400, shippedQuantity: 400, unitPrice: 300 }],
   },
   {
     // Заявка в регион, заведённая менеджером: направления нет.
@@ -186,7 +189,21 @@ const ORDERS: DirectionFactOrder[] = [
     status: ORDER_STATUSES.NEW,
     direction: "",
     managerEmail: "emil@ecoculture.kz",
-    items: [{ quantity: 200, shippedQuantity: 0, unitPrice: 350 }],
+    items: [{ flowerType: "rose", quantity: 200, shippedQuantity: 0, unitPrice: 350 }],
+  },
+  {
+    // СМЕШАННАЯ заявка: роза и хризантема в одной машине. Именно здесь ломается
+    // разрез по цветку, если фильтровать заявки целиком, а не их позиции.
+    orderId: "O-7",
+    clientName: "Цветы Астаны",
+    deliveryDate: "2026-09-12",
+    status: ORDER_STATUSES.NEW,
+    direction: "Астана",
+    managerEmail: "rop@ecoculture.kz",
+    items: [
+      { flowerType: "rose", quantity: 100, shippedQuantity: 0, unitPrice: 500 },
+      { flowerType: "chrysanthemum", quantity: 50, shippedQuantity: 0, unitPrice: 400 },
+    ],
   },
 ];
 
@@ -202,16 +219,18 @@ const fact = buildDirectionFact({
 });
 
 check("план за неделю", fact.planStems, 1500);
-check("заказано за неделю", fact.orderedStems, 1100);
+check("заказано за неделю", fact.orderedStems, 1250);
 check("отгружено за неделю", fact.shippedStems, 800);
-check("заявок в счёте", fact.orders, 2);
-check("сумма по направлениям", fact.amount, 600 * 500 + 500 * 400);
-check("выполнение плана, %", Math.round(fact.donePercent ?? -1), 73);
+check("заявок в счёте", fact.orders, 3);
+check("сумма по направлениям", fact.amount, 600 * 500 + 500 * 400 + 100 * 500 + 50 * 400);
+check("выполнение плана, %", Math.round(fact.donePercent ?? -1), 83);
 
 const rows = fact.groups.flatMap((g) => g.rows);
 const astana = rows.find((r) => r.direction === "Астана");
-check("Астана: наш магазин в факт не попал", astana?.orderedStems, 600);
-check("Астана: отменённая не попала", astana?.orders, 1);
+// 750 — это 600 из обычной заявки плюс 150 из смешанной. Трёх тысяч стеблей
+// нашего собственного магазина здесь нет, и в этом весь смысл проверки.
+check("Астана: наш магазин в факт не попал", astana?.orderedStems, 750);
+check("Астана: отменённая не попала", astana?.orders, 2);
 check("Астана: план недели", astana?.planStems, 1000);
 
 const karaganda = rows.find((r) => r.direction === "Караганда");
@@ -224,7 +243,7 @@ check("Семей: ни плана, ни факта — выполнение п�
 check(
   "алматинская заявка в регионы не попала",
   rows.reduce((s, r) => s + r.orderedStems, 0),
-  1100
+  1250
 );
 
 // Блоки направлений: сумма по блокам равна общему итогу — иначе на странице
@@ -235,6 +254,86 @@ check(
   fact.orderedStems
 );
 
+// --- Разрез по цветку -------------------------------------------------------
+
+check(
+  "в сводке все три цветка, даже пустые",
+  fact.byFlower.map((f) => f.flowerType),
+  ["rose", "chrysanthemum", "eustoma"]
+);
+
+const rose = fact.byFlower.find((f) => f.flowerType === "rose");
+const chrys = fact.byFlower.find((f) => f.flowerType === "chrysanthemum");
+const eustoma = fact.byFlower.find((f) => f.flowerType === "eustoma");
+
+check("роза: план недели", rose?.planStems, 700);
+check("роза: заказано (в том числе из смешанной заявки)", rose?.orderedStems, 700);
+check("роза: отгружено", rose?.shippedStems, 600);
+check("роза: выполнение 100 %", Math.round(rose?.donePercent ?? -1), 100);
+check("хризантема: план недели по двум направлениям", chrys?.planStems, 800);
+check("хризантема: заказано (в том числе из смешанной заявки)", chrys?.orderedStems, 550);
+check("эустома: плана нет — прочерк, а не ноль процентов", eustoma?.donePercent, null);
+check("эустома: и факта нет", eustoma?.orderedStems, 0);
+
+// Сводка по цветкам обязана сходиться с общим итогом: это одни и те же стебли,
+// посчитанные с другой стороны. Разойдутся — и странице нельзя верить.
+check(
+  "сумма по цветкам = план всего",
+  fact.byFlower.reduce((s, f) => s + f.planStems, 0),
+  fact.planStems
+);
+check(
+  "сумма по цветкам = заказано всего",
+  fact.byFlower.reduce((s, f) => s + f.orderedStems, 0),
+  fact.orderedStems
+);
+check(
+  "сумма по цветкам = отгружено всего",
+  fact.byFlower.reduce((s, f) => s + f.shippedStems, 0),
+  fact.shippedStems
+);
+check(
+  "сумма по цветкам = сумма всего",
+  fact.byFlower.reduce((s, f) => s + f.amount, 0),
+  fact.amount
+);
+
+// --- Фильтр по одному цветку ------------------------------------------------
+
+const roseOnly = buildDirectionFact({
+  orders: ORDERS,
+  plans: PLANS,
+  from: WEEK2.from,
+  to: WEEK2.to,
+  planPeriods: WEEK2.periods,
+  cancelledStatus: ORDER_STATUSES.CANCELLED,
+  flowerType: "rose",
+});
+check("только роза: план", roseOnly.planStems, 700);
+check("только роза: заказано", roseOnly.orderedStems, 700);
+check("только роза: отгружено", roseOnly.shippedStems, 600);
+check("только роза: сумма", roseOnly.amount, 600 * 500 + 100 * 500);
+// Заявка, где розы нет вовсе, не должна попадать даже в счётчик заявок.
+check("только роза: карагандинская заявка не в счёте", roseOnly.orders, 2);
+check(
+  "только роза: у Караганды пусто",
+  roseOnly.groups.flatMap((g) => g.rows).find((r) => r.direction === "Караганда")?.orderedStems,
+  0
+);
+check("только роза: в сводке одна строка", roseOnly.byFlower.map((f) => f.flowerType), ["rose"]);
+
+const eustomaOnly = buildDirectionFact({
+  orders: ORDERS,
+  plans: PLANS,
+  from: WEEK2.from,
+  to: WEEK2.to,
+  planPeriods: WEEK2.periods,
+  cancelledStatus: ORDER_STATUSES.CANCELLED,
+  flowerType: "eustoma",
+});
+check("только эустома: ни плана, ни факта", [eustomaOnly.planStems, eustomaOnly.orderedStems], [0, 0]);
+check("только эустома: выполнение прочерк", eustomaOnly.donePercent, null);
+
 // Месяц целиком — это просто сумма своих недель, без отдельного расчёта.
 const monthFact = buildDirectionFact({
   orders: ORDERS,
@@ -244,11 +343,11 @@ const monthFact = buildDirectionFact({
   planPeriods: ["2026-09-W1", "2026-09-W2", "2026-09-W3", "2026-09-W4", "2026-09-W5"],
   cancelledStatus: ORDER_STATUSES.CANCELLED,
 });
-check("месячный план = сумма недель", monthFact.planStems, 1000 + 500 + 800);
+check("месячный план = сумма недель", monthFact.planStems, 700 + 300 + 500 + 800);
 check("чужой месяц в план не попал", monthFact.planStems < 9999, true);
 // Заявка от 11 сентября направления не несёт, поэтому в факт по регионам она
 // не идёт — её и показывает список «похоже на регион, но направление не стоит».
-check("заявка без направления в факт не попала", monthFact.orderedStems, 1100);
+check("заявка без направления в факт не попала", monthFact.orderedStems, 1250);
 
 check(
   "пустые данные не роняют расчёт",
