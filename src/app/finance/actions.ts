@@ -9,6 +9,7 @@ import {
   setOrderPayment,
   setOrderPaymentByFarm,
   setOrderPromise,
+  setOrderInvoiceSent,
   updateOrderItemAmounts,
   recomputeOrderStatusFromItems,
 } from "@/lib/repo/orders";
@@ -18,6 +19,7 @@ import { confirmRefusal, moneyRefusal } from "@/lib/orderRules";
 import { invoiceByFarm } from "@/lib/orderMoney";
 import { isRetailOrder, isRetailRole } from "@/lib/retail";
 import { isRegionOrder } from "@/lib/orderKind";
+import { invoiceSentRefusal } from "@/lib/paymentStage";
 import {
   CLAIM_REASONS,
   CLAIM_STATUSES,
@@ -220,6 +222,47 @@ export async function setPaidAction(orderId: string, paid: boolean, paymentMetho
  * Обещание клиента заплатить. Нужно ради списка «кому звонить сегодня»: без
  * даты в нём каждый день висят одни и те же люди, и звонить перестают всем.
  */
+/**
+ * Отметка «счёт отправлен клиенту».
+ *
+ * Нужна потому, что «не оплачено» отвечало сразу на два разных вопроса: счёт
+ * ещё не выставили или клиент тянет с деньгами. Бухгалтер видела одну и ту же
+ * строку, а разговор с клиентом в этих случаях противоположный.
+ *
+ * Ставит только бухгалтер — так решил владелец. Дата первой отправки не
+ * перетирается повторным нажатием: она отвечает на вопрос «когда мы вообще про
+ * эти деньги напоминали».
+ */
+export async function setInvoiceSentAction(orderId: string, sent: boolean) {
+  const email = await requireAccountant();
+
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+
+  const session = await getServerSession(authOptions);
+  const refusal = invoiceSentRefusal({
+    role: session?.user?.role,
+    order,
+    cancelledStatus: ORDER_STATUSES.CANCELLED,
+  });
+  if (refusal) throw new Error(refusal);
+
+  await setOrderInvoiceSent(orderId, sent);
+
+  // В журнал это идёт наравне с оплатой: «счёт отправляли?» — первый вопрос
+  // при разборе долга, и отвечать на него по памяти нельзя.
+  await logMoney({
+    actorEmail: email,
+    orderId,
+    action: MONEY_LOG_ACTIONS.INVOICE_SENT,
+    details: sent ? "Счёт отправлен клиенту" : "Отметка об отправке счёта снята",
+    amountBefore: order.totalAmount,
+    amountAfter: order.totalAmount,
+  });
+
+  refreshMoneyPages(orderId);
+}
+
 export async function setPromiseAction(orderId: string, promisedAt: string, note: string) {
   const email = await requireAccountant();
 

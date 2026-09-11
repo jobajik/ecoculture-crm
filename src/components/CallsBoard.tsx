@@ -106,7 +106,8 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                         </Link>
                       </span>
                       <span className="block text-xs text-ink-muted ml-4">
-                        менеджер {c.managerName}
+                        менеджер {c.managerName} ·{" "}
+                        <span className="font-mono">{c.code}</span>
                       </span>
                     </td>
                     <td className="px-4 py-2.5 whitespace-nowrap tabular-nums">
@@ -150,6 +151,7 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                             totalAmount={c.amount}
                             paidAmount={c.paidAmount}
                             farms={c.farms}
+                            invoiceSentAt={c.invoiceSentAt}
                             onDone={() => setOpenId(null)}
                           />
                         </div>

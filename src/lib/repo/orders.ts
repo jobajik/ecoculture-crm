@@ -64,6 +64,7 @@ function toOrder(record: Record<string, string>): Order {
     // на одну заявку (грабли 1.10 — ошибка закрывает, а не открывает).
     direction: cleanDirection(record.Direction),
     kind: cleanOrderKind(record.Kind),
+    invoiceSentAt: toIsoDateTime(record.InvoiceSentAt),
   };
 }
 
@@ -182,6 +183,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     Retail: input.retail || "",
     Direction: input.direction || "",
     Kind: input.kind || "",
+    InvoiceSentAt: "",
   });
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -485,6 +487,25 @@ export async function saveOrderItems(
       : 0;
 
   return { updated: updates.length, created: creates.length, deleted };
+}
+
+/**
+ * Отметка «счёт отправлен клиенту». Ставит бухгалтер.
+ *
+ * Хранится ДАТА, а не галочка: «отправлен» без дня не отвечает на вопрос «когда
+ * мы вообще про эти деньги напоминали», а он и есть главный в разговоре с
+ * должником. Снятие отметки стирает дату целиком — полуправда «отправляли, но
+ * когда, не знаем» хуже честного «не отправляли».
+ */
+export async function setOrderInvoiceSent(orderId: string, sent: boolean): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    (record) => ({
+      // Повторная отметка не двигает дату: она про первую отправку счёта.
+      InvoiceSentAt: sent ? (record.InvoiceSentAt || "").trim() || new Date().toISOString() : "",
+    })
+  );
 }
 
 /** Первая «зелёная галочка»: менеджер согласовал заявку с клиентом окончательно. */

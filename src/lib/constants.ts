@@ -87,6 +87,15 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     // Колонка последняя (грабли 1.1). Пустая ячейка у старых заявок читается
     // как «обычная продажа» — это и есть правда.
     "Kind",
+    // Когда счёт был отправлен клиенту. Пустая ячейка — «ещё не отправляли»,
+    // и у старых заявок это честный ответ: до сентября такой отметки не было.
+    //
+    // Нужна потому, что «не оплачено» отвечало сразу на два разных вопроса:
+    // счёт ещё не выставили или клиент тянет с деньгами. Разговор с клиентом
+    // в этих случаях противоположный, а бухгалтер видела одну и ту же строку.
+    //
+    // Колонка последняя, как и всё остальное (грабли 1.1).
+    "InvoiceSentAt",
   ],
   // Клиентская база. Заводит менеджер, правит свой менеджер, РОП и админ.
   [SHEET_TABS.CLIENTS]: [
@@ -446,6 +455,7 @@ export const MONEY_LOG_ACTIONS = {
   ORDER_CANCELLED: "order_cancelled",
   MANAGER_CONFIRMED: "manager_confirmed",
   ORDER_EDITED: "order_edited",
+  INVOICE_SENT: "invoice_sent",
 } as const;
 export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
 
@@ -453,6 +463,7 @@ export const MONEY_LOG_LABELS: Record<string, string> = {
   order_cancelled: "Заявка отменена",
   manager_confirmed: "Подтверждение менеджера",
   order_edited: "Заявка изменена",
+  invoice_sent: "Счёт клиенту",
   payment: "Оплата",
   payment_cleared: "Оплата снята",
   recalculated: "Пересчёт заявки",

@@ -3,7 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { setPaymentAction, setPaymentByFarmAction } from "@/app/finance/actions";
+import {
+  setInvoiceSentAction,
+  setPaymentAction,
+  setPaymentByFarmAction,
+} from "@/app/finance/actions";
+import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
@@ -30,6 +35,7 @@ export default function PaymentPanel({
   totalAmount,
   paidAmount,
   farms = [],
+  invoiceSentAt = "",
   onDone,
 }: {
   orderId: string;
@@ -40,20 +46,76 @@ export default function PaymentPanel({
    * каждой отдельно. Одна или ноль — обычная заявка, работает как раньше.
    */
   farms?: FarmPayment[];
+  /** Когда счёт отправили клиенту. Пусто — не отправляли. */
+  invoiceSentAt?: string;
   onDone?: () => void;
 }) {
-  if (farms.length > 1) {
-    return (
-      <SplitPayment orderId={orderId} totalAmount={totalAmount} farms={farms} onDone={onDone} />
-    );
-  }
   return (
-    <WholePayment
-      orderId={orderId}
-      totalAmount={totalAmount}
-      paidAmount={paidAmount}
-      onDone={onDone}
-    />
+    <div className="space-y-4">
+      <InvoiceRow orderId={orderId} invoiceSentAt={invoiceSentAt} />
+      {farms.length > 1 ? (
+        <SplitPayment orderId={orderId} totalAmount={totalAmount} farms={farms} onDone={onDone} />
+      ) : (
+        <WholePayment
+          orderId={orderId}
+          totalAmount={totalAmount}
+          paidAmount={paidAmount}
+          onDone={onDone}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Отметка «счёт отправлен клиенту» — первая ступень оплаты.
+ *
+ * Раньше у заявки было два состояния, «не оплачено» и «оплачено», и первое
+ * отвечало сразу на два разных вопроса: счёт ещё не выставили или клиент тянет
+ * с деньгами. Напоминать в этих случаях надо по-разному, а строка выглядела
+ * одинаково.
+ *
+ * Стоит отметка здесь, в панели оплаты, а не отдельной кнопкой в строке: это
+ * то же самое рабочее место и тот же самый разговор о деньгах, а вторая кнопка
+ * в узкой строке таблицы означала бы промах пальцем на телефоне.
+ */
+function InvoiceRow({ orderId, invoiceSentAt }: { orderId: string; invoiceSentAt: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const sent = Boolean((invoiceSentAt || "").trim());
+
+  function toggle() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await setInvoiceSentAction(orderId, !sent);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Не удалось сохранить");
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 pb-3 border-b border-line-hairline">
+      <span className="text-sm">
+        <span className="text-ink-secondary">Счёт клиенту: </span>
+        {sent ? (
+          <span className="text-status-good">отправлен {formatMoment(invoiceSentAt)}</span>
+        ) : (
+          <span className="text-[#8a5a00]">ещё не отправлен</span>
+        )}
+      </span>
+      <button
+        onClick={toggle}
+        disabled={pending}
+        className={clsx("btn-secondary !py-1 !px-2.5 text-xs disabled:opacity-50", sent && "!text-ink-secondary")}
+      >
+        {pending ? "Сохраняю…" : sent ? "Снять отметку" : "Счёт отправлен"}
+      </button>
+      {error && <span className="text-sm text-status-critical">{error}</span>}
+    </div>
   );
 }
 

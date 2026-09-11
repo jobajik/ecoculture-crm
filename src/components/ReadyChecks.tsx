@@ -23,6 +23,7 @@ export default function ReadyChecks({
   paymentMethod,
   paidAmount,
   totalAmount,
+  invoiceSentAt = "",
   retail = "",
   kind = "",
   canConfirm,
@@ -35,6 +36,8 @@ export default function ReadyChecks({
   /** Сколько денег получено и сколько всего по счёту — оплата бывает частичной. */
   paidAmount: number;
   totalAmount: number;
+  /** Когда счёт отправили клиенту. Пусто — не отправляли. */
+  invoiceSentAt?: string;
   /** Направление собственной розницы; пусто — обычная продажа наружу. */
   retail?: string;
   /** Вид заявки: «region» — оптовый объём на город, счёта по нему нет. */
@@ -53,6 +56,10 @@ export default function ReadyChecks({
   const noInvoice = isRetail || isRegion;
   const ready = managerConfirmed && (noInvoice || paid);
   const partial = !paid && paidAmount > 0;
+  // Счёт отправлен, но денег ещё нет — промежуточная ступень между «ничего не
+  // сделано» и «оплачено». Без неё серая клетка означала сразу два разных
+  // положения дел, и понять по ней, пора ли напоминать клиенту, было нельзя.
+  const invoiceSent = !paid && !partial && Boolean((invoiceSentAt || "").trim());
   const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 
   function toggle() {
@@ -142,11 +149,17 @@ export default function ReadyChecks({
                   : "bg-surface-plane text-ink-muted"
             )}
           >
-            {paid ? "✓" : partial ? "½" : "—"}
+            {paid ? "✓" : partial ? "½" : invoiceSent ? "→" : "—"}
           </span>
           <div className="min-w-0">
             <div className="text-sm font-medium">
-              {paid ? "Оплачено" : partial ? "Оплачено частично" : "Оплачено"}
+              {paid
+                ? "Оплачено"
+                : partial
+                  ? "Оплачено частично"
+                  : invoiceSent
+                    ? "Счёт отправлен клиенту"
+                    : "Оплачено"}
             </div>
             <div className="text-xs text-ink-muted">
               {paid
@@ -155,7 +168,9 @@ export default function ReadyChecks({
                   }`
                 : partial
                   ? `Получено ${money(paidAmount)} из ${money(totalAmount)}`
-                  : "Отмечает бухгалтер в разделе «Оплаты»"}
+                  : invoiceSent
+                    ? `Счёт у клиента с ${formatDay(invoiceSentAt, "")} — ждём деньги`
+                    : "Отмечает бухгалтер в разделе «Оплаты»"}
             </div>
             {partial && (
               <div className="text-xs text-[#8a5a00] mt-0.5">

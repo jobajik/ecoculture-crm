@@ -186,6 +186,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         totalAmount={order.totalAmount}
         retail={order.retail}
         kind={order.kind}
+        invoiceSentAt={order.invoiceSentAt}
         canConfirm={
           role === "admin" ||
           (((role === "manager" && !region) ||

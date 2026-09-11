@@ -4,6 +4,7 @@ import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./
 import { isReadyToShip } from "./orderReady";
 import { hasNoClientInvoice } from "./orderKind";
 import { farmPayments, type FarmPayment } from "./orderMoney";
+import { orderCode, paymentStage, type PaymentStage } from "./paymentStage";
 import type { OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,15 @@ export interface FinanceOrderRow {
   collectionNote: string;
   /** Обе галочки — заявку можно собирать. */
   readyToCollect: boolean;
+  /** Когда счёт отправили клиенту. Пусто — не отправляли. */
+  invoiceSentAt: string;
+  /**
+   * Стадия оплаты: счёт не отправлен → счёт отправлен → часть → оплачено.
+   * Считается из отметки о счёте и полученной суммы, отдельным полем не хранится.
+   */
+  stage: PaymentStage;
+  /** Последние пять знаков номера — по ним бухгалтер ищет заявку. */
+  code: string;
   positions: string;
   /**
    * Счёт и оплата в разрезе КОМПАНИЙ: розу и эустому продаёт Rose Farm,
@@ -79,6 +89,10 @@ export interface CallRow {
   collectionNote: string;
   /** Счёт и оплата по компаниям — панель оплаты работает от них. */
   farms: FarmPayment[];
+  /** Когда счёт отправили клиенту. Пусто — не отправляли, и звонить рано. */
+  invoiceSentAt: string;
+  /** Последние пять знаков номера заявки. */
+  code: string;
   /** Почему строка стоит именно здесь — пишем словами, чтобы не гадать. */
   why: string;
 }
@@ -243,6 +257,9 @@ export async function getFinanceSnapshot(
       promisedAt: order.promisedAt,
       collectionNote: order.collectionNote,
       readyToCollect: isReadyToShip(order),
+      invoiceSentAt: order.invoiceSentAt,
+      stage: paymentStage({ totalAmount: amount, paidAmount, invoiceSentAt: order.invoiceSentAt }),
+      code: orderCode(order.orderId),
       farms: farmPayments(order),
       positions: order.items.map((i) => `${i.variety} ${i.grade}`).join(", "),
     };
@@ -365,6 +382,12 @@ export async function getFinanceSnapshot(
           : r.promisedAt === todayKey
             ? "today"
             : "future";
+      // Отметку о счёте в ПОРЯДОК звонков намеренно не пускаем. Колонка новая,
+      // и у всех заявок, заведённых до неё, она пуста — то есть «счёт не
+      // отправлен» стояло бы сегодня по всей базе, включая те счета, которые
+      // Юлия давно отправила руками. Пустая колонка не должна ничего утверждать
+      // (грабли 1.10: ошибка в данных закрывает, а не открывает). Саму отметку
+      // видно в панели оплаты, и она заполнится сама по мере работы.
       const why =
         promiseState === "broken"
           ? `Обещал заплатить ${dateWord(r.promisedAt)} — деньги не пришли`
@@ -390,6 +413,8 @@ export async function getFinanceSnapshot(
         promiseState,
         collectionNote: r.collectionNote,
         farms: r.farms,
+        invoiceSentAt: r.invoiceSentAt,
+        code: r.code,
         why,
       };
     })
