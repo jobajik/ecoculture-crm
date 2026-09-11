@@ -1,5 +1,15 @@
-import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
+import {
+  appendRow,
+  appendRows,
+  deleteWhere,
+  readTable,
+  rowToRecord,
+  SHEET_TABS,
+  updateRows,
+  updateWhere,
+} from "../sheets";
 import { generateId } from "../id";
+import { planItemSave } from "../orderEdit";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
 import { spreadByInvoice, type FarmMoney } from "../orderMoney";
@@ -372,6 +382,109 @@ export async function updateOrderItemAmounts(
       UnitPrice: Math.max(0, Math.round(unitPrice * 100) / 100),
     })
   );
+}
+
+/**
+ * Правка «шапки» заявки менеджером: дата доставки, телефон, комментарий.
+ *
+ * Клиент, направление, статус и всё денежное сюда не попадают намеренно: это
+ * разные разговоры с разными правилами, и один общий «сохранить что прислали»
+ * рано или поздно записал бы в заявку то, чего в форме и не было.
+ */
+export async function updateOrderHeader(
+  orderId: string,
+  fields: { deliveryDate?: string; clientPhone?: string; notes?: string }
+): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () => ({
+      ...(fields.deliveryDate !== undefined ? { DeliveryDate: fields.deliveryDate } : {}),
+      ...(fields.clientPhone !== undefined ? { ClientPhone: fields.clientPhone } : {}),
+      ...(fields.notes !== undefined ? { Notes: fields.notes } : {}),
+    })
+  );
+}
+
+export interface SaveOrderItemInput {
+  /** Пусто — новая позиция. */
+  itemId: string;
+  flowerType: FlowerType;
+  variety: string;
+  grade: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+/**
+ * Записывает новый состав заявки: правит, что осталось, дописывает новое,
+ * удаляет убранное.
+ *
+ * `ShippedQuantity` не трогается никогда — это история склада, а не заявки.
+ * Правила, по которым состав вообще разрешено менять (и кому), лежат в
+ * `src/lib/orderEdit.ts`; здесь только запись.
+ */
+export async function saveOrderItems(
+  orderId: string,
+  items: SaveOrderItemInput[]
+): Promise<{ updated: number; created: number; deleted: number }> {
+  const table = await readTable(SHEET_TABS.ORDER_ITEMS);
+  const existing = table.rows
+    .map((row, idx) => ({ record: rowToRecord(SHEET_TABS.ORDER_ITEMS, row), rowNumber: table.rowNumbers[idx] }))
+    .filter((r) => r.record.OrderID === orderId);
+
+  const rowByItemId = new Map(existing.map((r) => [r.record.ItemID, r]));
+  // Что оставить, что завести, что убрать, считает чистая функция под тестом —
+  // в том числе потому, что в «оставить» обязаны попасть и ТОЛЬКО ЧТО ВЫДАННЫЕ
+  // номера новых позиций. Без этого удаление, идущее следом, снесло бы их сразу
+  // после добавления.
+  const plan = planItemSave(
+    orderId,
+    existing.map((r) => r.record.ItemID),
+    items
+  );
+  const keep = new Set(plan.keep);
+
+  const updates: { rowNumber: number; record: Record<string, unknown> }[] = [];
+  const creates: Record<string, unknown>[] = [];
+  const newIds = plan.newIds;
+  let newIdx = 0;
+
+  for (const item of items) {
+    const row = item.itemId ? rowByItemId.get(item.itemId) : undefined;
+    const base = {
+      OrderID: orderId,
+      FlowerType: item.flowerType,
+      Variety: item.variety.trim(),
+      Grade: item.grade,
+      Quantity: Math.max(0, Math.round(item.quantity)),
+      UnitPrice: Math.max(0, Math.round(item.unitPrice * 100) / 100),
+    };
+    if (row) {
+      updates.push({
+        rowNumber: row.rowNumber,
+        // Отгруженное переносим как есть: заявку правят, склад — нет.
+        record: { ...base, ItemID: item.itemId, ShippedQuantity: Number(row.record.ShippedQuantity) || 0 },
+      });
+    } else {
+      creates.push({ ...base, ItemID: newIds[newIdx++], ShippedQuantity: 0 });
+    }
+  }
+
+  // Порядок важен: сначала правки и дописывание, и только потом удаление.
+  // Удаление сдвигает строки, и номера, собранные до него, стали бы чужими.
+  await updateRows(SHEET_TABS.ORDER_ITEMS, updates);
+  await appendRows(SHEET_TABS.ORDER_ITEMS, creates);
+
+  const deleted =
+    plan.deleted.length > 0
+      ? await deleteWhere(
+          SHEET_TABS.ORDER_ITEMS,
+          (record) => record.OrderID === orderId && !keep.has(record.ItemID)
+        )
+      : 0;
+
+  return { updated: updates.length, created: creates.length, deleted };
 }
 
 /** Первая «зелёная галочка»: менеджер согласовал заявку с клиентом окончательно. */

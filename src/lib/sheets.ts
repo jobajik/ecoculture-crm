@@ -213,6 +213,61 @@ export async function updateWhere(
 }
 
 /**
+ * Удаляет строки, подходящие под условие. Возвращает, сколько удалено.
+ *
+ * Нужно ровно для одного случая: менеджер убрал позицию из заявки. Оставить
+ * вместо удаления «количество ноль» было бы хуже — строка осталась бы в листе
+ * сборки, в истории и в печатной форме, и объяснить её никто бы не смог.
+ *
+ * Строки удаляются СНИЗУ ВВЕРХ. Удаление сдвигает всё, что ниже, на строку
+ * вверх: пойди сверху — и второй запрос попал бы уже не в ту строку, то есть
+ * стёр бы соседнюю позицию чужой заявки. Поэтому же удаление идёт одним
+ * пакетом, а не отдельными запросами: между ними таблица успела бы измениться.
+ */
+export async function deleteWhere(
+  tabName: string,
+  predicate: (record: Record<string, string>) => boolean
+): Promise<number> {
+  const table = await readTable(tabName);
+  const rowNumbers: number[] = [];
+  table.rows.forEach((row, i) => {
+    if (predicate(rowToRecord(tabName, row))) rowNumbers.push(table.rowNumbers[i]);
+  });
+  if (rowNumbers.length === 0) return 0;
+
+  const sheets = getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const sheetId = meta.data.sheets?.find((s) => s.properties?.title === tabName)?.properties
+    ?.sheetId;
+  if (sheetId === undefined || sheetId === null) {
+    throw new Error(`Лист «${tabName}» не найден`);
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: rowNumbers
+        .slice()
+        .sort((a, b) => b - a)
+        .map((rowNumber) => ({
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              // Google считает строки с нуля, а `rowNumbers` — с единицы, как
+              // их показывает сама таблица.
+              startIndex: rowNumber - 1,
+              endIndex: rowNumber,
+            },
+          },
+        })),
+    },
+  });
+  return rowNumbers.length;
+}
+
+/**
  * Стирает все строки данных вкладки, оставляя строку заголовков.
  *
  * Значения именно СТИРАЮТСЯ, а строки не удаляются: так не съезжают ссылки и

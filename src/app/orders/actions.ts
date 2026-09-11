@@ -3,9 +3,25 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
-import { createOrder, getOrderById, type NewOrderInput, updateOrderStatus } from "@/lib/repo/orders";
+import {
+  createOrder,
+  getOrderById,
+  saveOrderItems,
+  setOrderManagerConfirmed,
+  updateOrderHeader,
+  type NewOrderInput,
+  updateOrderStatus,
+} from "@/lib/repo/orders";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { cancelRefusal } from "@/lib/orderRules";
+import {
+  cleanDeliveryDate,
+  describeItemChanges,
+  editHeaderRefusal,
+  editItemsRefusal,
+  editedItemsRefusal,
+  type EditedItem,
+} from "@/lib/orderEdit";
 import { getClientById } from "@/lib/repo/clients";
 import { canFillRegions, canOrderForShop, isOwnShop, isRetailRole } from "@/lib/retail";
 import { canSetDirection, cleanDirection, directionRefusal } from "@/lib/direction";
@@ -17,7 +33,7 @@ import {
 } from "@/lib/orderKind";
 import { setOrderPayment } from "@/lib/repo/orders";
 import { setOrderDirection } from "@/lib/repo/orders";
-import { MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ROLES } from "@/lib/constants";
+import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ROLES } from "@/lib/constants";
 
 export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail">) {
   const session = await getServerSession(authOptions);
@@ -80,6 +96,126 @@ export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail
   revalidatePath("/retail");
   revalidatePath("/plans/regions");
   return orderId;
+}
+
+/**
+ * Правка уже оформленной заявки менеджером.
+ *
+ * До неё исправить ошибку в заявке было нельзя вовсе: забыл дату доставки,
+ * ошибся в количестве, клиент попросил добавить позицию — и оставалось отменить
+ * заявку и завести заново либо править Google-таблицу руками, в обход всех
+ * проверок. Владелец попросил дать нормальный путь.
+ *
+ * Все границы — в `src/lib/orderEdit.ts`, чистыми функциями под тестом: кто
+ * правит, до какого момента, и что вообще можно прислать. Здесь остаётся
+ * последовательность и след в журнале.
+ */
+export async function updateOrderAction(
+  orderId: string,
+  input: {
+    deliveryDate: string;
+    clientPhone?: string;
+    notes?: string;
+    /** Не передан — позиции не трогаем вовсе (их могли и не показать). */
+    items?: EditedItem[];
+  }
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const role = session.user.role;
+  const email = session.user.email.toLowerCase();
+
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+
+  const headerRefusal = editHeaderRefusal(order, role, email);
+  if (headerRefusal) throw new Error(headerRefusal);
+
+  const region = isRegionOrder(order);
+  const deliveryDate = cleanDeliveryDate(input.deliveryDate);
+  if (input.deliveryDate.trim() && !deliveryDate) {
+    throw new Error("Дата доставки указана неверно");
+  }
+  // У городской заявки день отгрузки — это вся её суть: по нему она попадает в
+  // план недели. Пустой он там значит «объём никуда не отнесён».
+  if (region && !deliveryDate) throw new Error("Укажите день отгрузки");
+
+  const before = order.totalAmount;
+  let changes: string[] = [];
+  let unconfirmed = false;
+
+  if (input.items) {
+    const itemsRefusal = editItemsRefusal(order, role, email);
+    if (itemsRefusal) throw new Error(itemsRefusal);
+
+    const next = input.items.map((item) => ({
+      itemId: (item.itemId || "").trim(),
+      flowerType: item.flowerType,
+      variety: (item.variety || "").trim(),
+      grade: (item.grade || "").trim(),
+      quantity: Math.round(Number(item.quantity)),
+      // Цены у городской заявки нет по замыслу: ноль здесь — не «забыли
+      // заполнить», а её природа. Присланное значение не проверяем, а стираем.
+      unitPrice: region ? 0 : Math.round(Number(item.unitPrice) * 100) / 100,
+    }));
+
+    const refusal = editedItemsRefusal({ current: order.items, next, region });
+    if (refusal) throw new Error(refusal);
+
+    changes = describeItemChanges({ current: order.items, next, region });
+    if (changes.length > 0) {
+      await saveOrderItems(
+        orderId,
+        next.map((item) => ({
+          ...item,
+          flowerType: item.flowerType as NewOrderInput["items"][number]["flowerType"],
+        }))
+      );
+
+      // Состав изменился — подтверждение менеджера снимается. Так решил
+      // владелец: склад видит «✓» и собирает по нему, а подтверждён был другой
+      // состав. Согласиться с новым менеджер должен осознанно.
+      if (order.managerConfirmed) {
+        await setOrderManagerConfirmed(orderId, false);
+        unconfirmed = true;
+      }
+    }
+  }
+
+  // Пишем только те поля, которые правка ДЕЙСТВИТЕЛЬНО прислала. Иначе форма,
+  // где телефона и комментария нет вовсе (городская заявка, заявка в наш
+  // магазин), молча стёрла бы их значения: «не прислали» превратилось бы в
+  // «прислали пустое».
+  await updateOrderHeader(orderId, {
+    deliveryDate,
+    ...(!region && input.clientPhone !== undefined ? { clientPhone: input.clientPhone.trim() } : {}),
+    ...(!region && input.notes !== undefined ? { notes: input.notes.trim() } : {}),
+  });
+
+  // В журнал идёт только то, что меняет ДЕНЬГИ. Дописанная дата доставки —
+  // это доведение заявки до ума, а не событие, о котором через месяц спорят;
+  // заваливать ими журнал бухгалтера значит сделать его нечитаемым.
+  const after = await getOrderById(orderId);
+  const total = after?.totalAmount ?? before;
+  if (Math.abs(total - before) > MONEY_EPSILON) {
+    await logMoney({
+      actorEmail: email,
+      orderId,
+      action: MONEY_LOG_ACTIONS.ORDER_EDITED,
+      details: `${changes.join("; ")}${unconfirmed ? " · подтверждение снято" : ""}`,
+      amountBefore: before,
+      amountAfter: total,
+    });
+  }
+
+  revalidatePath("/orders");
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/warehouse");
+  revalidatePath("/retail");
+  revalidatePath("/plans/regions");
+  revalidatePath("/analytics");
+
+  return { changes, unconfirmed };
 }
 
 /**

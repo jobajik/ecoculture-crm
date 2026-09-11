@@ -25,6 +25,11 @@ import { priceFromMap } from "@/lib/priceList";
  */
 
 export interface DraftItem {
+  /**
+   * Позиция уже записанной заявки. У новой пусто — по этому сервер и отличает
+   * «поправить существующую» от «дописать ещё одну».
+   */
+  itemId?: string;
   flowerType: FlowerType;
   variety: string;
   grade: string;
@@ -60,6 +65,7 @@ export default function OrderItemsEditor({
   items,
   onChange,
   stock,
+  showPrice = true,
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -72,6 +78,12 @@ export default function OrderItemsEditor({
    * нормально ставить с запасом.
    */
   stock?: Record<string, number>;
+  /**
+   * Показывать ли цену. У городской заявки её нет по замыслу: РОП двигает в
+   * регион объём, а сумму поступлений подтверждает потом бухгалтер. Поле цены
+   * там означало бы «забыли заполнить», хотя заполнять нечего.
+   */
+  showPrice?: boolean;
 }) {
   function updateItem(idx: number, patch: Partial<DraftItem>) {
     onChange(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
@@ -112,6 +124,7 @@ export default function OrderItemsEditor({
     (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
     0
   );
+  const stems = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
 
   return (
     <div className="card">
@@ -133,7 +146,10 @@ export default function OrderItemsEditor({
           return (
             <div
               key={idx}
-              className="grid grid-cols-2 sm:grid-cols-9 gap-2 items-end border-b border-line-hairline pb-3 last:border-0"
+              className={clsx(
+                "grid grid-cols-2 gap-2 items-end border-b border-line-hairline pb-3 last:border-0",
+                showPrice ? "sm:grid-cols-9" : "sm:grid-cols-8"
+              )}
             >
               <div className="col-span-2 sm:col-span-2">
                 <label className="label">Тип</label>
@@ -210,7 +226,13 @@ export default function OrderItemsEditor({
                   onChange={(e) => updateItem(idx, { quantity: e.target.value })}
                 />
               </div>
-              <div className="flex gap-2 col-span-2 sm:col-span-2">
+              <div
+                className={clsx(
+                  "flex gap-2 col-span-2",
+                  showPrice ? "sm:col-span-2" : "sm:col-span-1 sm:justify-end"
+                )}
+              >
+                {showPrice && (
                 <div className="flex-1">
                   <label className="label">
                     Цена, ₸ *
@@ -233,6 +255,7 @@ export default function OrderItemsEditor({
                     onChange={(e) => updateItem(idx, { unitPrice: e.target.value })}
                   />
                 </div>
+                )}
                 {items.length > 1 && (
                   <button
                     type="button"
@@ -249,7 +272,11 @@ export default function OrderItemsEditor({
         })}
       </div>
 
-      <div className="text-right mt-4 font-medium">Итого: {total.toLocaleString("ru-RU")} ₸</div>
+      <div className="text-right mt-4 font-medium">
+        {showPrice
+          ? `Итого: ${total.toLocaleString("ru-RU")} ₸`
+          : `Всего: ${stems.toLocaleString("ru-RU")} шт.`}
+      </div>
     </div>
   );
 }

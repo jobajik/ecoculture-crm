@@ -22,6 +22,7 @@ import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
+import { canEditOrder } from "@/lib/orderEdit";
 import { getClientById } from "@/lib/repo/clients";
 import { farmPayments } from "@/lib/orderMoney";
 import {
@@ -130,13 +131,33 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // Кнопку отмены показываем только тому, кто действительно может отменить, —
   // правила те же, что проверит сервер (src/lib/orderRules.ts).
   const canCancel = cancelRefusal(order, role, session?.user?.email) === "";
+  // Кнопка правки — по тому же правилу, что проверит сервер. Заявку, урезанную
+  // до своего цветка (зав. складом), править отсюда нельзя: она видит не всю
+  // заявку, и «сохранить» стёрло бы чужие позиции. Поэтому правила спрашиваем
+  // по ПОЛНОЙ заявке, а кнопку показываем, только когда показана она вся.
+  const canEdit = !farm && canEditOrder(loaded, role, session?.user?.email);
 
   return (
     <div className="max-w-3xl">
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <h1 className="text-xl font-semibold">Заявка {order.orderId}</h1>
-        <OrderStatusBadge status={order.status} />
+        <div className="flex items-center gap-3">
+          {canEdit && (
+            <Link href={`/orders/${order.orderId}/edit`} className="btn-secondary !py-1">
+              Изменить
+            </Link>
+          )}
+          <OrderStatusBadge status={order.status} />
+        </div>
       </div>
+      {canEdit && !order.deliveryDate && (
+        <div className="text-sm text-[#8a5a00] bg-status-warning/10 rounded-lg px-3 py-2 mb-3">
+          У заявки не указана дата доставки — без неё она не попадёт в лист сборки склада.{" "}
+          <Link href={`/orders/${order.orderId}/edit`} className="underline">
+            Указать дату
+          </Link>
+        </div>
+      )}
       <p className="text-sm text-ink-muted mb-6">
         {retail && (
           <>

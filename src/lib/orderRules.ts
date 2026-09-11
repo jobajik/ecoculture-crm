@@ -75,6 +75,24 @@ export function cancelRefusal(
 }
 
 /**
+ * Кому положено распоряжаться заявкой ТАКОГО РОДА: подтверждать её, отменять и
+ * править. Это про роль, а не про конкретного человека — «своя ли заявка»
+ * проверяется отдельно, по почте.
+ *
+ * Функция вынесена сюда, потому что спрашивают о ней уже в трёх местах
+ * (подтверждение, отмена, правка). Три копии этого выражения разъехались бы так
+ * же, как когда-то разъехалась проверка готовности заявки по четырём файлам.
+ */
+export function ownerRoleFor(
+  order: { retail?: string; kind?: string },
+  role: string | null | undefined
+): boolean {
+  if (isRegionOrder(order)) return canFillRegionOrders(role);
+  if (isRetailOrder(order)) return isRetailRole(role) || canFillRegions(role);
+  return role === ROLES.MANAGER;
+}
+
+/**
  * Кто ставит «зелёную галочку» подтверждения — и когда её ставить уже нельзя.
  *
  * Подтверждение открывает отгрузку, поэтому правило то же, что и у отмены:
@@ -103,11 +121,7 @@ export function confirmRefusal(
 
   const mine = order.managerEmail === (email || "").trim().toLowerCase();
   // Кому вообще положено подтверждать заявку такого рода.
-  const rightRole = isRegionOrder(order)
-    ? canFillRegionOrders(role)
-    : isRetailOrder(order)
-      ? isRetailRole(role) || canFillRegions(role)
-      : role === ROLES.MANAGER;
+  const rightRole = ownerRoleFor(order, role);
 
   if (!rightRole) {
     return hasNoClientInvoice(order)
