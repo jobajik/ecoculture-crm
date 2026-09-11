@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createOrderAction } from "@/app/orders/actions";
 import ClientPicker, { type ClientOption } from "./ClientPicker";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
+import { SHIPMENT_DIRECTIONS } from "@/lib/constants";
+import { directionForCity } from "@/lib/direction";
 
 export default function OrderForm({
   varieties,
@@ -12,6 +14,8 @@ export default function OrderForm({
   clients = [],
   initialClient = null,
   initialDeliveryDate = "",
+  showDirection = false,
+  initialDirection = "",
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -25,12 +29,28 @@ export default function OrderForm({
    */
   initialClient?: ClientOption | null;
   initialDeliveryDate?: string;
+  /**
+   * Показывать ли «Направление». Видит только РОП: региональный опт — его
+   * работа, а у менеджера, который возит по Алматы, это лишнее поле и лишний
+   * способ ошибиться. Разрешение всё равно проверяется на сервере.
+   */
+  showDirection?: boolean;
+  /** Направление, с которым пришли из раздела «Регионы». */
+  initialDirection?: string;
 }) {
   const router = useRouter();
   const [client, setClient] = useState<ClientOption | null>(initialClient);
   const [clientPhone, setClientPhone] = useState(initialClient?.phone ?? "");
   const [deliveryDate, setDeliveryDate] = useState(initialDeliveryDate);
   const [notes, setNotes] = useState("");
+  const [direction, setDirection] = useState(
+    initialDirection || directionForCity(initialClient?.city)
+  );
+  // Менял ли человек направление руками. Пока не менял — оно едет за клиентом:
+  // выбрал клиента из Караганды, направление встало само. После ручной правки
+  // подстановка замолкает, иначе она затирала бы осознанный выбор (возят и не
+  // туда, где офис клиента).
+  const [directionTouched, setDirectionTouched] = useState(Boolean(initialDirection));
   const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties, prices)]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +78,7 @@ export default function OrderForm({
         clientPhone: (clientPhone || client.phone).trim(),
         deliveryDate,
         notes,
+        direction,
         items: items.map((it) => ({
           flowerType: it.flowerType,
           variety: it.variety.trim(),
@@ -79,7 +100,14 @@ export default function OrderForm({
       <div className="card grid sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
           <label className="label">Клиент *</label>
-          <ClientPicker clients={clients} value={client} onChange={setClient} />
+          <ClientPicker
+            clients={clients}
+            value={client}
+            onChange={(next) => {
+              setClient(next);
+              if (!directionTouched) setDirection(directionForCity(next?.city));
+            }}
+          />
         </div>
         <div>
           <label className="label">Телефон для этой доставки</label>
@@ -99,6 +127,31 @@ export default function OrderForm({
             onChange={(e) => setDeliveryDate(e.target.value)}
           />
         </div>
+        {showDirection && (
+          <div>
+            <label className="label">Направление отгрузки</label>
+            <select
+              className="input"
+              value={direction}
+              onChange={(e) => {
+                setDirection(e.target.value);
+                setDirectionTouched(true);
+              }}
+            >
+              <option value="">Алматы и округа</option>
+              {SHIPMENT_DIRECTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <span className="block text-xs text-ink-muted mt-1">
+              {client?.city
+                ? `Город клиента — ${client.city}. Подставлено по нему, можно поменять.`
+                : "По этому полю заявка попадает в план отгрузок по регионам."}
+            </span>
+          </div>
+        )}
         <div className="sm:col-span-2">
           <label className="label">Комментарий</label>
           <textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />

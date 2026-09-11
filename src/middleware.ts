@@ -12,9 +12,12 @@ const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
     prefix: "/retail",
     roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse"],
   },
+  // РОП заводит оптовые заявки в регионы — так решил владелец. Заявки по
+  // Алматы остаются у менеджеров, и это проверяется не здесь, а в самом
+  // действии: у региональной заявки обязано быть направление.
   {
     prefix: "/orders/new",
-    roles: ["manager", "retail_almaty", "retail_regions", "admin", "warehouse"],
+    roles: ["manager", "retail_almaty", "retail_regions", "admin", "warehouse", "sales_head"],
   },
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
   // Рекламацию заводит менеджер, а решение по ней видит у бухгалтера. Раньше

@@ -3,6 +3,7 @@ import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
 import { spreadByInvoice, type FarmMoney } from "../orderMoney";
+import { cleanDirection } from "../direction";
 import type { Order, OrderItem, OrderWithItems } from "../types";
 
 /** Пустая ячейка = «нет». Отмеченной считается только явная TRUE/ДА/1. */
@@ -47,6 +48,10 @@ function toOrder(record: Record<string, string>): Order {
     collectionNote: record.CollectionNote || "",
     clientId: record.ClientID || "",
     retail: (record.Retail || "").trim(),
+    // Неизвестное значение превращается в пустое: направление — закрытый
+    // список, и опечатка в ячейке не должна заводить новое «направление»
+    // на одну заявку (грабли 1.10 — ошибка закрывает, а не открывает).
+    direction: cleanDirection(record.Direction),
   };
 }
 
@@ -86,6 +91,11 @@ export interface NewOrderInput {
    * заявка обязана остаться такой, какой была, — по ней считают деньги.
    */
   retail?: string;
+  /**
+   * Направление оптовой отгрузки из закрытого списка. Ставит только РОП:
+   * заявка в регион — его работа.
+   */
+  direction?: string;
   /** Клиент из базы — заявка без карточки больше не заводится. */
   clientId: string;
   /** Снимок имени на момент заявки: точка может переименоваться. */
@@ -150,6 +160,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     PaidRoseFarm: 0,
     PaidEsentai: 0,
     Retail: input.retail || "",
+    Direction: input.direction || "",
   });
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -395,4 +406,21 @@ export async function recomputeOrderStatusFromItems(orderId: string): Promise<vo
   if (nextStatus !== order.status) {
     await updateOrderStatus(orderId, nextStatus);
   }
+}
+
+/**
+ * Проставляет направление уже оформленной заявке.
+ *
+ * Нужно потому, что менеджер направление не ставит вовсе: он возит по Алматы,
+ * и лишнее поле в его форме — это лишний способ ошибиться. Но заявка в регион
+ * иногда всё-таки приходит через него, и тогда РОП помечает её сам, одним
+ * нажатием из своего раздела. Без этого его отчёт по регионам был бы неполным,
+ * а причину — «менеджер не ту кнопку нажал» — никто бы не нашёл.
+ */
+export async function setOrderDirection(orderId: string, direction: string): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () => ({ Direction: cleanDirection(direction) })
+  );
 }

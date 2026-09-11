@@ -10,6 +10,7 @@ import { buildClientStats } from "@/lib/clientStats";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { canSetDirection, cleanDirection } from "@/lib/direction";
 import {
   FLOWER_TYPE_LABELS,
   ORDER_STATUSES,
@@ -37,7 +38,7 @@ export default async function NewOrderPage({
    * заявок не бывает вовсе, а администратору нужны обе формы, и выбирает он их
    * тем, откуда пришёл.
    */
-  searchParams?: { client?: string; date?: string; retail?: string };
+  searchParams?: { client?: string; date?: string; retail?: string; direction?: string };
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
@@ -170,16 +171,33 @@ export default async function NewOrderPage({
     ? options.find((c) => c.clientId === searchParams.client) ?? null
     : null;
 
+  // Направление из адреса — так РОП попадает сюда из раздела «Регионы», нажав
+  // «Заявка в Астану». Значение проверяется по закрытому списку: подставленное
+  // из адреса ничем не лучше введённого руками (грабли 1.11).
+  const presetDirection = canSetDirection(role) ? cleanDirection(searchParams?.direction) : "";
+
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">Новая заявка</h1>
-      <OrderForm
-        varieties={varieties}
-        prices={priceMapForClient(prices)}
-        initialClient={preselected}
-        initialDeliveryDate={preselectedDate}
-        clients={options}
-      />
+      <h1 className="text-xl font-semibold mb-1">
+        {presetDirection ? `Новая заявка — ${presetDirection}` : "Новая заявка"}
+      </h1>
+      {presetDirection && (
+        <p className="text-sm text-ink-secondary mb-4">
+          Оптовая отгрузка в регион. Направление уже проставлено — по нему заявка попадёт в план
+          отгрузок.
+        </p>
+      )}
+      <div className={presetDirection ? "" : "mt-4"}>
+        <OrderForm
+          varieties={varieties}
+          prices={priceMapForClient(prices)}
+          initialClient={preselected}
+          initialDeliveryDate={preselectedDate}
+          clients={options}
+          showDirection={canSetDirection(role)}
+          initialDirection={presetDirection}
+        />
+      </div>
     </div>
   );
 }

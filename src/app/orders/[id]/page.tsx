@@ -231,6 +231,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <div className="label">Дата доставки</div>
           <div>{formatDay(order.deliveryDate)}</div>
         </div>
+        {order.direction && (
+          <div>
+            <div className="label">Направление отгрузки</div>
+            <div>{order.direction}</div>
+          </div>
+        )}
         <div>
           <div className="label">Комментарий</div>
           <div>{order.notes || "—"}</div>
