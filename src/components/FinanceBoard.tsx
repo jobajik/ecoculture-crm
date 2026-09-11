@@ -28,7 +28,7 @@ const FILTER_LABELS: Record<Filter, string> = {
 };
 
 /** Сколько колонок в таблице — под colSpan. */
-const COLS = 9;
+const COLS = 6;
 
 function dateLabel(key: string): string {
   if (!key) return "—";
@@ -211,20 +211,24 @@ export default function FinanceBoard({
       <div className="card !p-0 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
+            {/* Колонок ровно шесть, и это предел: девять не влезали даже на
+                компьютере — таблица уезжала вбок, и кнопка оплаты оказывалась за
+                краем экрана. Поэтому две даты живут в одной ячейке, «получено»
+                стоит под суммой, а галочка менеджера — рядом с именем клиента:
+                это те же данные, просто сложенные по смыслу, а не по колонке. */}
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Менеджер и заявка</th>
-              <th className="px-3 py-3 font-medium">№</th>
-              <th className="px-4 py-3 font-medium">Оформлена</th>
-              <th className="px-4 py-3 font-medium">Доставка</th>
-              <th className="px-4 py-3 font-medium text-right">Сумма</th>
-              <th className="px-4 py-3 font-medium text-center">
-                Менеджер
-                <br />
-                подтвердил
+              <th className="px-3 py-3 font-medium w-full">Менеджер и заявка</th>
+              <th className="px-2 py-3 font-medium">№</th>
+              <th className="px-3 py-3 font-medium hidden sm:table-cell">
+                Оформлена
+                <div className="text-xs font-normal text-ink-muted">доставка</div>
               </th>
-              <th className="px-4 py-3 font-medium">Статус оплаты</th>
-              <th className="px-4 py-3 font-medium text-right">Получено</th>
-              <th className="px-4 py-3 font-medium" />
+              <th className="px-3 py-3 font-medium text-right">
+                Сумма
+                <div className="text-xs font-normal text-ink-muted">получено</div>
+              </th>
+              <th className="px-3 py-3 font-medium">Статус оплаты</th>
+              <th className="px-2 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
@@ -242,7 +246,7 @@ export default function FinanceBoard({
                     )}
                     onClick={() => !searching && toggleManager(g.managerEmail)}
                   >
-                    <td className="px-4 py-2.5 font-medium" colSpan={4}>
+                    <td className="px-3 py-2.5 font-medium" colSpan={3}>
                       <span className="text-ink-muted mr-2">{open ? "▾" : "▸"}</span>
                       {g.managerName}
                       <span className="text-ink-muted font-normal">
@@ -250,12 +254,13 @@ export default function FinanceBoard({
                         · {g.rows.length} {orderWord(g.rows.length)}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">
-                      {money(g.amount)}
+                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                      <div className="font-medium">{money(g.amount)}</div>
+                      <div className="text-xs text-status-good">{money(g.paid)}</div>
                     </td>
-                    <td className="px-4 py-2.5" colSpan={2}>
+                    <td className="px-3 py-2.5">
                       {g.amount > 0 && (
-                        <div className="h-1.5 rounded-full bg-surface-plane overflow-hidden max-w-[140px]">
+                        <div className="h-1.5 rounded-full bg-surface-plane overflow-hidden max-w-[120px]">
                           <div
                             className="h-full rounded-full bg-status-good"
                             style={{ width: `${Math.min(100, (g.paid / g.amount) * 100)}%` }}
@@ -263,10 +268,7 @@ export default function FinanceBoard({
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-status-good whitespace-nowrap">
-                      {money(g.paid)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-xs text-ink-muted whitespace-nowrap">
+                    <td className="px-2 py-2.5 text-right text-xs text-ink-muted whitespace-nowrap">
                       {searching ? "" : open ? "свернуть" : "раскрыть"}
                     </td>
                   </tr>
@@ -281,12 +283,33 @@ export default function FinanceBoard({
                             openId === r.orderId && "bg-accent-soft/40"
                           )}
                         >
-                          <td className="px-4 py-2.5 pl-8">
-                            <Link href={`/orders/${r.orderId}`} className="font-medium hover:underline">
-                              {r.clientName}
-                            </Link>
+                          <td className="px-3 py-2.5 pl-6">
+                            <span className="flex items-center gap-1.5">
+                              {/* Галочка менеджера стоит у имени, а не отдельной
+                                  колонкой: под неё уходил двухэтажный заголовок
+                                  шириной в сто пикселей ради одного знака. */}
+                              <span
+                                className={clsx(
+                                  "text-xs shrink-0",
+                                  r.managerConfirmed ? "text-status-good" : "text-ink-muted"
+                                )}
+                                title={
+                                  r.managerConfirmed
+                                    ? "Менеджер подтвердил заявку"
+                                    : "Менеджер ещё не подтвердил заявку"
+                                }
+                              >
+                                {r.managerConfirmed ? "✓" : "○"}
+                              </span>
+                              <Link
+                                href={`/orders/${r.orderId}`}
+                                className="font-medium hover:underline"
+                              >
+                                {r.clientName}
+                              </Link>
+                            </span>
                             <div
-                              className="text-xs text-ink-muted truncate max-w-[240px]"
+                              className="text-xs text-ink-muted truncate max-w-[180px] sm:max-w-[420px] pl-5"
                               title={r.positions}
                             >
                               {r.positions}
@@ -295,46 +318,35 @@ export default function FinanceBoard({
                           {/* Номер — служебная надпись: мелкий, серый, моноширинный.
                               Тот же приём, что с кодом партии на складе: он нужен,
                               только чтобы сверить строку с тем, что назвали. */}
-                          <td className="px-3 py-2.5 font-mono text-xs text-ink-muted whitespace-nowrap">
+                          <td className="px-2 py-2.5 font-mono text-xs text-ink-muted whitespace-nowrap">
                             {r.code}
                           </td>
-                          <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                            {dateLabel(r.createdDate)}
+                          {/* Две даты в одной ячейке: сверху оформлена, снизу
+                              доставка. По отдельности они съедали две колонки,
+                              а читают их всегда вместе. */}
+                          <td className="px-3 py-2.5 text-xs text-ink-secondary whitespace-nowrap hidden sm:table-cell">
+                            <div>{dateLabel(r.createdDate)}</div>
+                            <div className="text-ink-muted">{dateLabel(r.deliveryDate)}</div>
                           </td>
-                          <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                            {dateLabel(r.deliveryDate)}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">
-                            {money(r.amount)}
-                          </td>
-                          <td className="px-4 py-2.5 text-center">
-                            <span
-                              className={clsx(
-                                "text-base",
-                                r.managerConfirmed ? "text-status-good" : "text-ink-muted"
-                              )}
-                            >
-                              {r.managerConfirmed ? "✓" : "—"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <StageBadge stage={r.stage} />
-                          </td>
-                          <td className="px-4 py-2.5 text-right">
-                            <div className="inline-block text-right">
+                          <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                            <div className="font-medium">{money(r.amount)}</div>
+                            <div className="text-xs">
                               <PaymentState totalAmount={r.amount} paidAmount={r.paidAmount} compact />
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                          <td className="px-3 py-2.5">
+                            <StageBadge stage={r.stage} />
+                          </td>
+                          <td className="px-2 py-2.5 text-right whitespace-nowrap">
                             {canEdit ? (
                               <button
                                 onClick={() => setOpenId(openId === r.orderId ? null : r.orderId)}
-                                className="btn-secondary !py-1 !px-2.5 text-xs"
+                                className="btn-secondary !py-1 !px-2 text-xs"
                               >
                                 {openId === r.orderId ? "Закрыть" : r.paid ? "Изменить" : "Оплата"}
                               </button>
                             ) : (
-                              <span className="text-xs text-ink-muted">только просмотр</span>
+                              <span className="text-xs text-ink-muted">просмотр</span>
                             )}
                           </td>
                         </tr>
@@ -357,7 +369,7 @@ export default function FinanceBoard({
 
                   {open && hidden > 0 && (
                     <tr className="border-b border-line-hairline">
-                      <td colSpan={COLS} className="px-4 py-2 pl-8">
+                      <td colSpan={COLS} className="px-4 py-2 pl-6">
                         <MoreToggle
                           expanded={false}
                           hidden={hidden}
@@ -386,7 +398,8 @@ export default function FinanceBoard({
       {groups.length > 0 && !searching && (
         <p className="text-sm text-ink-muted">
           Менеджеров: {groups.length} · заявок: {rows.length.toLocaleString("ru-RU")}. Нажмите на
-          строку менеджера, чтобы раскрыть его заявки.
+          строку менеджера, чтобы раскрыть его заявки. Зелёная галочка у клиента — менеджер
+          подтвердил заявку.
         </p>
       )}
     </div>
