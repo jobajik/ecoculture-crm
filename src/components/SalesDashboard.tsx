@@ -15,7 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import ChartCard, { CHART_COLORS, tooltipStyle } from "@/components/charts/ChartCard";
-import { FARM_ORDER, farmLabel } from "@/lib/constants";
+import { FARM_ORDER, FLOWER_TYPE_LABELS_PLURAL, farmLabel } from "@/lib/constants";
 import type { ManagerSalesRow, SalesSnapshot } from "@/lib/salesAnalytics";
 
 const FARM_COLOR: Record<string, string> = {
@@ -166,6 +166,71 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
             <span>ровный темп на сегодня — {(daysShare * 100).toFixed(0)}%</span>
             <span>{shortMoney(t.targetAmount)}</span>
           </div>
+        </div>
+      )}
+
+      {snapshot.byFlower.length > 0 && (
+        <div className="card !p-0 overflow-x-auto">
+          <div className="px-4 pt-4 pb-2">
+            <h3 className="font-medium">План и факт по цветку</h3>
+            <p className="text-xs text-ink-muted">
+              План ставится отдельно по розам, хризантемам и эустоме. Считаются позиции заявок:
+              в одной заявке едет и роза, и хризантема.
+            </p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-ink-secondary border-y border-line-hairline">
+                <th className="px-4 py-2 font-medium">Цветок</th>
+                <th className="px-4 py-2 font-medium text-right">План</th>
+                <th className="px-4 py-2 font-medium text-right">Продано</th>
+                <th className="px-4 py-2 font-medium text-right">Выполнение</th>
+                <th className="px-4 py-2 font-medium text-right">
+                  Стебли
+                  <div className="text-xs font-normal text-ink-muted">факт / план</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.byFlower.map((f) => {
+                const tone =
+                  f.progressPercent === null
+                    ? "ok"
+                    : progressTone(f.progressPercent, daysShare);
+                return (
+                  <tr key={f.flowerType} className="border-b border-line-hairline last:border-0">
+                    <td className="px-4 py-2 font-medium">
+                      {FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-ink-secondary">
+                      {f.targetAmount > 0 ? money(f.targetAmount) : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums font-medium">
+                      {money(f.amount)}
+                    </td>
+                    <td className={clsx("px-4 py-2 text-right tabular-nums", TONE_TEXT[tone])}>
+                      {f.progressPercent === null ? "плана нет" : `${Math.round(f.progressPercent)}%`}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-ink-secondary">
+                      {f.stems.toLocaleString("ru-RU")}
+                      {f.targetStems > 0 && (
+                        <span className="text-ink-muted">
+                          {" "}
+                          / {f.targetStems.toLocaleString("ru-RU")}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {snapshot.unsplitTargetAmount > 0 && (
+            <p className="px-4 py-2 text-xs text-status-warning">
+              Ещё {money(snapshot.unsplitTargetAmount)} плана стоит старым числом, без разбивки по
+              цветку, — в эту таблицу они не попали. Разнести их можно в разделе «Планы».
+            </p>
+          )}
         </div>
       )}
 

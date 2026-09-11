@@ -4,6 +4,12 @@ import { getPlansForPeriod } from "./repo/plans";
 import { ORDER_STATUSES, getFarmFor } from "./constants";
 import type { OrderWithItems } from "./types";
 import { hasNoClientInvoice } from "./orderKind";
+import {
+  PLAN_FLOWERS,
+  planByFlower,
+  unsplitPlanAmount,
+  type ManagerPlanTotal,
+} from "./managerPlans";
 
 // ---------------------------------------------------------------------------
 // Продажи менеджеров: факт за день и за месяц против плана.
@@ -34,6 +40,26 @@ export interface FarmSalesRow {
   amount: number;
   stems: number;
   share: number;
+}
+
+/**
+ * План против факта по цветку.
+ *
+ * План менеджерам ставится по цветкам (`managerPlans.ts`), и выполнение обязано
+ * считаться в том же разрезе: «сделали 90 % плана» одной розой и провалом по
+ * хризантеме — это две разные новости, а в общей цифре они неразличимы.
+ *
+ * Фильтруются ПОЗИЦИИ заявок, а не заявки целиком: в одной заявке едут и роза,
+ * и хризантема. Та же ошибка уже ловилась на странице регионов.
+ */
+export interface FlowerSalesRow {
+  flowerType: string;
+  amount: number;
+  stems: number;
+  targetAmount: number;
+  targetStems: number;
+  /** Выполнение по деньгам; null — плана по этому цветку нет, сравнивать не с чем. */
+  progressPercent: number | null;
 }
 
 export interface SalesDayPoint {
@@ -69,6 +95,9 @@ export interface SalesSnapshot {
   totals: SalesTotals;
   managers: ManagerSalesRow[];
   byFarm: FarmSalesRow[];
+  byFlower: FlowerSalesRow[];
+  /** Сколько плана ещё стоит старым числом, без разбивки по цветку. */
+  unsplitTargetAmount: number;
   daily: SalesDayPoint[];
   availablePeriods: string[];
 }
@@ -94,7 +123,11 @@ function orderStems(order: OrderWithItems): number {
 export async function getSalesSnapshot(
   period?: string,
   now: Date = new Date(),
-  injected?: { orders: OrderWithItems[]; users: Awaited<ReturnType<typeof listUsers>>; plans: Map<string, { targetAmount: number; targetStems: number }> }
+  injected?: {
+    orders: OrderWithItems[];
+    users: Awaited<ReturnType<typeof listUsers>>;
+    plans: Map<string, ManagerPlanTotal>;
+  }
 ): Promise<SalesSnapshot> {
   const targetPeriod = period && /^\d{4}-\d{2}$/.test(period) ? period : monthKey(now);
 
@@ -155,8 +188,9 @@ export async function getSalesSnapshot(
   }
   for (const email of plans.keys()) ensureRow(email);
 
-  // Итоги месяца по производствам.
+  // Итоги месяца по производствам и по цветкам.
   const farmMap = new Map<string, { amount: number; stems: number }>();
+  const flowerMap = new Map<string, { amount: number; stems: number }>();
 
   for (const order of monthOrders) {
     const row = ensureRow(order.managerEmail);
@@ -178,8 +212,31 @@ export async function getSalesSnapshot(
       farmRow.amount += itemAmount;
       farmRow.stems += item.quantity;
       farmMap.set(farm, farmRow);
+
+      const flowerRow = flowerMap.get(item.flowerType) ?? { amount: 0, stems: 0 };
+      flowerRow.amount += itemAmount;
+      flowerRow.stems += item.quantity;
+      flowerMap.set(item.flowerType, flowerRow);
     }
   }
+
+  // План по цветкам берётся у ВСЕХ менеджеров месяца, а не только у тех, кто
+  // попал в таблицу продаж: план уволенного или заболевшего — это всё ещё план
+  // отдела, и молча вычесть его значило бы показать выполнение лучше, чем есть.
+  const planFlowers = planByFlower(plans.values());
+  const byFlower: FlowerSalesRow[] = PLAN_FLOWERS.map((flowerType) => {
+    const fact = flowerMap.get(flowerType) ?? { amount: 0, stems: 0 };
+    const plan = planFlowers[flowerType] ?? { targetAmount: 0, targetStems: 0 };
+    return {
+      flowerType,
+      amount: fact.amount,
+      stems: fact.stems,
+      targetAmount: plan.targetAmount,
+      targetStems: plan.targetStems,
+      progressPercent:
+        plan.targetAmount > 0 ? (fact.amount / plan.targetAmount) * 100 : null,
+    };
+  }).filter((row) => row.amount > 0 || row.targetAmount > 0 || row.targetStems > 0);
 
   const managers = Array.from(rowsByEmail.values())
     .map((row) => ({
@@ -266,6 +323,8 @@ export async function getSalesSnapshot(
         share: amountMonth > 0 ? (v.amount / amountMonth) * 100 : 0,
       }))
       .sort((a, b) => b.amount - a.amount),
+    byFlower,
+    unsplitTargetAmount: unsplitPlanAmount(plans.values()),
     daily,
     availablePeriods,
   };

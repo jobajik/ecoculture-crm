@@ -37,8 +37,10 @@ export default async function PlansPage({
     return {
       email: m.email,
       name: m.name,
-      targetAmount: plan?.targetAmount ?? 0,
-      targetStems: plan?.targetStems ?? 0,
+      byFlower: plan?.byFlower ?? {},
+      legacyAmount: plan?.legacy.targetAmount ?? 0,
+      legacyStems: plan?.legacy.targetStems ?? 0,
+      splitByFlower: plan?.splitByFlower ?? false,
     };
   });
 
@@ -47,8 +49,9 @@ export default async function PlansPage({
       <div>
         <h1 className="text-xl font-semibold">Планы</h1>
         <p className="text-sm text-ink-secondary">
-          План продаж по менеджерам на месяц. Отсюда он попадает в раздел «Продажи»: рейтинг
-          показывает выполнение, а бонус считается от фактически оплаченного.
+          План продаж по менеджерам на месяц, отдельно по каждому цветку. План менеджера — это
+          сумма его цветков; отдельным числом он не вводится. Отсюда план попадает в раздел
+          «Продажи»: рейтинг показывает выполнение, а бонус считается от фактически оплаченного.
         </p>
       </div>
 

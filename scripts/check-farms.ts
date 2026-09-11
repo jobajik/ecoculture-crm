@@ -3,6 +3,7 @@ import { getPicklist } from "../src/lib/picklist";
 import { getSalesSnapshot } from "../src/lib/salesAnalytics";
 import { getStockSnapshot } from "../src/lib/stock";
 import { getDailySalesSnapshot } from "../src/lib/dailySales";
+import { aggregateManagerPlans } from "../src/lib/managerPlans";
 
 const NOW = new Date("2026-09-06T12:00:00");
 const TODAY = "2026-09-06";
@@ -67,10 +68,16 @@ const batches = [
   { batchId: "B3", harvestDate: "2026-09-05", flowerType: "eustoma", variety: "Alissa White", grade: "Стандарт", quantityIn: 60, quantityRemaining: 60, location: "", receivedByEmail: "w1@x.kz", receivedAt: "2026-09-05T08:00:00" },
 ] as never as Awaited<ReturnType<typeof import("../src/lib/repo/batches").listBatches>>;
 
-const plans = new Map([
-  ["m1@x.kz", { targetAmount: 100_000, targetStems: 1000 }],
-  ["m2@x.kz", { targetAmount: 100_000, targetStems: 1000 }],
-]);
+// План здесь нужен только как «он есть»: разрез по цветку проверяется отдельно,
+// в check-manager-plans. Собираем его той же функцией, что и боевой код, —
+// иначе тест начнёт расходиться с жизнью.
+const plans = aggregateManagerPlans(
+  [
+    { period: "2026-09", managerEmail: "m1@x.kz", flowerType: "rose", targetAmount: 100_000, targetStems: 1000 },
+    { period: "2026-09", managerEmail: "m2@x.kz", flowerType: "rose", targetAmount: 100_000, targetStems: 1000 },
+  ],
+  "2026-09"
+);
 
 let failures = 0;
 function check(label: string, actual: unknown, expected: unknown) {

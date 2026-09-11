@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { savePlans, type PlanRow } from "@/lib/repo/plans";
+import { cleanPlanFlower } from "@/lib/managerPlans";
 import {
   saveShipmentPlans,
   type ShipmentPlanInput,
@@ -57,11 +58,19 @@ export async function saveManagerPlansAction(period: string, rows: PlanRow[]) {
   const cleaned: PlanRow[] = rows.map((row) => {
     const email = (row.managerEmail || "").trim().toLowerCase();
     if (!email) throw new Error("У строки плана не указан менеджер");
+    // Цветок обязателен: план, записанный без него, лёг бы строкой старой схемы
+    // и стал бы вторым числом об одном и том же месяце (см. managerPlans.ts).
+    const flowerType = cleanPlanFlower(row.flowerType);
+    if (!flowerType) {
+      throw new Error(`Неизвестный тип цветка в плане: ${row.flowerType || "(пусто)"}`);
+    }
+    const what = `${email} · ${FLOWER_TYPE_LABELS[flowerType]}`;
     return {
       period,
       managerEmail: email,
-      targetAmount: cleanAmount(row.targetAmount, email),
-      targetStems: cleanStems(row.targetStems, email),
+      flowerType,
+      targetAmount: cleanAmount(row.targetAmount, what),
+      targetStems: cleanStems(row.targetStems, what),
     };
   });
 

@@ -161,7 +161,9 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   // остаются клиентскими без единой правки.
   [SHEET_TABS.PRICE_HISTORY]: ["Date", "FlowerType", "Variety", "Grade", "Price", "Kind"],
   [SHEET_TABS.VARIETIES]: ["FlowerType", "Variety", "Active"],
-  [SHEET_TABS.PLANS]: ["Period", "ManagerEmail", "TargetAmount", "TargetStems"],
+  // FlowerType дописан ПОСЛЕДНИМ (грабли 1.1). Пустой он означает строку
+  // старой схемы — план на менеджера без разбивки по цветку.
+  [SHEET_TABS.PLANS]: ["Period", "ManagerEmail", "TargetAmount", "TargetStems", "FlowerType"],
   // План отгрузок РОПа: одна строка — одно направление и один цветок в месяце.
   // Ключ строки — Period + Direction + FlowerType: при повторном сохранении
   // строка не дублируется, а переписывается.
