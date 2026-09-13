@@ -28,7 +28,12 @@ import {
 } from "@/lib/orderEdit";
 import { getClientById } from "@/lib/repo/clients";
 import { canFillRegions, canOrderForShop, isOwnShop, isRetailRole } from "@/lib/retail";
-import { canSetDirection, cleanDirection, directionFor, directionRefusal } from "@/lib/direction";
+import {
+  cleanDirection,
+  directionEditRefusal,
+  directionFor,
+  directionRefusal,
+} from "@/lib/direction";
 import {
   canFillRegionOrders,
   isRegionOrder,
@@ -74,20 +79,16 @@ async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">
     throw new Error("Эта роль оформляет заявки только на наши магазины");
   }
 
-  // Направление отгрузки ставит только РОП, и только обычной заявке: у
-  // перемещения в наш магазин направления не бывает.
+  // Направление отгрузки ставит МЕНЕДЖЕР САМ — так решил владелец. Раньше это
+  // была работа РОПа, и выходило глупо: менеджер договорился с клиентом из
+  // Бишкека, а в план отгрузок заявка попадала только после того, как РОП это
+  // заметит и пометит вручную. Форма подставляет направление по городу клиента
+  // («Бишкек» → «Киргизия»), менеджер может поправить.
   //
-  // Присланное тем, кому не положено, МОЛЧА отбрасывается, а не отвергается —
-  // и это не мелочь, а починка настоящей поломки. Форма подставляет направление
-  // по городу клиента («Бишкек» → «Киргизия»), но менеджеру поля не показывает.
-  // Пока здесь стоял отказ, менеджер не мог оформить заявку НИ ОДНОМУ клиенту
-  // из региона: он получал «Направление ставит руководитель отдела продаж» и
-  // никак не мог это поправить — поля-то он не видел. Владелец упёрся в это на
-  // клиенте из Бишкека.
-  //
-  // Заявка менеджера и должна приходить без направления: РОП помечает такие сам
-  // одним нажатием в своём разделе (`ordersMissingDirection`). Так это и
-  // задумано, просто раньше вместо пустого поля выходила стена.
+  // У перемещения в наш магазин направления не бывает. Присланное теми, у кого
+  // его не бывает вовсе (розница, склад), МОЛЧА отбрасывается, а не отвергается:
+  // их формы про это поле не знают, но общий код заявки может его донести, и
+  // отказ тогда упирался бы в поле, которого человек не видит.
   const direction = directionFor(role, input.direction);
   const refusal = directionRefusal({ role, direction, isShop: shop });
   if (refusal) throw new Error(refusal);
@@ -235,27 +236,30 @@ async function updateOrderActionInner(
 }
 
 /**
- * Проставить направление уже оформленной заявке.
+ * Проставить (или поправить) направление уже оформленной заявке.
  *
- * Нужно ровно для одного случая: заявка в регион пришла через менеджера, у
- * которого поля направления нет. РОП видит её в своём разделе отдельным
- * списком и помечает одним нажатием.
+ * Два случая, и оба настоящие: менеджер забыл выбрать направление или выбрал не
+ * то — правит у себя на заявке; РОП досматривает базу и помечает то, что
+ * осталось без направления, одним нажатием в своём разделе.
+ *
+ * Кто и какую заявку может трогать — `directionEditRefusal()`: менеджер только
+ * свою, РОП и администратор любую, а городскую и магазинную не трогает никто.
  */
 async function setOrderDirectionActionInner(orderId: string, direction: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
-  if (!canSetDirection(session.user.role)) {
-    throw new Error("Направление отгрузки ставит руководитель отдела продаж");
-  }
 
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
 
   const clean = cleanDirection(direction);
-  const refusal = directionRefusal({
+  const refusal = directionEditRefusal({
     role: session.user.role,
+    actorEmail: session.user.email,
+    orderManagerEmail: order.managerEmail,
     direction: clean,
     isShop: Boolean((order.retail || "").trim()),
+    isRegion: isRegionOrder(order),
   });
   if (refusal) throw new Error(refusal);
 

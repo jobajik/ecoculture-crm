@@ -36,6 +36,8 @@ import {
 } from "@/lib/retail";
 import CancelOrder from "@/components/CancelOrder";
 import DeleteOrder from "@/components/DeleteOrder";
+import OrderDirection from "@/components/OrderDirection";
+import { directionEditRefusal, directionForCity } from "@/lib/direction";
 import { canDeleteOrder } from "@/lib/orderDelete";
 
 export const dynamic = "force-dynamic";
@@ -149,6 +151,27 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     claims: allClaims.filter((c) => c.orderId === loaded.orderId).length,
     shippedStatus: ORDER_STATUSES.SHIPPED,
   });
+  // Направление отгрузки менеджер ставит и правит сам (решение владельца:
+  // «пусть менеджер сам заявку по Киргизии делает, без РОПа»). Правило то же,
+  // что проверит сервер, и считается по ПОЛНОЙ заявке: зав. складом видит её
+  // урезанной до своего цветка, и трогать направление оттуда незачем.
+  const canSetOrderDirection =
+    !farm &&
+    directionEditRefusal({
+      role,
+      actorEmail: myEmail,
+      orderManagerEmail: loaded.managerEmail,
+      direction: loaded.direction,
+      isShop: Boolean((loaded.retail || "").trim()),
+      isRegion: region,
+    }) === "";
+  // Пока направления нет, подставляем угаданное по городу клиента — как в
+  // списке РОПа: предложенное уже выбрано, и нажатие ровно одно. Записывать оно
+  // ничего не записывает, человек видит его до сохранения.
+  const suggestedDirection = directionForCity(client?.city);
+  const directionHint = client?.city
+    ? `Город клиента — ${client.city}. По этому полю заявка попадает в план отгрузок по регионам.`
+    : "По этому полю заявка попадает в план отгрузок по регионам.";
 
   return (
     <div className="max-w-3xl">
@@ -300,11 +323,14 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <div className="label">Дата доставки</div>
           <div>{formatDay(order.deliveryDate)}</div>
         </div>
-        {order.direction && !region && (
-          <div>
-            <div className="label">Направление отгрузки</div>
-            <div>{order.direction}</div>
-          </div>
+        {!region && (order.direction || canSetOrderDirection) && (
+          <OrderDirection
+            orderId={order.orderId}
+            direction={order.direction}
+            editable={canSetOrderDirection}
+            suggested={suggestedDirection}
+            hint={directionHint}
+          />
         )}
         {!region && (
           <div>

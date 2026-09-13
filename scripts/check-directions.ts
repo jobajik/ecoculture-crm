@@ -25,6 +25,7 @@ import {
   canSetDirection,
   cleanDirection,
   countsAsWholesale,
+  directionEditRefusal,
   directionForCity,
   directionRefusal,
   ordersMissingDirection,
@@ -69,21 +70,30 @@ check("похожий, но другой город не подставляет�
 
 // --- Права ------------------------------------------------------------------
 
+// Решение владельца: «Пусть менеджер сам заявку по Киргизии делает. Без РОПа».
+// Менеджер знает, куда едет цветок; РОП до этого узнавал об этом последним и
+// помечал заявки вручную.
+check("менеджер ставит направление сам", canSetDirection(ROLES.MANAGER), true);
 check("РОП ставит направление", canSetDirection(ROLES.SALES_HEAD), true);
 check("администратор тоже", canSetDirection(ROLES.ADMIN), true);
-check("менеджер не ставит", canSetDirection(ROLES.MANAGER), false);
 check("зав. складом не ставит", canSetDirection(ROLES.WAREHOUSE), false);
+check("менеджер розницы не ставит", canSetDirection(ROLES.RETAIL_ALMATY), false);
 check("пустая роль не ставит (грабли 1.10)", canSetDirection(""), false);
+
+// А вот раздел «Регионы» — по-прежнему рабочее место РОПа: чужие цифры по
+// городам менеджеру ни к чему. Права развязаны намеренно, раньше это была одна
+// и та же проверка.
 check("раздел «Регионы» видит РОП", canSeeRegionSales(ROLES.SALES_HEAD), true);
+check("администратор тоже", canSeeRegionSales(ROLES.ADMIN), true);
 check("менеджер раздел не видит", canSeeRegionSales(ROLES.MANAGER), false);
 
 check(
-  "менеджеру направление поставить нельзя",
-  directionRefusal({ role: ROLES.MANAGER, direction: "Астана", isShop: false }) !== "",
-  true
+  "менеджеру направление поставить можно",
+  directionRefusal({ role: ROLES.MANAGER, direction: "Киргизия", isShop: false }),
+  ""
 );
 check(
-  "но заявка без направления у менеджера проходит",
+  "заявка без направления проходит (Алматы и округа)",
   directionRefusal({ role: ROLES.MANAGER, direction: "", isShop: false }),
   ""
 );
@@ -93,15 +103,63 @@ check(
   ""
 );
 check(
+  "менеджеру розницы нельзя",
+  directionRefusal({ role: ROLES.RETAIL_ALMATY, direction: "Астана", isShop: false }) !== "",
+  true
+);
+check(
   "у заявки в наш магазин направления отгрузки не бывает",
-  directionRefusal({ role: ROLES.SALES_HEAD, direction: "Астана", isShop: true }) !== "",
+  directionRefusal({ role: ROLES.MANAGER, direction: "Астана", isShop: true }) !== "",
   true
 );
 check(
   "неизвестное направление не проходит",
-  directionRefusal({ role: ROLES.SALES_HEAD, direction: "Ташкент", isShop: false }) !== "",
+  directionRefusal({ role: ROLES.MANAGER, direction: "Ташкент", isShop: false }) !== "",
   true
 );
+
+// --- Правка направления в уже оформленной заявке ----------------------------
+//
+// Раз менеджер направление ставит сам, он должен уметь и исправить свою ошибку:
+// иначе промах в выпадающем списке снова упирался бы в РОПа, а ради этого всё и
+// менялось. Но чужую заявку он не трогает, а у городской направление — это и
+// есть контрагент.
+
+const edit = (over: Partial<Parameters<typeof directionEditRefusal>[0]>) =>
+  directionEditRefusal({
+    role: ROLES.MANAGER,
+    actorEmail: "manager@x.kz",
+    orderManagerEmail: "manager@x.kz",
+    direction: "Киргизия",
+    isShop: false,
+    isRegion: false,
+    ...over,
+  });
+
+check("менеджер правит СВОЮ заявку", edit({}), "");
+check("регистр почты не мешает", edit({ actorEmail: "Manager@X.kz" }), "");
+check("чужую заявку менеджер не правит", edit({ orderManagerEmail: "other@x.kz" }) !== "", true);
+check(
+  "РОП правит чужую",
+  edit({ role: ROLES.SALES_HEAD, orderManagerEmail: "other@x.kz" }),
+  ""
+);
+check(
+  "администратор правит чужую",
+  edit({ role: ROLES.ADMIN, orderManagerEmail: "other@x.kz" }),
+  ""
+);
+check("снять направление можно", edit({ direction: "" }), "");
+check("выдуманное направление не проходит", edit({ direction: "Марс" }) !== "", true);
+check("у городской заявки направление не меняют", edit({ isRegion: true }) !== "", true);
+check(
+  "у городской не меняет даже РОП",
+  edit({ role: ROLES.SALES_HEAD, isRegion: true }) !== "",
+  true
+);
+check("у заявки в наш магазин направления нет", edit({ isShop: true }) !== "", true);
+check("зав. складом направление не правит", edit({ role: ROLES.WAREHOUSE }) !== "", true);
+check("пустая роль не правит (грабли 1.10)", edit({ role: "" }) !== "", true);
 
 // --- Что идёт в оптовый счёт ------------------------------------------------
 
@@ -391,25 +449,33 @@ check(
 
 // --- Что реально попадёт в заявку ------------------------------------------
 //
-// Форма подставляет направление по городу клиента, но менеджеру поля не
-// показывает. Пока сервер на это ОТКАЗЫВАЛ, менеджер не мог оформить заявку ни
-// одному клиенту из региона: «Бишкек» превращался в «Киргизия», и заявка не
-// проходила. Владелец упёрся в это на живом клиенте.
+// Форма отправляет направление, подставленное по городу клиента, ВСЕГДА — даже
+// тому, кто поля не видел. Пока сервер на это ОТКАЗЫВАЛ, менеджер не мог
+// оформить заявку ни одному клиенту из региона: «Бишкек» превращался в
+// «Киргизия», и заявка не проходила. Владелец упёрся в это на живом клиенте.
+// Теперь менеджер направление видит и ставит, а молча отбрасывается только у
+// тех, у кого его не бывает вовсе, — у розницы и склада.
 
-check("у РОПа направление сохраняется", directionFor(ROLES.SALES_HEAD, "Астана"), "Астана");
-check("у админа тоже", directionFor(ROLES.ADMIN, "Караганда"), "Караганда");
-check("у менеджера отбрасывается, а не отвергается", directionFor(ROLES.MANAGER, "Киргизия"), "");
-check("город клиента менеджеру не мешает", directionFor(ROLES.MANAGER, directionForCity("Бишкек")), "");
-check("у менеджера розницы тоже пусто", directionFor(ROLES.RETAIL_ALMATY, "Астана"), "");
-check("пустая роль — пусто (грабли 1.10)", directionFor("", "Астана"), "");
-check("выдуманное направление РОПа не проходит", directionFor(ROLES.SALES_HEAD, "Марс"), "");
-// И главное: то, что отбросили, дальше уже не отказывает.
+check("у менеджера направление сохраняется", directionFor(ROLES.MANAGER, "Киргизия"), "Киргизия");
 check(
-  "после отбрасывания заявка менеджера проходит",
+  "подставленное по городу клиента доходит",
+  directionFor(ROLES.MANAGER, directionForCity("Бишкек")),
+  "Киргизия"
+);
+check("у РОПа сохраняется", directionFor(ROLES.SALES_HEAD, "Астана"), "Астана");
+check("у админа тоже", directionFor(ROLES.ADMIN, "Караганда"), "Караганда");
+check("у менеджера розницы отбрасывается, а не отвергается", directionFor(ROLES.RETAIL_ALMATY, "Астана"), "");
+check("у зав. складом тоже пусто", directionFor(ROLES.WAREHOUSE, "Астана"), "");
+check("пустая роль — пусто (грабли 1.10)", directionFor("", "Астана"), "");
+check("выдуманное направление не проходит", directionFor(ROLES.MANAGER, "Марс"), "");
+// И главное: то, что отбросили, дальше уже не отказывает — иначе менеджер
+// розницы упирался бы в поле, которого не видит.
+check(
+  "после отбрасывания заявка розницы проходит",
   directionRefusal({
-    role: ROLES.MANAGER,
-    direction: directionFor(ROLES.MANAGER, directionForCity("Бишкек")),
-    isShop: false,
+    role: ROLES.RETAIL_ALMATY,
+    direction: directionFor(ROLES.RETAIL_ALMATY, directionForCity("Астана")),
+    isShop: true,
   }),
   ""
 );
