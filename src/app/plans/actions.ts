@@ -20,6 +20,7 @@ import {
 } from "@/lib/constants";
 import { getShipmentPlansForMonth } from "@/lib/repo/shipmentPlans";
 import { parseShipmentPlanWorkbook, type ShipmentPlanParseResult } from "@/lib/excel";
+import { guard } from "@/lib/actionResult";
 
 /**
  * Планы ставит руководитель отдела продаж (и администратор). Проверка здесь,
@@ -51,7 +52,7 @@ function cleanAmount(value: unknown, what: string): number {
   return Math.round(num);
 }
 
-export async function saveManagerPlansAction(period: string, rows: PlanRow[]) {
+async function saveManagerPlansActionInner(period: string, rows: PlanRow[]) {
   await requireSalesHead();
   if (!isValidPeriod(period)) throw new Error("Неверный месяц");
 
@@ -82,7 +83,7 @@ export async function saveManagerPlansAction(period: string, rows: PlanRow[]) {
   return result;
 }
 
-export async function saveShipmentPlansAction(period: string, rows: ShipmentPlanInput[]) {
+async function saveShipmentPlansActionInner(period: string, rows: ShipmentPlanInput[]) {
   const email = await requireSalesHead();
   // Здесь period — код недели («2026-09-W1»), а не месяц: план ведётся понедельно.
   if (!isValidWeekCode(period)) throw new Error("Неверная неделя");
@@ -120,7 +121,7 @@ export async function saveShipmentPlansAction(period: string, rows: ShipmentPlan
  * сразу весь месяц, и пять отдельных сохранений означали бы пять записей в
  * таблицу и пять шансов остановиться на середине.
  */
-export async function saveShipmentPlansMonthAction(month: string, rows: ShipmentPlanInput[]) {
+async function saveShipmentPlansMonthActionInner(month: string, rows: ShipmentPlanInput[]) {
   const email = await requireSalesHead();
   if (!isValidPeriod(month)) throw new Error("Неверный месяц");
 
@@ -164,7 +165,7 @@ export async function saveShipmentPlansMonthAction(month: string, rows: Shipment
  * Ничего не записывает: цифры подставляются в форму, и человек их видит до
  * сохранения.
  */
-export async function copyPreviousShipmentPlanAction(
+async function copyPreviousShipmentPlanActionInner(
   month: string
 ): Promise<{ cells: { week: string; direction: string; flowerType: string; stems: number }[]; fromMonth: string }> {
   await requireSalesHead();
@@ -194,7 +195,7 @@ export async function copyPreviousShipmentPlanAction(
 }
 
 /** Читает файл плана и возвращает разобранные строки. Ничего не записывает. */
-export async function parseShipmentPlanFileAction(
+async function parseShipmentPlanFileActionInner(
   formData: FormData
 ): Promise<ShipmentPlanParseResult> {
   await requireSalesHead();
@@ -210,4 +211,35 @@ export async function parseShipmentPlanFileAction(
 
   const buffer = await (file as File).arrayBuffer();
   return parseShipmentPlanWorkbook(buffer, month);
+}
+
+// ---------------------------------------------------------------------------
+// Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
+//
+// Next.js в боевой сборке подменяет текст любой брошенной ошибки на
+// английскую заглушку, и человек вместо понятного отказа видит абзац про
+// Server Components. Возвращённое значение он не трогает — поэтому наружу
+// смотрят эти обёртки, а вся работа осталась в функциях выше.
+//
+// Подробности и правило целиком — в src/lib/actionResult.ts.
+// ---------------------------------------------------------------------------
+
+export async function saveManagerPlansAction(...args: Parameters<typeof saveManagerPlansActionInner>) {
+  return guard(() => saveManagerPlansActionInner(...args));
+}
+
+export async function saveShipmentPlansAction(...args: Parameters<typeof saveShipmentPlansActionInner>) {
+  return guard(() => saveShipmentPlansActionInner(...args));
+}
+
+export async function saveShipmentPlansMonthAction(...args: Parameters<typeof saveShipmentPlansMonthActionInner>) {
+  return guard(() => saveShipmentPlansMonthActionInner(...args));
+}
+
+export async function copyPreviousShipmentPlanAction(...args: Parameters<typeof copyPreviousShipmentPlanActionInner>) {
+  return guard(() => copyPreviousShipmentPlanActionInner(...args));
+}
+
+export async function parseShipmentPlanFileAction(...args: Parameters<typeof parseShipmentPlanFileActionInner>) {
+  return guard(() => parseShipmentPlanFileActionInner(...args));
 }

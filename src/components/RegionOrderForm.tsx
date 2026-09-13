@@ -10,6 +10,7 @@ import {
   getGradesFor,
   type FlowerType,
 } from "@/lib/constants";
+import { unwrap } from "@/lib/actionResult";
 
 interface DraftRow {
   flowerType: FlowerType;
@@ -101,7 +102,7 @@ export default function RegionOrderForm({
 
     setSubmitting(true);
     try {
-      const orderId = await createRegionOrderAction({ direction, deliveryDate, items });
+      const orderId = unwrap(await createRegionOrderAction({ direction, deliveryDate, items }));
       router.push(`/orders/${orderId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать заявку");

@@ -13,6 +13,7 @@ import {
 } from "@/lib/constants";
 import { KaspiFields } from "./ClientPicker";
 import { updateClientAction } from "@/app/clients/actions";
+import { unwrap } from "@/lib/actionResult";
 
 export interface ClientCardValues {
   name: string;
@@ -67,7 +68,7 @@ export default function ClientCard({
     setError(null);
     startTransition(async () => {
       try {
-        await updateClientAction(clientId, form);
+        unwrap(await updateClientAction(clientId, form));
         setEditing(false);
         router.refresh();
       } catch (e) {

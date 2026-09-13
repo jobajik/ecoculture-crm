@@ -7,6 +7,7 @@ import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import type { BatchStorageInfo } from "@/lib/shelfLife";
 import StorageStatusBadge from "./StorageStatusBadge";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import { unwrap } from "@/lib/actionResult";
 
 export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
   const router = useRouter();
@@ -113,7 +114,7 @@ function BatchRow({
 
     setSubmitting(true);
     try {
-      await createWriteoffAction({ batchId: batch.batchId, quantity: qty, reason });
+      unwrap(await createWriteoffAction({ batchId: batch.batchId, quantity: qty, reason }));
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось списать");

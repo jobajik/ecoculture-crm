@@ -8,6 +8,7 @@ import { ROLES, getGradesFor, FLOWER_TYPE_LABELS } from "@/lib/constants";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { BASE_VARIETY, PRICE_KINDS, cleanPriceKind, priceMapForClient } from "@/lib/priceList";
 import { parsePriceWorkbook, type ParsedPriceRow, type PriceParseResult } from "@/lib/excel";
+import { guard } from "@/lib/actionResult";
 
 /** Прайс ведут РОП и администратор: цена — это решение о деньгах. */
 async function requirePricer(): Promise<void> {
@@ -24,7 +25,7 @@ async function requirePricer(): Promise<void> {
  * параметром и приводится к известному значению — неизвестное считается
  * клиентским (грабли 1.10: ошибка не должна открывать «какой-то третий прайс»).
  */
-export async function savePricesAction(rows: PriceInput[], kind: string = PRICE_KINDS.CLIENT) {
+async function savePricesActionInner(rows: PriceInput[], kind: string = PRICE_KINDS.CLIENT) {
   await requirePricer();
   const priceKind = cleanPriceKind(kind);
 
@@ -65,7 +66,7 @@ export async function savePricesAction(rows: PriceInput[], kind: string = PRICE_
  * Молча уехавшая в таблицу неверная цена — худший вид ошибки: о ней узнают из
  * выставленного счёта.
  */
-export async function parsePriceFileAction(
+async function parsePriceFileActionInner(
   formData: FormData,
   kind: string = PRICE_KINDS.CLIENT
 ): Promise<PriceParseResult> {
@@ -89,7 +90,7 @@ export async function parsePriceFileAction(
  * отбрасываются здесь же, а не только в интерфейсе: запрос можно послать и в
  * обход страницы.
  */
-export async function importPricesAction(
+async function importPricesActionInner(
   rows: ParsedPriceRow[],
   kind: string = PRICE_KINDS.CLIENT
 ) {
@@ -104,4 +105,27 @@ export async function importPricesAction(
     })),
     kind
   );
+}
+
+// ---------------------------------------------------------------------------
+// Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
+//
+// Next.js в боевой сборке подменяет текст любой брошенной ошибки на
+// английскую заглушку, и человек вместо понятного отказа видит абзац про
+// Server Components. Возвращённое значение он не трогает — поэтому наружу
+// смотрят эти обёртки, а вся работа осталась в функциях выше.
+//
+// Подробности и правило целиком — в src/lib/actionResult.ts.
+// ---------------------------------------------------------------------------
+
+export async function savePricesAction(...args: Parameters<typeof savePricesActionInner>) {
+  return guard(() => savePricesActionInner(...args));
+}
+
+export async function parsePriceFileAction(...args: Parameters<typeof parsePriceFileActionInner>) {
+  return guard(() => parsePriceFileActionInner(...args));
+}
+
+export async function importPricesAction(...args: Parameters<typeof importPricesActionInner>) {
+  return guard(() => importPricesActionInner(...args));
 }

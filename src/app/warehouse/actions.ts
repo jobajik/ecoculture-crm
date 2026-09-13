@@ -14,6 +14,7 @@ import { createShipment, type NewShipmentInput } from "@/lib/repo/shipments";
 import { createWriteoff, type NewWriteoffInput } from "@/lib/repo/writeoffs";
 import { createStaffTakeout, type NewStaffTakeoutInput } from "@/lib/repo/staffTakeouts";
 import { cleanStaffName, takeoutRefusal } from "@/lib/staffTakeout";
+import { guard } from "@/lib/actionResult";
 
 async function requireWarehouse() {
   const session = await getServerSession(authOptions);
@@ -48,7 +49,7 @@ function assertOwnFlowerType(farm: string | null, flowerType: string) {
   }
 }
 
-export async function createBatchAction(input: Omit<NewBatchInput, "receivedByEmail">) {
+async function createBatchActionInner(input: Omit<NewBatchInput, "receivedByEmail">) {
   const { email, farm } = await requireWarehouse();
   assertOwnFlowerType(farm, input.flowerType);
   if (!input.variety.trim()) throw new Error("Укажите сорт");
@@ -67,7 +68,7 @@ export async function createBatchAction(input: Omit<NewBatchInput, "receivedByEm
  * с пометками об ошибках. Ничего не записывает — сначала кладовщик смотрит,
  * что распозналось, и только потом подтверждает загрузку.
  */
-export async function parseBatchesFileAction(formData: FormData): Promise<ParseResult> {
+async function parseBatchesFileActionInner(formData: FormData): Promise<ParseResult> {
   const { farm } = await requireWarehouse();
 
   const file = formData.get("file");
@@ -98,7 +99,7 @@ export async function parseBatchesFileAction(formData: FormData): Promise<ParseR
 }
 
 /** Записывает на склад строки, которые кладовщик подтвердил после проверки файла. */
-export async function importBatchesAction(rows: ParsedBatchRow[]) {
+async function importBatchesActionInner(rows: ParsedBatchRow[]) {
   const { email, farm } = await requireWarehouse();
 
   const valid = rows.filter((r) => !r.error && r.quantity > 0 && r.variety && r.grade && r.harvestDate);
@@ -124,7 +125,7 @@ export async function importBatchesAction(rows: ParsedBatchRow[]) {
   return { created: batchIds.length, totalStems: valid.reduce((sum, r) => sum + r.quantity, 0) };
 }
 
-export async function createShipmentAction(input: Omit<NewShipmentInput, "warehouseEmail">) {
+async function createShipmentActionInner(input: Omit<NewShipmentInput, "warehouseEmail">) {
   const { email, farm } = await requireWarehouse();
   if (!input.quantity || input.quantity <= 0) throw new Error("Укажите количество к отгрузке");
 
@@ -153,7 +154,7 @@ export async function createShipmentAction(input: Omit<NewShipmentInput, "wareho
   return shipmentId;
 }
 
-export async function createWriteoffAction(input: Omit<NewWriteoffInput, "warehouseEmail">) {
+async function createWriteoffActionInner(input: Omit<NewWriteoffInput, "warehouseEmail">) {
   const { email, farm } = await requireWarehouse();
   if (!input.quantity || input.quantity <= 0) throw new Error("Укажите количество к списанию");
 
@@ -176,7 +177,7 @@ export async function createWriteoffAction(input: Omit<NewWriteoffInput, "wareho
  * вложенными `if` означало бы, что проверить их можно только на живой базе, —
  * ровно так до сентября жила отмена заявки.
  */
-export async function createStaffTakeoutAction(
+async function createStaffTakeoutActionInner(
   input: Omit<NewStaffTakeoutInput, "warehouseEmail">
 ) {
   const session = await getServerSession(authOptions);
@@ -216,4 +217,41 @@ function todayKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
   ).padStart(2, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
+//
+// Next.js в боевой сборке подменяет текст любой брошенной ошибки на
+// английскую заглушку, и человек вместо «сначала снимите оплату» видит абзац
+// про Server Components. Возвращённое значение он не трогает — поэтому
+// наружу смотрят эти обёртки, а вся работа осталась в функциях выше.
+//
+// Подробности и правило целиком — в src/lib/actionResult.ts.
+// В браузере вызов оборачивается unwrap(); за этим следит
+// scripts/check-action-refusals.ts.
+// ---------------------------------------------------------------------------
+
+export async function createBatchAction(...args: Parameters<typeof createBatchActionInner>) {
+  return guard(() => createBatchActionInner(...args));
+}
+
+export async function parseBatchesFileAction(...args: Parameters<typeof parseBatchesFileActionInner>) {
+  return guard(() => parseBatchesFileActionInner(...args));
+}
+
+export async function importBatchesAction(...args: Parameters<typeof importBatchesActionInner>) {
+  return guard(() => importBatchesActionInner(...args));
+}
+
+export async function createShipmentAction(...args: Parameters<typeof createShipmentActionInner>) {
+  return guard(() => createShipmentActionInner(...args));
+}
+
+export async function createWriteoffAction(...args: Parameters<typeof createWriteoffActionInner>) {
+  return guard(() => createWriteoffActionInner(...args));
+}
+
+export async function createStaffTakeoutAction(...args: Parameters<typeof createStaffTakeoutActionInner>) {
+  return guard(() => createStaffTakeoutActionInner(...args));
 }

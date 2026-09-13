@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SHIPMENT_DIRECTIONS } from "@/lib/constants";
 import { setOrderDirectionAction } from "@/app/orders/actions";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Одна строка «похоже на регион, но направление не стоит».
@@ -39,7 +40,7 @@ export default function DirectionFixRow({
     setError(null);
     setSaving(true);
     try {
-      await setOrderDirectionAction(orderId, direction);
+      unwrap(await setOrderDirectionAction(orderId, direction));
       setDone(true);
       router.refresh();
     } catch (err) {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { setRegionIncomeAction } from "@/app/orders/actions";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Сколько денег пришло по этому городу. Вписывает бухгалтер.
@@ -48,7 +49,7 @@ export default function RegionIncomePanel({
     }
     setSaving(true);
     try {
-      await setRegionIncomeAction(orderId, amount);
+      unwrap(await setRegionIncomeAction(orderId, amount));
       setSaved(true);
       router.refresh();
     } catch (err) {

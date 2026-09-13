@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { importForecastAction, parseForecastFileAction } from "@/app/forecast/actions";
 import { FLOWER_TYPE_LABELS, formatGrade, periodLabel, weekLabel } from "@/lib/constants";
 import type { ForecastParseResult } from "@/lib/excel";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Загрузка прогноза срезки файлом. Сначала показываем, что распозналось, и
@@ -38,7 +39,7 @@ export default function ForecastImportForm({ month }: { month: string }) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("month", month);
-      setResult(await parseForecastFileAction(formData));
+      setResult(unwrap(await parseForecastFileAction(formData)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
     } finally {
@@ -51,7 +52,7 @@ export default function ForecastImportForm({ month }: { month: string }) {
     setError(null);
     setImporting(true);
     try {
-      const summary = await importForecastAction(result.varieties, result.mix, month);
+      const summary = unwrap(await importForecastAction(result.varieties, result.mix, month));
       setDone(summary);
       setResult(null);
       setFileName(null);

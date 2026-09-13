@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { importBatchesAction, parseBatchesFileAction } from "@/app/warehouse/actions";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import type { ParsedBatchRow, ParseResult } from "@/lib/excel";
+import { unwrap } from "@/lib/actionResult";
 
 export default function BatchImportForm() {
   const router = useRouter();
@@ -25,7 +26,7 @@ export default function BatchImportForm() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const parsed = await parseBatchesFileAction(formData);
+      const parsed = unwrap(await parseBatchesFileAction(formData));
       setResult(parsed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
@@ -39,7 +40,7 @@ export default function BatchImportForm() {
     setError(null);
     setImporting(true);
     try {
-      const summary = await importBatchesAction(result.rows.filter((r) => !r.error));
+      const summary = unwrap(await importBatchesAction(result.rows.filter((r) => !r.error)));
       setDone(summary);
       setResult(null);
       setFileName(null);

@@ -7,6 +7,7 @@ import ClientPicker, { type ClientOption } from "./ClientPicker";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
 import { SHIPMENT_DIRECTIONS } from "@/lib/constants";
 import { directionForCity } from "@/lib/direction";
+import { unwrap } from "@/lib/actionResult";
 
 export default function OrderForm({
   varieties,
@@ -70,7 +71,7 @@ export default function OrderForm({
 
     setSubmitting(true);
     try {
-      const orderId = await createOrderAction({
+      const orderId = unwrap(await createOrderAction({
         clientId: client.clientId,
         // Имя записывается снимком: точка может переименоваться, а в старой
         // заявке должно остаться то, что было написано тогда.
@@ -86,7 +87,7 @@ export default function OrderForm({
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice),
         })),
-      });
+      }));
       router.push(`/orders/${orderId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать заявку");

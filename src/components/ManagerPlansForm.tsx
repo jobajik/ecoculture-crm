@@ -7,6 +7,7 @@ import { saveManagerPlansAction } from "@/app/plans/actions";
 import { periodLabel } from "@/lib/constants";
 import { PLAN_FLOWERS, planCellKey, planFlowerLabel } from "@/lib/managerPlans";
 import NumberCell from "./NumberCell";
+import { unwrap } from "@/lib/actionResult";
 
 export interface ManagerPlanEntry {
   email: string;
@@ -148,7 +149,7 @@ export default function ManagerPlansForm({
     setSaving(true);
     setError(null);
     try {
-      await saveManagerPlansAction(
+      unwrap(await saveManagerPlansAction(
         period,
         changed.map((row) => ({
           period,
@@ -157,7 +158,7 @@ export default function ManagerPlansForm({
           targetAmount: row.amount,
           targetStems: row.stems,
         }))
-      );
+      ));
       setSaved(`Сохранено строк плана: ${changed.length}`);
       router.refresh();
     } catch (err) {

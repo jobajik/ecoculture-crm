@@ -23,6 +23,7 @@ import {
   type DistributeMode,
 } from "@/lib/planBalance";
 import WeekTabs from "./WeekTabs";
+import { unwrap } from "@/lib/actionResult";
 
 export interface BalanceInput {
   flowerType: string;
@@ -180,7 +181,7 @@ export default function PlanBalanceBoard({
         targetAmount: activeDraft[d]?.amount ?? 0,
       }));
 
-      await saveShipmentPlansAction(activeWeek, rows);
+      unwrap(await saveShipmentPlansAction(activeWeek, rows));
       setSaved(`План обновлён: строк ${rows.length}`);
       handleReset();
       router.refresh();

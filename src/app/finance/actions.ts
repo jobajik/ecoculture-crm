@@ -28,6 +28,7 @@ import {
   PAYMENT_METHODS,
   ROLES,
 } from "@/lib/constants";
+import { guard } from "@/lib/actionResult";
 
 /**
  * Заявка в наш магазин деньгами не сопровождается вовсе: счёта нет, платить
@@ -65,7 +66,7 @@ function refreshMoneyPages(orderId: string) {
  * предоплату, потом остаток — поэтому здесь сумма, а не галочка. Галочку
  * «оплачено целиком» система ставит сама, когда сумма догоняет счёт.
  */
-export async function setPaymentAction(
+async function setPaymentActionInner(
   orderId: string,
   paidAmount: number,
   paymentMethod: string
@@ -139,7 +140,7 @@ export async function setPaymentAction(
  * всего» складывается из частей, а не вводится вторым числом: два поля,
  * отвечающие за одно и то же, рано или поздно разъезжаются.
  */
-export async function setPaymentByFarmAction(
+async function setPaymentByFarmActionInner(
   orderId: string,
   byFarm: Record<string, number>,
   paymentMethod: string
@@ -212,7 +213,7 @@ export async function setPaymentByFarmAction(
 }
 
 /** Оплата целиком или снятие оплаты — то же действие, но одной кнопкой. */
-export async function setPaidAction(orderId: string, paid: boolean, paymentMethod: string) {
+async function setPaidActionInner(orderId: string, paid: boolean, paymentMethod: string) {
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
   return setPaymentAction(orderId, paid ? order.totalAmount : 0, paymentMethod);
@@ -233,7 +234,7 @@ export async function setPaidAction(orderId: string, paid: boolean, paymentMetho
  * перетирается повторным нажатием: она отвечает на вопрос «когда мы вообще про
  * эти деньги напоминали».
  */
-export async function setInvoiceSentAction(orderId: string, sent: boolean) {
+async function setInvoiceSentActionInner(orderId: string, sent: boolean) {
   const email = await requireAccountant();
 
   const order = await getOrderById(orderId);
@@ -263,7 +264,7 @@ export async function setInvoiceSentAction(orderId: string, sent: boolean) {
   refreshMoneyPages(orderId);
 }
 
-export async function setPromiseAction(orderId: string, promisedAt: string, note: string) {
+async function setPromiseActionInner(orderId: string, promisedAt: string, note: string) {
   const email = await requireAccountant();
 
   const order = await getOrderById(orderId);
@@ -310,7 +311,7 @@ export interface RecalcItemInput {
  * Причина обязательна: пересчёт без объяснения через месяц выглядит как ошибка
  * в данных, и разбираться в нём будет некому.
  */
-export async function recalculateOrderAction(
+async function recalculateOrderActionInner(
   orderId: string,
   items: RecalcItemInput[],
   reason: string,
@@ -407,7 +408,7 @@ export async function recalculateOrderAction(
  * Рекламацию заводит МЕНЕДЖЕР по своей заявке: клиент жалуется ему, а не
  * бухгалтеру. Так решил владелец — тогда видно, кто попросил и кто разрешил.
  */
-export async function createClaimAction(orderId: string, reason: string, comment: string) {
+async function createClaimActionInner(orderId: string, reason: string, comment: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
 
@@ -454,7 +455,7 @@ export async function createClaimAction(orderId: string, reason: string, comment
 }
 
 /** Отклонение рекламации бухгалтером: сумма заявки не меняется. */
-export async function rejectClaimAction(claimId: string, decision: string) {
+async function rejectClaimActionInner(claimId: string, decision: string) {
   const email = await requireAccountant();
 
   const claim = (await listClaims()).find((c) => c.claimId === claimId);
@@ -483,7 +484,7 @@ export async function rejectClaimAction(claimId: string, decision: string) {
  * Первую галочку ставит менеджер по своей заявке (администратор — по любой).
  * Бухгалтер её не ставит: это подтверждение договорённости с клиентом, а не денег.
  */
-export async function setManagerConfirmedAction(orderId: string, confirmed: boolean) {
+async function setManagerConfirmedActionInner(orderId: string, confirmed: boolean) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
 
@@ -521,4 +522,53 @@ export async function setManagerConfirmedAction(orderId: string, confirmed: bool
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/picklist");
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
+//
+// Next.js в боевой сборке подменяет текст любой брошенной ошибки на
+// английскую заглушку, и человек вместо «сначала снимите оплату» видит абзац
+// про Server Components. Возвращённое значение он не трогает — поэтому
+// наружу смотрят эти обёртки, а вся работа осталась в функциях выше.
+//
+// Подробности и правило целиком — в src/lib/actionResult.ts.
+// В браузере вызов оборачивается unwrap(); за этим следит
+// scripts/check-action-refusals.ts.
+// ---------------------------------------------------------------------------
+
+export async function setPaymentAction(...args: Parameters<typeof setPaymentActionInner>) {
+  return guard(() => setPaymentActionInner(...args));
+}
+
+export async function setPaymentByFarmAction(...args: Parameters<typeof setPaymentByFarmActionInner>) {
+  return guard(() => setPaymentByFarmActionInner(...args));
+}
+
+export async function setPaidAction(...args: Parameters<typeof setPaidActionInner>) {
+  return guard(() => setPaidActionInner(...args));
+}
+
+export async function setInvoiceSentAction(...args: Parameters<typeof setInvoiceSentActionInner>) {
+  return guard(() => setInvoiceSentActionInner(...args));
+}
+
+export async function setPromiseAction(...args: Parameters<typeof setPromiseActionInner>) {
+  return guard(() => setPromiseActionInner(...args));
+}
+
+export async function recalculateOrderAction(...args: Parameters<typeof recalculateOrderActionInner>) {
+  return guard(() => recalculateOrderActionInner(...args));
+}
+
+export async function createClaimAction(...args: Parameters<typeof createClaimActionInner>) {
+  return guard(() => createClaimActionInner(...args));
+}
+
+export async function rejectClaimAction(...args: Parameters<typeof rejectClaimActionInner>) {
+  return guard(() => rejectClaimActionInner(...args));
+}
+
+export async function setManagerConfirmedAction(...args: Parameters<typeof setManagerConfirmedActionInner>) {
+  return guard(() => setManagerConfirmedActionInner(...args));
 }

@@ -6,6 +6,7 @@ import { createShipmentAction } from "@/app/warehouse/actions";
 import clsx from "clsx";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import type { Batch, OrderWithItems } from "@/lib/types";
+import { unwrap } from "@/lib/actionResult";
 
 /** Русское склонение дней: 1 день, 2 дня, 5 дней. */
 function dayWord(n: number) {
@@ -86,7 +87,7 @@ function ItemShipRow({
 
     setSubmitting(true);
     try {
-      await createShipmentAction({ orderId, itemId: item.itemId, batchId, quantity: qty });
+      unwrap(await createShipmentAction({ orderId, itemId: item.itemId, batchId, quantity: qty }));
       setSuccess(true);
       onDone();
     } catch (err) {

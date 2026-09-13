@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { createClaimAction } from "@/app/finance/actions";
 import { CLAIM_REASONS, CLAIM_STATUSES, CLAIM_STATUS_LABELS } from "@/lib/constants";
 import { formatDay } from "@/lib/formatDate";
+import { unwrap } from "@/lib/actionResult";
 
 export interface OrderClaimRow {
   claimId: string;
@@ -50,7 +51,7 @@ export default function OrderClaims({
     setError(null);
     startTransition(async () => {
       try {
-        await createClaimAction(orderId, reason, comment);
+        unwrap(await createClaimAction(orderId, reason, comment));
         setComment("");
         setOpen(false);
         router.refresh();

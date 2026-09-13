@@ -12,6 +12,7 @@ import {
 import { createClientAction } from "@/app/clients/actions";
 import { orderForPicker } from "@/lib/clientPick";
 import { days } from "@/lib/plural";
+import { unwrap } from "@/lib/actionResult";
 
 export interface ClientOption {
   clientId: string;
@@ -112,7 +113,7 @@ export default function ClientPicker({
     if (!form.city.trim()) return setError("Укажите город — без него не посчитать, куда мы возим");
     startTransition(async () => {
       try {
-        const created = await createClientAction({ ...form });
+        const created = unwrap(await createClientAction({ ...form }));
         onChange({
           clientId: created.clientId,
           name: form.name.trim(),

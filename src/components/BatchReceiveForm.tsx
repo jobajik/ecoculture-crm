@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createBatchAction } from "@/app/warehouse/actions";
 import { FLOWER_TYPE_LABELS, GRADE_LABELS, formatGrade, getGradesFor } from "@/lib/constants";
 import type { FlowerType } from "@/lib/constants";
+import { unwrap } from "@/lib/actionResult";
 
 type FlowerTypeKey = FlowerType;
 
@@ -34,14 +35,14 @@ export default function BatchReceiveForm({
     setSuccess(null);
     setSubmitting(true);
     try {
-      const batchId = await createBatchAction({
+      const batchId = unwrap(await createBatchAction({
         flowerType,
         variety: variety.trim(),
         grade,
         quantityIn: Number(quantityIn),
         harvestDate,
         location: location.trim(),
-      });
+      }));
       // Код показываем, но отдельной мелкой строкой: подтверждение приёмки
       // важнее кода, а код нужен лишь чтобы подписать ведро.
       setSuccess(batchId);

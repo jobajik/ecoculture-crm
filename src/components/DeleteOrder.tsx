@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteOrderAction } from "@/app/orders/actions";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Удаление заявки совсем — кнопка только у администратора.
@@ -28,7 +29,7 @@ export default function DeleteOrder({ orderId }: { orderId: string }) {
     setError(null);
     startTransition(async () => {
       try {
-        await deleteOrderAction(orderId, reason);
+        unwrap(await deleteOrderAction(orderId, reason));
         router.push("/orders");
         router.refresh();
       } catch (e) {

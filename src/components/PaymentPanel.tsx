@@ -12,6 +12,7 @@ import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
+import { unwrap } from "@/lib/actionResult";
 
 export function money(value: number): string {
   return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
@@ -89,7 +90,7 @@ function InvoiceRow({ orderId, invoiceSentAt }: { orderId: string; invoiceSentAt
     setError(null);
     startTransition(async () => {
       try {
-        await setInvoiceSentAction(orderId, !sent);
+        unwrap(await setInvoiceSentAction(orderId, !sent));
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось сохранить");
@@ -141,7 +142,7 @@ function WholePayment({
     setError(null);
     startTransition(async () => {
       try {
-        await setPaymentAction(orderId, amount, method);
+        unwrap(await setPaymentAction(orderId, amount, method));
         router.refresh();
         onDone?.();
       } catch (e) {
@@ -257,7 +258,7 @@ function SplitPayment({
     setError(null);
     startTransition(async () => {
       try {
-        await setPaymentByFarmAction(orderId, next, method);
+        unwrap(await setPaymentByFarmAction(orderId, next, method));
         router.refresh();
         onDone?.();
       } catch (e) {

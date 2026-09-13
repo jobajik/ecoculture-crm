@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateOrderAction } from "@/app/orders/actions";
 import OrderItemsEditor, { type DraftItem } from "./OrderItemsEditor";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Правка уже оформленной заявки.
@@ -93,7 +94,7 @@ export default function OrderEditForm({
 
     setSaving(true);
     try {
-      await updateOrderAction(orderId, {
+      unwrap(await updateOrderAction(orderId, {
         deliveryDate,
         ...(showContacts ? { clientPhone: phone, notes } : {}),
         ...(editableItems
@@ -108,7 +109,7 @@ export default function OrderEditForm({
               })),
             }
           : {}),
-      });
+      }));
       router.push(`/orders/${orderId}`);
       router.refresh();
     } catch (err) {

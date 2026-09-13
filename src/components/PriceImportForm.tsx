@@ -7,6 +7,7 @@ import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import { BASE_VARIETY_LABEL } from "@/lib/priceList";
 import type { PriceParseResult } from "@/lib/excel";
 import MoreToggle from "./MoreToggle";
+import { unwrap } from "@/lib/actionResult";
 
 /** Сколько строк предпросмотра видно без разворота. */
 const VISIBLE_ROWS = 12;
@@ -40,7 +41,7 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      setResult(await parsePriceFileAction(formData, kind));
+      setResult(unwrap(await parsePriceFileAction(formData, kind)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
     } finally {
@@ -53,7 +54,7 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
     setError(null);
     setImporting(true);
     try {
-      setDone(await importPricesAction(result.rows.filter((r) => !r.error), kind));
+      setDone(unwrap(await importPricesAction(result.rows.filter((r) => !r.error), kind)));
       setResult(null);
       setFileName(null);
       if (fileInputRef.current) fileInputRef.current.value = "";

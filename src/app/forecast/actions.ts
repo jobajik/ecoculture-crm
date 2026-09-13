@@ -28,6 +28,7 @@ import {
   isValidWeekCode,
   weeksOfMonth,
 } from "@/lib/constants";
+import { guard } from "@/lib/actionResult";
 
 /**
  * Прогноз ведут агрономы (и администратор). Агроном привязан к производству
@@ -77,7 +78,7 @@ function cleanStems(value: unknown, what: string): number {
 }
 
 /** Прогноз по сортам: сорт × неделя. */
-export async function saveForecastAction(period: string, rows: HarvestForecastInput[]) {
+async function saveForecastActionInner(period: string, rows: HarvestForecastInput[]) {
   const { email, farm } = await requireAgronomist();
   if (!isValidWeekCode(period)) throw new Error("Неверная неделя");
 
@@ -108,7 +109,7 @@ export async function saveForecastAction(period: string, rows: HarvestForecastIn
 }
 
 /** Ростовка: градация × неделя, на весь цветок. */
-export async function saveMixAction(period: string, rows: HarvestMixInput[]) {
+async function saveMixActionInner(period: string, rows: HarvestMixInput[]) {
   const { email, farm } = await requireAgronomist();
   if (!isValidWeekCode(period)) throw new Error("Неверная неделя");
 
@@ -140,7 +141,7 @@ export async function saveMixAction(period: string, rows: HarvestMixInput[]) {
  * Читает загруженный файл и возвращает разобранные строки с пометками об
  * ошибках. Ничего не записывает: сначала агроном смотрит, что распозналось.
  */
-export async function parseForecastFileAction(formData: FormData): Promise<ForecastParseResult> {
+async function parseForecastFileActionInner(formData: FormData): Promise<ForecastParseResult> {
   const { farm } = await requireAgronomist();
 
   const file = formData.get("file");
@@ -180,7 +181,7 @@ export async function parseForecastFileAction(formData: FormData): Promise<Forec
  * как урожай, которого никто не обещал. Заменяются только те цветки, чьи листы
  * есть в файле: файл с одними розами не должен стирать хризантему.
  */
-export async function importForecastAction(
+async function importForecastActionInner(
   varieties: ParsedVarietyRow[],
   mix: ParsedMixRow[],
   /** Месяц, который заменяем. Без него обнуление не делается. */
@@ -258,7 +259,7 @@ export async function importForecastAction(
     varietyByWeek.set(row.week, list);
   }
   for (const [week, items] of varietyByWeek) {
-    const result = await saveForecastAction(
+    const result = await saveForecastActionInner(
       week,
       items.map((r) => ({
         period: week,
@@ -279,7 +280,7 @@ export async function importForecastAction(
     mixByWeek.set(row.week, list);
   }
   for (const [week, items] of mixByWeek) {
-    const result = await saveMixAction(
+    const result = await saveMixActionInner(
       week,
       items.map((r) => ({
         period: week,
@@ -293,4 +294,31 @@ export async function importForecastAction(
   }
 
   return { updated, created, totalStems, cleared };
+}
+
+// ---------------------------------------------------------------------------
+// Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
+//
+// Next.js в боевой сборке подменяет текст любой брошенной ошибки на
+// английскую заглушку, и человек вместо понятного отказа видит абзац про
+// Server Components. Возвращённое значение он не трогает — поэтому наружу
+// смотрят эти обёртки, а вся работа осталась в функциях выше.
+//
+// Подробности и правило целиком — в src/lib/actionResult.ts.
+// ---------------------------------------------------------------------------
+
+export async function saveForecastAction(...args: Parameters<typeof saveForecastActionInner>) {
+  return guard(() => saveForecastActionInner(...args));
+}
+
+export async function saveMixAction(...args: Parameters<typeof saveMixActionInner>) {
+  return guard(() => saveMixActionInner(...args));
+}
+
+export async function parseForecastFileAction(...args: Parameters<typeof parseForecastFileActionInner>) {
+  return guard(() => parseForecastFileActionInner(...args));
+}
+
+export async function importForecastAction(...args: Parameters<typeof importForecastActionInner>) {
+  return guard(() => importForecastActionInner(...args));
 }

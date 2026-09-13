@@ -19,6 +19,7 @@ import {
 } from "@/lib/constants";
 import { planCellKey } from "@/lib/planCell";
 import NumberCell, { parseNumber } from "./NumberCell";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * План отгрузок: весь месяц одной сеткой «направления × недели».
@@ -182,7 +183,7 @@ export default function ShipmentPlanGrid({
     setSaving(true);
     setError(null);
     try {
-      const result = await saveShipmentPlansMonthAction(month, changed);
+      const result = unwrap(await saveShipmentPlansMonthAction(month, changed));
       setNote(`Сохранено ячеек: ${result.updated + result.created}`);
       router.refresh();
     } catch (err) {
@@ -196,7 +197,7 @@ export default function ShipmentPlanGrid({
     setBusy("copy");
     setError(null);
     try {
-      const { cells, fromMonth } = await copyPreviousShipmentPlanAction(month);
+      const { cells, fromMonth } = unwrap(await copyPreviousShipmentPlanAction(month));
       if (cells.length === 0) {
         setNote(`В ${periodLabel(fromMonth)} плана не было — копировать нечего.`);
         return;
@@ -229,7 +230,7 @@ export default function ShipmentPlanGrid({
       const formData = new FormData();
       formData.append("file", file);
       formData.append("month", month);
-      const result = await parseShipmentPlanFileAction(formData);
+      const result = unwrap(await parseShipmentPlanFileAction(formData));
 
       if (result.fatalError) {
         setError(result.fatalError);

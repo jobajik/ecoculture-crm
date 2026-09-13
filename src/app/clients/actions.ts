@@ -13,6 +13,7 @@ import {
 import { CLIENT_SOURCES, CLIENT_TYPES, PAYMENT_METHODS, PAYMENT_TERMS, ROLES } from "@/lib/constants";
 import { kaspiFieldsFor } from "@/lib/clientPick";
 import { canCreateCard, canSeeShop, cleanTerritory, isOwnShop, retailTerritoryFor } from "@/lib/retail";
+import { guard } from "@/lib/actionResult";
 
 /**
  * Клиентскую базу ведут те, кто продаёт.
@@ -76,7 +77,7 @@ function clean(input: Partial<NewClientInput>) {
   };
 }
 
-export async function createClientAction(input: Omit<NewClientInput, "managerEmail">) {
+async function createClientActionInner(input: Omit<NewClientInput, "managerEmail">) {
   const { email, all, role } = await requireSales();
 
   // Список магазинов ЗАКРЫТЫЙ: точку заводит РОП, а не менеджер розницы из
@@ -117,7 +118,7 @@ export async function createClientAction(input: Omit<NewClientInput, "managerEma
   };
 }
 
-export async function updateClientAction(
+async function updateClientActionInner(
   clientId: string,
   input: Partial<NewClientInput> & { active?: boolean }
 ) {
@@ -144,17 +145,29 @@ export async function updateClientAction(
 
   // Передать клиента другому менеджеру может только РОП или админ: иначе
   // чужого клиента можно было бы тихо записать на себя вместе с его выручкой.
+  //
+  // ВАЖНО: отказ только на НАСТОЯЩЕЕ изменение. Форма карточки присылает все
+  // поля целиком, включая те, которые человек не трогал, — и пока проверка
+  // стояла на «поле пришло», менеджер не мог сохранить даже собственного
+  // клиента: он правил телефон, а получал «направление розницы меняет только
+  // РОП». Прислать текущее значение и попытаться его изменить — разные вещи.
   const patch: Partial<NewClientInput> & { active?: boolean } = { ...data };
   if (input.managerEmail !== undefined) {
-    if (!all) throw new Error("Передать клиента другому менеджеру может только РОП");
-    patch.managerEmail = input.managerEmail.trim().toLowerCase();
+    const asked = input.managerEmail.trim().toLowerCase();
+    if (asked !== client.managerEmail) {
+      if (!all) throw new Error("Передать клиента другому менеджеру может только РОП");
+      patch.managerEmail = asked;
+    }
   }
   // Перевести точку в другое направление (или сделать клиента нашим магазином)
   // может только РОП. Иначе граница между Алматы и регионами держалась бы на
   // честном слове: любой менеджер розницы забрал бы себе чужую точку.
   if (input.retail !== undefined) {
-    if (!all) throw new Error("Направление розницы меняет только РОП");
-    patch.retail = cleanTerritory(input.retail);
+    const asked = cleanTerritory(input.retail);
+    if (asked !== (client.retail || "").trim()) {
+      if (!all) throw new Error("Направление розницы меняет только РОП");
+      patch.retail = asked;
+    }
   }
   if (input.active !== undefined) patch.active = input.active;
 
@@ -163,4 +176,25 @@ export async function updateClientAction(
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/retail");
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
+//
+// Next.js в боевой сборке подменяет текст любой брошенной ошибки на
+// английскую заглушку, и человек вместо «сначала снимите оплату» видит абзац
+// про Server Components. Возвращённое значение он не трогает — поэтому
+// наружу смотрят эти обёртки, а вся работа осталась в функциях выше.
+//
+// Подробности и правило целиком — в src/lib/actionResult.ts.
+// В браузере вызов оборачивается unwrap(); за этим следит
+// scripts/check-action-refusals.ts.
+// ---------------------------------------------------------------------------
+
+export async function createClientAction(...args: Parameters<typeof createClientActionInner>) {
+  return guard(() => createClientActionInner(...args));
+}
+
+export async function updateClientAction(...args: Parameters<typeof updateClientActionInner>) {
+  return guard(() => updateClientActionInner(...args));
 }

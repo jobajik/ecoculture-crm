@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { createOrderAction } from "@/app/orders/actions";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
+import { unwrap } from "@/lib/actionResult";
 
 export interface RetailShopOption {
   clientId: string;
@@ -87,7 +88,7 @@ export default function RetailOrderForm({
 
     setSubmitting(true);
     try {
-      const orderId = await createOrderAction({
+      const orderId = unwrap(await createOrderAction({
         clientId: shop.clientId,
         // Имя записывается снимком: точку могут переименовать, а в старой
         // заявке должно остаться то, что было написано тогда.
@@ -103,7 +104,7 @@ export default function RetailOrderForm({
           // должна не отправляться: стебли важнее суммы, а сумму РОП добавит.
           unitPrice: Number(it.unitPrice) || 0,
         })),
-      });
+      }));
       router.push(`/orders/${orderId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать заявку");

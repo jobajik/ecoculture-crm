@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cancelOrderAction } from "@/app/orders/actions";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Отмена заявки.
@@ -27,7 +28,7 @@ export default function CancelOrder({ orderId }: { orderId: string }) {
     setError(null);
     startTransition(async () => {
       try {
-        await cancelOrderAction(orderId, reason);
+        unwrap(await cancelOrderAction(orderId, reason));
         setOpen(false);
         router.refresh();
       } catch (e) {

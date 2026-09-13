@@ -20,6 +20,7 @@
  */
 import {
   buildDirectionFact,
+  directionFor,
   canSeeRegionSales,
   canSetDirection,
   cleanDirection,
@@ -386,6 +387,31 @@ check(
   "алматинская заявка в список не попала — ей направление и не нужно",
   missing.some((m) => m.orderId === "O-5"),
   false
+);
+
+// --- Что реально попадёт в заявку ------------------------------------------
+//
+// Форма подставляет направление по городу клиента, но менеджеру поля не
+// показывает. Пока сервер на это ОТКАЗЫВАЛ, менеджер не мог оформить заявку ни
+// одному клиенту из региона: «Бишкек» превращался в «Киргизия», и заявка не
+// проходила. Владелец упёрся в это на живом клиенте.
+
+check("у РОПа направление сохраняется", directionFor(ROLES.SALES_HEAD, "Астана"), "Астана");
+check("у админа тоже", directionFor(ROLES.ADMIN, "Караганда"), "Караганда");
+check("у менеджера отбрасывается, а не отвергается", directionFor(ROLES.MANAGER, "Киргизия"), "");
+check("город клиента менеджеру не мешает", directionFor(ROLES.MANAGER, directionForCity("Бишкек")), "");
+check("у менеджера розницы тоже пусто", directionFor(ROLES.RETAIL_ALMATY, "Астана"), "");
+check("пустая роль — пусто (грабли 1.10)", directionFor("", "Астана"), "");
+check("выдуманное направление РОПа не проходит", directionFor(ROLES.SALES_HEAD, "Марс"), "");
+// И главное: то, что отбросили, дальше уже не отказывает.
+check(
+  "после отбрасывания заявка менеджера проходит",
+  directionRefusal({
+    role: ROLES.MANAGER,
+    direction: directionFor(ROLES.MANAGER, directionForCity("Бишкек")),
+    isShop: false,
+  }),
+  ""
 );
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);

@@ -10,6 +10,7 @@ import { parseNumber } from "./NumberCell";
 import MoreToggle from "./MoreToggle";
 import { money } from "./PaymentPanel";
 import { formatDay, formatMoment } from "@/lib/formatDate";
+import { unwrap } from "@/lib/actionResult";
 
 /** Что бухгалтеру нужно знать о рекламации, чтобы решить прямо здесь. */
 export interface ClaimView {
@@ -169,7 +170,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
     setError(null);
     startTransition(async () => {
       try {
-        await recalculateOrderAction(
+        unwrap(await recalculateOrderAction(
           claim.orderId,
           claim.items.map((i) => ({
             itemId: i.itemId,
@@ -178,7 +179,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
           })),
           reason || `${claim.reason}: ${claim.comment}`,
           claim.claimId
-        );
+        ));
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось пересчитать");
@@ -190,7 +191,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
     setError(null);
     startTransition(async () => {
       try {
-        await rejectClaimAction(claim.claimId, reason);
+        unwrap(await rejectClaimAction(claim.claimId, reason));
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось отклонить");

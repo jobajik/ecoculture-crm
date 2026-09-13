@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { setManagerConfirmedAction } from "@/app/finance/actions";
 import { formatDay } from "@/lib/formatDate";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Две «зелёные галочки» готовности заявки к сборке.
@@ -67,7 +68,7 @@ export default function ReadyChecks({
     setError(null);
     startTransition(async () => {
       try {
-        await setManagerConfirmedAction(orderId, !managerConfirmed);
+        unwrap(await setManagerConfirmedAction(orderId, !managerConfirmed));
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось сохранить");

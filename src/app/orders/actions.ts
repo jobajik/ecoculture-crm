@@ -28,7 +28,7 @@ import {
 } from "@/lib/orderEdit";
 import { getClientById } from "@/lib/repo/clients";
 import { canFillRegions, canOrderForShop, isOwnShop, isRetailRole } from "@/lib/retail";
-import { canSetDirection, cleanDirection, directionRefusal } from "@/lib/direction";
+import { canSetDirection, cleanDirection, directionFor, directionRefusal } from "@/lib/direction";
 import {
   canFillRegionOrders,
   isRegionOrder,
@@ -38,8 +38,9 @@ import {
 import { setOrderPayment } from "@/lib/repo/orders";
 import { setOrderDirection } from "@/lib/repo/orders";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ROLES } from "@/lib/constants";
+import { guard } from "@/lib/actionResult";
 
-export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail">) {
+async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role;
@@ -74,9 +75,20 @@ export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail
   }
 
   // Направление отгрузки ставит только РОП, и только обычной заявке: у
-  // перемещения в наш магазин направления не бывает. Проверка здесь, а не в
-  // форме, — поле можно и не показать, а запрос всё равно придёт (грабли 1.11).
-  const direction = cleanDirection(input.direction);
+  // перемещения в наш магазин направления не бывает.
+  //
+  // Присланное тем, кому не положено, МОЛЧА отбрасывается, а не отвергается —
+  // и это не мелочь, а починка настоящей поломки. Форма подставляет направление
+  // по городу клиента («Бишкек» → «Киргизия»), но менеджеру поля не показывает.
+  // Пока здесь стоял отказ, менеджер не мог оформить заявку НИ ОДНОМУ клиенту
+  // из региона: он получал «Направление ставит руководитель отдела продаж» и
+  // никак не мог это поправить — поля-то он не видел. Владелец упёрся в это на
+  // клиенте из Бишкека.
+  //
+  // Заявка менеджера и должна приходить без направления: РОП помечает такие сам
+  // одним нажатием в своём разделе (`ordersMissingDirection`). Так это и
+  // задумано, просто раньше вместо пустого поля выходила стена.
+  const direction = directionFor(role, input.direction);
   const refusal = directionRefusal({ role, direction, isShop: shop });
   if (refusal) throw new Error(refusal);
 
@@ -114,7 +126,7 @@ export async function createOrderAction(input: Omit<NewOrderInput, "managerEmail
  * правит, до какого момента, и что вообще можно прислать. Здесь остаётся
  * последовательность и след в журнале.
  */
-export async function updateOrderAction(
+async function updateOrderActionInner(
   orderId: string,
   input: {
     deliveryDate: string;
@@ -229,7 +241,7 @@ export async function updateOrderAction(
  * которого поля направления нет. РОП видит её в своём разделе отдельным
  * списком и помечает одним нажатием.
  */
-export async function setOrderDirectionAction(orderId: string, direction: string) {
+async function setOrderDirectionActionInner(orderId: string, direction: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   if (!canSetDirection(session.user.role)) {
@@ -265,7 +277,7 @@ export async function setOrderDirectionAction(orderId: string, direction: string
  *
  * Правила отмены живут в `src/lib/orderRules.ts` и покрыты тестами.
  */
-export async function cancelOrderAction(orderId: string, reason: string) {
+async function cancelOrderActionInner(orderId: string, reason: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
 
@@ -310,7 +322,7 @@ export async function cancelOrderAction(orderId: string, reason: string) {
  * в `src/lib/orderDelete.ts`, чистой функцией под тестом, а здесь остаётся
  * порядок действий и запись в журнал.
  */
-export async function deleteOrderAction(orderId: string, reason: string) {
+async function deleteOrderActionInner(orderId: string, reason: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
 
@@ -372,7 +384,7 @@ export async function deleteOrderAction(orderId: string, reason: string) {
  * проверка. Ветка внутри чужого действия означала бы, что половина проверок
  * клиентской заявки выполняется вхолостую, а половина — мешает.
  */
-export async function createRegionOrderAction(input: {
+async function createRegionOrderActionInner(input: {
   direction: string;
   deliveryDate: string;
   items: { flowerType: string; variety: string; grade: string; quantity: number }[];
@@ -423,7 +435,7 @@ export async function createRegionOrderAction(input: {
  * тоже. Поэтому обычная панель оплаты здесь не годится: она считает долг как
  * «счёт минус внесено» и на нулевом счёте показала бы переплату.
  */
-export async function setRegionIncomeAction(orderId: string, amount: number) {
+async function setRegionIncomeActionInner(orderId: string, amount: number) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
 
@@ -462,4 +474,45 @@ export async function setRegionIncomeAction(orderId: string, amount: number) {
 
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/plans/regions");
+}
+
+// ---------------------------------------------------------------------------
+// Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
+//
+// Next.js в боевой сборке подменяет текст любой брошенной ошибки на
+// английскую заглушку, и человек вместо «сначала снимите оплату» видит абзац
+// про Server Components. Возвращённое значение он не трогает — поэтому
+// наружу смотрят эти обёртки, а вся работа осталась в функциях выше.
+//
+// Подробности и правило целиком — в src/lib/actionResult.ts.
+// В браузере вызов оборачивается unwrap(); за этим следит
+// scripts/check-action-refusals.ts.
+// ---------------------------------------------------------------------------
+
+export async function createOrderAction(...args: Parameters<typeof createOrderActionInner>) {
+  return guard(() => createOrderActionInner(...args));
+}
+
+export async function updateOrderAction(...args: Parameters<typeof updateOrderActionInner>) {
+  return guard(() => updateOrderActionInner(...args));
+}
+
+export async function setOrderDirectionAction(...args: Parameters<typeof setOrderDirectionActionInner>) {
+  return guard(() => setOrderDirectionActionInner(...args));
+}
+
+export async function cancelOrderAction(...args: Parameters<typeof cancelOrderActionInner>) {
+  return guard(() => cancelOrderActionInner(...args));
+}
+
+export async function deleteOrderAction(...args: Parameters<typeof deleteOrderActionInner>) {
+  return guard(() => deleteOrderActionInner(...args));
+}
+
+export async function createRegionOrderAction(...args: Parameters<typeof createRegionOrderActionInner>) {
+  return guard(() => createRegionOrderActionInner(...args));
+}
+
+export async function setRegionIncomeAction(...args: Parameters<typeof setRegionIncomeActionInner>) {
+  return guard(() => setRegionIncomeActionInner(...args));
 }

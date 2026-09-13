@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { createStaffTakeoutAction } from "@/app/warehouse/actions";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import { findSimilarStaff } from "@/lib/staffTakeout";
+import { unwrap } from "@/lib/actionResult";
 
 export interface TakeoutBatchOption {
   batchId: string;
@@ -132,14 +133,14 @@ export default function StaffTakeoutForm({
 
     setSubmitting(true);
     try {
-      await createStaffTakeoutAction({
+      unwrap(await createStaffTakeoutAction({
         date,
         staffName: staffName.trim(),
         batchId: batch.batchId,
         quantity: qty,
         unitPrice: price,
         note: note.trim(),
-      });
+      }));
       setDone(`${staffName.trim()} — ${qty} шт.`);
       // Фамилию и день оставляем: следующей строкой часто идёт тот же человек
       // или тот же день. Сбрасываем то, что точно поменяется.

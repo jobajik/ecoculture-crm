@@ -8,6 +8,7 @@ import { setPromiseAction } from "@/app/finance/actions";
 import type { CallRow } from "@/lib/finance";
 import MoreToggle from "./MoreToggle";
 import PaymentPanel, { money } from "./PaymentPanel";
+import { unwrap } from "@/lib/actionResult";
 
 /** Сколько строк видно без разворота. Больше десяти звонков за раз не делают. */
 const VISIBLE = 10;
@@ -186,7 +187,7 @@ function PromiseForm({ row, onDone }: { row: CallRow; onDone: () => void }) {
     setError(null);
     startTransition(async () => {
       try {
-        await setPromiseAction(row.orderId, nextDate, note);
+        unwrap(await setPromiseAction(row.orderId, nextDate, note));
         router.refresh();
         onDone();
       } catch (e) {

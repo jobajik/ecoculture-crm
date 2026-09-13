@@ -13,6 +13,7 @@ import {
 import { BASE_VARIETY, BASE_VARIETY_LABEL, priceKey } from "@/lib/priceList";
 import { parseNumber } from "./NumberCell";
 import MoreToggle from "./MoreToggle";
+import { unwrap } from "@/lib/actionResult";
 
 /**
  * Прайс-лист: строка «Все сорта» и, по желанию, отдельные сорта.
@@ -63,7 +64,7 @@ export default function PriceBoard({
     setSaving(true);
     setError(null);
     try {
-      await savePricesAction(changed, kind);
+      unwrap(await savePricesAction(changed, kind));
       setSaved(`Сохранено цен: ${changed.length}`);
       router.refresh();
     } catch (err) {
