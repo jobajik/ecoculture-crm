@@ -110,9 +110,29 @@ async function main() {
   } else {
     console.log(`Строк: ${lostLog.length}`);
     for (const l of lostLog) {
-      console.log(`  ${l.OrderID} · ${l.Action} · было ${l.AmountBefore} стало ${l.AmountAfter} · ${l.CreatedAt}`);
+      console.log(
+        `  ${l.OrderID} · ${l.Action} · было ${l.AmountBefore} стало ${l.AmountAfter} · ${l.CreatedAt} · ${l.ActorEmail}`
+      );
     }
     console.log("Журнал только дописывается — эти строки трогать не надо, они и есть след.");
+  }
+  console.log("");
+
+  // --- Кто и почему удалил -----------------------------------------------
+  //
+  // Ради этого раздела журнал и заводился: заявки больше нет, и ответить на
+  // вопрос «куда она делась» может только эта строка. Печатаем её целиком —
+  // с почтой того, кто нажал, и с описанием, которое записывалось в момент
+  // удаления: номер, клиент, менеджер, сумма, позиции и причина.
+  const deletions = log.filter((l) => (l.Action || "").trim() === "order_deleted");
+  console.log("=== 5. Удаления заявок: кто, когда и почему ===");
+  if (deletions.length === 0) {
+    console.log("Заявок через программу не удаляли ни разу.");
+  } else {
+    for (const l of deletions.sort((a, b) => (a.CreatedAt || "").localeCompare(b.CreatedAt || ""))) {
+      console.log(`  ${l.CreatedAt} · ${l.ActorEmail || "(без почты)"} · ${l.OrderID}`);
+      console.log(`      ${l.Details || "(без описания)"}`);
+    }
   }
 }
 
