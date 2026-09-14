@@ -38,9 +38,9 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-import { readTableWithFormulas, writeCells } from "../src/lib/sheets";
+import { readTablesWithFormulas, writeCells } from "../src/lib/sheets";
 import { SHEET_HEADERS, SHEET_TABS } from "../src/lib/constants";
-import { isSheetError, recoverFromFormula } from "../src/lib/sheetCell";
+import { containsSheetError, isSheetError, recoverFromFormula } from "../src/lib/sheetCell";
 import { createBackup } from "../src/lib/backup";
 
 interface Broken {
@@ -52,6 +52,8 @@ interface Broken {
   shown: string;
   /** Что было введено на самом деле. Пусто — восстановить нечем. */
   recovered: string;
+  /** Что вернула таблица в ответ на просьбу показать записанное. */
+  stored: string;
 }
 
 function columnLetter(index: number): string {
@@ -70,12 +72,16 @@ async function main() {
   const tabs = Object.values(SHEET_TABS);
 
   const broken: Broken[] = [];
+  const lost: Broken[] = [];
   const untouchable: Broken[] = [];
 
+  // Две картины одной и той же таблицы: что ВИДНО (там ошибка) и что ЗАПИСАНО
+  // (там уцелевший текст, превращённый в формулу). Обе — одним запросом на все
+  // вкладки: по два запроса на вкладку упирается в лимит чтений Google.
+  const pictures = await readTablesWithFormulas(tabs);
+
   for (const tab of tabs) {
-    // Две картины одной и той же таблицы: что ВИДНО (там ошибка) и что
-    // ЗАПИСАНО (там уцелевший текст, превращённый в формулу).
-    const { shown, formulas } = await readTableWithFormulas(tab);
+    const { shown, formulas } = pictures.get(tab) ?? { shown: [], formulas: [] };
     const headers = SHEET_HEADERS[tab] ?? [];
 
     shown.forEach((row, r) => {
@@ -90,13 +96,20 @@ async function main() {
           column: headers[c] ?? columnLetter(c),
           shown: String(cell ?? ""),
           recovered: recoverFromFormula(formula),
+          stored: formula,
         };
-        (item.recovered ? broken : untouchable).push(item);
+        // Три судьбы. Восстановили — чиним. Внутри записанного та же жалоба
+        // («#ERROR! ()») — значение потеряли ещё раньше, и честный ответ здесь
+        // пустая ячейка, а не выдумка. Всё прочее — настоящая формула
+        // владельца, её не трогаем вовсе.
+        if (item.recovered) broken.push(item);
+        else if (containsSheetError(formula) || !formula.trim()) lost.push(item);
+        else untouchable.push(item);
       });
     });
   }
 
-  console.log(`Сломанных ячеек: ${broken.length + untouchable.length}`);
+  console.log(`Сломанных ячеек: ${broken.length + lost.length + untouchable.length}`);
   console.log("");
 
   if (broken.length > 0) {
@@ -106,13 +119,25 @@ async function main() {
     }
     console.log("");
   }
+  if (lost.length > 0) {
+    console.log("=== Восстановить нечем — очищу ===");
+    console.log("Настоящее значение потеряли раньше: в записи лежит та же жалоба таблицы.");
+    console.log("Придумывать телефон нельзя, поэтому ячейка станет пустой.");
+    for (const b of lost) console.log(`  ${b.address} · ${b.column} · записано: «${b.stored}»`);
+    console.log("");
+  }
   if (untouchable.length > 0) {
     console.log("=== Не трону: восстанавливать нечем или это настоящая формула ===");
-    for (const b of untouchable) console.log(`  ${b.address} · ${b.column} · ${b.shown}`);
+    // Печатаем и то, что вернула таблица: первая версия скрипта не починила ни
+    // одной ячейки, и понять почему было нельзя — в выводе не было главного,
+    // самого записанного значения. Теперь оно видно, и гадать не придётся.
+    for (const b of untouchable) {
+      console.log(`  ${b.address} · ${b.column} · ${b.shown} · записано: «${b.stored}»`);
+    }
     console.log("");
   }
 
-  if (broken.length === 0) {
+  if (broken.length === 0 && lost.length === 0) {
     console.log("Чинить нечего.");
     return;
   }
@@ -133,9 +158,16 @@ async function main() {
   // Пишем по одной ячейке. Пометку «это текст» ставит сам `writeCells` — там
   // же, где её ставит любая другая запись программы, чтобы правило жило в
   // одном месте и не разъехалось.
-  await writeCells(broken.map((b) => ({ address: b.address, value: b.recovered })));
+  await writeCells([
+    ...broken.map((b) => ({ address: b.address, value: b.recovered })),
+    ...lost.map((b) => ({ address: b.address, value: "" })),
+  ]);
 
-  console.log(`Починено ячеек: ${broken.length}`);
+  console.log(`Восстановлено ячеек: ${broken.length}`);
+  if (lost.length > 0) {
+    console.log(`Очищено (восстановить было нечем): ${lost.length}`);
+    console.log("Эти значения придётся вписать руками — программа их не знает.");
+  }
 }
 
 main().catch((error) => {

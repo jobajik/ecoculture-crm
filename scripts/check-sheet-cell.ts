@@ -14,7 +14,12 @@
  *
  * Запуск: npx tsx scripts/check-sheet-cell.ts
  */
-import { isSheetError, recoverFromFormula, sheetSafeText } from "../src/lib/sheetCell";
+import {
+  containsSheetError,
+  isSheetError,
+  recoverFromFormula,
+  sheetSafeText,
+} from "../src/lib/sheetCell";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -65,8 +70,20 @@ check("пусто — не ошибка", isSheetError(""), false);
 // запросом. Из «=+7 701…» телефон восстанавливается, а не придумывается заново.
 
 check("телефон восстановлен", recoverFromFormula("=+7 701 555 20 30"), "+7 701 555 20 30");
+// Знака равенства может и не быть: на боевой базе Google отдал записи ровно
+// такими, какими их ввели. Первая версия требовала «=» обязательно и не
+// починила ни одной из 62 ячеек.
+check("без знака равенства тоже", recoverFromFormula("+7 701 555 20 30"), "+7 701 555 20 30");
 check("минус тоже", recoverFromFormula("=-нет данных"), "-нет данных");
-check("не формула — восстанавливать нечего", recoverFromFormula("просто текст"), "");
+check("жалоба вместо значения — восстанавливать нечем", recoverFromFormula("#ERROR!"), "");
+// Жалоба ВНУТРИ значения: программа прочитала сломанную ячейку и записала
+// «#ERROR!» дальше как обычный текст. Первая версия починки этого не заметила и
+// записала строку «#ERROR! ()» в двадцать ячеек живой базы.
+check("жалоба внутри значения — тоже нечем", recoverFromFormula("#ERROR! ()"), "");
+check("и с равенством впереди", recoverFromFormula("=#ERROR! ()"), "");
+check("узнаём жалобу внутри строки", containsSheetError("#ERROR! ()"), true);
+check("обычный телефон — не жалоба", containsSheetError("+7 701 555 20 30"), false);
+check("пусто — не жалоба", containsSheetError(""), false);
 check("пусто — нечего", recoverFromFormula(""), "");
 check("пустая формула — нечего", recoverFromFormula("=   "), "");
 // Настоящую формулу владельца трогать нельзя: превратив её в текст, мы сломаем

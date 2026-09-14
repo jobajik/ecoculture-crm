@@ -121,7 +121,7 @@ export async function readTable(tabName: string): Promise<SheetTable> {
 }
 
 /**
- * Читает вкладку ДВАЖДЫ: что в ней видно и что в ней записано.
+ * Читает вкладки ДВАЖДЫ: что в них видно и что в них записано.
  *
  * Обычно это одно и то же, и разница нужна ровно в одном случае — когда
  * таблица приняла наш текст за формулу и показывает `#ERROR!`. Тогда видимое
@@ -129,23 +129,36 @@ export async function readTable(tabName: string): Promise<SheetTable> {
  * (`=+7 701 555 20 30`), и телефон можно вернуть, а не придумать заново.
  * Пользуется этим `scripts/fix-error-cells.ts`.
  */
-export async function readTableWithFormulas(
-  tabName: string
-): Promise<{ shown: string[][]; formulas: string[][] }> {
+export async function readTablesWithFormulas(
+  tabNames: string[]
+): Promise<Map<string, { shown: string[][]; formulas: string[][] }>> {
+  const out = new Map<string, { shown: string[][]; formulas: string[][] }>();
+  if (tabNames.length === 0) return out;
+
   const sheets = getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
+  const ranges = tabNames.map((tab) => `${tab}!A:ZZ`);
+
+  // Все вкладки — ОДНИМ запросом на каждую картину, а не по два запроса на
+  // вкладку. Вкладок семнадцать, и построчный обход стоил бы 34 обращения;
+  // вместе с резервной копией это упирается в лимит Google (60 чтений в минуту
+  // на пользователя), и работа обрывается на середине. Так уже случилось.
   const [shownRes, formulaRes] = await Promise.all([
-    sheets.spreadsheets.values.get({ spreadsheetId, range: `${tabName}!A:ZZ` }),
-    sheets.spreadsheets.values.get({
+    sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges }),
+    sheets.spreadsheets.values.batchGet({
       spreadsheetId,
-      range: `${tabName}!A:ZZ`,
+      ranges,
       valueRenderOption: "FORMULA",
     }),
   ]);
-  return {
-    shown: (shownRes.data.values ?? []) as string[][],
-    formulas: (formulaRes.data.values ?? []) as string[][],
-  };
+
+  tabNames.forEach((tab, i) => {
+    out.set(tab, {
+      shown: (shownRes.data.valueRanges?.[i]?.values ?? []) as string[][],
+      formulas: (formulaRes.data.valueRanges?.[i]?.values ?? []) as string[][],
+    });
+  });
+  return out;
 }
 
 /**

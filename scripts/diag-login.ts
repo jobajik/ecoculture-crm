@@ -39,16 +39,19 @@ import { SHEET_TABS, ROLES, ROLE_LABELS, isFarmBoundRole, farmLabel } from "../s
 
 const KNOWN_ROLES: string[] = Object.values(ROLES);
 
-/** Буквы, которые выглядят одинаково в латинице и кириллице. */
-const LOOKALIKE = "аеорсхукАЕОРСХУКABCEHKMOPTXaceopxy";
-
-function suspiciousLetters(text: string): string[] {
+/**
+ * Русские буквы в почте. Ищем именно их: почта бывает только латинской, и
+ * русская «о» вместо латинской «o» делает адрес другим, оставаясь неотличимой
+ * на вид.
+ *
+ * Первая версия отмечала ЛЮБУЮ букву-двойника, в том числе латинскую, — и
+ * поэтому ругалась на каждую нормальную почту подряд. Проверка, которая
+ * срабатывает всегда, не значит ничего: её перестают читать.
+ */
+function cyrillicLetters(text: string): string[] {
   const found = new Set<string>();
   for (const ch of text) {
-    if (LOOKALIKE.includes(ch)) {
-      const cyrillic = /[А-Яа-яЁё]/.test(ch);
-      found.add(`${ch} (${cyrillic ? "русская" : "латинская"})`);
-    }
+    if (/[А-Яа-яЁё]/.test(ch)) found.add(ch);
   }
   return [...found];
 }
@@ -78,11 +81,16 @@ async function main() {
       rawActive.trim().toUpperCase()
     );
 
+    // Разделяем то, что ДЕЙСТВИТЕЛЬНО мешает войти, и то, что просто заметно.
+    // Пробелы по краям и заглавные буквы вход переживает (почта приводится к
+    // нижнему регистру и обрезается), и держать их в одном списке с настоящими
+    // причинами значит пугать зря: человек ищет поломку там, где её нет.
     const problems: string[] = [];
+    const notes: string[] = [];
     if (!email) problems.push("почта не заполнена — войти нельзя");
-    if (rawEmail !== rawEmail.trim()) problems.push("в почте пробел по краям (сам по себе не мешает, но подозрительно)");
+    if (rawEmail !== rawEmail.trim()) notes.push("в почте пробелы по краям — вход их обрезает, не мешает");
     if (/\s/.test(email)) problems.push("ВНУТРИ почты есть пробел — вход не сработает");
-    if (rawEmail !== rawEmail.toLowerCase()) problems.push("в почте заглавные буквы (вход это переживёт)");
+    if (rawEmail !== rawEmail.toLowerCase()) notes.push("в почте заглавные буквы — вход это переживёт");
     if (!role) problems.push("КОЛОНКА Role ПУСТАЯ — программа не пускает никуда (грабли 1.10)");
     else if (!KNOWN_ROLES.includes(role)) {
       problems.push(`роль «${role}» неизвестна — допустимые: ${KNOWN_ROLES.join(", ")}`);
@@ -92,7 +100,10 @@ async function main() {
       problems.push("КОЛОНКА Farm ПУСТАЯ — войти он сможет, но его действия будут отказывать");
     }
 
-    const letters = suspiciousLetters(rawEmail);
+    const letters = cyrillicLetters(rawEmail);
+    if (letters.length > 0) {
+      problems.push(`в почте РУССКИЕ буквы: ${letters.join(", ")} — на вид не отличить, но адрес другой`);
+    }
 
     console.log(`Строка ${table.rowNumbers[i]} — ${name || "(без имени)"}`);
     console.log(`    почта:  "${rawEmail}"`);
@@ -105,16 +116,13 @@ async function main() {
     console.log(
       `    Farm:   "${rawFarm}"${rawFarm.trim() ? ` (${farmLabel(rawFarm.trim().toLowerCase())})` : ""}`
     );
-    if (letters.length > 0) {
-      console.log(`    буквы-двойники в почте: ${letters.join(", ")}`);
-      console.log("      (проверьте, что почта набрана латиницей целиком)");
-    }
     if (problems.length === 0) {
       console.log("    ВОЙДЁТ");
     } else {
       console.log("    НЕ ВОЙДЁТ или будет работать неправильно:");
       for (const p of problems) console.log(`      - ${p}`);
     }
+    for (const n of notes) console.log(`    заметка: ${n}`);
     console.log("");
   });
 
