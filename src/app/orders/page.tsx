@@ -5,6 +5,7 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { ROLES, farmLabel, getFarmFor, retailLabel } from "@/lib/constants";
 import { farmScopeFor, isRetailOrder, isRetailRole, retailTerritoryFor } from "@/lib/retail";
 import { isRegionOrder } from "@/lib/orderKind";
+import { newOrderLinkFor } from "@/lib/newOrder";
 import OrdersTable from "@/components/OrdersTable";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ export default async function OrdersPage() {
     .filter((order) => order.items.length > 0);
 
   const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
+  const newOrderLink = newOrderLinkFor(role);
 
   return (
     <div>
@@ -57,9 +59,13 @@ export default async function OrdersPage() {
         <h1 className="text-xl font-semibold">
           {territory ? `Заявки — ${retailLabel(territory)}` : "Заявки"}
         </h1>
-        {(role === "manager" || role === "admin" || isRetailRole(role)) && (
-          <Link href="/orders/new" className="btn-primary">
-            + Новая заявка
+        {/* Кому кнопка положена и куда ведёт — одной функцией (newOrder.ts).
+            У РОПа её здесь не было вовсе, и он решил, что заявку на регион
+            завести нельзя: возможность, о которой нельзя догадаться, ничем не
+            отличается от отсутствующей. */}
+        {newOrderLink && (
+          <Link href={newOrderLink.href} className="btn-primary">
+            {newOrderLink.label}
           </Link>
         )}
       </div>

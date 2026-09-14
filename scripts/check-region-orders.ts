@@ -20,6 +20,7 @@
  *
  * Запуск: npx tsx scripts/check-region-orders.ts
  */
+import { newOrderLinkFor } from "../src/lib/newOrder";
 import {
   buildRegionIncome,
   canFillRegionOrders,
@@ -301,7 +302,35 @@ check(
 
 moneyChecks()
   .then(() => {
-    console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
+    // --- Откуда человек попадает к форме ----------------------------------------
+//
+// Владелец: «Почему у РОПа нет возможности оформлять заявку на регионы по
+// опту?» Возможность была, а кнопки в разделе «Заявки» — там, где все остальные
+// заводят заявки, — у него не было. Возможность, о которой нельзя догадаться,
+// ничем не отличается от отсутствующей.
+
+check("у РОПа кнопка есть", newOrderLinkFor(ROLES.SALES_HEAD) !== null, true);
+check(
+  "и ведёт сразу на форму объёма, а не на клиентскую",
+  newOrderLinkFor(ROLES.SALES_HEAD)?.href,
+  "/orders/new?region=1"
+);
+check(
+  "подписана честно — это объём, а не заявка клиенту",
+  /Объём в регион/.test(newOrderLinkFor(ROLES.SALES_HEAD)?.label ?? ""),
+  true
+);
+check("у менеджера обычная заявка", newOrderLinkFor(ROLES.MANAGER)?.href, "/orders/new");
+check("у администратора тоже", newOrderLinkFor(ROLES.ADMIN)?.href, "/orders/new");
+check("у менеджера розницы тоже", newOrderLinkFor(ROLES.RETAIL_ALMATY)?.href, "/orders/new");
+// Зав. складом заполняет регионы в своём разделе, бухгалтеру и агроному заводить
+// нечего: лишняя кнопка — это лишний способ попасть не туда.
+check("зав. складом кнопки здесь нет", newOrderLinkFor(ROLES.WAREHOUSE), null);
+check("бухгалтеру нечего заводить", newOrderLinkFor(ROLES.ACCOUNTANT), null);
+check("агроному тоже", newOrderLinkFor(ROLES.AGRONOMIST), null);
+check("пустая роль — ничего (грабли 1.10)", newOrderLinkFor(""), null);
+
+console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
     process.exit(fails === 0 ? 0 : 1);
   })
   .catch((err) => {
