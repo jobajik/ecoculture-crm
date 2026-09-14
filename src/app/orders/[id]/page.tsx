@@ -24,6 +24,9 @@ import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
 import { canEditOrder } from "@/lib/orderEdit";
+import WarehouseItemsEdit from "@/components/WarehouseItemsEdit";
+import { adjustOrderByWarehouseAction } from "../actions";
+import { myItems, warehouseEditRefusal } from "@/lib/warehouseOrderEdit";
 import { getClientById } from "@/lib/repo/clients";
 import { farmPayments } from "@/lib/orderMoney";
 import {
@@ -141,6 +144,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // заявку, и «сохранить» стёрло бы чужие позиции. Поэтому правила спрашиваем
   // по ПОЛНОЙ заявке, а кнопку показываем, только когда показана она вся.
   const canEdit = !farm && canEditOrder(loaded, role, session?.user?.email);
+
+  // Правка склада — отдельная дверь с отдельными правилами: свой цветок, только
+  // количество, ростовка и цена. Считаем по ПОЛНОЙ заявке (`loaded`), а не по
+  // урезанной под производство: чужие позиции не правятся, но их сумма входит
+  // в итог, и без неё «сумма станет» показывала бы не ту цифру.
+  const canWarehouseAdjust = warehouseEditRefusal(loaded, role, session?.user?.farm ?? null) === "";
+  const warehouseItems = myItems(loaded, session?.user?.farm ?? null);
+  const otherItemsTotal = loaded.items
+    .filter((i) => !warehouseItems.some((m) => m.itemId === i.itemId))
+    .reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   // Удалять заявку совсем может только администратор, и только «чистую»:
   // без отгрузок, без денег, без рекламаций. Правило то же, что проверит
   // сервер (src/lib/orderDelete.ts), и считается по ПОЛНОЙ заявке.
@@ -414,6 +427,22 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           {canCancel && <CancelOrder orderId={order.orderId} />}
           {canDelete && <DeleteOrder orderId={order.orderId} />}
         </div>
+      )}
+
+      {/* Зав. складом правит СВОИ позиции: заказали шестидесятку, а в
+          холодильнике пятидесятка. Всё остальное — чужой цветок, сорт, состав —
+          остаётся за менеджером (src/lib/warehouseOrderEdit.ts). */}
+      {canWarehouseAdjust && (
+        <WarehouseItemsEdit
+          orderId={order.orderId}
+          items={warehouseItems}
+          otherItemsTotal={otherItemsTotal}
+          paidAmount={loaded.paidAmount}
+          totalBefore={loaded.totalAmount}
+          region={region}
+          farm={farm ?? ""}
+          save={adjustOrderByWarehouseAction}
+        />
       )}
 
       <h2 className="font-medium mb-2">История отгрузок</h2>

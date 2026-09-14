@@ -390,6 +390,31 @@ export async function updateOrderItemAmounts(
 }
 
 /**
+ * Правка позиции зав. складом: ростовка, количество и цена.
+ *
+ * Отдельно от `updateOrderItemAmounts`, потому что у склада меняется ещё и
+ * ростовка: заказали шестидесятку, а в холодильнике пятидесятка. Сорт и тип
+ * цветка тут не трогаются намеренно — другой сорт это другая договорённость с
+ * клиентом, а другой цветок вообще другое производство.
+ *
+ * Отгруженное количество не меняется: цветок уехал.
+ */
+export async function updateOrderItemLine(
+  itemId: string,
+  input: { grade: string; quantity: number; unitPrice: number }
+): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDER_ITEMS,
+    (record) => record.ItemID === itemId,
+    () => ({
+      Grade: input.grade,
+      Quantity: Math.max(0, Math.round(input.quantity)),
+      UnitPrice: Math.max(0, Math.round(input.unitPrice * 100) / 100),
+    })
+  );
+}
+
+/**
  * Правка «шапки» заявки менеджером: дата доставки, телефон, комментарий.
  *
  * Клиент, направление, статус и всё денежное сюда не попадают намеренно: это

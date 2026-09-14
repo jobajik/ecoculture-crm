@@ -40,7 +40,20 @@ import {
   regionIncomeRefusal,
   regionOrderRefusal,
 } from "@/lib/orderKind";
-import { setOrderPayment } from "@/lib/repo/orders";
+import {
+  recomputeOrderStatusFromItems,
+  setOrderPayment,
+  updateOrderItemLine,
+} from "@/lib/repo/orders";
+import { invoiceByFarm } from "@/lib/orderMoney";
+import {
+  describeWarehouseChanges,
+  moneyWarning,
+  myItems,
+  warehouseEditRefusal,
+  warehouseEditedRefusal,
+  type WarehouseEditedItem,
+} from "@/lib/warehouseOrderEdit";
 import { setOrderDirection } from "@/lib/repo/orders";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ROLES } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
@@ -519,4 +532,109 @@ export async function createRegionOrderAction(...args: Parameters<typeof createR
 
 export async function setRegionIncomeAction(...args: Parameters<typeof setRegionIncomeActionInner>) {
   return guard(() => setRegionIncomeActionInner(...args));
+}
+
+/**
+ * Зав. складом правит свои позиции в заявке.
+ *
+ * Владелец попросил дать складу менять данные по заявкам «по цветкам
+ * сотрудников»: менеджер записал 800 шестидесятки, а утром в холодильнике 640,
+ * и половина из них пятидесятка. Видит это зав. складом, собирает тоже она, а
+ * до сих пор ей оставалось звонить менеджеру и ждать.
+ *
+ * Все границы — в `src/lib/warehouseOrderEdit.ts` (свой цветок, только
+ * количество/ростовка/цена, не ниже отгруженного, причина обязательна), и
+ * проверяются они ЗДЕСЬ: форма — подсказка, запрещает сервер (грабли 1.11).
+ *
+ * После правки обязательно пересчитываются флаг оплаты и статус. Без этого
+ * выросшая заявка осталась бы «оплаченной» и уехала бы к клиенту раньше денег,
+ * а уменьшенная ниже отгруженного вечно висела бы в «можно отгружать».
+ */
+async function adjustOrderByWarehouseActionInner(
+  orderId: string,
+  input: { items: WarehouseEditedItem[]; reason: string }
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const role = session.user.role;
+  const email = session.user.email.toLowerCase();
+  const farm = session.user.farm ?? null;
+
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+
+  const refusal = warehouseEditRefusal(order, role, farm);
+  if (refusal) throw new Error(refusal);
+
+  const region = isRegionOrder(order);
+  const next = input.items.map((item) => ({
+    itemId: (item.itemId || "").trim(),
+    grade: (item.grade || "").trim(),
+    quantity: Math.round(Number(item.quantity)),
+    unitPrice: region ? 0 : Math.round(Number(item.unitPrice) * 100) / 100,
+  }));
+
+  const itemsRefusal = warehouseEditedRefusal({
+    current: order.items,
+    next,
+    farm,
+    reason: input.reason,
+    region,
+  });
+  if (itemsRefusal) throw new Error(itemsRefusal);
+
+  const changes = describeWarehouseChanges({ current: order.items, next, region });
+  const before = order.totalAmount;
+
+  // Пишем ТОЛЬКО свои строки. Чужие позиции не переписываются даже теми же
+  // значениями: лишняя запись в чужую строку — это лишний повод ей измениться.
+  const byId = new Map(next.map((i) => [i.itemId, i]));
+  for (const item of myItems(order, farm)) {
+    const edit = byId.get(item.itemId);
+    if (!edit) continue;
+    await updateOrderItemLine(item.itemId, {
+      grade: edit.grade,
+      quantity: edit.quantity,
+      unitPrice: edit.unitPrice,
+    });
+  }
+
+  const after = await getOrderById(orderId);
+  const total = after?.totalAmount ?? before;
+
+  // Флаг «оплачено целиком» — вывод из суммы, и после правки он обязан быть
+  // пересчитан. Деньги при этом не трогаются: сколько внесли, столько и внесли.
+  await setOrderPayment(
+    orderId,
+    order.paidAmount,
+    total,
+    order.accountantEmail || email,
+    order.paymentMethod,
+    invoiceByFarm(after?.items ?? order.items)
+  );
+  await recomputeOrderStatusFromItems(orderId);
+
+  await logMoney({
+    actorEmail: email,
+    orderId,
+    action: MONEY_LOG_ACTIONS.WAREHOUSE_ADJUSTED,
+    details: `${changes.join("; ")} · причина: ${input.reason.trim()}`,
+    amountBefore: before,
+    amountAfter: total,
+  });
+
+  revalidatePath("/orders");
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/warehouse");
+  revalidatePath("/warehouse/picklist");
+  revalidatePath("/finance");
+  revalidatePath("/analytics");
+
+  return { changes, total, warning: moneyWarning(order.paidAmount, before, total) };
+}
+
+export async function adjustOrderByWarehouseAction(
+  ...args: Parameters<typeof adjustOrderByWarehouseActionInner>
+) {
+  return guard(() => adjustOrderByWarehouseActionInner(...args));
 }
