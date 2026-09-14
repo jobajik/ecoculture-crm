@@ -5,7 +5,8 @@ import { DEBT_OVERDUE_DAYS, ROLES } from "@/lib/constants";
 
 import SectionTabs from "@/components/SectionTabs";
 import CallsBoard from "@/components/CallsBoard";
-import { FINANCE_TABS } from "../tabs";
+import { financeTabsFor } from "../tabs";
+import { canEditFinance } from "@/lib/financeAccess";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -26,7 +27,9 @@ function dayWord(n: number): string {
 export default async function DebtsPage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
-  const canEdit = role === ROLES.ACCOUNTANT || role === ROLES.ADMIN;
+  // Право СМОТРЕТЬ и право ТРОГАТЬ разведены: РОП видит долги, но обещания и
+  // заметки ставит бухгалтер (src/lib/financeAccess.ts).
+  const canEdit = canEditFinance(role);
 
   // Долги считаются по всей базе, поэтому период здесь не важен.
   const snapshot = await getFinanceSnapshot("month");
@@ -44,7 +47,7 @@ export default async function DebtsPage() {
         </p>
       </div>
 
-      <SectionTabs tabs={FINANCE_TABS} />
+      <SectionTabs tabs={financeTabsFor(role)} />
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="card !p-4">

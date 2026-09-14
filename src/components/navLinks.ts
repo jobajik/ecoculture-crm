@@ -44,7 +44,9 @@ export const NAV_LINKS: NavLink[] = [
   },
   { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
   { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
-  { href: "/finance", label: "Оплаты", roles: ["accountant", "admin"] },
+  // РОП заходит сюда смотреть, а не работать: долги по его заявкам — часть
+  // разговора о продажах. Менять он ничего не может (financeAccess.ts).
+  { href: "/finance", label: "Оплаты", roles: ["accountant", "admin", "sales_head"] },
   { href: "/plans", label: "Планы", roles: ["sales_head", "admin"] },
   // У администратора прогноз срезки живёт вкладкой внутри «Планов» — иначе
   // верхнее меню снова разрастается до девяти пунктов.

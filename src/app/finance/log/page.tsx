@@ -7,7 +7,7 @@ import { listUsers } from "@/lib/repo/users";
 import { ROLES } from "@/lib/constants";
 import SectionTabs from "@/components/SectionTabs";
 import MoneyLogView, { type MoneyLogRow } from "@/components/MoneyLogView";
-import { FINANCE_TABS } from "../tabs";
+import { financeTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,7 +54,7 @@ export default async function MoneyLogPage() {
         </p>
       </div>
 
-      <SectionTabs tabs={FINANCE_TABS} />
+      <SectionTabs tabs={financeTabsFor(role)} />
 
       <MoneyLogView rows={rows} />
     </div>

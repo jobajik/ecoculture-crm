@@ -6,7 +6,7 @@ import { listStaffTakeouts } from "@/lib/repo/staffTakeouts";
 import { periodLabel, periodOf, periodShift } from "@/lib/constants";
 import { buildStaffMonth, canSeeTakeouts, takeoutFarmScope } from "@/lib/staffTakeout";
 import SectionTabs from "@/components/SectionTabs";
-import { FINANCE_TABS } from "../tabs";
+import { financeTabsFor } from "../tabs";
 import StaffTakeoutMonth from "@/components/StaffTakeoutMonth";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,7 @@ export default async function FinanceTakeoutsPage({
       </p>
 
       <div className="mb-4">
-        <SectionTabs tabs={FINANCE_TABS} />
+        <SectionTabs tabs={financeTabsFor(role)} />
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">

@@ -1,9 +1,11 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot, type FinancePeriod } from "@/lib/finance";
 import { farmLabel } from "@/lib/constants";
 import FinanceReport from "@/components/FinanceReport";
 
 import SectionTabs from "@/components/SectionTabs";
-import { FINANCE_TABS } from "../tabs";
+import { financeTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,6 +15,11 @@ export default async function FinanceReportPage({
 }: {
   searchParams: { period?: string; date?: string };
 }) {
+  // Роль нужна только для набора вкладок: у РОПа их меньше — кадровое и
+  // служебное ему не показываем (см. tabs.ts).
+  const session = await getServerSession(authOptions);
+  const role = session?.user?.role;
+
   const period = (["day", "week", "month"] as const).includes(searchParams.period as FinancePeriod)
     ? (searchParams.period as FinancePeriod)
     : "month";
@@ -29,7 +36,7 @@ export default async function FinanceReportPage({
         </p>
       </div>
 
-      <SectionTabs tabs={FINANCE_TABS} />
+      <SectionTabs tabs={financeTabsFor(role)} />
 
       <FinanceReport snapshot={snapshot} farms={farms} />
     </div>

@@ -7,7 +7,8 @@ import { listUsers } from "@/lib/repo/users";
 import { ROLES, formatGrade } from "@/lib/constants";
 import SectionTabs from "@/components/SectionTabs";
 import ClaimsBoard, { type ClaimView } from "@/components/ClaimsBoard";
-import { FINANCE_TABS } from "../tabs";
+import { financeTabsFor } from "../tabs";
+import { canEditFinance } from "@/lib/financeAccess";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -22,7 +23,7 @@ export default async function ClaimsPage() {
   ) {
     redirect("/");
   }
-  const canDecide = role === ROLES.ACCOUNTANT || role === ROLES.ADMIN;
+  const canDecide = canEditFinance(role);
 
   const [claims, orders, users] = await Promise.all([
     listClaims(),
@@ -73,7 +74,7 @@ export default async function ClaimsPage() {
         </p>
       </div>
 
-      <SectionTabs tabs={FINANCE_TABS} />
+      <SectionTabs tabs={financeTabsFor(role)} />
 
       <ClaimsBoard claims={views} canDecide={canDecide} />
     </div>

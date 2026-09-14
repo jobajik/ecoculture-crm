@@ -21,6 +21,7 @@ import { invoiceByFarm } from "@/lib/orderMoney";
 import { isRetailOrder, isRetailRole } from "@/lib/retail";
 import { isRegionOrder } from "@/lib/orderKind";
 import { invoiceSentRefusal } from "@/lib/paymentStage";
+import { canEditFinance } from "@/lib/financeAccess";
 import {
   CLAIM_REASONS,
   CLAIM_STATUSES,
@@ -38,11 +39,19 @@ import { guard } from "@/lib/actionResult";
 const RETAIL_MONEY_REFUSAL =
   "Это заявка в наш магазин — внутреннее перемещение. Оплата по ней не проводится.";
 
-/** Деньгами распоряжается бухгалтер и администратор — больше никто. */
+/**
+ * Деньгами распоряжается бухгалтер — и это проверяется ЗДЕСЬ, а не только
+ * прятками в интерфейсе (грабли 1.11).
+ *
+ * РОП с недавних пор раздел «Оплаты» видит, но ничего в нём не меняет. Кнопок
+ * ему не показывают, однако серверное действие вызывается и обычным запросом,
+ * так что запрет обязан жить на сервере. Правило одно на всех —
+ * `canEditFinance()` в `src/lib/financeAccess.ts`.
+ */
 async function requireAccountant() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
-  if (session.user.role !== ROLES.ACCOUNTANT && session.user.role !== ROLES.ADMIN) {
+  if (!canEditFinance(session.user.role)) {
     throw new Error("Недостаточно прав: деньгами по заявке распоряжается бухгалтер");
   }
   return session.user.email.toLowerCase();

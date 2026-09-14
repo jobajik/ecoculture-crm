@@ -24,7 +24,15 @@ const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // весь /finance был закрыт от менеджера, и он не мог узнать, чем кончилась
   // его же жалоба, хотя страница /finance/claims его пускала.
   { prefix: "/finance/claims", roles: ["accountant", "manager", "sales_head", "admin"] },
-  { prefix: "/finance", roles: ["accountant", "admin"] },
+  // Удержания с сотрудников и журнал действий бухгалтера — не про продажи:
+  // первое кадровое, второе служебное. РОПу они не нужны, и правила стоят ВЫШЕ
+  // общего «/finance», потому что совпадение ищется по первому подходящему.
+  { prefix: "/finance/takeouts", roles: ["accountant", "admin"] },
+  { prefix: "/finance/log", roles: ["accountant", "admin"] },
+  // РОП видит оплаты, долги и отчёт — но ничего в них не меняет: право смотреть
+  // и право трогать разведены (`src/lib/financeAccess.ts`). Так попросил
+  // владелец: «просто чтобы видела долги и прочее».
+  { prefix: "/finance", roles: ["accountant", "admin", "sales_head"] },
   // РОП по замыслу видит продажи — их же он и планирует. В списке его не было,
   // и middleware разворачивал его с собственного раздела.
   { prefix: "/sales", roles: ["manager", "sales_head", "admin", "accountant"] },
