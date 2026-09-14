@@ -8,6 +8,7 @@ import { PAYMENT_STAGES, matchesOrderSearch } from "@/lib/paymentStage";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import PaymentPanel, { PaymentState, money } from "./PaymentPanel";
 import InvoiceCell from "./InvoiceCell";
+import CashByFlowerCard from "./CashByFlowerCard";
 import StageBadge from "./StageBadge";
 
 type Filter = "all" | "noinvoice" | "unpaid" | "partial" | "paid" | "ready";
@@ -154,6 +155,11 @@ export default function FinanceBoard({
           tone={snapshot.debtOverdueTotal > 0 ? "critical" : "default"}
         />
       </div>
+
+      {/* Касса по цветкам. Владелец ведёт это в тетради — «касса: хриз. 20 000,
+          роза 30 000» — и попросил то же в программе: «Получено» стояло одним
+          числом и на его вопрос не отвечало. */}
+      <CashByFlowerCard cash={snapshot.cash} periodLabel={snapshot.periodLabel} />
 
       <div className="card">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-1">

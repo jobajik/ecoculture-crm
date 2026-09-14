@@ -3,6 +3,8 @@ import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./constants";
 import { isReadyToShip } from "./orderReady";
 import { hasNoClientInvoice } from "./orderKind";
+import { cashByFlower, type CashByFlower } from "./cashByFlower";
+import { isRetailOrder } from "./retail";
 import { farmPayments, type FarmPayment } from "./orderMoney";
 import { orderCode, paymentStage, type PaymentStage } from "./paymentStage";
 import type { OrderWithItems } from "./types";
@@ -149,6 +151,15 @@ export interface FinanceSnapshot {
   calls: CallRow[];
   /** Сколько денег получено сверх счёта — их придётся возвращать или зачитывать. */
   overpaidTotal: number;
+  /**
+   * Касса по цветкам: сколько денег ПРИШЛО за розу, за хризантему, за эустому.
+   *
+   * Считается по дню поступления, а не по дню оформления заявки, — в отличие от
+   * всего остального на этой странице. Так решил владелец: это касса, и вопрос
+   * у неё свой. Расхождение написано на странице словами, чтобы никто не искал
+   * в нём ошибку. Правила — в `src/lib/cashByFlower.ts`.
+   */
+  cash: CashByFlower;
 }
 
 function dayKey(date: Date): string {
@@ -465,5 +476,20 @@ export async function getFinanceSnapshot(
     debtOverdueTotal: debts.filter((d) => d.overdue).reduce((s, d) => s + d.amount, 0),
     calls,
     overpaidTotal: allRows.reduce((s, r) => s + r.overpaid, 0),
+    // Касса считается по СВОЕЙ выборке и по своему дню, и оба отличия
+    // осознанные:
+    //
+    // - день — тот, когда деньги пришли, а не когда оформили заявку (решение
+    //   владельца: это касса, вопрос у неё свой);
+    // - заявки в НАШИ магазины исключены, как и везде: это перемещение внутри
+    //   компании, денег там не бывает вовсе. А вот объём на город включён —
+    //   поступления по нему бухгалтер вписывает руками, и это настоящие
+    //   деньги за настоящий цветок. Цены в позициях у такой заявки нет, и
+    //   `cashByFlower` делит её по стеблям.
+    cash: cashByFlower(
+      orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && !isRetailOrder(o)),
+      from,
+      to
+    ),
   };
 }
