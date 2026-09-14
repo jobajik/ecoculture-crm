@@ -35,6 +35,10 @@ export default function NumberCell({
   ariaLabel?: string;
   className?: string;
 }) {
+  // Подсказка в пустой клетке — прочерк, а не «0». В сетке плана отгрузок
+  // пустых клеток четыре десятка, и сорок пять серых нулей читались как
+  // проставленный ноль («сюда не везём») вместо «сюда ещё не думали». Итог той
+  // же строки рядом показывает прочерк — теперь они говорят одно и то же.
   return (
     <div className="relative">
       <input
@@ -44,7 +48,7 @@ export default function NumberCell({
         aria-label={ariaLabel}
         disabled={disabled}
         value={formatNumber(value)}
-        placeholder="0"
+        placeholder="—"
         onChange={(e) => onChange(parseNumber(e.target.value))}
         onFocus={(e) => e.target.select()}
         className={`input text-right tabular-nums disabled:opacity-60 ${

@@ -28,9 +28,16 @@ export default async function FinancePage({
   // оплату спросить будет не с кого (src/lib/financeAccess.ts).
   const canEdit = canEditFinance(role);
 
+  // Открываемся на МЕСЯЦЕ, а не на дне.
+  //
+  // На дне страница честно показывала четыре нуля и пустую таблицу: заявки
+  // сегодня ещё не оформляли, а деньги приходят по вчерашним и позавчерашним.
+  // Бухгалтер заходила утром и видела пустоту при полутора миллионах долга —
+  // ровно та же беда, что была у зав. складом с листом сборки. День и неделя
+  // никуда не делись, они рядом кнопками.
   const period = (["day", "week", "month"] as const).includes(searchParams.period as FinancePeriod)
     ? (searchParams.period as FinancePeriod)
-    : "day";
+    : "month";
 
   const snapshot = await getFinanceSnapshot(period, searchParams.date);
 

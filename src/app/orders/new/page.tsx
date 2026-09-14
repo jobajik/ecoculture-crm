@@ -208,6 +208,18 @@ export default async function NewOrderPage({
   // из адреса ничем не лучше введённого руками (грабли 1.11).
   const presetDirection = canSetDirection(role) ? cleanDirection(searchParams?.direction) : "";
 
+  // Остаток на складе — рядом с количеством, а не только на главной. Менеджер
+  // обещает клиенту то, что лежит в холодильнике, и узнать об этом он должен
+  // до разговора, а не от зав. складом на следующее утро. Считаем по всем
+  // производствам: заявка бывает смешанной.
+  const clientStock = await getStockSnapshot();
+  const clientStockMap: Record<string, number> = {};
+  for (const card of clientStock.varieties) {
+    for (const grade of card.grades) {
+      clientStockMap[`${card.flowerType}|${card.variety}|${grade.grade}`] = grade.quantity;
+    }
+  }
+
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">
@@ -228,6 +240,7 @@ export default async function NewOrderPage({
           clients={options}
           showDirection={canSetDirection(role)}
           initialDirection={presetDirection}
+          stock={clientStockMap}
         />
       </div>
     </div>

@@ -109,7 +109,17 @@ export default async function DebtsPage() {
                 <td className="px-4 py-2.5 text-ink-secondary tabular-nums">{d.clientPhone || "—"}</td>
                 <td className="px-4 py-2.5 text-ink-secondary">{d.managerName}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">{d.orders}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium">{money(d.amount)}</td>
+                {/* Под суммой — сколько из неё просрочено. Без этой строки
+                    карточка «Просрочено» сверху была бы числом, которое в
+                    таблице не найти, а такие числа читаются как ошибка. */}
+                <td className="px-4 py-2.5 text-right tabular-nums font-medium">
+                  {money(d.amount)}
+                  {d.overdueAmount > 0 && d.overdueAmount < d.amount - 1 && (
+                    <div className="text-xs font-normal text-status-critical">
+                      из них просрочено {money(d.overdueAmount)}
+                    </div>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-right tabular-nums">
                   <span className={d.overdue ? "text-status-critical font-medium" : "text-ink-secondary"}>
                     {d.oldestDays} {dayWord(d.oldestDays)}

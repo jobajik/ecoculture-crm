@@ -7,8 +7,17 @@ import type { OrderWithItems } from "@/lib/types";
 import OrderStatusBadge from "./OrderStatusBadge";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import { formatDay } from "@/lib/formatDate";
+import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { personName, type NameByEmail } from "@/lib/personName";
 
-export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
+export default function OrdersTable({
+  orders,
+  managerNames = {},
+}: {
+  orders: OrderWithItems[];
+  /** Почта → имя из вкладки `Users`. Без неё в колонке стоял бы адрес. */
+  managerNames?: NameByEmail;
+}) {
   const [status, setStatus] = useState<string>("all");
   const [search, setSearch] = useState("");
 
@@ -76,7 +85,9 @@ export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
                   </div>
                 </td>
                 <td className="px-4 py-3">{o.clientName}</td>
-                <td className="px-4 py-3 text-ink-secondary">{o.managerEmail}</td>
+                <td className="px-4 py-3 text-ink-secondary">
+                  {personName(o.managerEmail, managerNames)}
+                </td>
                 <td className="px-4 py-3 text-ink-secondary">
                   {o.items
                     .map((i) => `${FLOWER_TYPE_LABELS[i.flowerType]} ${i.variety} ×${i.quantity}`)
@@ -86,8 +97,22 @@ export default function OrdersTable({ orders }: { orders: OrderWithItems[] }) {
                 <td className="px-4 py-3 text-ink-secondary">
                   {formatDay(o.deliveryDate)}
                 </td>
+                {/* Под статусом — готовность к сборке. Статус отвечает на
+                    вопрос «где заявка в своей жизни», готовность — на вопрос
+                    «что мешает её собрать», и это разные вопросы. Раньше
+                    второй ответ был только внутри заявки: в списке у всех
+                    строк стояло одинаковое «Новая», и понять, какая из своих
+                    заявок застряла, можно было только открыв каждую. */}
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={o.status} />
+                  {o.status === "new" &&
+                    (isReadyToShip(o) ? (
+                      <div className="text-xs text-status-good mt-1 whitespace-nowrap">
+                        ✓✓ можно собирать
+                      </div>
+                    ) : (
+                      <div className="text-xs text-ink-muted mt-1">{notReadyReason(o)}</div>
+                    ))}
                 </td>
               </tr>
             ))}

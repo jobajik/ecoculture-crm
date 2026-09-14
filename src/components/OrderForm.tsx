@@ -17,6 +17,7 @@ export default function OrderForm({
   initialDeliveryDate = "",
   showDirection = false,
   initialDirection = "",
+  stock,
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -39,6 +40,17 @@ export default function OrderForm({
   showDirection?: boolean;
   /** Направление, с которым пришли из раздела «Регионы». */
   initialDirection?: string;
+  /**
+   * Остаток на складе: «цветок|сорт|градация» → штук.
+   *
+   * Менеджер обещает клиенту то, чего может не быть в холодильнике. Раньше
+   * остаток был только на главной — то есть не в ту секунду, когда он нужен:
+   * человек уже выбрал сорт и длину и вводит количество. Заявка на 800 роз
+   * при 240 на складе — это не отказ клиенту, а разговор с ним на день позже,
+   * когда цветок уже ждут. Запретом это не делается (срез приходит каждый
+   * день, и продавать вперёд нормально) — поэтому цифра, а не запрет.
+   */
+  stock?: Record<string, number>;
 }) {
   const router = useRouter();
   const [client, setClient] = useState<ClientOption | null>(initialClient);
@@ -165,6 +177,7 @@ export default function OrderForm({
         prices={prices}
         items={items}
         onChange={setItems}
+        stock={stock}
       />
 
       {error && (

@@ -7,6 +7,8 @@ import { farmScopeFor, isRetailOrder, isRetailRole, retailTerritoryFor } from "@
 import { isRegionOrder } from "@/lib/orderKind";
 import { newOrderLinkFor } from "@/lib/newOrder";
 import OrdersTable from "@/components/OrdersTable";
+import { listUsers } from "@/lib/repo/users";
+import { nameIndex } from "@/lib/personName";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +52,10 @@ export default async function OrdersPage() {
     })
     .filter((order) => order.items.length > 0);
 
+  // Имена сотрудников — чтобы в колонке «Менеджер» стояла фамилия, а не
+  // почтовый адрес. Список кэшируется на минуту, лишнего чтения таблицы нет.
+  const managerNames = nameIndex(await listUsers());
+
   const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
   const newOrderLink = newOrderLinkFor(role);
 
@@ -81,7 +87,7 @@ export default async function OrdersPage() {
         </p>
       )}
       {!farm && !territory && <div className="mb-4" />}
-      <OrdersTable orders={orders} />
+      <OrdersTable orders={orders} managerNames={managerNames} />
     </div>
   );
 }

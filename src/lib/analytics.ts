@@ -1,4 +1,5 @@
 import { listOrdersWithItems } from "./repo/orders";
+import { decimal, percent } from "./formatNumber";
 import { listBatches } from "./repo/batches";
 import { listWriteoffs } from "./repo/writeoffs";
 import { listStaffTakeouts } from "./repo/staffTakeouts";
@@ -979,7 +980,7 @@ export async function getAnalyticsSummary(
   const say = (n: number) => Math.round(n).toLocaleString("ru-RU");
   const moneyShort = (n: number) =>
     Math.abs(n) >= 1_000_000
-      ? `${(n / 1_000_000).toFixed(1).replace(".", ",")} млн ₸`
+      ? `${decimal(n / 1_000_000)} млн ₸`
       : `${say(n)} ₸`;
 
   if (nowSales.stems > 0) {
@@ -1011,7 +1012,7 @@ export async function getAnalyticsSummary(
 
   headline.push(
     `Сейчас на складе ${say(stockStems)} стеблей на ${moneyShort(stockMoney)} по прайсу, ` +
-      `средний возраст ${stockAvgAge.toFixed(1).replace(".", ",")} дн.` +
+      `средний возраст ${decimal(stockAvgAge)} дн.` +
       (coverDays !== null
         ? ` При нынешнем темпе продаж этого хватит на ${Math.round(coverDays)} дн.`
         : "")
@@ -1034,7 +1035,7 @@ export async function getAnalyticsSummary(
     attention.push({
       level: "critical",
       title: `Просрочено ${fmtN(expiredStems)} шт`,
-      detail: `${expiredPercent.toFixed(1)} % склада, примерно ${fmtN(
+      detail: `${percent(expiredPercent)} склада, примерно ${fmtN(
         activeBatches
           .filter((b, idx) => storageInfos[idx].status === "critical")
           .reduce((s, b) => s + batchMoney(b), 0)
@@ -1068,7 +1069,7 @@ export async function getAnalyticsSummary(
   if (writeoffPercent !== null && writeoffPercent > BENCHMARKS.writeoffPercent.warn) {
     attention.push({
       level: "critical",
-      title: `Списание ${writeoffPercent.toFixed(1)} % от принятого`,
+      title: `Списание ${percent(writeoffPercent)} от принятого`,
       detail: `Ориентир — не больше ${BENCHMARKS.writeoffPercent.warn} %. За период это ${fmtN(
         writeoffStems
       )} шт и примерно ${fmtN(writeoffMoney)} ₸.`,
@@ -1092,7 +1093,7 @@ export async function getAnalyticsSummary(
       .slice(0, 2);
     attention.push({
       level: "warning",
-      title: `Продаём на ${discountPercent.toFixed(1)} % дешевле прайса`,
+      title: `Продаём на ${percent(discountPercent)} дешевле прайса`,
       detail:
         `По прайсу заявки стоили бы ${fmtN(listRevenue)} ₸, продали на ${fmtN(
           soldAtListPrice
@@ -1101,7 +1102,7 @@ export async function getAnalyticsSummary(
         } %.` +
         (worst.length > 0
           ? ` Сильнее всех отклоняются: ${worst
-              .map((m) => `${m.managerEmail} (${m.discountPercent!.toFixed(1)} %)`)
+              .map((m) => `${m.managerEmail} (${percent(m.discountPercent!)})`)
               .join(", ")}.`
           : " Либо прайс оторван от жизни, либо скидки дают слишком легко."),
     });
@@ -1149,7 +1150,7 @@ export async function getAnalyticsSummary(
         priceDrops.length === 1
           ? `${
               FLOWER_TYPE_LABELS[priceDrops[0].flowerType] ?? priceDrops[0].flowerType
-            }: средняя цена упала на ${Math.abs(priceDrops[0].avgPrice.changePercent!).toFixed(1)} %`
+            }: средняя цена упала на ${percent(Math.abs(priceDrops[0].avgPrice.changePercent!))}`
           : "Средняя цена продажи упала",
       detail: `${priceDrops
         .map(

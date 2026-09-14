@@ -397,10 +397,40 @@ export default function FinanceBoard({
                 </Fragment>
               );
             })}
+            {/* Пустая таблица обязана сказать, ПОЧЕМУ она пустая. Причин две, и
+                они разные: за период заявок не оформляли — или они есть, но
+                отсеяны фильтром. «Заявок по этому фильтру нет» на пустом
+                периоде звучало как поломка сайта. */}
             {groups.length === 0 && (
               <tr>
-                <td colSpan={COLS} className="px-4 py-10 text-center text-ink-muted">
-                  Заявок по этому фильтру нет
+                <td colSpan={COLS} className="px-4 py-10 text-center">
+                  {snapshot.orders.length === 0 ? (
+                    <>
+                      <p className="font-medium">За этот период заявок не оформляли</p>
+                      <p className="text-sm text-ink-secondary mt-1">
+                        Долги и деньги по прошлым заявкам никуда не делись — они в карточках
+                        сверху и на вкладке «Долги и звонки». Период переключается кнопками
+                        «День · Неделя · Месяц».
+                      </p>
+                    </>
+                  ) : search.trim() ? (
+                    <>
+                      <p className="font-medium">Ничего не нашлось</p>
+                      <p className="text-sm text-ink-secondary mt-1">
+                        За период заявок {snapshot.orders.length.toLocaleString("ru-RU")}, но под
+                        «{search.trim()}» не подходит ни одна. Попробуйте номер заявки или часть
+                        названия клиента.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium">Под этот отбор не попала ни одна заявка</p>
+                      <p className="text-sm text-ink-secondary mt-1">
+                        За период их {snapshot.orders.length.toLocaleString("ru-RU")} — нажмите
+                        «Все», чтобы увидеть.
+                      </p>
+                    </>
+                  )}
                 </td>
               </tr>
             )}

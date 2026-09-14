@@ -107,8 +107,18 @@ export interface DebtRow {
   managerName: string;
   orders: number;
   amount: number;
+  /**
+   * Сколько из этого долга просрочено.
+   *
+   * Считается ПО ЗАЯВКАМ, а не по клиенту целиком. Иначе одна старая заявка
+   * тянула бы в просрочку весь долг клиента вместе со вчерашними, и карточка
+   * «Просрочено» показывала бы то же число, что «Всего долг», — а в списке под
+   * ней у половины строк стояло бы «срок ещё не вышел». Так и было.
+   */
+  overdueAmount: number;
   /** Дней с самой ранней неоплаченной даты доставки (или оформления). */
   oldestDays: number;
+  /** У клиента есть ХОТЯ БЫ ОДНА просроченная заявка — этим красится возраст. */
   overdue: boolean;
 }
 
@@ -348,6 +358,9 @@ export async function getFinanceSnapshot(
   // --- Долги: по всей базе, не только за период ---
   // Долг — ОСТАТОК по заявке, а не вся её сумма: клиент с предоплатой 90 % не
   // должен выглядеть таким же должником, как тот, кто не заплатил вовсе.
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayKey = dayKey(today);
+
   const debtMap = new Map<string, DebtRow & { oldest: string }>();
   for (const r of allRows) {
     if (r.debt <= 0) continue;
@@ -360,24 +373,29 @@ export async function getFinanceSnapshot(
       managerName: r.managerName,
       orders: 0,
       amount: 0,
+      overdueAmount: 0,
       oldestDays: 0,
       overdue: false,
       oldest: basis,
     };
     row.orders += 1;
     row.amount += r.debt;
+    // Просрочка — свойство ЗАЯВКИ, и складывается тоже по заявкам.
+    const orderDays = Math.max(0, daysBetween(parseKey(basis), today));
+    if (orderDays > DEBT_OVERDUE_DAYS) {
+      row.overdueAmount += r.debt;
+      row.overdue = true;
+    }
     if (basis < row.oldest) row.oldest = basis;
     if (!row.clientPhone && r.clientPhone) row.clientPhone = r.clientPhone;
     debtMap.set(key, row);
   }
 
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayKey = dayKey(today);
   const debts: DebtRow[] = Array.from(debtMap.values())
-    .map(({ oldest, ...row }) => {
-      const days = Math.max(0, daysBetween(parseKey(oldest), today));
-      return { ...row, oldestDays: days, overdue: days > DEBT_OVERDUE_DAYS };
-    })
+    .map(({ oldest, ...row }) => ({
+      ...row,
+      oldestDays: Math.max(0, daysBetween(parseKey(oldest), today)),
+    }))
     .sort((a, b) => b.amount - a.amount);
 
   // --- Кому звонить сегодня ------------------------------------------------
@@ -473,7 +491,7 @@ export async function getFinanceSnapshot(
     orders: periodRows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     debts,
     debtTotal: debts.reduce((s, d) => s + d.amount, 0),
-    debtOverdueTotal: debts.filter((d) => d.overdue).reduce((s, d) => s + d.amount, 0),
+    debtOverdueTotal: debts.reduce((s, d) => s + d.overdueAmount, 0),
     calls,
     overpaidTotal: allRows.reduce((s, r) => s + r.overpaid, 0),
     // Касса считается по СВОЕЙ выборке и по своему дню, и оба отличия
