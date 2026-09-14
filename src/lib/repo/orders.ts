@@ -15,6 +15,7 @@ import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from
 import { spreadByInvoice, type FarmMoney } from "../orderMoney";
 import { cleanDirection } from "../direction";
 import { cleanOrderKind } from "../orderKind";
+import { invoiceFieldsOnSent } from "../paymentStage";
 import type { Order, OrderItem, OrderWithItems } from "../types";
 
 /** Пустая ячейка = «нет». Отмеченной считается только явная TRUE/ДА/1. */
@@ -65,6 +66,7 @@ function toOrder(record: Record<string, string>): Order {
     direction: cleanDirection(record.Direction),
     kind: cleanOrderKind(record.Kind),
     invoiceSentAt: toIsoDateTime(record.InvoiceSentAt),
+    invoiceNote: (record.InvoiceNote || "").trim(),
   };
 }
 
@@ -184,6 +186,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     Direction: input.direction || "",
     Kind: input.kind || "",
     InvoiceSentAt: "",
+    InvoiceNote: "",
   });
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -501,10 +504,31 @@ export async function setOrderInvoiceSent(orderId: string, sent: boolean): Promi
   return updateWhere(
     SHEET_TABS.ORDERS,
     (record) => record.OrderID === orderId,
-    (record) => ({
-      // Повторная отметка не двигает дату: она про первую отправку счёта.
-      InvoiceSentAt: sent ? (record.InvoiceSentAt || "").trim() || new Date().toISOString() : "",
-    })
+    (record) => {
+      // Правила (дата не двигается, заметка стирается) живут чистой функцией в
+      // paymentStage.ts и покрыты тестом: здесь только запись.
+      const next = invoiceFieldsOnSent(sent, { invoiceSentAt: record.InvoiceSentAt });
+      return {
+        InvoiceSentAt: next.invoiceSentAt,
+        ...(next.invoiceNote !== undefined ? { InvoiceNote: next.invoiceNote } : {}),
+      };
+    }
+  );
+}
+
+/**
+ * Заметка о том, почему счёт ещё не отправлен.
+ *
+ * Появилась после случая владельца: два счёта не ушли из-за неверных телефонов
+ * клиентов, а в списке они ничем не отличались от остальных неотмеченных — и
+ * бухгалтеру пришлось вспоминать, какие именно. Заметка отвечает ровно на этот
+ * вопрос и живёт ровно до отправки счёта.
+ */
+export async function setOrderInvoiceNote(orderId: string, note: string): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () => ({ InvoiceNote: note.trim().slice(0, 200) })
   );
 }
 

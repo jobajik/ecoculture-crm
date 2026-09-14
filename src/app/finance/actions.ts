@@ -10,6 +10,7 @@ import {
   setOrderPaymentByFarm,
   setOrderPromise,
   setOrderInvoiceSent,
+  setOrderInvoiceNote,
   updateOrderItemAmounts,
   recomputeOrderStatusFromItems,
 } from "@/lib/repo/orders";
@@ -261,6 +262,37 @@ async function setInvoiceSentActionInner(orderId: string, sent: boolean) {
     amountAfter: order.totalAmount,
   });
 
+  refreshMoneyPages(orderId);
+}
+
+/**
+ * Заметка о том, почему счёт ещё не отправлен.
+ *
+ * Владелец: «сейчас со списка не отправлены два счёта, т. к. номера тел
+ * неверные, теперь надо искать который из них не отправлен». Отметка отвечает
+ * на вопрос «отправлен ли», а заметка — на вопрос «почему нет», и без неё
+ * бухгалтер держит это в голове до завтра.
+ *
+ * Права те же, что у отметки: пишет бухгалтер. В журнал денег НЕ идёт — это
+ * не событие с деньгами, а рабочая пометка, и засорять ею журнал значит
+ * сделать его нечитаемым (там же, где решено не писать туда дописанную дату
+ * доставки).
+ */
+async function setInvoiceNoteActionInner(orderId: string, note: string) {
+  await requireAccountant();
+
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+
+  const session = await getServerSession(authOptions);
+  const refusal = invoiceSentRefusal({
+    role: session?.user?.role,
+    order,
+    cancelledStatus: ORDER_STATUSES.CANCELLED,
+  });
+  if (refusal) throw new Error(refusal);
+
+  await setOrderInvoiceNote(orderId, note);
   refreshMoneyPages(orderId);
 }
 
@@ -551,6 +583,10 @@ export async function setPaidAction(...args: Parameters<typeof setPaidActionInne
 
 export async function setInvoiceSentAction(...args: Parameters<typeof setInvoiceSentActionInner>) {
   return guard(() => setInvoiceSentActionInner(...args));
+}
+
+export async function setInvoiceNoteAction(...args: Parameters<typeof setInvoiceNoteActionInner>) {
+  return guard(() => setInvoiceNoteActionInner(...args));
 }
 
 export async function setPromiseAction(...args: Parameters<typeof setPromiseActionInner>) {

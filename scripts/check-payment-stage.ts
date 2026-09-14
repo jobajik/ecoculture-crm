@@ -32,6 +32,7 @@ import {
   STAGE_HINTS,
   STAGE_LABELS,
   STAGE_SHORT,
+  invoiceFieldsOnSent,
   STAGE_TONES,
   invoiceSentRefusal,
   matchesOrderSearch,
@@ -63,8 +64,14 @@ function checkSome(label: string, actual: string, expectEmpty: boolean) {
 // --- Колонка дописана в конец (грабли 1.1) ---------------------------------
 
 const headers = SHEET_HEADERS[SHEET_TABS.ORDERS];
-check("InvoiceSentAt — последняя колонка", headers[headers.length - 1], "InvoiceSentAt");
-check("Kind осталась на своём месте", headers[headers.length - 2], "Kind");
+// Каждая новая колонка дописывается В КОНЕЦ и сдвигает предыдущую последнюю —
+// порядок и проверяем целиком, а не одно имя: перепутанный порядок ломает
+// чтение всей вкладки (грабли 1.1).
+check(
+  "последние колонки Orders идут в том порядке, в каком их дописывали",
+  headers.slice(-3),
+  ["Kind", "InvoiceSentAt", "InvoiceNote"]
+);
 
 // --- Стадии ----------------------------------------------------------------
 
@@ -198,6 +205,36 @@ check("по менеджеру", found("нурланов"), true);
 check("по куску имени", found("эмиль"), true);
 check("чужой номер не находится", found("99999"), false);
 check("чужое имя не находится", found("Айгерим"), false);
+
+// --- Колонка отметки НОВАЯ, и подпись обязана это признавать ----------------
+//
+// Так решил владелец. У всех заявок, заведённых до сентября, отметка пуста, и
+// назвать их «счёт не отправлен» значило бы соврать про счета, которые Юлия
+// давно отправила руками. Программа говорит «отметки нет» — то есть ровно то,
+// что знает (грабли 1.10: пустая ячейка ничего не утверждает).
+check("пустая отметка не утверждает, что счёт не отправлен", /не отправлен/i.test(STAGE_LABELS.new), false);
+check("а говорит, что отметки нет", /отметк/i.test(STAGE_LABELS.new), true);
+check("короткая подпись так же", /отметк/i.test(STAGE_SHORT.new), true);
+
+// --- Что записывается при отметке о счёте -----------------------------------
+//
+// Заметка «почему счёт не ушёл» появилась после случая владельца: два счёта не
+// отправили из-за неверных телефонов клиентов, и какие именно — приходилось
+// вспоминать. Живёт она ровно до отправки счёта.
+const firstMark = invoiceFieldsOnSent(true, { invoiceSentAt: "" });
+check("первая отметка ставит дату", Boolean(firstMark.invoiceSentAt), true);
+check("и стирает заметку «почему не ушёл»", firstMark.invoiceNote, "");
+
+const secondMark = invoiceFieldsOnSent(true, { invoiceSentAt: "2026-09-10T08:00:00.000Z" });
+check(
+  "повторная отметка НЕ двигает дату первой отправки",
+  secondMark.invoiceSentAt,
+  "2026-09-10T08:00:00.000Z"
+);
+
+const removed = invoiceFieldsOnSent(false, { invoiceSentAt: "2026-09-10T08:00:00.000Z" });
+check("снятие отметки стирает дату целиком", removed.invoiceSentAt, "");
+check("и заметку при этом не трогает", removed.invoiceNote, undefined);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

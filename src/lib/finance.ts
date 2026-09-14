@@ -49,8 +49,10 @@ export interface FinanceOrderRow {
   collectionNote: string;
   /** Обе галочки — заявку можно собирать. */
   readyToCollect: boolean;
-  /** Когда счёт отправили клиенту. Пусто — не отправляли. */
+  /** Когда счёт отправили клиенту. Пусто — отметки нет. */
   invoiceSentAt: string;
+  /** Почему счёт ещё не ушёл — заметка бухгалтера. Пусто — заметки нет. */
+  invoiceNote: string;
   /**
    * Стадия оплаты: счёт не отправлен → счёт отправлен → часть → оплачено.
    * Считается из отметки о счёте и полученной суммы, отдельным полем не хранится.
@@ -258,6 +260,7 @@ export async function getFinanceSnapshot(
       collectionNote: order.collectionNote,
       readyToCollect: isReadyToShip(order),
       invoiceSentAt: order.invoiceSentAt,
+      invoiceNote: order.invoiceNote,
       stage: paymentStage({ totalAmount: amount, paidAmount, invoiceSentAt: order.invoiceSentAt }),
       code: orderCode(order.orderId),
       farms: farmPayments(order),

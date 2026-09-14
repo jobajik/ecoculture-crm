@@ -4,23 +4,17 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import type { FinanceOrderRow, FinanceSnapshot } from "@/lib/finance";
-import {
-  PAYMENT_STAGES,
-  STAGE_HINTS,
-  STAGE_LABELS,
-  STAGE_SHORT,
-  STAGE_TONES,
-  matchesOrderSearch,
-  type PaymentStage,
-} from "@/lib/paymentStage";
+import { PAYMENT_STAGES, matchesOrderSearch } from "@/lib/paymentStage";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import PaymentPanel, { PaymentState, money } from "./PaymentPanel";
+import InvoiceCell from "./InvoiceCell";
+import StageBadge from "./StageBadge";
 
 type Filter = "all" | "noinvoice" | "unpaid" | "partial" | "paid" | "ready";
 
 const FILTER_LABELS: Record<Filter, string> = {
   all: "Все",
-  noinvoice: "Счёт не отправлен",
+  noinvoice: "Без отметки о счёте",
   unpaid: "Не оплачены",
   partial: "Оплачены частично",
   paid: "Оплачены",
@@ -334,8 +328,21 @@ export default function FinanceBoard({
                               <PaymentState totalAmount={r.amount} paidAmount={r.paidAmount} compact />
                             </div>
                           </td>
+                          {/* Стадия и работа с ней — в одной ячейке. Раньше
+                              отметку об отправке счёта можно было поставить
+                              только внутри панели оплаты, то есть раскрыв
+                              строку: два нажатия и чужой экран ради одного
+                              слова «отправлен». Владелец на этом и споткнулся —
+                              два счёта не ушли из-за неверных телефонов, а
+                              найти их в списке было нечем. */}
                           <td className="px-3 py-2.5">
-                            <StageBadge stage={r.stage} />
+                            <InvoiceCell
+                              orderId={r.orderId}
+                              stage={r.stage}
+                              invoiceSentAt={r.invoiceSentAt}
+                              invoiceNote={r.invoiceNote}
+                              canEdit={canEdit}
+                            />
                           </td>
                           <td className="px-2 py-2.5 text-right whitespace-nowrap">
                             {canEdit ? (
@@ -413,20 +420,6 @@ function orderWord(n: number): string {
   if (last === 1) return "заявка";
   if (last >= 2 && last <= 4) return "заявки";
   return "заявок";
-}
-
-export function StageBadge({ stage, full = false }: { stage: PaymentStage; full?: boolean }) {
-  return (
-    <span
-      className={clsx(
-        "inline-block rounded-md px-2 py-0.5 text-xs whitespace-nowrap",
-        TONE_CLASS[STAGE_TONES[stage]]
-      )}
-      title={STAGE_HINTS[stage]}
-    >
-      {full ? STAGE_LABELS[stage] : STAGE_SHORT[stage]}
-    </span>
-  );
 }
 
 function Tile({
