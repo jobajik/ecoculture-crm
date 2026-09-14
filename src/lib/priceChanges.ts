@@ -1,5 +1,6 @@
 import type { PriceRow } from "./priceList";
 import { priceKey } from "./priceList";
+import { compareGrades } from "./constants";
 
 /**
  * История изменений прайса: когда, что и на сколько поменяли.
@@ -92,11 +93,16 @@ export function priceChangeDays(rows: PriceRow[]): PriceChangeDay[] {
       const withBase = list.filter((c) => c.changePercent !== null);
       return {
         date,
+        // Градации — в том же порядке, что везде, где их видит человек: у розы
+        // длины по возрастанию, у хризантемы Высшая → Первая → Вторая. По
+        // алфавиту выходило «100, 40, 50, 60» и «Вторая, Высшая, Первая», и
+        // список изменений цен читался так же плохо, как лист сборки, где эта
+        // сортировка и всплыла.
         changes: list.sort(
           (a, b) =>
             a.flowerType.localeCompare(b.flowerType, "ru") ||
             a.variety.localeCompare(b.variety, "ru") ||
-            a.grade.localeCompare(b.grade, "ru")
+            compareGrades(a.flowerType, a.grade, b.grade)
         ),
         up: list.filter((c) => c.from !== null && c.to > c.from).length,
         down: list.filter((c) => c.from !== null && c.to > 0 && c.to < c.from).length,

@@ -99,6 +99,56 @@ async function main() {
   check("picklist esentai: стеблей", esentaiList.totalStems, 250);
   check("picklist esentai: типы", [...new Set(esentaiList.lines.map((l) => l.flowerType))], ["chrysanthemum"]);
 
+  // --- Порядок строк: как принято у людей, а не по алфавиту -----------------
+  //
+  // Владелец прислал снимок напечатанного листа: у хризантемы шло «Вторая,
+  // Высшая, Первая, Третья». Набирают не так, и глаз каждый раз ищет строку
+  // заново. Порядок тот же, что везде в программе, — `compareGrades`.
+  // Отдельная выборка, а не строка в общей: добавить её к общим заявкам значило
+  // бы сдвинуть все суммы вокруг, и тест начал бы проверять не то.
+  const mixedOrders = [
+    {
+      orderId: "O4",
+      clientName: "Порядок строк",
+      clientPhone: "",
+      managerEmail: "m2@x.kz",
+      status: "new",
+      notes: "",
+      deliveryDate: TODAY,
+      createdAt: `${TODAY}T12:00:00`,
+      items: [
+        // Нарочно вразнобой: так их и присылают менеджеры.
+        { flowerType: "eustoma", variety: "Zebra", grade: "Стандарт", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "chrysanthemum", variety: "Zebra", grade: "Третья", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "chrysanthemum", variety: "Zebra", grade: "Высшая", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "chrysanthemum", variety: "Zebra", grade: "Вторая", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "chrysanthemum", variety: "Zebra", grade: "Первая", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "rose", variety: "Zebra", grade: "100", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "rose", variety: "Zebra", grade: "40", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "rose", variety: "Zebra", grade: "60", quantity: 1, unitPrice: 1, shipped: 0 },
+        { flowerType: "rose", variety: "Zebra", grade: "50", quantity: 1, unitPrice: 1, shipped: 0 },
+      ],
+    },
+  ] as never as typeof orders;
+  const ordered = await getPicklist(TODAY, NOW, { orders: mixedOrders, batches, users }, null);
+  check(
+    "лист сборки: длины розы по возрастанию",
+    ordered.lines.filter((l) => l.flowerType === "rose" && l.variety === "Zebra").map((l) => l.grade),
+    ["40", "50", "60", "100"]
+  );
+  check(
+    "лист сборки: категории хризантемы по старшинству",
+    ordered.lines
+      .filter((l) => l.flowerType === "chrysanthemum" && l.variety === "Zebra")
+      .map((l) => l.grade),
+    ["Высшая", "Первая", "Вторая", "Третья"]
+  );
+  check(
+    "лист сборки: цветки в привычном порядке, роза первой",
+    [...new Set(ordered.lines.map((l) => l.flowerType))],
+    ["rose", "chrysanthemum", "eustoma"]
+  );
+
   const allList = await getPicklist(TODAY, NOW, { orders, batches, users }, null);
   check("picklist без фильтра: стеблей = сумма двух", allList.totalStems, 120 + 250);
   check("picklist без фильтра: заявок", allList.totalOrders, 3);

@@ -1,7 +1,7 @@
 import { listOrdersWithItems } from "./repo/orders";
 import { listBatches } from "./repo/batches";
 import { listUsers } from "./repo/users";
-import { ORDER_STATUSES, getFarmFor } from "./constants";
+import { FLOWER_TYPES, ORDER_STATUSES, compareGrades, getFarmFor } from "./constants";
 import { isReadyToShip } from "./orderReady";
 import type { OrderWithItems } from "./types";
 
@@ -180,10 +180,29 @@ export async function getPicklist(
     }
   }
 
+  // Порядок строк в листе сборки — не косметика, а удобство того, кто с ним
+  // идёт к холодильнику. Сортировка по алфавиту давала «Вторая, Высшая,
+  // Первая, Третья» у хризантемы и «100, 40, 50, 60» у розы: глаз каждый раз
+  // ищет строку заново, а набирают по длине подряд. Владелец прислал снимок
+  // напечатанного листа именно с этим.
+  //
+  // Порядок такой же, как везде в программе, где градации видит человек
+  // (`compareGrades` в constants.ts): у розы длины по возрастанию, у хризантемы
+  // Высшая → Первая → Вторая → Третья. Цветки идут в своём привычном порядке —
+  // роза, хризантема, эустома, — а не по английскому названию кода, от которого
+  // хризантема оказывалась первой.
+  const flowerOrder = Object.values(FLOWER_TYPES) as string[];
+  const flowerRank = (type: string) => {
+    const i = flowerOrder.indexOf(type);
+    return i === -1 ? flowerOrder.length : i;
+  };
   const lines = Array.from(lineMap.values()).sort((a, b) => {
-    if (a.flowerType !== b.flowerType) return a.flowerType.localeCompare(b.flowerType);
+    if (a.flowerType !== b.flowerType) {
+      return flowerRank(a.flowerType) - flowerRank(b.flowerType) ||
+        a.flowerType.localeCompare(b.flowerType);
+    }
     if (a.variety !== b.variety) return a.variety.localeCompare(b.variety, "ru");
-    return a.grade.localeCompare(b.grade, "ru");
+    return compareGrades(a.flowerType, a.grade, b.grade);
   });
 
   const shortageStems = lines.reduce(
