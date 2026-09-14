@@ -40,7 +40,7 @@ dotenv.config();
 
 import { readTablesWithFormulas, writeCells } from "../src/lib/sheets";
 import { SHEET_HEADERS, SHEET_TABS } from "../src/lib/constants";
-import { containsSheetError, isSheetError, recoverFromFormula } from "../src/lib/sheetCell";
+import { containsSheetError, recoverFromFormula } from "../src/lib/sheetCell";
 import { createBackup } from "../src/lib/backup";
 
 interface Broken {
@@ -48,7 +48,7 @@ interface Broken {
   /** Адрес ячейки в таблице, например «Clients!E14». */
   address: string;
   column: string;
-  /** Что показывает ячейка сейчас: #ERROR! и подобное. */
+  /** Что показывает ячейка сейчас: #ERROR! — целиком или внутри текста. */
   shown: string;
   /** Что было введено на самом деле. Пусто — восстановить нечем. */
   recovered: string;
@@ -88,7 +88,13 @@ async function main() {
       // Строка 1 — заголовки, её не трогаем вовсе.
       if (r === 0) return;
       row.forEach((cell, c) => {
-        if (!isSheetError(String(cell ?? ""))) return;
+        // Ищем не только ячейку, ЦЕЛИКОМ равную жалобе, но и любую, где жалоба
+        // сидит ВНУТРИ текста. Второе — след моей же первой починки: она
+        // записала в двадцать ячеек строку «#ERROR! ()» как обычный текст, и
+        // повторный проход их не заметил, потому что сравнивал целиком.
+        // Отличить их нельзя ничем, кроме содержимого: снаружи это уже
+        // обычный текст, а не ошибка таблицы.
+        if (!containsSheetError(String(cell ?? ""))) return;
         const formula = String(formulas[r]?.[c] ?? "");
         const item: Broken = {
           tab,
@@ -121,7 +127,7 @@ async function main() {
   }
   if (lost.length > 0) {
     console.log("=== Восстановить нечем — очищу ===");
-    console.log("Настоящее значение потеряли раньше: в записи лежит та же жалоба таблицы.");
+    console.log("Настоящее значение потеряли раньше: и в ячейке, и в записи лежит жалоба таблицы.");
     console.log("Придумывать телефон нельзя, поэтому ячейка станет пустой.");
     for (const b of lost) console.log(`  ${b.address} · ${b.column} · записано: «${b.stored}»`);
     console.log("");
