@@ -26,9 +26,34 @@ function toUser(record: Record<string, string>): AppUser {
   };
 }
 
+/**
+ * Список сотрудников живёт в памяти сервера МИНУТУ.
+ *
+ * Без кэша эта вкладка читалась из Google при КАЖДОЙ отрисовке любой страницы:
+ * роль сотрудника перечитывается на каждый запрос сессии, а `getServerSession()`
+ * зовёт этот обработчик сам. Один человек, листающий заявки, давал десятки
+ * чтений в минуту — при лимите Google в 60 чтений в минуту на пользователя. Мы
+ * в него уже упирались, и упирались больно: неответ таблицы программа приняла
+ * за «сотрудника уволили» и показала бухгалтеру страницу оплат без кнопок.
+ *
+ * Минута выбрана так, чтобы обещание «права меняются на ходу» осталось правдой:
+ * владелец правит строку в таблице — и через минуту она действует. Мгновенности
+ * тут никто и не ждёт, а десятки лишних обращений к Google стоят дорого.
+ *
+ * Сбрасывать его руками неоткуда: САМА ПРОГРАММА во вкладку Users не пишет
+ * никогда — сотрудников владелец правит в таблице, а скрипт `add-staff.ts`
+ * работает отдельно от сайта. Кэш живёт в памяти одного экземпляра сервера и
+ * исчезает при новой сборке.
+ */
+const CACHE_MS = 60_000;
+let cache: { at: number; users: AppUser[] } | null = null;
+
 export async function listUsers(): Promise<AppUser[]> {
+  if (cache && Date.now() - cache.at < CACHE_MS) return cache.users;
   const table = await readTable(SHEET_TABS.USERS);
-  return table.rows.map((row) => toUser(rowToRecord(SHEET_TABS.USERS, row)));
+  const users = table.rows.map((row) => toUser(rowToRecord(SHEET_TABS.USERS, row)));
+  cache = { at: Date.now(), users };
+  return users;
 }
 
 export async function getUserByEmail(email: string): Promise<AppUser | null> {

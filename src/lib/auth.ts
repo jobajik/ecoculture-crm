@@ -1,6 +1,7 @@
 import type { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getUserByEmail } from "./repo/users";
+import { roleForToken, type RoleLookup } from "./authRole";
 
 export const authOptions: AuthOptions = {
   providers: [
@@ -27,7 +28,11 @@ export const authOptions: AuthOptions = {
       return true;
     },
     // Роль и производство перечитываются из таблицы при каждом обновлении
-    // токена — иначе права нельзя было бы менять на ходу.
+    // токена — иначе права нельзя было бы менять на ходу. А обновляется он не
+    // раз в полчаса, как кажется, а при КАЖДОЙ отрисовке страницы: этот
+    // обработчик зовёт сам `getServerSession()`. Отсюда две вещи: чтение
+    // вкладки Users кэшируется на минуту (repo/users.ts), а неответ таблицы не
+    // считается увольнением (authRole.ts).
     //
     // Важна ветка else: раньше её не было, и если строку сотрудника удаляли из
     // Users или ставили Active=FALSE, токен СОХРАНЯЛ прежнюю роль. Уволенный
@@ -37,17 +42,32 @@ export const authOptions: AuthOptions = {
     // на вход: список сотрудников в таблице снова означает то, что обещает.
     async jwt({ token, user }) {
       const email = token.email ?? user?.email;
-      if (email) {
+      if (!email) return token;
+
+      // Таблица отвечает не всегда: лимиты Google, сеть, секундная
+      // недоступность. Неответ — это НЕ «сотрудника уволили», и путать одно с
+      // другим нельзя: на этом бухгалтер Юлия получила страницу оплат без
+      // единой кнопки (подробности и правило — в src/lib/authRole.ts).
+      let lookup: RoleLookup;
+      try {
         const appUser = await getUserByEmail(email);
-        if (appUser && appUser.active) {
-          token.role = appUser.role;
-          token.farm = appUser.farm ?? null;
-          token.name = appUser.name || token.name;
-        } else {
-          token.role = undefined;
-          token.farm = null;
-        }
+        lookup = { ok: true, user: appUser };
+      } catch (error) {
+        console.error("Не удалось перечитать роль из таблицы:", error);
+        lookup = { ok: false };
       }
+
+      const next = roleForToken(
+        {
+          role: token.role as string | undefined,
+          farm: (token.farm as string | null) ?? null,
+          name: token.name ?? undefined,
+        },
+        lookup
+      );
+      token.role = next.role;
+      token.farm = next.farm;
+      token.name = next.name;
       return token;
     },
     async session({ session, token }) {
