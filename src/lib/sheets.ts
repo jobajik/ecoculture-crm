@@ -1,5 +1,6 @@
 import { google, sheets_v4 } from "googleapis";
 import { SHEET_HEADERS, SHEET_TABS } from "./constants";
+import { sheetSafeText } from "./sheetCell";
 
 // ---------------------------------------------------------------------------
 // Низкоуровневый клиент Google Sheets API.
@@ -75,10 +76,18 @@ function getSpreadsheetId(): string {
 }
 
 /** Экранирует значение для безопасной записи в CSV-подобную ячейку (не требуется для values.update, оставлено для ясности). */
+/**
+ * Значение для ячейки.
+ *
+ * Строка проходит через `sheetSafeText()`: значение, начинающееся с `+`, `-`,
+ * `=` или `@`, Google-таблица принимает за формулу и считает. Именно так
+ * телефон «+7 701 555 20 30» превращался в `#ERROR!` — и терялся, потому что
+ * обратно программа читала уже эту надпись. Подробности — в `sheetCell.ts`.
+ */
 function toCell(value: unknown): string | number {
   if (value === null || value === undefined) return "";
   if (typeof value === "number" || typeof value === "boolean") return value as number;
-  return String(value);
+  return sheetSafeText(String(value));
 }
 
 export interface SheetTable {
@@ -109,6 +118,53 @@ export async function readTable(tabName: string): Promise<SheetTable> {
     rowNumbers.push(idx + 2); // +1 за заголовок, +1 за 1-based индексацию
   });
   return { headers: headerRow, rows, rowNumbers };
+}
+
+/**
+ * Читает вкладку ДВАЖДЫ: что в ней видно и что в ней записано.
+ *
+ * Обычно это одно и то же, и разница нужна ровно в одном случае — когда
+ * таблица приняла наш текст за формулу и показывает `#ERROR!`. Тогда видимое
+ * значение потеряно, а записанное цело: Google отдаёт его как формулу
+ * (`=+7 701 555 20 30`), и телефон можно вернуть, а не придумать заново.
+ * Пользуется этим `scripts/fix-error-cells.ts`.
+ */
+export async function readTableWithFormulas(
+  tabName: string
+): Promise<{ shown: string[][]; formulas: string[][] }> {
+  const sheets = getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const [shownRes, formulaRes] = await Promise.all([
+    sheets.spreadsheets.values.get({ spreadsheetId, range: `${tabName}!A:ZZ` }),
+    sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tabName}!A:ZZ`,
+      valueRenderOption: "FORMULA",
+    }),
+  ]);
+  return {
+    shown: (shownRes.data.values ?? []) as string[][],
+    formulas: (formulaRes.data.values ?? []) as string[][],
+  };
+}
+
+/**
+ * Записывает отдельные ячейки по адресам вида «Clients!E14».
+ *
+ * Единственный способ починить одну ячейку, не переписывая всю строку: строку
+ * пришлось бы собрать заново, а в ней могут быть значения, которых мы не
+ * трогали и не должны трогать.
+ */
+export async function writeCells(cells: { address: string; value: string }[]): Promise<void> {
+  if (cells.length === 0) return;
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: cells.map((c) => ({ range: c.address, values: [[toCell(c.value)]] })),
+    },
+  });
 }
 
 /** Преобразует строку значений в объект по заголовкам конкретной вкладки (используются заголовки из констант, а не из самой таблицы, чтобы не зависеть от ручных правок порядка). */
