@@ -42,8 +42,10 @@ export default async function DebtsPage() {
         <h1 className="text-xl font-semibold">Долги и звонки</h1>
         <p className="text-sm text-ink-secondary">
           Долг — это ОСТАТОК по заявке: клиент с предоплатой висит только на невнесённую часть.
-          Возраст считается от даты доставки; после {DEBT_OVERDUE_DAYS} дней долг помечается как
-          просроченный. Сверху — список на сегодня, ниже — сколько всего должен каждый клиент.
+          Возраст считается от даты доставки, а если её не проставили — от дня оформления; после
+          {DEBT_OVERDUE_DAYS} дней долг помечается просроченным. Просрочка считается по каждой
+          заявке отдельно, поэтому у клиента со старым и свежим долгом просрочена только старая
+          часть. Сверху — список на сегодня, ниже — сколько всего должен каждый клиент.
         </p>
       </div>
 
@@ -61,7 +63,7 @@ export default async function DebtsPage() {
             {money(snapshot.debtOverdueTotal)}
           </div>
           <div className="text-xs text-ink-muted mt-1">
-            дольше {DEBT_OVERDUE_DAYS} дней после доставки
+            дольше {DEBT_OVERDUE_DAYS} дней
           </div>
         </div>
         <div className="card !p-4">

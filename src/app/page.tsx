@@ -6,6 +6,9 @@ import { authOptions } from "@/lib/auth";
 import { getStockSnapshot } from "@/lib/stock";
 import { farmLabel, flowerTypesForFarm, isFarmBoundRole } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
+import HomeFocusBoard from "@/components/HomeFocus";
+import { homeFocus } from "@/lib/homeFocus";
+import { listOrdersWithItems } from "@/lib/repo/orders";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,6 +22,22 @@ export default async function HomePage() {
   // только по своему цветку. Остальные роли видят всё.
   const farm = isFarmBoundRole(role) ? session.user?.farm ?? null : null;
   const snapshot = await getStockSnapshot(new Date(), undefined, farm);
+
+  // «Что у вас сегодня» — короткий блок про СВОЮ работу. До него главная у всех
+  // была одной и той же сводкой по складу: зав. складом это ровно её дело, а
+  // менеджеру — три экрана чужих цифр, под которыми лежит кнопка «Принять
+  // заявку» (на телефоне девять экранов прокрутки). Считается чистой функцией
+  // из уже прочитанных заявок — `scripts/check-home-focus.ts`.
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate()
+  ).padStart(2, "0")}`;
+  const focus = homeFocus({
+    role,
+    email: session.user?.email ?? "",
+    orders: await listOrdersWithItems(),
+    todayKey,
+  });
 
   // На главной — только разделы, по одному на область работы. Подстраницы
   // открываются вкладками внутри раздела, чтобы не заваливать человека выбором.
@@ -98,8 +117,13 @@ export default async function HomePage() {
           <h1 className="text-xl font-semibold">
             Добро пожаловать, {session.user?.name?.split(" ")[0]}
           </h1>
+          {/* Подпись описывает страницу целиком, а не один блок на ней: с
+              появлением «что у вас сегодня» обещание «здесь про склад» стало
+              наполовину неверным. */}
           <p className="text-ink-secondary">
-            Что сейчас лежит на складе и сколько дней с момента срезки
+            {focus?.aboveStock
+              ? "Ваша работа на сегодня, а ниже — что лежит на складе"
+              : "Что сейчас лежит на складе и сколько дней с момента срезки"}
             {farm && <> — производство {farmLabel(farm)}</>}.
           </p>
         </div>
@@ -114,7 +138,11 @@ export default async function HomePage() {
         />
       </div>
 
+      {focus?.aboveStock && <HomeFocusBoard focus={focus} />}
+
       <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />
+
+      {focus && !focus.aboveStock && <HomeFocusBoard focus={focus} />}
 
       <div>
         <h2 className="text-lg font-semibold mb-3">Разделы</h2>
