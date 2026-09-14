@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createBatchAction } from "@/app/warehouse/actions";
 import { FLOWER_TYPE_LABELS, GRADE_LABELS, formatGrade, getGradesFor } from "@/lib/constants";
 import type { FlowerType } from "@/lib/constants";
-import { unwrap } from "@/lib/actionResult";
+import { unwrapValue } from "@/lib/actionResult";
 
 type FlowerTypeKey = FlowerType;
 
@@ -35,7 +35,7 @@ export default function BatchReceiveForm({
     setSuccess(null);
     setSubmitting(true);
     try {
-      const batchId = unwrap(await createBatchAction({
+      const batchId = unwrapValue(await createBatchAction({
         flowerType,
         variety: variety.trim(),
         grade,

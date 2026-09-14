@@ -25,7 +25,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { guard, isRefusal, refusalOf, unwrap } from "../src/lib/actionResult";
+import { guard, isRefusal, refusalOf, unwrap, unwrapValue } from "../src/lib/actionResult";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -90,6 +90,35 @@ async function mechanics() {
     message = e instanceof Error ? e.message : String(e);
   }
   check("unwrap возвращает ТОТ ЖЕ текст", message, "в партии осталось 200");
+
+  // --- Пустой ответ там, где ждали значение --------------------------------
+  //
+  // Владелец прислал снимок: менеджер заводит клиента в форме заявки и получает
+  // красную английскую строку «Cannot read properties of undefined (reading
+  // 'clientId')». На боевой сборке этот путь работает — я прошёл его браузером.
+  // Значит действие в тот раз вернуло ПУСТОТУ (так бывает у вкладки, открытой
+  // из предыдущей версии сайта), и программа споткнулась о неё уже в браузере.
+  check("значение проходит насквозь", unwrapValue({ clientId: "CLI-1" }), { clientId: "CLI-1" });
+  for (const empty of [undefined, null]) {
+    let text = "";
+    try {
+      unwrapValue(empty);
+    } catch (e) {
+      text = e instanceof Error ? e.message : String(e);
+    }
+    check(`пустой ответ (${String(empty)}) объясняется по-русски`, /старой версии/.test(text), true);
+    check(`пустой ответ (${String(empty)}) не английский`, /Cannot read properties/.test(text), false);
+  }
+  // Отказ остаётся отказом: свой текст важнее разговора про версии.
+  let refusalText = "";
+  try {
+    unwrapValue(await guard(async () => {
+      throw new Error("Это клиент другого менеджера");
+    }));
+  } catch (e) {
+    refusalText = e instanceof Error ? e.message : String(e);
+  }
+  check("отказ не подменяется", refusalText, "Это клиент другого менеджера");
 }
 
 // --- Каждое действие обёрнуто ----------------------------------------------
@@ -121,7 +150,9 @@ let calls = 0;
 for (const path of viewFiles) {
   const src = readFileSync(path, "utf-8");
   for (const name of actionNames) {
-    const pattern = new RegExp(`(unwrap\\(\\s*)?await ${name}\\(`, "g");
+    // Годится любая из двух обёрток: `unwrap` там, где ответ не нужен, и
+    // `unwrapValue` там, где из ответа сразу читают поле.
+    const pattern = new RegExp(`(unwrap(?:Value)?\\(\\s*)?await ${name}\\(`, "g");
     for (const m of src.matchAll(pattern)) {
       calls++;
       if (!m[1]) {

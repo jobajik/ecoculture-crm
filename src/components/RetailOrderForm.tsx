@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { createOrderAction } from "@/app/orders/actions";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
-import { unwrap } from "@/lib/actionResult";
+import { unwrapValue } from "@/lib/actionResult";
 
 export interface RetailShopOption {
   clientId: string;
@@ -88,7 +88,7 @@ export default function RetailOrderForm({
 
     setSubmitting(true);
     try {
-      const orderId = unwrap(await createOrderAction({
+      const orderId = unwrapValue(await createOrderAction({
         clientId: shop.clientId,
         // Имя записывается снимком: точку могут переименовать, а в старой
         // заявке должно остаться то, что было написано тогда.
