@@ -107,7 +107,7 @@ export default function CalendarBoard({ data }: { data: CalendarMonth }) {
         </span>
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <div className="min-w-[760px]">
           <div className="grid grid-cols-7 border-b border-line-hairline">
             {WEEKDAYS.map((w, i) => (
@@ -459,7 +459,7 @@ function Block({
 
 function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="table-scroll">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-ink-secondary border-b border-line-hairline">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ORDER_STATUS_LABELS, FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { OrderWithItems } from "@/lib/types";
 import OrderStatusBadge from "./OrderStatusBadge";
+import ItemsCell from "./ItemsCell";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import { formatDay } from "@/lib/formatDate";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
@@ -40,9 +41,6 @@ export default function OrdersTable({
 }) {
   const [status, setStatus] = useState<string>("all");
   const [search, setSearch] = useState("");
-  // Какие заявки человек раскрыл. По одной, а не «раскрыть все»: раскрытие
-  // ломает ровную сетку, и делать это должен тот, кому оно понадобилось.
-  const [openItems, setOpenItems] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     return orders.filter((o) => {
@@ -63,15 +61,6 @@ export default function OrdersTable({
   const narrowed = status !== "all" || search.trim().length > 0;
   const shown = expanded || narrowed ? filtered : filtered.slice(0, COLLAPSED_TABLE_SIZE);
   const hidden = filtered.length - shown.length;
-
-  function toggleItems(orderId: string) {
-    setOpenItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(orderId)) next.delete(orderId);
-      else next.add(orderId);
-      return next;
-    });
-  }
 
   const itemText = (i: OrderWithItems["items"][number]) =>
     `${FLOWER_TYPE_LABELS[i.flowerType] ?? i.flowerType} ${i.variety} ×${i.quantity.toLocaleString("ru-RU")}`;
@@ -95,7 +84,7 @@ export default function OrdersTable({
         />
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -110,8 +99,6 @@ export default function OrdersTable({
           </thead>
           <tbody>
             {shown.map((o) => {
-              const itemsOpen = openItems.has(o.orderId);
-              const rest = o.items.length - 1;
               const reason = o.status === "new" && !isReadyToShip(o) ? notReadyReason(o) : "";
               return (
                 <tr
@@ -129,51 +116,23 @@ export default function OrdersTable({
                     </Link>
                     <div className="text-xs text-ink-muted">{formatDay(o.createdAt)}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-label="Клиент">
                     <div className="truncate max-w-[200px]" title={o.clientName}>
                       {o.clientName}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-secondary">
+                  <td className="px-4 py-3 text-ink-secondary" data-label="Менеджер">
                     <div className="truncate max-w-[130px]">
                       {personName(o.managerEmail, managerNames)}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-secondary">
-                    {itemsOpen ? (
-                      <div className="max-w-[340px]">
-                        {o.items.map((i, idx) => (
-                          <div key={idx}>{itemText(i)}</div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => toggleItems(o.orderId)}
-                          className="text-xs text-series-1 hover:underline mt-1"
-                        >
-                          свернуть
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-baseline gap-2 max-w-[340px]">
-                        <span className="truncate" title={o.items.map(itemText).join(", ")}>
-                          {o.items.length > 0 ? itemText(o.items[0]) : "—"}
-                        </span>
-                        {rest > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => toggleItems(o.orderId)}
-                            className="text-xs text-series-1 hover:underline whitespace-nowrap shrink-0"
-                          >
-                            ещё {rest}
-                          </button>
-                        )}
-                      </div>
-                    )}
+                  <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
+                    <ItemsCell lines={o.items.map(itemText)} />
                   </td>
-                  <td className="px-4 py-3 font-medium text-right whitespace-nowrap tabular-nums">
+                  <td className="px-4 py-3 font-medium sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
                     {o.totalAmount.toLocaleString("ru-RU")} ₸
                   </td>
-                  <td className="px-4 py-3 text-ink-secondary whitespace-nowrap">
+                  <td className="px-4 py-3 text-ink-secondary whitespace-nowrap" data-label="Доставка">
                     {formatDay(o.deliveryDate)}
                   </td>
                   {/* Под статусом — готовность к сборке. Статус отвечает на

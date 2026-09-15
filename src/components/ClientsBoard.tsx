@@ -126,7 +126,7 @@ export default function ClientsBoard({
         />
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -142,7 +142,7 @@ export default function ClientsBoard({
           <tbody>
             {shown.map((r) => (
               <tr key={r.clientId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
-                <td className="px-4 py-2.5">
+                <td data-label="Клиент" className="px-4 py-2.5">
                   <Link href={`/clients/${r.clientId}`} className="font-medium hover:underline">
                     {r.name}
                   </Link>
@@ -150,19 +150,19 @@ export default function ClientsBoard({
                     {[r.shopName, r.clientType].filter(Boolean).join(" · ") || "—"}
                   </span>
                 </td>
-                <td className="px-4 py-2.5">{r.city || "—"}</td>
-                <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{r.managerName}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{r.orders || "—"}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
+                <td data-label="Город" className="px-4 py-2.5">{r.city || "—"}</td>
+                <td data-label="Менеджер" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">{r.managerName}</td>
+                <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{r.orders || "—"}</td>
+                <td data-label="Выручка" className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
                   {r.revenue > 0 ? money(r.revenue) : "—"}
                   {r.debt > 0 && (
                     <span className="block text-xs text-[#8a5a00]">долг {money(r.debt)}</span>
                   )}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
+                <td data-label="Средний чек" className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
                   {r.avgCheck > 0 ? money(r.avgCheck) : "—"}
                 </td>
-                <td
+                <td data-label="Последний заказ"
                   className={clsx(
                     "px-4 py-2.5 whitespace-nowrap",
                     r.sleeping ? "text-[#8a5a00]" : "text-ink-secondary"

@@ -70,7 +70,7 @@ export default async function RetailShopsPage() {
           : `${shops.length} ${shops.length === 1 ? "магазин" : "магазинов"}. Отправки считаются по всем заявкам, кроме отменённых.`}
       </p>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -92,7 +92,7 @@ export default async function RetailShopsPage() {
                   key={shop.clientId}
                   className="border-b border-line-hairline last:border-0 hover:bg-surface-plane"
                 >
-                  <td className="px-4 py-2.5">
+                  <td data-label="Магазин" className="px-4 py-2.5">
                     <Link href={`/clients/${shop.clientId}`} className="font-medium hover:underline">
                       {shop.name}
                     </Link>
@@ -100,20 +100,20 @@ export default async function RetailShopsPage() {
                       <span className="ml-2 text-xs text-ink-muted">не работает</span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-ink-secondary">{shop.city || "—"}</td>
+                  <td data-label="Город" className="px-4 py-2.5 text-ink-secondary">{shop.city || "—"}</td>
                   {territories.length > 1 && (
-                    <td className="px-4 py-2.5 text-ink-secondary">
+                    <td data-label="Направление" className="px-4 py-2.5 text-ink-secondary">
                       {retailShortLabel(shop.retail)}
                     </td>
                   )}
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row?.orders ?? 0}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
+                  <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row?.orders ?? 0}</td>
+                  <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
                     {row ? row.stems.toLocaleString("ru-RU") : "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
+                  <td data-label="По внутр. цене" className="px-4 py-2.5 text-right tabular-nums">
                     {row ? money(row.amount) : "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
+                  <td data-label="Последняя доставка" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
                     {row?.last ? formatDay(row.last) : "ещё не возили"}
                   </td>
                   {canOrder && (

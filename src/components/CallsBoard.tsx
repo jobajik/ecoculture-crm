@@ -77,7 +77,7 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
         )}
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -99,7 +99,7 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                       openId === c.orderId && "bg-accent-soft/40"
                     )}
                   >
-                    <td className="px-4 py-2.5">
+                    <td data-label="Клиент" className="px-4 py-2.5">
                       <span className="flex items-center gap-2">
                         <span className={clsx("w-2 h-2 rounded-full shrink-0", style.dot)} />
                         <Link href={`/orders/${c.orderId}`} className="font-medium hover:underline">
@@ -111,7 +111,7 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                         <span className="font-mono">{c.code}</span>
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 whitespace-nowrap tabular-nums">
+                    <td data-label="Телефон" className="px-4 py-2.5 whitespace-nowrap tabular-nums">
                       {c.clientPhone ? (
                         <a href={`tel:${c.clientPhone.replace(/[^\d+]/g, "")}`} className="hover:underline">
                           {c.clientPhone}
@@ -120,10 +120,10 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                         <span className="text-ink-muted">телефона нет</span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">
+                    <td data-label="Долг" className="px-4 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">
                       {money(c.debt)}
                     </td>
-                    <td className={clsx("px-4 py-2.5", style.text)}>
+                    <td data-label="Почему в списке" className={clsx("px-4 py-2.5", style.text)}>
                       {c.why}
                       {c.collectionNote && (
                         <span className="block text-xs text-ink-muted">{c.collectionNote}</span>

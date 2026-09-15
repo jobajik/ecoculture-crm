@@ -382,7 +382,7 @@ export default function PlanBalanceBoard({
         </div>
       )}
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -504,7 +504,7 @@ export default function PlanBalanceBoard({
 
       {/* Месяц по неделям: ради этой таблицы понедельное планирование и нужно —
           видно, в какой неделе перекос, и что сумма недель складывается в месяц. */}
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">

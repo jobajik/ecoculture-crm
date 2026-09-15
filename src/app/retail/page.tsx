@@ -118,7 +118,7 @@ export default async function RetailDayPage({
         <Tile title="По внутренней цене" value={money(totals.amount)} hint="Это не выручка" />
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -135,7 +135,7 @@ export default async function RetailDayPage({
                 key={row.clientId}
                 className="border-b border-line-hairline last:border-0 hover:bg-surface-plane"
               >
-                <td className="px-4 py-2.5 align-top">
+                <td data-label="Магазин" className="px-4 py-2.5 align-top">
                   <Link href={`/clients/${row.clientId}`} className="font-medium hover:underline">
                     {row.name}
                   </Link>
@@ -145,7 +145,7 @@ export default async function RetailDayPage({
                       .join(" · ")}
                   </div>
                 </td>
-                <td className="px-4 py-2.5 align-top text-ink-secondary">
+                <td data-label="Что заказано" className="px-4 py-2.5 align-top text-ink-secondary">
                   {row.empty ? (
                     <span className="text-[#8a5a00]">заявки на этот день нет</span>
                   ) : (
@@ -158,13 +158,13 @@ export default async function RetailDayPage({
                     ))
                   )}
                 </td>
-                <td className="px-4 py-2.5 align-top text-right tabular-nums">
+                <td data-label="Стеблей" className="px-4 py-2.5 align-top text-right tabular-nums">
                   {row.stems > 0 ? row.stems.toLocaleString("ru-RU") : "—"}
                 </td>
-                <td className="px-4 py-2.5 align-top text-right tabular-nums">
+                <td data-label="Сумма" className="px-4 py-2.5 align-top text-right tabular-nums">
                   {row.amount > 0 ? money(row.amount) : "—"}
                 </td>
-                <td className="px-4 py-2.5 align-top">
+                <td data-label="Готовность" className="px-4 py-2.5 align-top">
                   {row.empty ? (
                     canOrder ? (
                       // Магазин и день уже выбраны здесь — незачем выбирать их

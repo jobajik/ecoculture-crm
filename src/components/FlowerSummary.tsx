@@ -50,7 +50,7 @@ export default function FlowerSummary({
         </span>
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full text-sm min-w-[840px]">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">

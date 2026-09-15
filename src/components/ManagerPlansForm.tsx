@@ -210,7 +210,7 @@ export default function ManagerPlansForm({
           ввода есть предел, за которым «1 800 000» показывается как «1 800 0».
           Шрифт уменьшить нельзя — при меньшем 16 px Safari на iPhone сам
           увеличивает страницу, как только палец попадает в поле. */}
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full min-w-[540px] sm:min-w-0 text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">

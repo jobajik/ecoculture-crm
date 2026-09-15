@@ -33,7 +33,7 @@ export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
         Показывать только партии с остатком
       </label>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">

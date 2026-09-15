@@ -208,7 +208,7 @@ export default function FinanceBoard({
         </p>
       )}
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
           <thead>
             {/* Колонок ровно шесть, и это предел: девять не влезали даже на

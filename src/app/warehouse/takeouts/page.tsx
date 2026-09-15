@@ -139,7 +139,7 @@ export default async function StaffTakeoutsPage({
         />
       </div>
 
-      <div className="card !p-0 overflow-x-auto mb-6">
+      <div className="card !p-0 table-scroll table-cards mb-6">
         <table className="w-full text-sm min-w-[620px]">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -154,23 +154,23 @@ export default async function StaffTakeoutsPage({
           <tbody>
             {day.rows.map((r) => (
               <tr key={r.takeoutId} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-2.5 font-medium whitespace-nowrap">{r.staffName}</td>
-                <td className="px-3 py-2.5 text-ink-secondary">
+                <td data-label="Кому" className="px-4 py-2.5 font-medium whitespace-nowrap">{r.staffName}</td>
+                <td data-label="Что взял" className="px-3 py-2.5 text-ink-secondary">
                   {FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType} {r.variety} ·{" "}
                   {formatGrade(r.grade)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">{nf(r.quantity)}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(r.quantity)}</td>
+                <td data-label="Цена" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
                   {r.unitPrice > 0 ? `${nf(r.unitPrice)} ₸` : "—"}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">
+                <td data-label="Сумма" className="px-3 py-2.5 text-right tabular-nums">
                   {r.unitPrice > 0 ? (
                     `${nf(r.amount)} ₸`
                   ) : (
                     <span className="text-[#8a5a00]">без цены</span>
                   )}
                 </td>
-                <td className="px-3 py-2.5 text-ink-muted">{r.note || "—"}</td>
+                <td data-label="Примечание" className="px-3 py-2.5 text-ink-muted">{r.note || "—"}</td>
               </tr>
             ))}
             {day.rows.length === 0 && (

@@ -85,7 +85,7 @@ export default function ClaimsBoard({
       {done.length > 0 && (
         <div className="space-y-2">
           <h2 className="font-medium">Решённые</h2>
-          <div className="card !p-0 overflow-x-auto">
+          <div className="card !p-0 table-scroll table-cards">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -99,20 +99,20 @@ export default function ClaimsBoard({
               <tbody>
                 {shownDone.map((c) => (
                   <tr key={c.claimId} className="border-b border-line-hairline last:border-0">
-                    <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
+                    <td data-label="Когда" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
                       {formatDay(c.decidedAt || c.createdAt)}
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td data-label="Клиент" className="px-4 py-2.5">
                       <Link href={`/orders/${c.orderId}`} className="font-medium hover:underline">
                         {c.clientName}
                       </Link>
                       <span className="block text-xs text-ink-muted">{c.managerName}</span>
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td data-label="Причина" className="px-4 py-2.5">
                       {c.reason}
                       <span className="block text-xs text-ink-muted">{c.comment}</span>
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td data-label="Решение" className="px-4 py-2.5">
                       <span
                         className={clsx(
                           "font-medium",
@@ -127,7 +127,7 @@ export default function ClaimsBoard({
                         <span className="block text-xs text-ink-muted">{c.decision}</span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 tabular-nums whitespace-nowrap">
+                    <td data-label="Итог" className="px-4 py-2.5 tabular-nums whitespace-nowrap">
                       {money(c.orderTotal)}
                     </td>
                   </tr>
@@ -230,7 +230,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
 
       {mode === "recalc" && (
         <div className="space-y-3 border-t border-line-hairline pt-3">
-          <div className="overflow-x-auto">
+          <div className="table-scroll table-cards">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -247,11 +247,11 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
                   const changed = v.quantity !== i.quantity || v.unitPrice !== i.unitPrice;
                   return (
                     <tr key={i.itemId} className="border-b border-line-hairline last:border-0">
-                      <td className="px-2 py-2">{i.label}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-ink-muted">
+                      <td data-label="Позиция" className="px-2 py-2">{i.label}</td>
+                      <td data-label="Отгружено" className="px-2 py-2 text-right tabular-nums text-ink-muted">
                         {i.shippedQuantity}
                       </td>
-                      <td className="px-2 py-2 text-right">
+                      <td data-label="К оплате, шт" className="px-2 py-2 text-right">
                         <input
                           className={clsx(
                             "input !w-24 !py-1 !min-h-0 text-right tabular-nums",
@@ -268,7 +268,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
                           }
                         />
                       </td>
-                      <td className="px-2 py-2 text-right">
+                      <td data-label="Цена, ₸" className="px-2 py-2 text-right">
                         <input
                           className={clsx(
                             "input !w-24 !py-1 !min-h-0 text-right tabular-nums",
@@ -285,7 +285,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
                           }
                         />
                       </td>
-                      <td className="px-2 py-2 text-right tabular-nums font-medium whitespace-nowrap">
+                      <td data-label="Сумма" className="px-2 py-2 text-right tabular-nums font-medium whitespace-nowrap">
                         {money(v.quantity * v.unitPrice)}
                       </td>
                     </tr>

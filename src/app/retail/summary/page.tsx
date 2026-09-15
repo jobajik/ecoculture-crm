@@ -92,7 +92,7 @@ export default async function RetailSummaryPage() {
           </div>
 
           {summary.byTerritory.length > 1 && (
-            <div className="card !p-0 overflow-x-auto mb-6">
+            <div className="card !p-0 table-scroll table-cards mb-6">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -105,12 +105,12 @@ export default async function RetailSummaryPage() {
                 <tbody>
                   {summary.byTerritory.map((row) => (
                     <tr key={row.territory} className="border-b border-line-hairline last:border-0">
-                      <td className="px-4 py-2.5">{row.label}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
+                      <td data-label="Направление" className="px-4 py-2.5">{row.label}</td>
+                      <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
+                      <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
                         {row.stems.toLocaleString("ru-RU")}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
+                      <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -119,7 +119,7 @@ export default async function RetailSummaryPage() {
           )}
 
           <h2 className="font-medium mb-2">По магазинам</h2>
-          <div className="card !p-0 overflow-x-auto mb-6">
+          <div className="card !p-0 table-scroll table-cards mb-6">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -137,14 +137,14 @@ export default async function RetailSummaryPage() {
                     key={row.clientId || row.name}
                     className="border-b border-line-hairline last:border-0"
                   >
-                    <td className="px-4 py-2.5">{row.name}</td>
-                    <td className="px-4 py-2.5 text-ink-secondary">{row.city || "—"}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td data-label="Магазин" className="px-4 py-2.5">{row.name}</td>
+                    <td data-label="Город" className="px-4 py-2.5 text-ink-secondary">{row.city || "—"}</td>
+                    <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
+                    <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
                       {row.stems.toLocaleString("ru-RU")}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">
+                    <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
+                    <td data-label="Доля" className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">
                       {t.stems > 0 ? `${Math.round((row.stems / t.stems) * 100)} %` : "—"}
                     </td>
                   </tr>
@@ -154,7 +154,7 @@ export default async function RetailSummaryPage() {
           </div>
 
           <h2 className="font-medium mb-2">Что возим</h2>
-          <div className="card !p-0 overflow-x-auto">
+          <div className="card !p-0 table-scroll table-cards">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -171,15 +171,15 @@ export default async function RetailSummaryPage() {
                     key={`${row.flowerType}|${row.variety}|${row.grade}`}
                     className="border-b border-line-hairline last:border-0"
                   >
-                    <td className="px-4 py-2.5">
+                    <td data-label="Цветок" className="px-4 py-2.5">
                       {FLOWER_TYPE_LABELS[row.flowerType] ?? row.flowerType}
                     </td>
-                    <td className="px-4 py-2.5">{row.variety}</td>
-                    <td className="px-4 py-2.5 text-ink-secondary">{formatGrade(row.grade)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td data-label="Сорт" className="px-4 py-2.5">{row.variety}</td>
+                    <td data-label="Длина / категория" className="px-4 py-2.5 text-ink-secondary">{formatGrade(row.grade)}</td>
+                    <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
                       {row.stems.toLocaleString("ru-RU")}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
+                    <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
                   </tr>
                 ))}
               </tbody>

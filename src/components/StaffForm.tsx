@@ -109,7 +109,7 @@ export default function StaffForm({
         <p className="text-sm bg-status-good/10 text-status-good rounded-lg px-3 py-2">{done}</p>
       )}
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -124,16 +124,16 @@ export default function StaffForm({
           <tbody>
             {users.map((u) => (
               <tr key={u.email} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-2.5 font-medium">
+                <td data-label="Имя" className="px-4 py-2.5 font-medium">
                   {u.name || <span className="text-status-critical">имя не заполнено</span>}
                   {u.email === me && <span className="text-xs text-ink-muted"> · вы</span>}
                 </td>
-                <td className="px-4 py-2.5 text-ink-secondary">{u.email}</td>
-                <td className="px-4 py-2.5">{ROLE_LABELS[u.role] ?? u.role ?? "—"}</td>
-                <td className="px-4 py-2.5 text-ink-secondary">
+                <td data-label="Почта" className="px-4 py-2.5 text-ink-secondary">{u.email}</td>
+                <td data-label="Роль" className="px-4 py-2.5">{ROLE_LABELS[u.role] ?? u.role ?? "—"}</td>
+                <td data-label="Производство" className="px-4 py-2.5 text-ink-secondary">
                   {u.farm ? FARM_LABELS[u.farm] ?? u.farm : "—"}
                 </td>
-                <td className="px-4 py-2.5">
+                <td data-label="Доступ" className="px-4 py-2.5">
                   <span className={u.active ? "text-status-good" : "text-ink-muted"}>
                     {u.active ? "открыт" : "закрыт"}
                   </span>

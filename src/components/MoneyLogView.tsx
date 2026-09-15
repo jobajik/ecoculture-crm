@@ -101,7 +101,7 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
         />
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -117,22 +117,22 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
               const changed = Math.round(r.amountAfter) !== Math.round(r.amountBefore);
               return (
                 <tr key={r.logId} className="border-b border-line-hairline last:border-0">
-                  <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
+                  <td data-label="Когда" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
                     {formatMoment(r.createdAt)}
                   </td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{r.actorName}</td>
-                  <td className="px-4 py-2.5">
+                  <td data-label="Кто" className="px-4 py-2.5 whitespace-nowrap">{r.actorName}</td>
+                  <td data-label="Заявка" className="px-4 py-2.5">
                     <Link href={`/orders/${r.orderId}`} className="hover:underline">
                       {r.clientName || r.orderId}
                     </Link>
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td data-label="Что сделал" className="px-4 py-2.5">
                     <span className={clsx("font-medium", STRONG.includes(r.action) && "text-[#8a5a00]")}>
                       {MONEY_LOG_LABELS[r.action] ?? r.action}
                     </span>
                     {r.details && <span className="block text-xs text-ink-muted">{r.details}</span>}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
+                  <td data-label="Было → стало" className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
                     {changed ? (
                       <>
                         <span className="text-ink-muted line-through">{money(r.amountBefore)}</span>

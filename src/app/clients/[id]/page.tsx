@@ -136,7 +136,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
       </div>
 
       <h2 className="font-medium mb-2">История заказов</h2>
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -151,26 +151,26 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           <tbody>
             {myOrders.map((o) => (
               <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
-                <td className="px-4 py-2.5 whitespace-nowrap">
+                <td data-label="Заявка" className="px-4 py-2.5 whitespace-nowrap">
                   <Link href={`/orders/${o.orderId}`} className="font-medium hover:underline">
                     {o.orderId}
                   </Link>
                 </td>
-                <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
+                <td data-label="Оформлена" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
                   {formatDay(o.createdAt)}
                 </td>
-                <td className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
+                <td data-label="Доставка" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
                   {formatDay(o.deliveryDate)}
                 </td>
-                <td className="px-4 py-2.5 text-ink-secondary">
+                <td data-label="Позиции" className="px-4 py-2.5 text-ink-secondary">
                   {o.items
                     .map((i) => `${i.variety} ${formatGrade(i.grade)} — ${i.quantity}`)
                     .join(", ")}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
+                <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
                   {money(o.totalAmount)}
                 </td>
-                <td className="px-4 py-2.5">
+                <td data-label="Статус" className="px-4 py-2.5">
                   <OrderStatusBadge status={o.status} />
                 </td>
               </tr>

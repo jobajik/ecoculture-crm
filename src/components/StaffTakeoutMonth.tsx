@@ -40,7 +40,7 @@ export default function StaffTakeoutMonth({
         </div>
       ) : (
         <>
-          <div className="card !p-0 overflow-x-auto">
+          <div className="card !p-0 table-scroll table-cards">
             <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -55,8 +55,8 @@ export default function StaffTakeoutMonth({
               <tbody>
                 {month.rows.map((r) => (
                   <tr key={r.key} className="border-b border-line-hairline last:border-0">
-                    <td className="px-4 py-2.5 font-medium whitespace-nowrap">{r.staffName}</td>
-                    <td className="px-3 py-2.5 text-ink-secondary">
+                    <td data-label="Сотрудник" className="px-4 py-2.5 font-medium whitespace-nowrap">{r.staffName}</td>
+                    <td data-label="Что брал" className="px-3 py-2.5 text-ink-secondary">
                       {/* «Роза 60» читалось бы как длина стебля — а это
                           количество. Поэтому «шт.» здесь обязательно. */}
                       {r.byFlower
@@ -68,14 +68,14 @@ export default function StaffTakeoutMonth({
                         )
                         .join(", ")}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{nf(r.stems)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                    <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(r.stems)}</td>
+                    <td data-label="Раз" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
                       {r.takeouts}
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-ink-secondary">
+                    <td data-label="Последний раз" className="px-3 py-2.5 whitespace-nowrap text-ink-secondary">
                       {formatDay(r.lastDate)}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                    <td data-label="К удержанию" className="px-3 py-2.5 text-right tabular-nums font-medium">
                       {nf(r.amount)} ₸
                       {r.noPrice > 0 && (
                         <span className="block text-[11px] text-[#8a5a00]">

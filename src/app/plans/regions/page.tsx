@@ -291,7 +291,7 @@ export default async function RegionSalesPage({
       )}
 
       <h2 className="font-medium mb-2">По цветку</h2>
-      <div className="card !p-0 overflow-x-auto mb-6">
+      <div className="card !p-0 table-scroll table-cards mb-6">
         <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -311,19 +311,19 @@ export default async function RegionSalesPage({
                   (flower && flower !== f.flowerType ? "opacity-45" : "")
                 }
               >
-                <td className="px-4 py-2.5 font-medium whitespace-nowrap">
+                <td data-label="Цветок" className="px-4 py-2.5 font-medium whitespace-nowrap">
                   {FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                <td data-label="План, шт" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
                   {f.planStems > 0 ? nf(f.planStems) : "—"}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
                   {f.orderedStems > 0 ? nf(f.orderedStems) : "—"}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">
+                <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums">
                   {f.shippedStems > 0 ? nf(f.shippedStems) : "—"}
                 </td>
-                <td
+                <td data-label="Выполнение"
                   className={
                     "px-3 py-2.5 text-right tabular-nums " +
                     (f.donePercent === null
@@ -347,7 +347,7 @@ export default async function RegionSalesPage({
         По направлениям
         {flower ? ` · ${FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower}` : ""}
       </h2>
-      <div className="card !p-0 overflow-x-auto mb-6">
+      <div className="card !p-0 table-scroll table-cards mb-6">
         <table className="w-full text-sm min-w-[720px]">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -382,17 +382,17 @@ export default async function RegionSalesPage({
                   </tr>
                   {useful.map((r) => (
                     <tr key={r.direction} className="border-b border-line-hairline">
-                      <td className="px-4 py-2.5 font-medium whitespace-nowrap">{r.direction}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                      <td data-label="Направление" className="px-4 py-2.5 font-medium whitespace-nowrap">{r.direction}</td>
+                      <td data-label="План, шт" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
                         {r.planStems > 0 ? nf(r.planStems) : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                      <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
                         {r.orderedStems > 0 ? nf(r.orderedStems) : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums">
                         {r.shippedStems > 0 ? nf(r.shippedStems) : "—"}
                       </td>
-                      <td
+                      <td data-label="Выполнение"
                         className={
                           "px-3 py-2.5 text-right tabular-nums " +
                           (r.donePercent === null
@@ -406,7 +406,7 @@ export default async function RegionSalesPage({
                       >
                         {pct(r.donePercent)}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">
                         {(incomeByDirection.get(r.direction)?.income ?? 0) > 0
                           ? `${nf(incomeByDirection.get(r.direction)!.income)} ₸`
                           : "—"}
@@ -416,7 +416,7 @@ export default async function RegionSalesPage({
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                      <td data-label="Заявок" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
                         {r.orders || "—"}
                       </td>
                     </tr>
@@ -437,23 +437,23 @@ export default async function RegionSalesPage({
           </tbody>
           <tfoot>
             <tr className="bg-surface-plane/60">
-              <td className="px-4 py-2.5 font-medium">Всего</td>
-              <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+              <td data-label="Направление" className="px-4 py-2.5 font-medium">Всего</td>
+              <td data-label="План, шт" className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {nf(fact.planStems)}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+              <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {nf(fact.orderedStems)}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+              <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {nf(fact.shippedStems)}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+              <td data-label="Выполнение" className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {pct(fact.donePercent)}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+              <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {nf(incomeTotal)} ₸
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums font-medium">{fact.orders}</td>
+              <td data-label="Заявок" className="px-3 py-2.5 text-right tabular-nums font-medium">{fact.orders}</td>
             </tr>
           </tfoot>
         </table>
@@ -463,7 +463,7 @@ export default async function RegionSalesPage({
         Заявки периода
         {flower ? ` · только ${(FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower).toLowerCase()}` : ""}
       </h2>
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm min-w-[680px]">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -479,21 +479,21 @@ export default async function RegionSalesPage({
           <tbody>
             {regionOrders.map((o) => (
               <tr key={o.orderId} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-2.5 whitespace-nowrap text-ink-secondary">
+                <td data-label="Доставка" className="px-4 py-2.5 whitespace-nowrap text-ink-secondary">
                   {formatDay(o.deliveryDate)}
                 </td>
-                <td className="px-3 py-2.5 whitespace-nowrap font-medium">{o.direction}</td>
-                <td className="px-3 py-2.5">{o.clientName}</td>
-                <td className="px-3 py-2.5 whitespace-nowrap">
+                <td data-label="Направление" className="px-3 py-2.5 whitespace-nowrap font-medium">{o.direction}</td>
+                <td data-label="Клиент" className="px-3 py-2.5">{o.clientName}</td>
+                <td data-label="Заявка" className="px-3 py-2.5 whitespace-nowrap">
                   <Link href={`/orders/${o.orderId}`} className="hover:underline">
                     {o.orderId}
                   </Link>
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">{nf(o.stems)}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(o.stems)}</td>
+                <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
                   {o.shipped > 0 ? nf(o.shipped) : "—"}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">{nf(o.amount)} ₸</td>
+                <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">{nf(o.amount)} ₸</td>
               </tr>
             ))}
             {regionOrders.length === 0 && (

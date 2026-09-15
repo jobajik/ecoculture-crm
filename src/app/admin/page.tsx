@@ -97,7 +97,7 @@ export default async function AdminPage() {
             Что делает каждая роль
           </summary>
           <div className="mt-3">
-        <div className="overflow-x-auto mb-5 border border-line-hairline rounded-lg">
+        <div className="table-scroll table-cards mb-5 border border-line-hairline rounded-lg">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-ink-secondary border-b border-line-hairline bg-surface-plane">
@@ -110,12 +110,12 @@ export default async function AdminPage() {
             <tbody>
               {ROLE_GUIDE.map((r) => (
                 <tr key={r.code} className="border-b border-line-hairline last:border-0">
-                  <td className="px-3 py-2">
+                  <td data-label="Код роли" className="px-3 py-2">
                     <code>{r.code}</code>
                   </td>
-                  <td className="px-3 py-2">{ROLE_LABELS[r.code] ?? r.code}</td>
-                  <td className="px-3 py-2 text-ink-secondary">{r.does}</td>
-                  <td className="px-3 py-2 text-ink-secondary">{r.farm}</td>
+                  <td data-label="Кто это" className="px-3 py-2">{ROLE_LABELS[r.code] ?? r.code}</td>
+                  <td data-label="Что делает в системе" className="px-3 py-2 text-ink-secondary">{r.does}</td>
+                  <td data-label="Колонка Farm" className="px-3 py-2 text-ink-secondary">{r.farm}</td>
                 </tr>
               ))}
             </tbody>

@@ -42,7 +42,7 @@ export default async function DebtsPage() {
         <h1 className="text-xl font-semibold">Долги и звонки</h1>
         <p className="text-sm text-ink-secondary">
           Долг — это ОСТАТОК по заявке: клиент с предоплатой висит только на невнесённую часть.
-          Возраст считается от даты доставки, а если её не проставили — от дня оформления; после
+          Возраст считается от даты доставки, а если её не проставили — от дня оформления; после{" "}
           {DEBT_OVERDUE_DAYS} дней долг помечается просроченным. Просрочка считается по каждой
           заявке отдельно, поэтому у клиента со старым и свежим долгом просрочена только старая
           часть. Сверху — список на сегодня, ниже — сколько всего должен каждый клиент.
@@ -89,7 +89,7 @@ export default async function DebtsPage() {
 
       <h2 className="font-medium pt-2">Сколько должен каждый клиент</h2>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -108,13 +108,13 @@ export default async function DebtsPage() {
                 className="border-b border-line-hairline last:border-0 hover:bg-surface-plane"
               >
                 <td className="px-4 py-2.5 font-medium">{d.clientName}</td>
-                <td className="px-4 py-2.5 text-ink-secondary tabular-nums">{d.clientPhone || "—"}</td>
-                <td className="px-4 py-2.5 text-ink-secondary">{d.managerName}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">{d.orders}</td>
+                <td data-label="Телефон" className="px-4 py-2.5 text-ink-secondary tabular-nums">{d.clientPhone || "—"}</td>
+                <td data-label="Менеджер" className="px-4 py-2.5 text-ink-secondary">{d.managerName}</td>
+                <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">{d.orders}</td>
                 {/* Под суммой — сколько из неё просрочено. Без этой строки
                     карточка «Просрочено» сверху была бы числом, которое в
                     таблице не найти, а такие числа читаются как ошибка. */}
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium">
+                <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums font-medium">
                   {money(d.amount)}
                   {d.overdueAmount > 0 && d.overdueAmount < d.amount - 1 && (
                     <div className="text-xs font-normal text-status-critical">
@@ -122,7 +122,7 @@ export default async function DebtsPage() {
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums">
+                <td data-label="Возраст" className="px-4 py-2.5 text-right tabular-nums">
                   <span className={d.overdue ? "text-status-critical font-medium" : "text-ink-secondary"}>
                     {d.oldestDays} {dayWord(d.oldestDays)}
                   </span>

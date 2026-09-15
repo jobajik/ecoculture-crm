@@ -225,7 +225,7 @@ export default function DailySalesDashboard({ initial }: { initial: DailySalesSn
 
           <div>
             <h3 className="font-medium mb-2">Заявки дня</h3>
-            <div className="card !p-0 overflow-x-auto">
+            <div className="card !p-0 table-scroll">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-ink-secondary border-b border-line-hairline">

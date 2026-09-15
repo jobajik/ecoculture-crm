@@ -155,7 +155,7 @@ function FlowerPrices({
         onFocus={(e) => e.target.select()}
         onChange={(e) => onChange(key, parseNumber(e.target.value))}
         className={clsx(
-          "input !px-2 !py-1 !min-h-0 !text-sm w-20 text-right tabular-nums",
+          "input !px-1.5 !py-1 !min-h-0 !text-sm w-16 text-right tabular-nums",
           "disabled:opacity-70 disabled:bg-surface-plane",
           !value && base ? "placeholder:text-ink-muted/70" : ""
         )}
@@ -173,15 +173,20 @@ function FlowerPrices({
         </span>
       </h3>
 
+      {/* Здесь боковая прокрутка ОСТАЁТСЯ — и только на телефоне.
+          Это сетка ввода: у розы четырнадцать колонок с полями цены, и ужать их
+          под 390 px значит сделать поля по два сантиметра, куда не попасть
+          пальцем и где не прочитать число. На компьютере сетка помещается
+          целиком — ради этого поля и отступы здесь уже, чем везде. */}
       <div className="card !p-0 overflow-x-auto">
-        <table className="text-sm">
+        <table className="text-sm w-full">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium sticky left-0 bg-surface z-10 min-w-[12rem]">
+              <th className="px-3 py-3 font-medium sticky left-0 bg-surface z-10 w-40">
                 Сорт
               </th>
               {grades.map((grade) => (
-                <th key={grade} className="px-2 py-3 font-medium text-center whitespace-nowrap">
+                <th key={grade} className="px-0.5 py-3 font-medium text-center whitespace-nowrap">
                   {formatGrade(grade)}
                 </th>
               ))}
@@ -190,11 +195,11 @@ function FlowerPrices({
           <tbody>
             {/* Основная строка. Её одной хватает, чтобы оценить весь цветок. */}
             <tr className="border-b border-line-hairline bg-accent-soft/40">
-              <td className="px-4 py-2 font-medium sticky left-0 bg-accent-soft/40 z-10">
+              <td className="px-3 py-2 font-medium sticky left-0 bg-accent-soft/40 z-10">
                 {BASE_VARIETY_LABEL}
               </td>
               {grades.map((grade) => (
-                <td key={grade} className="px-1 py-2">
+                <td key={grade} className="px-0.5 py-2">
                   {cell(BASE_VARIETY, grade)}
                 </td>
               ))}
@@ -202,11 +207,11 @@ function FlowerPrices({
 
             {shownVarieties.map((variety) => (
               <tr key={variety} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-1.5 sticky left-0 bg-surface z-10 text-ink-secondary">
+                <td className="px-3 py-1.5 sticky left-0 bg-surface z-10 text-ink-secondary truncate max-w-[10rem]">
                   {variety}
                 </td>
                 {grades.map((grade) => (
-                  <td key={grade} className="px-1 py-1.5">
+                  <td key={grade} className="px-0.5 py-1.5">
                     {cell(variety, grade, values[priceKey(flowerType, BASE_VARIETY, grade)] ?? 0)}
                   </td>
                 ))}

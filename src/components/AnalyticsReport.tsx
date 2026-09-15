@@ -519,7 +519,7 @@ export default function AnalyticsReport({
 
   return (
     <div className="space-y-6">
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="border-b border-line-hairline">
@@ -704,7 +704,7 @@ function Collapsible<T>({
   const hidden = rows.length - shown.length;
   return (
     <div className="card !p-0">
-      <div className="overflow-x-auto">
+      <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">{head}</tr>

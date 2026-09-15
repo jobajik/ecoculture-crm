@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ItemsCell from "@/components/ItemsCell";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listBatches } from "@/lib/repo/batches";
 import { getSettings } from "@/lib/repo/settings";
@@ -102,7 +103,7 @@ export default async function WarehousePage() {
       )}
 
       <h2 className="font-medium mb-2">Можно отгружать</h2>
-      <div className="card !p-0 overflow-x-auto mb-6">
+      <div className="card !p-0 table-scroll table-cards mb-6">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -116,14 +117,21 @@ export default async function WarehousePage() {
           </thead>
           <tbody>
             {readyToShip.map((o) => (
-              <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
+              <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top">
                 <td className="px-4 py-3 font-medium">{o.orderId}</td>
-                <td className="px-4 py-3">{o.clientName}</td>
-                <td className="px-4 py-3 text-ink-secondary">
+                <td className="px-4 py-3" data-label="Клиент">
+                  <div className="truncate max-w-[200px]" title={o.clientName}>
+                    {o.clientName}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">
                   {formatDay(o.deliveryDate)}
                 </td>
-                <td className="px-4 py-3 text-ink-secondary">
-                  {o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`).join(", ")}
+                <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
+                  <ItemsCell
+                    lines={o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)}
+                    width="max-w-[260px]"
+                  />
                 </td>
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={o.status} />
@@ -155,7 +163,7 @@ export default async function WarehousePage() {
             Эти заявки уже заведены, но отгружать их рано: цветок не выдаём, пока менеджер не
             согласовал заявку, а бухгалтер не провёл оплату.
           </p>
-          <div className="card !p-0 overflow-x-auto">
+          <div className="card !p-0 table-scroll table-cards">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -170,21 +178,30 @@ export default async function WarehousePage() {
                 {waiting.map((o) => (
                   <tr
                     key={o.orderId}
-                    className="border-b border-line-hairline last:border-0 hover:bg-surface-plane"
+                    className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
                   >
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
                       <Link href={`/orders/${o.orderId}`} className="hover:underline">
                         {o.orderId}
                       </Link>
                     </td>
-                    <td className="px-4 py-3">{o.clientName}</td>
-                    <td className="px-4 py-3 text-ink-secondary">{formatDay(o.deliveryDate)}</td>
-                    <td className="px-4 py-3 text-ink-secondary">
-                      {o.items
-                        .map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)
-                        .join(", ")}
+                    <td className="px-4 py-3" data-label="Клиент">
+                      <div className="truncate max-w-[200px]" title={o.clientName}>
+                        {o.clientName}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-[#8a5a00] min-w-[200px]">{notReadyReason(o)}</td>
+                    <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">{formatDay(o.deliveryDate)}</td>
+                    <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
+                      <ItemsCell
+                        lines={o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)}
+                        width="max-w-[260px]"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-[#8a5a00]" data-label="Чего ждём">
+                      <div className="truncate max-w-[210px]" title={notReadyReason(o)}>
+                        {notReadyReason(o)}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

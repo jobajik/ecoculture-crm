@@ -108,7 +108,7 @@ function DayRow({ day }: { day: PriceChangeDay }) {
       </button>
 
       {open && (
-        <div className="overflow-x-auto border-t border-line-hairline">
+        <div className="table-scroll border-t border-line-hairline">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-ink-secondary border-b border-line-hairline bg-surface-plane">

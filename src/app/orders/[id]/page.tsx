@@ -353,7 +353,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         )}
       </div>
 
-      <div className="card !p-0 overflow-x-auto mb-6">
+      <div className="card !p-0 table-scroll mb-6">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -446,7 +446,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       )}
 
       <h2 className="font-medium mb-2">История отгрузок</h2>
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">

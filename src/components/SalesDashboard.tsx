@@ -170,7 +170,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
       )}
 
       {snapshot.byFlower.length > 0 && (
-        <div className="card !p-0 overflow-x-auto">
+        <div className="card !p-0 table-scroll">
           <div className="px-4 pt-4 pb-2">
             <h3 className="font-medium">План и факт по цветку</h3>
             <p className="text-xs text-ink-muted">
@@ -327,7 +327,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
         </ChartCard>
       </div>
 
-      <div className="card !p-0 overflow-x-auto">
+      <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
