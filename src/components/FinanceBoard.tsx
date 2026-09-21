@@ -343,11 +343,18 @@ export default function FinanceBoard({
                             {r.code}
                             {/* Номер реализации 1С — под номером заявки: оба
                                 служебные, и сверяют их всегда вместе. */}
-                            {r.realization1c && (
-                              <div className="text-[11px] text-ink-secondary" title="№ реализации в 1С">
-                                1С {r.realization1c}
-                              </div>
-                            )}
+                            {r.realizations
+                              .filter((x) => x.number)
+                              .map((x) => (
+                                <div
+                                  key={x.flowerType}
+                                  className="text-[11px] text-ink-secondary"
+                                  title={`№ реализации в 1С — ${x.label}`}
+                                >
+                                  1С {r.realizations.length > 1 ? `${x.label.slice(0, 4)}. ` : ""}
+                                  {x.number}
+                                </div>
+                              ))}
                           </td>
                           {/* Две даты в одной ячейке: сверху оформлена, снизу
                               доставка. По отдельности они съедали две колонки,
@@ -409,7 +416,7 @@ export default function FinanceBoard({
                                 farms={r.farms}
                                 invoiceSentAt={r.invoiceSentAt}
                                 payments={r.payments}
-                                realization1c={r.realization1c}
+                                realizations={r.realizations}
                                 defaultMethod={r.paymentMethod}
                                 status={r.status}
                                 consignment={r.consignment}

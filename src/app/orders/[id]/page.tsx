@@ -45,7 +45,7 @@ import { canDeleteOrder } from "@/lib/orderDelete";
 import { listPayments } from "@/lib/repo/payments";
 import PaymentPanel from "@/components/PaymentPanel";
 import { canEditFinance } from "@/lib/financeAccess";
-import { paymentHistory } from "@/lib/payments";
+import { paymentHistory, realizationsOf } from "@/lib/payments";
 
 export const dynamic = "force-dynamic";
 
@@ -321,8 +321,27 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               : "Компания определяется по цветку в заявке, выбирать её не нужно."}
             {kaspiOfClient.length > 0 && ` Клиент платит с Kaspi ${kaspiOfClient.join(" / ")}.`}
             {order.paymentMethod && ` Вид оплаты по заявке: ${order.paymentMethod}.`}
-            {loaded.realization1c && ` Реализация 1С № ${loaded.realization1c}.`}
           </p>
+          {/* Реализации 1С — по одной на цветок: розу и эустому продаёт одна
+              компания, но в 1С это два документа, и у каждого своя сумма
+              (просьба бухгалтера). У заявки из одного цветка — одна строка. */}
+          {(() => {
+            const list = realizationsOf(loaded.items, loaded.realization1c);
+            if (list.length < 2 && !loaded.realization1c) return null;
+            return (
+              <div className="mt-3 text-sm">
+                <div className="label">{list.length > 1 ? "Реализации в 1С" : "Реализация в 1С"}</div>
+                <ul className="space-y-0.5">
+                  {list.map((r) => (
+                    <li key={r.flowerType} className="tabular-nums">
+                      <span className="capitalize">{r.label}</span> — {Math.round(r.amount).toLocaleString("ru-RU")} ₸
+                      <span className="text-ink-muted"> · № {r.number || "не вписан"}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
           {/* Какими частями платил клиент — видно всем, кто видит счёт. */}
           {!canTakeMoney && orderPayments.length > 0 && (
             <div className="mt-3 text-sm">
@@ -353,7 +372,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             farms={farmPayments(loaded)}
             invoiceSentAt={loaded.invoiceSentAt}
             payments={orderPayments}
-            realization1c={loaded.realization1c}
+            realizations={realizationsOf(loaded.items, loaded.realization1c)}
             defaultMethod={loaded.paymentMethod}
             status={loaded.status}
             consignment={isConsignment(loaded)}

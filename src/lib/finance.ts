@@ -9,6 +9,7 @@ import { farmPayments, type FarmPayment } from "./orderMoney";
 import { orderCode, paymentStage, type PaymentStage } from "./paymentStage";
 import type { OrderWithItems, Payment } from "./types";
 import { listPayments } from "./repo/payments";
+import { realizationsOf, type Realization } from "./payments";
 
 /** Порядок цветков в денежных строках — как везде: роза, хризантема, эустома. */
 const FLOWER_ORDER_FOR_MONEY = ["rose", "chrysanthemum", "eustoma"];
@@ -71,8 +72,13 @@ export interface FinanceOrderRow {
   consignment: boolean;
   /** Сколько по заявке на реализации ещё не оплачено. У обычной заявки — ноль. */
   onConsignment: number;
-  /** Номер реализации в 1С. */
+  /** Номер реализации в 1С — ячейка как есть (для поиска). */
   realization1c: string;
+  /**
+   * Реализации по цветкам: в 1С на розу и эустому — два документа, у каждого
+   * своя сумма и свой номер, хоть компания и одна.
+   */
+  realizations: Realization[];
   /** Платежи по заявке — по строке на поступление (вкладка Payments). */
   payments: FinancePayment[];
   /**
@@ -335,6 +341,7 @@ export async function getFinanceSnapshot(
       consignment,
       onConsignment: consignment && amount - paidAmount > MONEY_EPSILON ? amount - paidAmount : 0,
       realization1c: order.realization1c,
+      realizations: realizationsOf(order.items, order.realization1c),
       payments: paymentsByOrder.get(order.orderId) ?? [],
       byFlower: FLOWER_ORDER_FOR_MONEY.map((flowerType) => ({
         flowerType,

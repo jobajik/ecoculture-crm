@@ -23,8 +23,10 @@ import { farmPayments, invoiceByFarm } from "@/lib/orderMoney";
 import { appendPayments, deletePayment, listPayments } from "@/lib/repo/payments";
 import {
   addPaymentRefusal,
-  cleanRealization,
+  joinRealizations,
   methodOfPayments,
+  parseRealizations,
+  realizationFlowers,
   splitPaymentLines,
   removePaymentRefusal,
   totalsAfter,
@@ -746,11 +748,18 @@ async function removePaymentActionInner(orderId: string, paymentId: string) {
   return { ok: true };
 }
 
-async function setRealizationActionInner(orderId: string, value: string) {
+/**
+ * Номера реализаций 1С. У заявки их столько, сколько в ней цветков: в 1С на
+ * розу и на эустому — два документа, хоть компания и одна (просьба бухгалтера).
+ * Принимает номера по цветкам; строка — для старых вызовов с одним номером.
+ */
+async function setRealizationActionInner(orderId: string, value: string | Record<string, string>) {
   const email = await requireAccountant();
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
-  const clean = cleanRealization(value);
+  const flowers = realizationFlowers(order.items);
+  const numbers = typeof value === "string" ? parseRealizations(value, flowers) : value ?? {};
+  const clean = joinRealizations(numbers, flowers);
   if (clean === order.realization1c) return { ok: true };
 
   await setOrderRealization(orderId, clean);
@@ -759,8 +768,8 @@ async function setRealizationActionInner(orderId: string, value: string) {
     orderId,
     action: MONEY_LOG_ACTIONS.REALIZATION_1C,
     details: clean
-      ? `Реализация 1С № ${clean}${order.realization1c ? ` (было ${order.realization1c})` : ""}`
-      : `Номер реализации 1С стёрт (был ${order.realization1c})`,
+      ? `Реализация 1С: ${clean}${order.realization1c ? ` (было: ${order.realization1c})` : ""}`
+      : `Номер реализации 1С стёрт (был: ${order.realization1c})`,
     amountBefore: order.totalAmount,
     amountAfter: order.totalAmount,
   });

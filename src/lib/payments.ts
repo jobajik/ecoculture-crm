@@ -194,3 +194,97 @@ export function splitPaymentLines(
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+// ---------------------------------------------------------------------------
+// Реализации 1С — по ЦВЕТКУ, а не по заявке
+//
+// Бухгалтер: «менеджер заполняет заявку на розу и эустому — выходит общая
+// сумма в Rose Farm. Надо, чтобы было две суммы реализации, как в 1С». Компания
+// одна (Rose Farm продаёт и розу, и эустому — так сказал владелец), но в 1С на
+// каждый цветок оформляется СВОЙ документ реализации. Значит, у заявки столько
+// реализаций, сколько в ней цветков: своя сумма и свой номер 1С у каждой.
+//
+// Номера хранятся в той же колонке `Realization1C`, чтобы не заводить три
+// колонки под три цветка: у заявки из одного цветка там просто номер, как было,
+// а у смешанной — «роза: РН-1; эустома: РН-2». Старый номер без подписи у
+// смешанной заявки читается как номер ПЕРВОЙ реализации, а не теряется.
+// ---------------------------------------------------------------------------
+
+/** Порядок и подписи реализаций — как везде: роза, хризантема, эустома. */
+export const REALIZATION_FLOWERS = ["rose", "chrysanthemum", "eustoma"] as const;
+export const REALIZATION_LABELS: Record<string, string> = {
+  rose: "роза",
+  chrysanthemum: "хризантема",
+  eustoma: "эустома",
+};
+
+export interface Realization {
+  flowerType: string;
+  label: string;
+  /** Сумма документа реализации — позиции этого цветка. */
+  amount: number;
+  /** Номер документа в 1С; пусто — ещё не вписан. */
+  number: string;
+}
+
+/** Цветки заявки в привычном порядке — столько и реализаций. */
+export function realizationFlowers(items: { flowerType: string }[]): string[] {
+  const present = new Set(items.map((i) => i.flowerType));
+  return REALIZATION_FLOWERS.filter((f) => present.has(f));
+}
+
+/** Разобрать ячейку в номера по цветкам. */
+export function parseRealizations(value: string | null | undefined, flowers: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const raw = String(value ?? "").trim();
+  if (!raw || flowers.length === 0) return out;
+  const byLabel = new Map(flowers.map((f) => [REALIZATION_LABELS[f] ?? f, f]));
+  const parts = raw.split(";").map((p) => p.trim()).filter(Boolean);
+  const labelled = parts.every((p) => {
+    const m = p.match(/^([^:]+):\s*(.*)$/);
+    return m && byLabel.has(m[1].trim().toLowerCase());
+  });
+  if (!labelled) {
+    // Номер без подписей: у одного цветка — его номер; у нескольких — первой
+    // реализации (так его вписывали до разделения).
+    out[flowers[0]] = cleanRealization(raw);
+    return out;
+  }
+  for (const p of parts) {
+    const m = p.match(/^([^:]+):\s*(.*)$/)!;
+    const flower = byLabel.get(m[1].trim().toLowerCase())!;
+    const number = cleanRealization(m[2]);
+    if (number) out[flower] = number;
+  }
+  return out;
+}
+
+/** Собрать номера обратно в ячейку. Один цветок — просто номер, как раньше. */
+export function joinRealizations(numbers: Record<string, string>, flowers: string[]): string {
+  if (flowers.length <= 1) return cleanRealization(numbers[flowers[0] ?? ""] ?? "");
+  return flowers
+    .map((f) => [f, cleanRealization(numbers[f] ?? "")] as const)
+    .filter(([, n]) => n)
+    .map(([f, n]) => `${REALIZATION_LABELS[f] ?? f}: ${n}`)
+    .join("; ");
+}
+
+/** Реализации заявки: цветок, сумма его позиций и номер 1С. */
+export function realizationsOf(
+  items: { flowerType: string; quantity: number; unitPrice: number }[],
+  cell: string
+): Realization[] {
+  const flowers = realizationFlowers(items);
+  const numbers = parseRealizations(cell, flowers);
+  return flowers.map((f) => ({
+    flowerType: f,
+    label: REALIZATION_LABELS[f] ?? f,
+    amount:
+      Math.round(
+        items
+          .filter((i) => i.flowerType === f)
+          .reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0) * 100
+      ) / 100,
+    number: numbers[f] ?? "",
+  }));
+}

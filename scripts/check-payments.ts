@@ -14,7 +14,10 @@ import {
   addPaymentRefusal,
   cleanRealization,
   methodOfPayments,
+  joinRealizations,
+  parseRealizations,
   paymentHistory,
+  realizationsOf,
   splitPaymentLines,
   removePaymentRefusal,
   totalsAfter,
@@ -235,6 +238,52 @@ const mixedRow = {
 check("находится по сумме хризантемы", matchesOrderSearch(mixedRow, "60 000"), true);
 check("и по итогу, как раньше", matchesOrderSearch(mixedRow, "120000"), true);
 check("по части суммы-части не ищет", matchesOrderSearch({ ...mixedRow, amount: 999_999 }, "6000"), false);
+
+// --- Две реализации 1С в одной заявке (роза и эустома) ---------------------
+// Бухгалтер: «менеджеры заполняют заявку на розу и эустому, выходит общая сумма
+// в Rose Farm. Надо чтобы было две суммы реализации как в 1С».
+{
+  const items = [
+    { flowerType: "rose", quantity: 200, unitPrice: 300 },
+    { flowerType: "eustoma", quantity: 100, unitPrice: 400 },
+    { flowerType: "rose", quantity: 50, unitPrice: 200 },
+  ];
+  const r = realizationsOf(items, "");
+  check("две реализации: роза и эустома", r.map((x) => x.label), ["роза", "эустома"]);
+  check("у каждой своя сумма", r.map((x) => x.amount), [70_000, 40_000]);
+  check("номеров пока нет", r.map((x) => x.number), ["", ""]);
+
+  const two = ["rose", "eustoma"];
+  const cell = joinRealizations({ rose: " РН-1 ", eustoma: "РН-2" }, two);
+  check("в ячейку — с подписями", cell, "роза: РН-1; эустома: РН-2");
+  check("и обратно", parseRealizations(cell, two), { rose: "РН-1", eustoma: "РН-2" });
+  check("только один номер вписан", joinRealizations({ eustoma: "РН-2" }, two), "эустома: РН-2");
+  check("пустые — пустая ячейка", joinRealizations({}, two), "");
+  check(
+    "старый номер без подписи — первой реализации",
+    parseRealizations("РН-7", two),
+    { rose: "РН-7" }
+  );
+  check("один цветок — просто номер, как раньше", joinRealizations({ rose: "РН-9" }, ["rose"]), "РН-9");
+  check("и читается так же", parseRealizations("РН-9", ["rose"]), { rose: "РН-9" });
+  check(
+    "номера видны в реализациях",
+    realizationsOf(items, "роза: РН-1; эустома: РН-2").map((x) => x.number),
+    ["РН-1", "РН-2"]
+  );
+  check(
+    "порядок цветков — роза, хризантема, эустома",
+    realizationsOf(
+      [
+        { flowerType: "eustoma", quantity: 1, unitPrice: 1 },
+        { flowerType: "chrysanthemum", quantity: 1, unitPrice: 1 },
+        { flowerType: "rose", quantity: 1, unitPrice: 1 },
+      ],
+      ""
+    ).map((x) => x.flowerType),
+    ["rose", "chrysanthemum", "eustoma"]
+  );
+}
 
 // --- Деньги: реализация не долг, платежи видны в строке -------------------
 

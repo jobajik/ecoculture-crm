@@ -12,7 +12,7 @@ import {
   setRealizationAction,
 } from "@/app/finance/actions";
 import type { FinancePayment } from "@/lib/finance";
-import { paymentHistory } from "@/lib/payments";
+import { paymentHistory, type Realization } from "@/lib/payments";
 import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
 import { MIXED_PAYMENT_METHOD, PAYMENT_METHODS } from "@/lib/constants";
@@ -43,7 +43,7 @@ export default function PaymentPanel({
   farms = [],
   invoiceSentAt = "",
   payments = [],
-  realization1c = "",
+  realizations = [],
   defaultMethod = "",
   status = "",
   consignment = false,
@@ -61,8 +61,8 @@ export default function PaymentPanel({
   invoiceSentAt?: string;
   /** Платежи по заявке, по строке на поступление. */
   payments?: FinancePayment[];
-  /** Номер реализации в 1С. */
-  realization1c?: string;
+  /** Реализации 1С по цветкам: сумма и номер документа у каждой. */
+  realizations?: Realization[];
   /** Как клиент собирался платить — указал менеджер в заявке. */
   defaultMethod?: string;
   status?: string;
@@ -73,7 +73,7 @@ export default function PaymentPanel({
   return (
     <div className="space-y-4">
       <InvoiceRow orderId={orderId} invoiceSentAt={invoiceSentAt} />
-      <RealizationRow orderId={orderId} value={realization1c} />
+      <RealizationRow orderId={orderId} realizations={realizations} />
       {consignment && (
         <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">
           Это заявка на реализацию: клиент платит за то, что продал, и остаток здесь не долг, а
@@ -136,16 +136,20 @@ function dayLabel(key: string): string {
 }
 
 /**
- * Номер реализации в 1С. Бухгалтер ведёт учёт и там, и здесь, и без номера
- * заявку с документом связывали по сумме и клиенту — на глаз.
+ * Номера реализаций в 1С — по одному на цветок. Бухгалтер: «менеджер заполняет
+ * заявку на розу и эустому — выходит общая сумма в Rose Farm, а надо две суммы
+ * реализации, как в 1С». Компания одна, документов в 1С два, и у каждого своя
+ * сумма: она стоит рядом с полем, чтобы номер вписывали к нужной сумме.
  */
-function RealizationRow({ orderId, value }: { orderId: string; value: string }) {
+function RealizationRow({ orderId, realizations }: { orderId: string; realizations: Realization[] }) {
   const router = useRouter();
-  const [draft, setDraft] = useState(value);
+  const initial = Object.fromEntries(realizations.map((r) => [r.flowerType, r.number]));
+  const [draft, setDraft] = useState<Record<string, string>>(initial);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const changed = draft.trim() !== value.trim();
+  const changed = realizations.some((r) => (draft[r.flowerType] ?? "").trim() !== r.number.trim());
+  const several = realizations.length > 1;
 
   function save() {
     setError(null);
@@ -161,31 +165,50 @@ function RealizationRow({ orderId, value }: { orderId: string; value: string }) 
     });
   }
 
+  if (realizations.length === 0) return null;
+
   return (
-    <div className="flex flex-wrap items-end gap-2 pb-3 border-b border-line-hairline">
-      <label className="text-sm">
-        <span className="block text-ink-secondary mb-1">№ реализации в 1С</span>
-        <input
-          className="input !w-48"
-          value={draft}
-          placeholder="например, РН-000123"
-          maxLength={40}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setSaved(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && changed) save();
-          }}
-        />
-      </label>
-      {changed && (
-        <button onClick={save} disabled={pending} className="btn-secondary disabled:opacity-50">
-          {pending ? "Сохраняю…" : "Сохранить номер"}
-        </button>
+    <div className="pb-3 border-b border-line-hairline space-y-2">
+      {several && (
+        <div className="text-sm text-ink-secondary">
+          Реализаций в 1С — {realizations.length}: по одной на цветок
+        </div>
       )}
-      {saved && !changed && <span className="text-sm text-status-good">сохранено</span>}
-      {error && <span className="text-sm text-status-critical">{error}</span>}
+      <div className="flex flex-wrap items-end gap-3">
+        {realizations.map((r) => (
+          <label key={r.flowerType} className="text-sm">
+            <span className="block text-ink-secondary mb-1">
+              {several ? (
+                <>
+                  № 1С · {r.label} <span className="tabular-nums text-ink-primary">{money(r.amount)}</span>
+                </>
+              ) : (
+                "№ реализации в 1С"
+              )}
+            </span>
+            <input
+              className="input !w-44"
+              value={draft[r.flowerType] ?? ""}
+              placeholder="например, РН-000123"
+              maxLength={40}
+              onChange={(e) => {
+                setDraft((d) => ({ ...d, [r.flowerType]: e.target.value }));
+                setSaved(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && changed) save();
+              }}
+            />
+          </label>
+        ))}
+        {changed && (
+          <button onClick={save} disabled={pending} className="btn-secondary disabled:opacity-50">
+            {pending ? "Сохраняю…" : several ? "Сохранить номера" : "Сохранить номер"}
+          </button>
+        )}
+        {saved && !changed && <span className="text-sm text-status-good">сохранено</span>}
+      </div>
+      {error && <div className="text-sm text-status-critical">{error}</div>}
     </div>
   );
 }
