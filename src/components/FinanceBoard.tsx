@@ -81,7 +81,19 @@ export default function FinanceBoard({
       if (filter === "partial" && r.stage !== PAYMENT_STAGES.PARTIAL) return false;
       if (filter === "paid" && !r.paid) return false;
       if (filter === "ready" && !r.readyToCollect) return false;
-      return matchesOrderSearch(r, search);
+      return matchesOrderSearch(
+        {
+          ...r,
+          amounts: [
+            ...r.byFlower.map((f) => f.amount),
+            ...r.farms.map((f) => f.amount),
+            ...r.farms.map((f) => f.amount - f.paidAmount),
+            r.debt,
+            ...r.payments.map((p) => p.amount),
+          ],
+        },
+        search
+      );
     });
   }, [snapshot.orders, filter, search]);
 
@@ -346,6 +358,14 @@ export default function FinanceBoard({
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                             <div className="font-medium">{money(r.amount)}</div>
+                            {/* В смешанной заявке — сумма по каждому цветку:
+                                клиент платит по компаниям, и пришедшие 60 000
+                                бухгалтер ищет как «хризантему», а не как итог. */}
+                            {r.byFlower.length > 1 && (
+                              <div className="text-[11px] text-ink-secondary">
+                                {r.byFlower.map((f) => `${f.label} ${money(f.amount)}`).join(" · ")}
+                              </div>
+                            )}
                             <div className="text-xs">
                               <PaymentState totalAmount={r.amount} paidAmount={r.paidAmount} compact />
                             </div>

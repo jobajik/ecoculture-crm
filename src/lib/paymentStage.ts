@@ -181,6 +181,13 @@ export function matchesOrderSearch(
     amount?: number;
     /** Номер реализации в 1С. */
     realization1c?: string;
+    /**
+     * Другие суммы, по которым заявку ищут: части по цветку и по компании,
+     * остаток, уже пришедшие платежи. Просьба бухгалтера: «итог 120 000, пришла
+     * оплата на 60 000 — приходится долго искать эту сумму». 60 000 — это
+     * хризантема в смешанной заявке, и в списке её не было видно вовсе.
+     */
+    amounts?: number[];
   },
   query: string
 ): boolean {
@@ -199,11 +206,17 @@ export function matchesOrderSearch(
   // Сумма: «150 000», «150000» и «150000 ₸» — одно и то же. Совпадение целиком
   // или, от четырёх цифр, частью: по трём цифрам нашлась бы половина базы.
   const sumQuery = q.replace(/[\s₸тг.]/g, "").replace(",", ".");
-  if (/^\d+(\.\d+)?$/.test(sumQuery) && row.amount !== undefined) {
-    const whole = String(Math.round(Number(row.amount) || 0));
+  if (/^\d+(\.\d+)?$/.test(sumQuery)) {
     const wanted = String(Math.round(Number(sumQuery)));
-    if (whole === wanted) return true;
-    if (wanted.length >= 4 && whole.includes(wanted)) return true;
+    const candidates = [row.amount, ...(row.amounts ?? [])].filter(
+      (n): n is number => n !== undefined && Number(n) > 0
+    );
+    for (const n of candidates) {
+      const whole = String(Math.round(Number(n) || 0));
+      if (whole === wanted) return true;
+      // Часть суммы — только у итога заявки: по части «60» совпало бы полбазы.
+      if (n === row.amount && wanted.length >= 4 && whole.includes(wanted)) return true;
+    }
   }
   return false;
 }

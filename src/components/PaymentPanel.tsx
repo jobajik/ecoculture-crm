@@ -15,7 +15,7 @@ import type { FinancePayment } from "@/lib/finance";
 import { paymentHistory } from "@/lib/payments";
 import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
-import { PAYMENT_METHODS } from "@/lib/constants";
+import { MIXED_PAYMENT_METHOD, PAYMENT_METHODS } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
 import { unwrap } from "@/lib/actionResult";
 
@@ -289,6 +289,10 @@ function PaymentsList({
 /**
  * Новый платёж: сколько пришло, когда и как. Итог заявки сервер складывает
  * сам — «к предыдущей сумме вручную добавлять последующую» больше не нужно.
+ *
+ * Смешанная оплата — часть картой, часть наличными (просьба бухгалтера) —
+ * вносится одним поступлением из нескольких строк: у каждой свой способ и своя
+ * сумма, и в журнал каждая ложится отдельным платежом.
  */
 function AddPayment({
   orderId,
@@ -312,21 +316,48 @@ function AddPayment({
     const row = farms.find((x) => x.farm === f);
     return split && row ? Math.max(0, row.amount - row.paidAmount) : Math.max(0, totalAmount - paidAmount);
   };
-  const [amount, setAmount] = useState<number>(0);
-  const [date, setDate] = useState(todayKey());
-  const [method, setMethod] = useState<string>(
-    PAYMENT_METHODS.includes(defaultMethod as never) ? defaultMethod : PAYMENT_METHODS[0]
+  const mixed = defaultMethod === MIXED_PAYMENT_METHOD;
+  const firstMethod = PAYMENT_METHODS.includes(defaultMethod as never) ? defaultMethod : PAYMENT_METHODS[0];
+  // Менеджер написал «Смешанная» — сразу две строки: картой и наличными.
+  const [lines, setLines] = useState<{ amount: number; method: string }[]>(
+    mixed
+      ? [
+          { amount: 0, method: PAYMENT_METHODS[0] },
+          { amount: 0, method: PAYMENT_METHODS[1] },
+        ]
+      : [{ amount: 0, method: firstMethod }]
   );
+  const [date, setDate] = useState(todayKey());
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const owed = owedFor(farm);
+  const total = Math.round(lines.reduce((s, l) => s + (l.amount || 0), 0) * 100) / 100;
+  const unusedMethod = PAYMENT_METHODS.find((m) => !lines.some((l) => l.method === m));
+
+  function setLine(i: number, patch: Partial<{ amount: number; method: string }>) {
+    setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  }
+
+  function fillRest() {
+    // Остаток кладётся в последнюю строку: в первых уже стоят известные части.
+    const others = lines.slice(0, -1).reduce((s, l) => s + (l.amount || 0), 0);
+    const rest = Math.max(0, Math.round((owed - others) * 100) / 100);
+    setLine(lines.length - 1, { amount: rest });
+  }
 
   function save() {
     setError(null);
     startTransition(async () => {
       try {
-        unwrap(await addPaymentAction({ orderId, amount, date, method, farm }));
-        setAmount(0);
+        unwrap(
+          await addPaymentAction({
+            orderId,
+            date,
+            farm,
+            lines: lines.filter((l) => l.amount > 0),
+          })
+        );
+        setLines([{ amount: 0, method: firstMethod }]);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось сохранить");
@@ -351,17 +382,6 @@ function AddPayment({
           </label>
         )}
         <label className="text-sm">
-          <span className="block text-ink-secondary mb-1">Сумма, ₸</span>
-          <input
-            className="input !w-36 text-right tabular-nums"
-            inputMode="decimal"
-            value={amount ? amount.toLocaleString("ru-RU") : ""}
-            placeholder={owed > 0 ? Math.round(owed).toLocaleString("ru-RU") : ""}
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => setAmount(parseNumber(e.target.value))}
-          />
-        </label>
-        <label className="text-sm">
           <span className="block text-ink-secondary mb-1">Когда пришли</span>
           <input
             type="date"
@@ -371,22 +391,82 @@ function AddPayment({
             onChange={(e) => setDate(e.target.value)}
           />
         </label>
-        <MethodSelect value={method} onChange={setMethod} />
-        <button
-          onClick={save}
-          disabled={pending || amount <= 0}
-          className="btn-primary disabled:opacity-50"
-        >
-          {pending ? "Сохраняю…" : "Внести платёж"}
-        </button>
-        {owed > 1 && amount !== Math.round(owed * 100) / 100 && (
+      </div>
+
+      <div className="space-y-2">
+        {lines.map((line, i) => (
+          <div key={i} className="flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              {i === 0 && <span className="block text-ink-secondary mb-1">Сумма, ₸</span>}
+              <input
+                className="input !w-36 text-right tabular-nums"
+                inputMode="decimal"
+                value={line.amount ? line.amount.toLocaleString("ru-RU") : ""}
+                placeholder={
+                  lines.length === 1 && owed > 0 ? Math.round(owed).toLocaleString("ru-RU") : ""
+                }
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setLine(i, { amount: parseNumber(e.target.value) })}
+              />
+            </label>
+            <label className="text-sm">
+              {i === 0 && <span className="block text-ink-secondary mb-1">Способ</span>}
+              <select
+                className="input !w-auto"
+                value={line.method}
+                onChange={(e) => setLine(i, { method: e.target.value })}
+              >
+                {PAYMENT_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {lines.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setLines((prev) => prev.filter((_, j) => j !== i))}
+                className="text-xs text-ink-muted hover:text-status-critical pb-3"
+              >
+                убрать
+              </button>
+            )}
+          </div>
+        ))}
+        {unusedMethod && (
           <button
             type="button"
-            onClick={() => setAmount(Math.round(owed * 100) / 100)}
-            className="btn-secondary"
+            onClick={() => setLines((prev) => [...prev, { amount: 0, method: unusedMethod }])}
+            className="text-sm text-accent hover:underline"
           >
-            Весь остаток {money(owed)}
+            + часть другим способом (смешанная оплата)
           </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={save}
+          disabled={pending || total <= 0}
+          className="btn-primary disabled:opacity-50"
+        >
+          {pending
+            ? "Сохраняю…"
+            : lines.length > 1
+              ? `Внести ${money(total)}`
+              : "Внести платёж"}
+        </button>
+        {owed > 1 && Math.abs(total - owed) > 0.5 && (
+          <button type="button" onClick={fillRest} className="btn-secondary">
+            {lines.length > 1 ? "Добить остаток" : `Весь остаток ${money(owed)}`}
+          </button>
+        )}
+        {lines.length > 1 && owed > 0 && (
+          <span className="text-xs text-ink-muted">
+            к оплате {money(owed)}
+            {total > 0 && Math.abs(total - owed) > 0.5 && ` · разница ${money(owed - total)}`}
+          </span>
         )}
       </div>
       {defaultMethod && (

@@ -10,6 +10,11 @@ import { orderCode, paymentStage, type PaymentStage } from "./paymentStage";
 import type { OrderWithItems, Payment } from "./types";
 import { listPayments } from "./repo/payments";
 
+/** Порядок цветков в денежных строках — как везде: роза, хризантема, эустома. */
+const FLOWER_ORDER_FOR_MONEY = ["rose", "chrysanthemum", "eustoma"];
+/** Короткие подписи для узкой колонки суммы. */
+const FLOWER_SHORT: Record<string, string> = { rose: "роза", chrysanthemum: "хриз.", eustoma: "эуст." };
+
 /** Платёж в том виде, в каком его видит панель бухгалтера. */
 export interface FinancePayment {
   paymentId: string;
@@ -70,6 +75,12 @@ export interface FinanceOrderRow {
   realization1c: string;
   /** Платежи по заявке — по строке на поступление (вкладка Payments). */
   payments: FinancePayment[];
+  /**
+   * Сумма по каждому цветку — роза, хризантема, эустома. В смешанной заявке
+   * клиент платит частями по компаниям, и пришедшие 60 000 бухгалтер ищет
+   * именно как «хризантему этой заявки», а не как её итог.
+   */
+  byFlower: { flowerType: string; label: string; amount: number }[];
   /** Сколько получено сверх суммы заявки — обычно после пересчёта по рекламации. */
   overpaid: number;
   promisedAt: string;
@@ -325,6 +336,13 @@ export async function getFinanceSnapshot(
       onConsignment: consignment && amount - paidAmount > MONEY_EPSILON ? amount - paidAmount : 0,
       realization1c: order.realization1c,
       payments: paymentsByOrder.get(order.orderId) ?? [],
+      byFlower: FLOWER_ORDER_FOR_MONEY.map((flowerType) => ({
+        flowerType,
+        label: FLOWER_SHORT[flowerType] ?? flowerType,
+        amount: order.items
+          .filter((i) => i.flowerType === flowerType)
+          .reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
+      })).filter((f) => f.amount > 0),
       overpaid: Math.max(0, paidAmount - amount),
       promisedAt: order.promisedAt,
       collectionNote: order.collectionNote,

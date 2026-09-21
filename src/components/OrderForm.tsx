@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createOrderAction } from "@/app/orders/actions";
 import ClientPicker, { type ClientOption } from "./ClientPicker";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
-import { PAYMENT_METHODS, SHIPMENT_DIRECTIONS } from "@/lib/constants";
+import { ORDER_PAYMENT_METHODS, SHIPMENT_DIRECTIONS } from "@/lib/constants";
 import { directionForCity } from "@/lib/direction";
 import { unwrapValue } from "@/lib/actionResult";
 
@@ -69,7 +69,7 @@ export default function OrderForm({
   // заранее — просьба Юлии: «только менеджер знает вид оплаты». Подставляется
   // из карточки клиента («чем платит») и едет за клиентом, пока не тронули.
   const methodOf = (c: ClientOption | null) =>
-    PAYMENT_METHODS.includes((c?.paymentMethod ?? "") as never) ? (c?.paymentMethod as string) : "";
+    ORDER_PAYMENT_METHODS.includes(c?.paymentMethod ?? "") ? (c?.paymentMethod as string) : "";
   const [paymentMethod, setPaymentMethod] = useState(methodOf(initialClient));
   const [methodTouched, setMethodTouched] = useState(false);
   const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties, prices)]);
@@ -186,14 +186,14 @@ export default function OrderForm({
             }}
           >
             <option value="">— не знаю —</option>
-            {PAYMENT_METHODS.map((m) => (
+            {ORDER_PAYMENT_METHODS.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
             ))}
           </select>
           <span className="block text-xs text-ink-muted mt-1">
-            Бухгалтер увидит это в списке оплат — до того, как придут деньги.
+            «Смешанная» — если клиент платит частями разными способами. Бухгалтер увидит это в списке оплат — до того, как придут деньги.
           </span>
         </div>
         <div className="sm:col-span-2">

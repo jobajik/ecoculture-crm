@@ -13,7 +13,9 @@
 import {
   addPaymentRefusal,
   cleanRealization,
+  methodOfPayments,
   paymentHistory,
+  splitPaymentLines,
   removePaymentRefusal,
   totalsAfter,
 } from "../src/lib/payments";
@@ -21,7 +23,8 @@ import { isConsignment } from "../src/lib/orderKind";
 import { isReadyToShip, notReadyReason } from "../src/lib/orderReady";
 import { getFinanceSnapshot } from "../src/lib/finance";
 import { byNewest, orderPicklistColumns } from "../src/lib/picklistOrder";
-import { ROLES, SHEET_HEADERS, SHEET_TABS } from "../src/lib/constants";
+import { ORDER_PAYMENT_METHODS, ROLES, SHEET_HEADERS, SHEET_TABS } from "../src/lib/constants";
+import { matchesOrderSearch } from "../src/lib/paymentStage";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -193,6 +196,46 @@ check(
   ["X2", "X1"]
 );
 
+// --- Смешанная оплата: часть картой, часть наличными ------------------------
+
+check(
+  "две части разными способами — два платежа",
+  splitPaymentLines([
+    { amount: 70_000, method: "Каспи" },
+    { amount: 50_000, method: "Наличные" },
+  ]),
+  { lines: [{ method: "Каспи", amount: 70_000 }, { method: "Наличные", amount: 50_000 }], refusal: "" }
+);
+check(
+  "один способ дважды склеивается",
+  splitPaymentLines([
+    { amount: 10_000, method: "Наличные" },
+    { amount: 5_000, method: "Наличные" },
+  ]).lines,
+  [{ method: "Наличные", amount: 15_000 }]
+);
+check("пустая строка выбрасывается", splitPaymentLines([{ amount: 100, method: "Каспи" }, { amount: 0, method: "" }]).lines.length, 1);
+check("способ «Смешанная» у одного платежа нельзя", refused(splitPaymentLines([{ amount: 100, method: "Смешанная" }]).refusal), true);
+check("минус в части — отказ", refused(splitPaymentLines([{ amount: -5, method: "Каспи" }]).refusal), true);
+check("ни одной части — отказ", refused(splitPaymentLines([]).refusal), true);
+check("вид оплаты по платежам: один способ", methodOfPayments(["Каспи", "Каспи"]), "Каспи");
+check("вид оплаты по платежам: разные — смешанная", methodOfPayments(["Каспи", "Наличные"]), "Смешанная");
+check("вид оплаты: платежей нет — пусто", methodOfPayments([]), "");
+check("менеджер может выбрать «Смешанная»", ORDER_PAYMENT_METHODS.includes("Смешанная"), true);
+
+// --- Поиск по части суммы («итог 120 000, пришла оплата на 60 000») ---------
+
+const mixedRow = {
+  orderId: "ORD-1757924831",
+  clientName: "Салон",
+  managerName: "Айгерим",
+  amount: 120_000,
+  amounts: [60_000, 60_000],
+};
+check("находится по сумме хризантемы", matchesOrderSearch(mixedRow, "60 000"), true);
+check("и по итогу, как раньше", matchesOrderSearch(mixedRow, "120000"), true);
+check("по части суммы-части не ищет", matchesOrderSearch({ ...mixedRow, amount: 999_999 }, "6000"), false);
+
 // --- Деньги: реализация не долг, платежи видны в строке -------------------
 
 async function main() {
@@ -265,6 +308,7 @@ async function main() {
   check("платёж виден в строке заявки", row("FIRE").payments.map((p) => p.amount), [30_000]);
   check("и день внесения при нём", row("FIRE").payments[0].enteredOn, "2026-09-10");
   check("номер 1С в строке", row("FIRE").realization1c, "РН-7");
+  check("сумма по цветку в строке", row("FIRE").byFlower, [{ flowerType: "rose", label: "роза", amount: 100_000 }]);
 
   console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

@@ -445,6 +445,17 @@ export function isFarmBoundRole(role: string | null | undefined): boolean {
 export const PAYMENT_METHODS = ["Каспи", "Наличные", "Оплата по реквизитам"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+/**
+ * Смешанная оплата: часть картой, часть наличными, часть по реквизитам — просьба
+ * бухгалтера. Это НЕ способ отдельного платежа (у каждого поступления способ
+ * один), а вид оплаты ЗАЯВКИ: так её помечает менеджер, если клиент заранее
+ * сказал, что заплатит по-разному, и так же она помечается сама, когда платежи
+ * пришли разными способами.
+ */
+export const MIXED_PAYMENT_METHOD = "Смешанная";
+/** Что можно выбрать как вид оплаты заявки: способы плюс «смешанная». */
+export const ORDER_PAYMENT_METHODS: string[] = [...PAYMENT_METHODS, MIXED_PAYMENT_METHOD];
+
 /** Через сколько дней после даты доставки долг считается просроченным. */
 export const DEBT_OVERDUE_DAYS = 3;
 

@@ -20,10 +20,12 @@ import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { confirmRefusal, moneyRefusal } from "@/lib/orderRules";
 import { farmPayments, invoiceByFarm } from "@/lib/orderMoney";
-import { appendPayment, deletePayment, listPayments } from "@/lib/repo/payments";
+import { appendPayments, deletePayment, listPayments } from "@/lib/repo/payments";
 import {
   addPaymentRefusal,
   cleanRealization,
+  methodOfPayments,
+  splitPaymentLines,
   removePaymentRefusal,
   totalsAfter,
 } from "@/lib/payments";
@@ -612,11 +614,14 @@ async function writeTotalsAfter(
   }
   const ledger = (await listPayments({ fresh: true })).filter((p) => p.orderId === order.orderId);
   const firstDay = ledger.map((p) => p.date).filter(Boolean).sort()[0] ?? "";
+  // Вид оплаты заявки — из её платежей: один способ — он и есть, разные —
+  // «Смешанная». Платежей нет — пусто, и тогда остаётся то, что указал менеджер.
+  const ledgerMethod = methodOfPayments(ledger.map((p) => p.method));
   await setOrderPaidTotals(order.orderId, {
     amount: next.paidAmount,
     totalAmount: order.totalAmount,
     accountantEmail: email,
-    paymentMethod: method,
+    paymentMethod: ledgerMethod || method,
     byField,
     // Были деньги ДО журнала (итог больше суммы платежей) — их день мы знаем
     // только из прежней отметки и её не трогаем. Иначе первый день — из журнала.
@@ -630,10 +635,14 @@ async function writeTotalsAfter(
 
 async function addPaymentActionInner(input: {
   orderId: string;
-  amount: number;
   date: string;
-  method: string;
   farm: string;
+  /**
+   * Части поступления по способам. Обычно одна; смешанная оплата («часть
+   * картой, часть наличными» — просьба бухгалтера) — несколько, и каждая
+   * становится отдельным платежом со своим способом.
+   */
+  lines: { amount: number; method: string }[];
   note?: string;
 }) {
   const email = await requireAccountant();
@@ -643,12 +652,18 @@ async function addPaymentActionInner(input: {
   if (!order) throw new Error("Заявка не найдена");
   const invoice = invoiceByFarm(order.items);
 
+  const split = splitPaymentLines(input.lines ?? []);
+  if (split.refusal) throw new Error(split.refusal);
+  const total = split.lines.reduce((s, l) => s + l.amount, 0);
+
+  // Общие правила — на всё поступление целиком (права, день, компания), а
+  // способ каждой части проверен выше.
   const refusal = addPaymentRefusal({
     role: session?.user?.role,
-    amount: Number(input.amount),
+    amount: total,
     date: input.date,
     today: todayKey(),
-    method: input.method,
+    method: split.lines[0].method,
     farm: input.farm || "",
     invoiceFarms: invoice.map((f) => f.farm),
     status: order.status,
@@ -656,29 +671,33 @@ async function addPaymentActionInner(input: {
   });
   if (refusal) throw new Error(refusal);
 
-  const amount = Math.round(Number(input.amount) * 100) / 100;
   const farm = invoice.length > 1 ? input.farm : invoice[0]?.farm ?? "";
+  const amount = Math.round(total * 100) / 100;
 
-  // Сначала журнал, потом итог: если второй запрос не дойдёт, платёж будет
-  // виден строкой, а разница с итогом — отдельной строкой «вне журнала», и её
+  // Сначала журнал, потом итог: если второй запрос не дойдёт, платежи будут
+  // видны строками, а разница с итогом — отдельной строкой «вне журнала», и её
   // легко заметить. При обратном порядке итог вырос бы молча, без следа.
-  await appendPayment({
-    orderId: order.orderId,
-    date: input.date,
-    amount,
-    farm: invoice.length > 1 ? farm : "",
-    method: input.method,
-    accountantEmail: email,
-    note: (input.note || "").trim().slice(0, 200),
-  });
-  const after = await writeTotalsAfter(order, farm, amount, email, input.method);
+  // Все части — одной записью.
+  await appendPayments(
+    split.lines.map((l) => ({
+      orderId: order.orderId,
+      date: input.date,
+      amount: l.amount,
+      farm: invoice.length > 1 ? farm : "",
+      method: l.method,
+      accountantEmail: email,
+      note: (input.note || "").trim().slice(0, 200),
+    }))
+  );
+  const after = await writeTotalsAfter(order, farm, amount, email, split.lines[0].method);
 
   await logMoney({
     actorEmail: email,
     orderId: order.orderId,
     action: MONEY_LOG_ACTIONS.PAYMENT_ADDED,
     details:
-      `Платёж ${money(amount)} за ${input.date.split("-").reverse().join(".")} · ${input.method}` +
+      `Платёж ${money(amount)} за ${input.date.split("-").reverse().join(".")} · ` +
+      split.lines.map((l) => (split.lines.length > 1 ? `${l.method} ${money(l.amount)}` : l.method)).join(" + ") +
       (invoice.length > 1 ? ` · ${FARM_LABELS[farm] ?? farm}` : "") +
       ` · всего получено ${money(after)} из ${money(order.totalAmount)}`,
     amountBefore: order.paidAmount,

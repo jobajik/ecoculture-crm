@@ -1,4 +1,4 @@
-import { MONEY_EPSILON, ORDER_STATUSES, PAYMENT_METHODS } from "./constants";
+import { MIXED_PAYMENT_METHOD, MONEY_EPSILON, ORDER_STATUSES, PAYMENT_METHODS } from "./constants";
 import { canEditFinance } from "./financeAccess";
 
 /**
@@ -151,6 +151,44 @@ export function totalsAfter(
   const target = farm && farm in byFarm ? farm : farms.length === 1 ? farms[0] : "";
   if (target) byFarm[target] = Math.max(0, round2((byFarm[target] ?? 0) + delta));
   return { paidAmount: Math.max(0, round2((Number(paidAmount) || 0) + delta)), byFarm };
+}
+
+/**
+ * Вид оплаты заявки по её платежам: один способ — он и есть, разные —
+ * «Смешанная». Нет платежей — пусто (тогда остаётся то, что указал менеджер).
+ */
+export function methodOfPayments(methods: string[]): string {
+  const distinct = Array.from(new Set(methods.map((m) => m.trim()).filter(Boolean)));
+  if (distinct.length === 0) return "";
+  return distinct.length === 1 ? distinct[0] : MIXED_PAYMENT_METHOD;
+}
+
+/**
+ * Одно поступление, разложенное по способам: 70 000 картой + 50 000 наличными.
+ * Каждая часть — отдельный платёж со своим способом; одинаковые способы
+ * склеиваются, пустые строки выбрасываются. Отказ — если частей нет или
+ * какая-то часть неверна.
+ */
+export function splitPaymentLines(
+  lines: { amount: number; method: string }[]
+): { lines: { amount: number; method: string }[]; refusal: string } {
+  const byMethod = new Map<string, number>();
+  for (const line of lines) {
+    const amount = Number(line.amount);
+    if (!line.method && (!amount || amount === 0)) continue;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { lines: [], refusal: "У каждой части оплаты должна быть сумма больше нуля" };
+    }
+    if (!PAYMENT_METHODS.includes(line.method as never)) {
+      return { lines: [], refusal: "У каждой части оплаты выберите способ" };
+    }
+    byMethod.set(line.method, round2((byMethod.get(line.method) ?? 0) + amount));
+  }
+  if (byMethod.size === 0) return { lines: [], refusal: "Укажите сумму платежа" };
+  return {
+    lines: Array.from(byMethod.entries()).map(([method, amount]) => ({ method, amount })),
+    refusal: "",
+  };
 }
 
 function round2(n: number): number {

@@ -1,4 +1,4 @@
-import { appendRow, deleteWhere, readTable, rowToRecord, SHEET_TABS } from "../sheets";
+import { appendRow, appendRows, deleteWhere, readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import type { Payment } from "../types";
@@ -59,4 +59,27 @@ export async function appendPayment(input: Omit<Payment, "paymentId" | "createdA
 
 export async function deletePayment(paymentId: string): Promise<number> {
   return deleteWhere(SHEET_TABS.PAYMENTS, (record) => record.PaymentID === paymentId);
+}
+
+/** Несколько платежей одной записью — смешанная оплата (часть картой, часть наличными). */
+export async function appendPayments(
+  inputs: Omit<Payment, "paymentId" | "createdAt">[]
+): Promise<string[]> {
+  const createdAt = new Date().toISOString();
+  const ids = inputs.map(() => generateId("PAY"));
+  await appendRows(
+    SHEET_TABS.PAYMENTS,
+    inputs.map((input, i) => ({
+      PaymentID: ids[i],
+      CreatedAt: createdAt,
+      OrderID: input.orderId,
+      Date: input.date,
+      Amount: input.amount,
+      Farm: input.farm,
+      Method: input.method,
+      AccountantEmail: input.accountantEmail,
+      Note: input.note,
+    }))
+  );
+  return ids;
 }
