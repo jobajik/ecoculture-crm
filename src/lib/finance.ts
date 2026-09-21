@@ -2,12 +2,25 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
 import { ORDER_STATUSES, DEBT_OVERDUE_DAYS, MONEY_EPSILON, getFarmFor } from "./constants";
 import { isReadyToShip } from "./orderReady";
-import { hasNoClientInvoice } from "./orderKind";
+import { hasNoClientInvoice, isConsignment } from "./orderKind";
 import { cashByFlower, type CashByFlower } from "./cashByFlower";
 import { isRetailOrder } from "./retail";
 import { farmPayments, type FarmPayment } from "./orderMoney";
 import { orderCode, paymentStage, type PaymentStage } from "./paymentStage";
-import type { OrderWithItems } from "./types";
+import type { OrderWithItems, Payment } from "./types";
+import { listPayments } from "./repo/payments";
+
+/** Платёж в том виде, в каком его видит панель бухгалтера. */
+export interface FinancePayment {
+  paymentId: string;
+  /** Когда пришли деньги. */
+  date: string;
+  amount: number;
+  farm: string;
+  method: string;
+  /** Когда платёж внесли в программу — от этого зависит, можно ли его удалить. */
+  enteredOn: string;
+}
 
 // ---------------------------------------------------------------------------
 // Финансы для бухгалтера.
@@ -43,8 +56,20 @@ export interface FinanceOrderRow {
   paymentMethod: string;
   /** Сколько денег получено. */
   paidAmount: number;
-  /** Сколько осталось получить. Ноль — вопрос закрыт. */
+  /**
+   * Сколько осталось получить. Ноль — вопрос закрыт. У заявки НА РЕАЛИЗАЦИЮ
+   * (пожарка) всегда ноль: остаток там не долг, а цветок, который ещё не
+   * продан, — он лежит в `onConsignment`.
+   */
   debt: number;
+  /** Заявка на реализацию: платят за проданное, в долги и звонки не идёт. */
+  consignment: boolean;
+  /** Сколько по заявке на реализации ещё не оплачено. У обычной заявки — ноль. */
+  onConsignment: number;
+  /** Номер реализации в 1С. */
+  realization1c: string;
+  /** Платежи по заявке — по строке на поступление (вкладка Payments). */
+  payments: FinancePayment[];
   /** Сколько получено сверх суммы заявки — обычно после пересчёта по рекламации. */
   overpaid: number;
   promisedAt: string;
@@ -234,14 +259,32 @@ export async function getFinanceSnapshot(
   period: FinancePeriod = "day",
   anchorDate?: string,
   now: Date = new Date(),
-  injected?: { orders: OrderWithItems[]; users: Awaited<ReturnType<typeof listUsers>> }
+  injected?: {
+    orders: OrderWithItems[];
+    users: Awaited<ReturnType<typeof listUsers>>;
+    payments?: Payment[];
+  }
 ): Promise<FinanceSnapshot> {
   const anchor =
     anchorDate && /^\d{4}-\d{2}-\d{2}$/.test(anchorDate) ? parseKey(anchorDate) : new Date(now);
 
-  const [orders, users] = injected
-    ? [injected.orders, injected.users]
-    : await Promise.all([listOrdersWithItems(), listUsers()]);
+  const [orders, users, payments] = injected
+    ? [injected.orders, injected.users, injected.payments ?? []]
+    : await Promise.all([listOrdersWithItems(), listUsers(), listPayments()]);
+  // Платежи по заявке — для панели бухгалтера: видно, какими частями платили.
+  const paymentsByOrder = new Map<string, FinancePayment[]>();
+  for (const p of payments) {
+    const list = paymentsByOrder.get(p.orderId) ?? [];
+    list.push({
+      paymentId: p.paymentId,
+      date: p.date,
+      amount: p.amount,
+      farm: p.farm,
+      method: p.method,
+      enteredOn: (p.createdAt || "").slice(0, 10),
+    });
+    paymentsByOrder.set(p.orderId, list);
+  }
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
   // Заявки в наши магазины сюда не попадают вовсе. Это внутреннее перемещение:
@@ -256,6 +299,7 @@ export async function getFinanceSnapshot(
   const toRow = (order: OrderWithItems): FinanceOrderRow => {
     const amount = order.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
     const paidAmount = order.paidAmount;
+    const consignment = isConsignment(order);
     return {
       orderId: order.orderId,
       createdAt: order.createdAt,
@@ -275,7 +319,12 @@ export async function getFinanceSnapshot(
       paidAmount,
       // Остаток меньше тенге — это округление при пересчёте, а не долг. Без
       // этого заявка навсегда осталась бы в списке звонков из-за копейки.
-      debt: amount - paidAmount > MONEY_EPSILON ? amount - paidAmount : 0,
+      // Реализация (пожарка) долгом не бывает — см. `isConsignment`.
+      debt: !consignment && amount - paidAmount > MONEY_EPSILON ? amount - paidAmount : 0,
+      consignment,
+      onConsignment: consignment && amount - paidAmount > MONEY_EPSILON ? amount - paidAmount : 0,
+      realization1c: order.realization1c,
+      payments: paymentsByOrder.get(order.orderId) ?? [],
       overpaid: Math.max(0, paidAmount - amount),
       promisedAt: order.promisedAt,
       collectionNote: order.collectionNote,
@@ -473,7 +522,9 @@ export async function getFinanceSnapshot(
     totals: {
       amount,
       paidAmount,
-      unpaidAmount: amount - paidAmount,
+      // Ждём — это ДОЛГ, а не «сумма минус получено»: у заявки на реализацию
+      // (пожарка) неоплаченное — непроданный цветок, его не ждут (orderKind.ts).
+      unpaidAmount: periodRows.reduce((s, r) => s + r.debt, 0),
       orders: periodRows.length,
       paidOrders,
       partlyPaidOrders,

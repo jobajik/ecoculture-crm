@@ -20,6 +20,7 @@ export const SHEET_TABS = {
   CLIENTS: "Clients",
   SETTINGS: "Settings",
   STAFF_TAKEOUTS: "StaffTakeouts",
+  PAYMENTS: "Payments",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -107,6 +108,13 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     //
     // Колонка последняя (грабли 1.1).
     "InvoiceNote",
+    // Номер документа реализации в 1С. Бухгалтер ведёт учёт в 1С и в CRM
+    // параллельно, и без номера связать одну заявку с одним документом можно
+    // было только по сумме и клиенту — то есть на глаз. Вписывает бухгалтер,
+    // по нему работает поиск в «Оплатах».
+    //
+    // Колонка последняя (грабли 1.1).
+    "Realization1C",
   ],
   // Клиентская база. Заводит менеджер, правит свой менеджер, РОП и админ.
   [SHEET_TABS.CLIENTS]: [
@@ -281,6 +289,24 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "WarehouseEmail",
     "Note",
   ],
+  // Платежи по заявке — по строке на каждое поступление. До них у заявки была
+  // одна сумма «получено всего», и второй платёж бухгалтер складывала с первым
+  // в уме, а какими частями платил клиент, не видел никто. Итог по-прежнему
+  // лежит в Orders.PaidAmount: он нужен всем расчётам, и собирать его из
+  // журнала на каждой странице значило бы лишнее чтение (грабли 1.15).
+  // Farm — какому ТОО пришли деньги (у смешанной заявки счетов два), пусто —
+  // заявка одного производства.
+  [SHEET_TABS.PAYMENTS]: [
+    "PaymentID",
+    "CreatedAt",
+    "OrderID",
+    "Date",
+    "Amount",
+    "Farm",
+    "Method",
+    "AccountantEmail",
+    "Note",
+  ],
 };
 
 /**
@@ -292,6 +318,17 @@ export const SHEET_HEADERS: Record<string, string[]> = {
  * Деньги появляются позже и с другой стороны — бухгалтер вписывает, сколько
  * по этому городу поступило.
  */
+/**
+ * Направления, куда цветок уходит НА РЕАЛИЗАЦИЮ, а не продаётся.
+ *
+ * Пожарка забирает цветок, продаёт сколько получится и платит за проданное;
+ * остаток на руках у неё есть всегда. Считать такую заявку обычной продажей
+ * значило бы держать её в долгах, просрочке и списке звонков вечно — бухгалтер
+ * так и сказала: «там всегда будет висеть задолженность». Список закрытый, как
+ * и сами направления.
+ */
+export const CONSIGNMENT_DIRECTIONS: string[] = ["Пожарка"];
+
 export const ORDER_KINDS = {
   CLIENT: "",
   REGION: "region",
@@ -470,6 +507,10 @@ export const MONEY_LOG_ACTIONS = {
   ORDER_DELETED: "order_deleted",
   // Зав. складом поправила свои позиции: заказали одно, в холодильнике другое.
   WAREHOUSE_ADJUSTED: "warehouse_adjusted",
+  // Отдельный платёж по заявке и его удаление (ошибся суммой — удалил).
+  PAYMENT_ADDED: "payment_added",
+  PAYMENT_REMOVED: "payment_removed",
+  REALIZATION_1C: "realization_1c",
 } as const;
 export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
 
@@ -480,6 +521,9 @@ export const MONEY_LOG_LABELS: Record<string, string> = {
   invoice_sent: "Счёт клиенту",
   order_deleted: "Заявка удалена",
   warehouse_adjusted: "Правка склада",
+  payment_added: "Платёж",
+  payment_removed: "Платёж удалён",
+  realization_1c: "Номер реализации 1С",
   payment: "Оплата",
   payment_cleared: "Оплата снята",
   recalculated: "Пересчёт заявки",

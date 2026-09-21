@@ -1,5 +1,5 @@
 import { DEBT_OVERDUE_DAYS, MONEY_EPSILON, ORDER_STATUSES, ROLES } from "./constants";
-import { isRegionOrder } from "./orderKind";
+import { isConsignment, isRegionOrder } from "./orderKind";
 import { isRetailOrder } from "./retail";
 import { isReadyToShip, missingForShip } from "./orderReady";
 import { newOrderLinkFor } from "./newOrder";
@@ -64,6 +64,8 @@ export interface FocusOrder {
   totalAmount: number;
   retail?: string;
   kind?: string;
+  /** Направление: заявка на реализацию (пожарка) долгом не считается. */
+  direction?: string;
 }
 
 const num = (n: number) => n.toLocaleString("ru-RU");
@@ -72,6 +74,8 @@ const num = (n: number) => n.toLocaleString("ru-RU");
 function debtOf(o: FocusOrder): number {
   if (o.status === ORDER_STATUSES.CANCELLED) return 0;
   if (isRetailOrder(o)) return 0;
+  // Реализация — не долг: платят за проданное, остаток есть всегда (finance.ts).
+  if (isConsignment(o)) return 0;
   const rest = o.totalAmount - o.paidAmount;
   return rest > MONEY_EPSILON ? rest : 0;
 }

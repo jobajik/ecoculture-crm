@@ -1,4 +1,4 @@
-import { ORDER_KINDS, ROLES, SHIPMENT_DIRECTIONS } from "./constants";
+import { CONSIGNMENT_DIRECTIONS, ORDER_KINDS, ROLES, SHIPMENT_DIRECTIONS } from "./constants";
 import { cleanDirection } from "./direction";
 
 /**
@@ -58,6 +58,23 @@ export function hasNoClientInvoice(
 }
 
 /** Кто заводит городские заявки. Это работа РОПа — так решил владелец. */
+/**
+ * Заявка на РЕАЛИЗАЦИЮ (сейчас — пожарка): цветок забирают, продают сколько
+ * получится и платят за проданное. Счёт есть и деньги есть, но долга в обычном
+ * смысле нет: «там всегда будет висеть задолженность», и держать такую заявку в
+ * просрочке и в списке звонков значило бы звонить туда каждый день впустую.
+ *
+ * Отличие от `hasNoClientInvoice`: там денег нет вовсе, здесь они приходят —
+ * частями, по мере продаж. Поэтому это отдельная функция, а не третий случай
+ * той: в выручку и бонусы полученные деньги идут как обычно.
+ */
+export function isConsignment(
+  order: { direction?: string; retail?: string; kind?: string } | null | undefined
+): boolean {
+  if (!order || hasNoClientInvoice(order)) return false;
+  return CONSIGNMENT_DIRECTIONS.includes(cleanDirection(order.direction));
+}
+
 export function canFillRegionOrders(role: string | null | undefined): boolean {
   return role === ROLES.SALES_HEAD || role === ROLES.ADMIN;
 }

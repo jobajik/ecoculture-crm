@@ -1,3 +1,4 @@
+import { byNewest } from "./picklistOrder";
 import { listOrdersWithItems } from "./repo/orders";
 import { listBatches } from "./repo/batches";
 import { listUsers } from "./repo/users";
@@ -34,6 +35,8 @@ export interface PicklistOrder {
   clientPhone: string;
   managerName: string;
   managerEmail: string;
+  /** Когда заявку оформили — по нему заявки идут на листе, свежие первыми. */
+  createdAt: string;
   status: string;
   notes: string;
   /** Две «зелёные галочки»: менеджер согласовал и бухгалтер увидел деньги. */
@@ -126,6 +129,7 @@ export async function getPicklist(
     clientPhone: order.clientPhone,
     managerName: nameByEmail.get(order.managerEmail) ?? order.managerEmail,
     managerEmail: order.managerEmail,
+    createdAt: order.createdAt,
     status: order.status,
     notes: order.notes,
     managerConfirmed: order.managerConfirmed,
@@ -237,7 +241,7 @@ export async function getPicklist(
   const picklistOrders = forDate
     .map(toPicklistOrder)
     .filter((o) => o.items.length > 0)
-    .sort((a, b) => a.clientName.localeCompare(b.clientName, "ru"));
+    .sort(byNewest);
 
   const [y, m, d] = date.split("-").map(Number);
   const dateLabel = new Date(y, (m || 1) - 1, d || 1).toLocaleDateString("ru-RU", {
@@ -266,3 +270,4 @@ export async function getPicklist(
     nearbyDates,
   };
 }
+

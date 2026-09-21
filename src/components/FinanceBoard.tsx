@@ -195,7 +195,7 @@ export default function FinanceBoard({
         </div>
         <input
           className="input !w-auto flex-1 min-w-[200px] !py-1.5"
-          placeholder="Номер заявки, клиент или менеджер"
+          placeholder="Номер заявки, 1С, клиент, менеджер или сумма"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -312,6 +312,15 @@ export default function FinanceBoard({
                               className="text-xs text-ink-muted truncate max-w-[180px] sm:max-w-[420px] pl-5"
                               title={r.positions}
                             >
+                              {/* Как клиент собирался платить — знает только
+                                  менеджер, и бухгалтеру это нужно до того, как
+                                  деньги придут (просьба Юлии). */}
+                              {r.consignment && (
+                                <span className="text-[#8a5a00]">на реализации · </span>
+                              )}
+                              {r.paymentMethod && !r.paid && (
+                                <span className="text-ink-secondary">{r.paymentMethod} · </span>
+                              )}
                               {r.positions}
                             </div>
                           </td>
@@ -320,6 +329,13 @@ export default function FinanceBoard({
                               только чтобы сверить строку с тем, что назвали. */}
                           <td className="px-2 py-2.5 font-mono text-xs text-ink-muted whitespace-nowrap">
                             {r.code}
+                            {/* Номер реализации 1С — под номером заявки: оба
+                                служебные, и сверяют их всегда вместе. */}
+                            {r.realization1c && (
+                              <div className="text-[11px] text-ink-secondary" title="№ реализации в 1С">
+                                1С {r.realization1c}
+                              </div>
+                            )}
                           </td>
                           {/* Две даты в одной ячейке: сверху оформлена, снизу
                               доставка. По отдельности они съедали две колонки,
@@ -372,6 +388,11 @@ export default function FinanceBoard({
                                 paidAmount={r.paidAmount}
                                 farms={r.farms}
                                 invoiceSentAt={r.invoiceSentAt}
+                                payments={r.payments}
+                                realization1c={r.realization1c}
+                                defaultMethod={r.paymentMethod}
+                                status={r.status}
+                                consignment={r.consignment}
                                 onDone={() => setOpenId(null)}
                               />
                             </td>

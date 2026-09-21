@@ -197,6 +197,7 @@ export default async function NewOrderPage({
       mine: c.managerEmail === myEmail,
       orders: statByClient.get(c.clientId)?.orders ?? 0,
       daysSinceLast: statByClient.get(c.clientId)?.daysSinceLast ?? -1,
+      paymentMethod: c.paymentMethod,
     }));
 
   const preselected = searchParams?.client

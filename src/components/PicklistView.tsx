@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { FARM_ORDER, FLOWER_TYPE_LABELS_PLURAL, farmLabel, formatGrade } from "@/lib/constants";
 import type { Picklist, PicklistLine, PicklistOrder } from "@/lib/picklist";
+import { orderPicklistColumns } from "@/lib/picklistOrder";
 import { orders as orderWord } from "@/lib/plural";
 
 const TYPE_ORDER = ["rose", "chrysanthemum", "eustoma"];
@@ -68,11 +69,9 @@ export default function PicklistView({
 
   // Клиенты становятся колонками и группируются по менеджерам — так на листе
   // сразу видно, чьи это заявки, и не нужно сверяться с легендой.
-  const clients = [...picklist.orders].sort(
-    (a, b) =>
-      a.managerName.localeCompare(b.managerName, "ru") ||
-      a.clientName.localeCompare(b.clientName, "ru")
-  );
+  // Порядок — свежие заявки первыми (просьба РОПа), а не по алфавиту:
+  // `orderPicklistColumns` в src/lib/picklist.ts.
+  const clients = orderPicklistColumns(picklist.orders);
 
   const managerGroups: { manager: string; count: number; stems: number }[] = [];
   for (const c of clients) {

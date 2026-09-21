@@ -27,6 +27,7 @@ export default function ReadyChecks({
   invoiceSentAt = "",
   retail = "",
   kind = "",
+  consignment = false,
   canConfirm,
 }: {
   orderId: string;
@@ -43,6 +44,11 @@ export default function ReadyChecks({
   retail?: string;
   /** Вид заявки: «region» — оптовый объём на город, счёта по нему нет. */
   kind?: string;
+  /**
+   * Заявка на реализацию (пожарка): платят за проданное, ПОСЛЕ отгрузки, —
+   * поэтому собирать её можно по одной галочке менеджера (orderReady.ts).
+   */
+  consignment?: boolean;
   canConfirm: boolean;
 }) {
   const router = useRouter();
@@ -55,7 +61,7 @@ export default function ReadyChecks({
   const isRetail = !!retail.trim();
   const isRegion = kind.trim().toLowerCase() === "region";
   const noInvoice = isRetail || isRegion;
-  const ready = managerConfirmed && (noInvoice || paid);
+  const ready = managerConfirmed && (noInvoice || consignment || paid);
   const partial = !paid && paidAmount > 0;
   // Счёт отправлен, но денег ещё нет — промежуточная ступень между «ничего не
   // сделано» и «оплачено». Без неё серая клетка означала сразу два разных
@@ -93,7 +99,9 @@ export default function ReadyChecks({
                 ? "Заявка подтверждена — склад может собирать. Это объём на город: счёта нет, поступления бухгалтер отметит отдельно."
                 : isRetail
                   ? "Менеджер розницы подтвердил заявку — склад может собирать. Это наш магазин, оплата по заявке не нужна."
-                  : "Менеджер согласовал заявку и бухгалтер подтвердил оплату — склад может собирать."
+                  : consignment
+                    ? "Менеджер подтвердил — склад может собирать. Это реализация: платят за проданное, после отгрузки."
+                    : "Менеджер согласовал заявку и бухгалтер подтвердил оплату — склад может собирать."
               : "Склад увидит заявку, но она будет помечена как неготовая."}
           </p>
         </div>
@@ -171,11 +179,13 @@ export default function ReadyChecks({
                   ? `Получено ${money(paidAmount)} из ${money(totalAmount)}`
                   : invoiceSent
                     ? `Счёт у клиента с ${formatDay(invoiceSentAt, "")} — ждём деньги`
-                    : "Отмечает бухгалтер в разделе «Оплаты»"}
+                    : consignment
+                      ? "Реализация: деньги приходят по мере продаж и сборку не держат"
+                      : "Отмечает бухгалтер в разделе «Оплаты»"}
             </div>
             {partial && (
               <div className="text-xs text-[#8a5a00] mt-0.5">
-                Остаток {money(totalAmount - paidAmount)}
+                {consignment ? "На реализации ещё" : "Остаток"} {money(totalAmount - paidAmount)}
               </div>
             )}
           </div>

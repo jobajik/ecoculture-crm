@@ -18,7 +18,7 @@ import {
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ReadyChecks from "@/components/ReadyChecks";
 import RegionIncomePanel from "@/components/RegionIncomePanel";
-import { canFillRegionOrders, isRegionOrder } from "@/lib/orderKind";
+import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKind";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
@@ -42,6 +42,10 @@ import DeleteOrder from "@/components/DeleteOrder";
 import OrderDirection from "@/components/OrderDirection";
 import { directionEditRefusal, directionForCity } from "@/lib/direction";
 import { canDeleteOrder } from "@/lib/orderDelete";
+import { listPayments } from "@/lib/repo/payments";
+import PaymentPanel from "@/components/PaymentPanel";
+import { canEditFinance } from "@/lib/financeAccess";
+import { paymentHistory } from "@/lib/payments";
 
 export const dynamic = "force-dynamic";
 
@@ -91,12 +95,27 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       }
     : loaded;
 
-  const [allShipments, allClaims, users, client] = await Promise.all([
+  const [allShipments, allClaims, users, client, allPayments] = await Promise.all([
     listShipments(),
     listClaims(),
     listUsers(),
     loaded.clientId ? getClientById(loaded.clientId) : Promise.resolve(null),
+    // Платежи нужны только тем, кто видит деньги заявки; складу — нет.
+    farm || retail ? Promise.resolve([]) : listPayments(),
   ]);
+  const orderPayments = allPayments
+    .filter((p) => p.orderId === loaded.orderId)
+    .map((p) => ({
+      paymentId: p.paymentId,
+      date: p.date,
+      amount: p.amount,
+      farm: p.farm,
+      method: p.method,
+      enteredOn: (p.createdAt || "").slice(0, 10),
+    }));
+  // Бухгалтер работает с оплатой прямо на заявке (просьба Юлии: «неудобно
+  // заходить в заявку, потом искать её в неоплаченных и ставить отметку»).
+  const canTakeMoney = canEditFinance(role) && !farm && !retail && !isRegionOrder(loaded);
 
   // Счёт по компаниям. Компанию не выбирают руками: роза и эустома идут от Rose
   // Farm, хризантема от Есентая, а в смешанной заявке счетов два, и клиент
@@ -235,6 +254,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         totalAmount={order.totalAmount}
         retail={order.retail}
         kind={order.kind}
+        consignment={isConsignment(order)}
         invoiceSentAt={order.invoiceSentAt}
         canConfirm={
           role === "admin" ||
@@ -300,7 +320,44 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               ? "В заявке цветок обоих производств — счёта два, и клиент платит двумя переводами. Бухгалтер отмечает каждый отдельно."
               : "Компания определяется по цветку в заявке, выбирать её не нужно."}
             {kaspiOfClient.length > 0 && ` Клиент платит с Kaspi ${kaspiOfClient.join(" / ")}.`}
+            {order.paymentMethod && ` Вид оплаты по заявке: ${order.paymentMethod}.`}
+            {loaded.realization1c && ` Реализация 1С № ${loaded.realization1c}.`}
           </p>
+          {/* Какими частями платил клиент — видно всем, кто видит счёт. */}
+          {!canTakeMoney && orderPayments.length > 0 && (
+            <div className="mt-3 text-sm">
+              <div className="label">Платежи</div>
+              <ul className="space-y-0.5">
+                {paymentHistory(loaded.paidAmount, orderPayments).rows.map((p) => (
+                  <li key={p.paymentId} className="tabular-nums">
+                    {Math.round(p.amount).toLocaleString("ru-RU")} ₸
+                    <span className="text-ink-muted">
+                      {" "}
+                      · {formatDay(p.date)} · {p.method}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {canTakeMoney && (
+        <div className="card mb-6">
+          <div className="text-sm font-medium mb-3">Оплата</div>
+          <PaymentPanel
+            orderId={loaded.orderId}
+            totalAmount={loaded.totalAmount}
+            paidAmount={loaded.paidAmount}
+            farms={farmPayments(loaded)}
+            invoiceSentAt={loaded.invoiceSentAt}
+            payments={orderPayments}
+            realization1c={loaded.realization1c}
+            defaultMethod={loaded.paymentMethod}
+            status={loaded.status}
+            consignment={isConsignment(loaded)}
+          />
         </div>
       )}
 

@@ -173,16 +173,37 @@ export function orderCode(orderId: string | null | undefined): string {
  * заявку, что и «24831».
  */
 export function matchesOrderSearch(
-  row: { orderId: string; clientName: string; managerName: string },
+  row: {
+    orderId: string;
+    clientName: string;
+    managerName: string;
+    /** Сумма заявки — бухгалтер ищет по сумме из выписки. */
+    amount?: number;
+    /** Номер реализации в 1С. */
+    realization1c?: string;
+  },
   query: string
 ): boolean {
   const q = String(query ?? "").trim().toLowerCase();
   if (!q) return true;
   if (row.clientName.toLowerCase().includes(q)) return true;
   if (row.managerName.toLowerCase().includes(q)) return true;
+  if ((row.realization1c || "").toLowerCase().includes(q)) return true;
 
   const digits = q.replace(/[\s-]/g, "");
   if (!digits) return false;
   if (orderCode(row.orderId).toLowerCase().includes(digits)) return true;
-  return row.orderId.toLowerCase().replace(/[\s-]/g, "").includes(digits);
+  if (row.orderId.toLowerCase().replace(/[\s-]/g, "").includes(digits)) return true;
+  if ((row.realization1c || "").toLowerCase().replace(/[\s-]/g, "").includes(digits)) return true;
+
+  // Сумма: «150 000», «150000» и «150000 ₸» — одно и то же. Совпадение целиком
+  // или, от четырёх цифр, частью: по трём цифрам нашлась бы половина базы.
+  const sumQuery = q.replace(/[\s₸тг.]/g, "").replace(",", ".");
+  if (/^\d+(\.\d+)?$/.test(sumQuery) && row.amount !== undefined) {
+    const whole = String(Math.round(Number(row.amount) || 0));
+    const wanted = String(Math.round(Number(sumQuery)));
+    if (whole === wanted) return true;
+    if (wanted.length >= 4 && whole.includes(wanted)) return true;
+  }
+  return false;
 }

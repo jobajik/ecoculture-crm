@@ -4,10 +4,15 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import {
+  addPaymentAction,
+  removePaymentAction,
   setInvoiceSentAction,
   setPaymentAction,
   setPaymentByFarmAction,
+  setRealizationAction,
 } from "@/app/finance/actions";
+import type { FinancePayment } from "@/lib/finance";
+import { paymentHistory } from "@/lib/payments";
 import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
 import { PAYMENT_METHODS } from "@/lib/constants";
@@ -37,6 +42,11 @@ export default function PaymentPanel({
   paidAmount,
   farms = [],
   invoiceSentAt = "",
+  payments = [],
+  realization1c = "",
+  defaultMethod = "",
+  status = "",
+  consignment = false,
   onDone,
 }: {
   orderId: string;
@@ -49,20 +59,343 @@ export default function PaymentPanel({
   farms?: FarmPayment[];
   /** Когда счёт отправили клиенту. Пусто — не отправляли. */
   invoiceSentAt?: string;
+  /** Платежи по заявке, по строке на поступление. */
+  payments?: FinancePayment[];
+  /** Номер реализации в 1С. */
+  realization1c?: string;
+  /** Как клиент собирался платить — указал менеджер в заявке. */
+  defaultMethod?: string;
+  status?: string;
+  /** Заявка на реализацию (пожарка): платят за проданное, остаток — не долг. */
+  consignment?: boolean;
   onDone?: () => void;
 }) {
   return (
     <div className="space-y-4">
       <InvoiceRow orderId={orderId} invoiceSentAt={invoiceSentAt} />
-      {farms.length > 1 ? (
-        <SplitPayment orderId={orderId} totalAmount={totalAmount} farms={farms} onDone={onDone} />
-      ) : (
-        <WholePayment
-          orderId={orderId}
-          totalAmount={totalAmount}
-          paidAmount={paidAmount}
-          onDone={onDone}
+      <RealizationRow orderId={orderId} value={realization1c} />
+      {consignment && (
+        <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">
+          Это заявка на реализацию: клиент платит за то, что продал, и остаток здесь не долг, а
+          непроданный цветок. В долги и звонки она не попадает — вносите деньги платежами по мере
+          поступления.
+        </p>
+      )}
+      <PaymentsList
+        orderId={orderId}
+        totalAmount={totalAmount}
+        paidAmount={paidAmount}
+        payments={payments}
+        farms={farms}
+        status={status}
+      />
+      <AddPayment
+        orderId={orderId}
+        totalAmount={totalAmount}
+        paidAmount={paidAmount}
+        farms={farms}
+        defaultMethod={defaultMethod}
+      />
+      {/* Прежний способ — «получено всего» одним числом — остался для
+          исправлений: вернули переплату, сняли ошибочную оплату, старая заявка
+          без журнала. Он свёрнут: в обычной работе вносят платёж, а не итог. */}
+      <details className="rounded-xl border border-line-hairline px-3 py-2">
+        <summary className="text-sm text-ink-secondary cursor-pointer select-none">
+          Исправить итог вручную
+        </summary>
+        <div className="pt-3">
+          <p className="text-xs text-ink-muted mb-3">
+            Здесь вписывается «получено всего» одним числом, мимо списка платежей. Нужно только для
+            исправлений — разница с платежами будет видна отдельной строкой.
+          </p>
+          {farms.length > 1 ? (
+            <SplitPayment orderId={orderId} totalAmount={totalAmount} farms={farms} onDone={onDone} />
+          ) : (
+            <WholePayment
+              orderId={orderId}
+              totalAmount={totalAmount}
+              paidAmount={paidAmount}
+              onDone={onDone}
+            />
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dayLabel(key: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return key || "—";
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/**
+ * Номер реализации в 1С. Бухгалтер ведёт учёт и там, и здесь, и без номера
+ * заявку с документом связывали по сумме и клиенту — на глаз.
+ */
+function RealizationRow({ orderId, value }: { orderId: string; value: string }) {
+  const router = useRouter();
+  const [draft, setDraft] = useState(value);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const changed = draft.trim() !== value.trim();
+
+  function save() {
+    setError(null);
+    setSaved(false);
+    startTransition(async () => {
+      try {
+        unwrap(await setRealizationAction(orderId, draft));
+        setSaved(true);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Не удалось сохранить");
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 pb-3 border-b border-line-hairline">
+      <label className="text-sm">
+        <span className="block text-ink-secondary mb-1">№ реализации в 1С</span>
+        <input
+          className="input !w-48"
+          value={draft}
+          placeholder="например, РН-000123"
+          maxLength={40}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setSaved(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && changed) save();
+          }}
         />
+      </label>
+      {changed && (
+        <button onClick={save} disabled={pending} className="btn-secondary disabled:opacity-50">
+          {pending ? "Сохраняю…" : "Сохранить номер"}
+        </button>
+      )}
+      {saved && !changed && <span className="text-sm text-status-good">сохранено</span>}
+      {error && <span className="text-sm text-status-critical">{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * Какими частями платил клиент. Раньше это было одно число «получено всего», и
+ * второй платёж бухгалтер складывала с первым в уме.
+ */
+function PaymentsList({
+  orderId,
+  totalAmount,
+  paidAmount,
+  payments,
+  farms,
+  status,
+}: {
+  orderId: string;
+  totalAmount: number;
+  paidAmount: number;
+  payments: FinancePayment[];
+  farms: FarmPayment[];
+  status: string;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const history = paymentHistory(paidAmount, payments);
+  const today = todayKey();
+  const farmLabel = (farm: string) => farms.find((f) => f.farm === farm)?.farmLabel ?? farm;
+
+  function remove(p: FinancePayment) {
+    if (!window.confirm(`Удалить платёж ${money(p.amount)} за ${dayLabel(p.date)}?`)) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await removePaymentAction(orderId, p.paymentId));
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Не удалось удалить");
+      }
+    });
+  }
+
+  if (history.rows.length === 0 && history.unrecorded === 0) {
+    return <p className="text-sm text-ink-muted">Платежей по заявке пока нет.</p>;
+  }
+
+  const left = totalAmount - paidAmount;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm font-medium">Платежи</div>
+      <ul className="text-sm divide-y divide-line-hairline rounded-xl border border-line-hairline">
+        {history.unrecorded !== 0 && (
+          <li className="flex flex-wrap items-baseline gap-x-3 px-3 py-2 text-ink-secondary">
+            <span className="tabular-nums font-medium w-28">{money(history.unrecorded)}</span>
+            <span className="flex-1 min-w-0">
+              {history.unrecorded > 0
+                ? "внесено раньше одной суммой, без разбивки на платежи"
+                : "исправление итога вручную"}
+            </span>
+          </li>
+        )}
+        {history.rows.map((p) => {
+          const full = payments.find((x) => x.paymentId === p.paymentId)!;
+          const canRemove =
+            status !== "cancelled" && (status !== "shipped" || full.enteredOn === today);
+          return (
+            <li key={p.paymentId} className="flex flex-wrap items-baseline gap-x-3 px-3 py-2">
+              <span className="tabular-nums font-medium w-28">{money(p.amount)}</span>
+              <span className="flex-1 min-w-0 text-ink-secondary">
+                {dayLabel(p.date)} · {p.method}
+                {p.farm && farms.length > 1 && ` · ${farmLabel(p.farm)}`}
+              </span>
+              {canRemove && (
+                <button
+                  onClick={() => remove(full)}
+                  disabled={pending}
+                  className="text-xs text-ink-muted hover:text-status-critical disabled:opacity-50"
+                >
+                  удалить
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-xs text-ink-muted">
+        Всего получено {money(paidAmount)} из {money(totalAmount)}
+        {left > 1 && ` · остаток ${money(left)}`}
+        {left < -1 && ` · переплата ${money(-left)}`}.
+      </p>
+      {error && (
+        <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Новый платёж: сколько пришло, когда и как. Итог заявки сервер складывает
+ * сам — «к предыдущей сумме вручную добавлять последующую» больше не нужно.
+ */
+function AddPayment({
+  orderId,
+  totalAmount,
+  paidAmount,
+  farms,
+  defaultMethod,
+}: {
+  orderId: string;
+  totalAmount: number;
+  paidAmount: number;
+  farms: FarmPayment[];
+  defaultMethod: string;
+}) {
+  const router = useRouter();
+  const split = farms.length > 1;
+  // У смешанной заявки сразу выбрана компания, которой ещё недоплатили.
+  const firstOwed = farms.find((f) => f.amount - f.paidAmount > 1)?.farm ?? farms[0]?.farm ?? "";
+  const [farm, setFarm] = useState(split ? firstOwed : "");
+  const owedFor = (f: string) => {
+    const row = farms.find((x) => x.farm === f);
+    return split && row ? Math.max(0, row.amount - row.paidAmount) : Math.max(0, totalAmount - paidAmount);
+  };
+  const [amount, setAmount] = useState<number>(0);
+  const [date, setDate] = useState(todayKey());
+  const [method, setMethod] = useState<string>(
+    PAYMENT_METHODS.includes(defaultMethod as never) ? defaultMethod : PAYMENT_METHODS[0]
+  );
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const owed = owedFor(farm);
+
+  function save() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await addPaymentAction({ orderId, amount, date, method, farm }));
+        setAmount(0);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Не удалось сохранить");
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-medium">Поступил платёж</div>
+      <div className="flex flex-wrap items-end gap-3">
+        {split && (
+          <label className="text-sm">
+            <span className="block text-ink-secondary mb-1">Какой компании</span>
+            <select className="input !w-auto" value={farm} onChange={(e) => setFarm(e.target.value)}>
+              {farms.map((f) => (
+                <option key={f.farm} value={f.farm}>
+                  {f.farmLabel}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="text-sm">
+          <span className="block text-ink-secondary mb-1">Сумма, ₸</span>
+          <input
+            className="input !w-36 text-right tabular-nums"
+            inputMode="decimal"
+            value={amount ? amount.toLocaleString("ru-RU") : ""}
+            placeholder={owed > 0 ? Math.round(owed).toLocaleString("ru-RU") : ""}
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => setAmount(parseNumber(e.target.value))}
+          />
+        </label>
+        <label className="text-sm">
+          <span className="block text-ink-secondary mb-1">Когда пришли</span>
+          <input
+            type="date"
+            className="input !w-auto"
+            value={date}
+            max={todayKey()}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <MethodSelect value={method} onChange={setMethod} />
+        <button
+          onClick={save}
+          disabled={pending || amount <= 0}
+          className="btn-primary disabled:opacity-50"
+        >
+          {pending ? "Сохраняю…" : "Внести платёж"}
+        </button>
+        {owed > 1 && amount !== Math.round(owed * 100) / 100 && (
+          <button
+            type="button"
+            onClick={() => setAmount(Math.round(owed * 100) / 100)}
+            className="btn-secondary"
+          >
+            Весь остаток {money(owed)}
+          </button>
+        )}
+      </div>
+      {defaultMethod && (
+        <p className="text-xs text-ink-muted">Менеджер указал в заявке: {defaultMethod}.</p>
+      )}
+      {error && (
+        <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
+          {error}
+        </div>
       )}
     </div>
   );

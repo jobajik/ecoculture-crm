@@ -68,6 +68,7 @@ function toOrder(record: Record<string, string>): Order {
     kind: cleanOrderKind(record.Kind),
     invoiceSentAt: toIsoDateTime(record.InvoiceSentAt),
     invoiceNote: (record.InvoiceNote || "").trim(),
+    realization1c: (record.Realization1C || "").trim(),
   };
 }
 
@@ -101,6 +102,8 @@ export interface NewOrderItemInput {
 
 export interface NewOrderInput {
   managerEmail: string;
+  /** Как клиент будет платить — ставит менеджер; пусто — не знает. */
+  paymentMethod?: string;
   /**
    * Направление розницы, если заявка в наш магазин. Пишется снимком: карточку
    * магазина потом могут перевести в другое направление или закрыть, а старая
@@ -175,7 +178,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     ManagerConfirmedAt: "",
     Paid: "FALSE",
     PaidAt: "",
-    PaymentMethod: "",
+    PaymentMethod: input.paymentMethod || "",
     AccountantEmail: "",
     PaidAmount: 0,
     PromisedAt: "",
@@ -295,7 +298,28 @@ export async function setOrderPaymentByFarm(
   return writePayment(orderId, { amount, totalAmount, accountantEmail, paymentMethod, byField });
 }
 
-/** Общая часть обеих записей оплаты: итог, флаг, дата, способ, кто внёс. */
+/**
+ * Итог оплаты после отдельного платежа (журнал Payments).
+ *
+ * `paidAt` — день ПЕРВОГО поступления по журналу: платёж вносят и задним
+ * числом, и тогда «когда пришли деньги» должно быть днём денег, а не днём,
+ * когда бухгалтер добралась до заявки.
+ */
+export async function setOrderPaidTotals(
+  orderId: string,
+  input: {
+    amount: number;
+    totalAmount: number;
+    accountantEmail: string;
+    paymentMethod: string;
+    byField: Partial<Record<FarmMoney["field"], number>>;
+    paidAt: string;
+  }
+): Promise<boolean> {
+  return writePayment(orderId, input);
+}
+
+/** Общая часть всех записей оплаты: итог, флаг, дата, способ, кто внёс. */
 async function writePayment(
   orderId: string,
   input: {
@@ -304,6 +328,8 @@ async function writePayment(
     accountantEmail: string;
     paymentMethod: string;
     byField: Partial<Record<FarmMoney["field"], number>>;
+    /** Явный день первого поступления; не задан — прежний или сегодня. */
+    paidAt?: string;
   }
 ): Promise<boolean> {
   const { amount, totalAmount, accountantEmail, paymentMethod, byField } = input;
@@ -319,8 +345,16 @@ async function writePayment(
       Paid: fully ? "TRUE" : "FALSE",
       // Дату первой оплаты не перетираем: она отвечает на вопрос «когда пришли
       // деньги», а не «когда бухгалтер последний раз трогала строку».
-      PaidAt: amount > 0 ? (record.PaidAt || "").trim() || new Date().toISOString() : "",
-      PaymentMethod: amount > 0 ? paymentMethod || record.PaymentMethod || "" : "",
+      PaidAt:
+        amount > 0
+          ? input.paidAt !== undefined
+            ? input.paidAt
+            : (record.PaidAt || "").trim() || new Date().toISOString()
+          : "",
+      // Способ оплаты ставит и менеджер, когда оформляет заявку («клиент
+      // платит наличными»), поэтому снятие оплаты его НЕ стирает: вместе с
+      // деньгами пропало бы и то, что знал только менеджер.
+      PaymentMethod: paymentMethod || record.PaymentMethod || "",
       AccountantEmail: accountantEmail,
     })
   );
@@ -629,5 +663,14 @@ export async function setOrderDirection(orderId: string, direction: string): Pro
     SHEET_TABS.ORDERS,
     (record) => record.OrderID === orderId,
     () => ({ Direction: cleanDirection(direction) })
+  );
+}
+
+/** Номер реализации 1С — вписывает бухгалтер. */
+export async function setOrderRealization(orderId: string, value: string): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () => ({ Realization1C: value })
   );
 }

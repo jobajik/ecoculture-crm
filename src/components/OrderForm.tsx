@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createOrderAction } from "@/app/orders/actions";
 import ClientPicker, { type ClientOption } from "./ClientPicker";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
-import { SHIPMENT_DIRECTIONS } from "@/lib/constants";
+import { PAYMENT_METHODS, SHIPMENT_DIRECTIONS } from "@/lib/constants";
 import { directionForCity } from "@/lib/direction";
 import { unwrapValue } from "@/lib/actionResult";
 
@@ -65,6 +65,13 @@ export default function OrderForm({
   // подстановка замолкает, иначе она затирала бы осознанный выбор (возят и не
   // туда, где офис клиента).
   const [directionTouched, setDirectionTouched] = useState(Boolean(initialDirection));
+  // Как клиент будет платить. Знает это только менеджер, а бухгалтеру нужно
+  // заранее — просьба Юлии: «только менеджер знает вид оплаты». Подставляется
+  // из карточки клиента («чем платит») и едет за клиентом, пока не тронули.
+  const methodOf = (c: ClientOption | null) =>
+    PAYMENT_METHODS.includes((c?.paymentMethod ?? "") as never) ? (c?.paymentMethod as string) : "";
+  const [paymentMethod, setPaymentMethod] = useState(methodOf(initialClient));
+  const [methodTouched, setMethodTouched] = useState(false);
   const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties, prices)]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +100,7 @@ export default function OrderForm({
         deliveryDate,
         notes,
         direction,
+        paymentMethod,
         items: items.map((it) => ({
           flowerType: it.flowerType,
           variety: it.variety.trim(),
@@ -120,6 +128,7 @@ export default function OrderForm({
             onChange={(next) => {
               setClient(next);
               if (!directionTouched) setDirection(directionForCity(next?.city));
+              if (!methodTouched) setPaymentMethod(methodOf(next));
             }}
           />
         </div>
@@ -166,6 +175,27 @@ export default function OrderForm({
             </span>
           </div>
         )}
+        <div>
+          <label className="label">Вид оплаты</label>
+          <select
+            className="input"
+            value={paymentMethod}
+            onChange={(e) => {
+              setPaymentMethod(e.target.value);
+              setMethodTouched(true);
+            }}
+          >
+            <option value="">— не знаю —</option>
+            {PAYMENT_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <span className="block text-xs text-ink-muted mt-1">
+            Бухгалтер увидит это в списке оплат — до того, как придут деньги.
+          </span>
+        </div>
         <div className="sm:col-span-2">
           <label className="label">Комментарий</label>
           <textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />

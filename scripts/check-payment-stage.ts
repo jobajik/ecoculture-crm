@@ -69,8 +69,8 @@ const headers = SHEET_HEADERS[SHEET_TABS.ORDERS];
 // чтение всей вкладки (грабли 1.1).
 check(
   "последние колонки Orders идут в том порядке, в каком их дописывали",
-  headers.slice(-3),
-  ["Kind", "InvoiceSentAt", "InvoiceNote"]
+  headers.slice(-4),
+  ["Kind", "InvoiceSentAt", "InvoiceNote", "Realization1C"]
 );
 
 // --- Стадии ----------------------------------------------------------------
@@ -205,6 +205,18 @@ check("по менеджеру", found("нурланов"), true);
 check("по куску имени", found("эмиль"), true);
 check("чужой номер не находится", found("99999"), false);
 check("чужое имя не находится", found("Айгерим"), false);
+
+// Просьба бухгалтера: искать по сумме из выписки и по номеру реализации 1С.
+const row2 = { ...row, amount: 150_000, realization1c: "РН-000123" };
+const found2 = (q: string) => matchesOrderSearch(row2, q);
+check("по сумме целиком", found2("150000"), true);
+check("по сумме с пробелом", found2("150 000"), true);
+check("по сумме со знаком тенге", found2("150 000 ₸"), true);
+check("по части суммы от четырёх цифр", found2("1500"), true);
+check("три цифры суммы не ищут по части", found2("150") === found("150"), true);
+check("чужая сумма не находится", found2("275 000"), false);
+check("по номеру реализации", found2("РН-000123"), true);
+check("по цифрам номера реализации", found2("000123"), true);
 
 // --- Колонка отметки НОВАЯ, и подпись обязана это признавать ----------------
 //

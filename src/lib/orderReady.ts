@@ -1,5 +1,5 @@
 import { MONEY_EPSILON } from "./constants";
-import { hasNoClientInvoice, isRegionOrder } from "./orderKind";
+import { hasNoClientInvoice, isConsignment, isRegionOrder } from "./orderKind";
 
 /**
  * Готовность заявки к отгрузке — одно правило на всю программу.
@@ -39,12 +39,24 @@ export interface ShipGateOrder {
   retail?: string;
   /** Вид заявки: «region» — оптовый объём на город, счёта по нему нет. */
   kind?: string;
+  /** Направление: по нему узнаётся заявка на реализацию (пожарка). */
+  direction?: string;
+}
+
+/**
+ * Ждёт ли отгрузка денег. Не ждёт у заявок без счёта (наш магазин, город) и у
+ * заявок НА РЕАЛИЗАЦИЮ: пожарка платит за то, что продала, — то есть уже ПОСЛЕ
+ * того, как цветок уехал. Потребуй здесь оплату, и такую заявку не отгрузили бы
+ * никогда.
+ */
+function waitsForMoney(order: ShipGateOrder): boolean {
+  return !hasNoClientInvoice(order) && !isConsignment(order);
 }
 
 /** Заявку можно отгружать. */
 export function isReadyToShip(order: ShipGateOrder): boolean {
   if (!order.managerConfirmed) return false;
-  return hasNoClientInvoice(order) ? true : order.paid;
+  return waitsForMoney(order) ? order.paid : true;
 }
 
 /**
@@ -65,7 +77,7 @@ export function missingForShip(order: ShipGateOrder): string[] {
     );
   }
   // Своему магазину счёт не выставляют — оплату здесь не ждут вовсе.
-  if (!hasNoClientInvoice(order) && !order.paid) {
+  if (waitsForMoney(order) && !order.paid) {
     const rest = order.totalAmount - order.paidAmount;
     // Частичная оплата — это тоже «не оплачено», но зав. складом полезно
     // видеть, что деньги уже идут, а не думать, что клиент молчит.

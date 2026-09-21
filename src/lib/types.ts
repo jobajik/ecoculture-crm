@@ -80,6 +80,23 @@ export interface Order {
    * Живёт только до отправки: отметил счёт отправленным — стирается сама.
    */
   invoiceNote: string;
+  /** Номер документа реализации в 1С; вписывает бухгалтер. */
+  realization1c: string;
+}
+
+/** Один платёж по заявке — строка вкладки Payments. */
+export interface Payment {
+  paymentId: string;
+  createdAt: string;
+  orderId: string;
+  /** День, когда деньги пришли (ГГГГ-ММ-ДД), — не день, когда их внесли. */
+  date: string;
+  amount: number;
+  /** Какому ТОО; пусто — заявка одного производства. */
+  farm: string;
+  method: string;
+  accountantEmail: string;
+  note: string;
 }
 
 /**

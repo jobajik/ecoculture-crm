@@ -1,7 +1,7 @@
 import { CLIENT_SLEEPING_DAYS, MONEY_EPSILON, ORDER_STATUSES } from "./constants";
 import type { Client, OrderWithItems } from "./types";
 import { isOwnShop } from "./retail";
-import { hasNoClientInvoice } from "./orderKind";
+import { hasNoClientInvoice, isConsignment } from "./orderKind";
 
 /**
  * Аналитика по клиентской базе.
@@ -165,6 +165,9 @@ export function buildClientStats(input: {
 
     let revenue = 0;
     let paid = 0;
+    // Долг считается только по обычным продажам: у заявки на реализацию
+    // (пожарка) остаток — непроданный цветок, а не долг (orderKind.ts).
+    let owed = 0;
     let stems = 0;
     const positions = new Map<string, number>();
     let first = "";
@@ -175,6 +178,7 @@ export function buildClientStats(input: {
       revenue += amount;
       // Переплата — это долг перед клиентом, а не наша выручка.
       paid += Math.min(order.paidAmount, amount);
+      if (!isConsignment(order)) owed += Math.max(0, amount - order.paidAmount);
       stems += order.items.reduce((sum, i) => sum + i.quantity, 0);
 
       for (const item of order.items) {
@@ -189,7 +193,7 @@ export function buildClientStats(input: {
       }
     }
 
-    const debt = revenue - paid > MONEY_EPSILON ? revenue - paid : 0;
+    const debt = owed > MONEY_EPSILON ? owed : 0;
     const daysSinceLast = daysBetween(last, now);
     const top = Array.from(positions.entries()).sort((a, b) => b[1] - a[1])[0];
 

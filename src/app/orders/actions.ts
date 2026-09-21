@@ -55,7 +55,7 @@ import {
   type WarehouseEditedItem,
 } from "@/lib/warehouseOrderEdit";
 import { setOrderDirection } from "@/lib/repo/orders";
-import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ROLES } from "@/lib/constants";
+import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, PAYMENT_METHODS, ROLES } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
 
 async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">) {
@@ -116,10 +116,18 @@ async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">
     );
   }
 
+  // Вид оплаты — из закрытого списка; чужое значение молча становится пустым
+  // («не знаю»), как и прочие закрытые списки: отказывать из-за подсказки
+  // бухгалтеру значило бы не дать завести заявку вовсе.
+  const paymentMethod = PAYMENT_METHODS.includes((input.paymentMethod ?? "") as never)
+    ? (input.paymentMethod as string)
+    : "";
+
   const orderId = await createOrder({
     ...input,
     retail: shop ? client.retail : "",
     direction,
+    paymentMethod: shop ? "" : paymentMethod,
     managerEmail: session.user.email,
   });
   revalidatePath("/orders");

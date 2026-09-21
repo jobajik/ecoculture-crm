@@ -11,13 +11,22 @@ import {
   setOrderPromise,
   setOrderInvoiceSent,
   setOrderInvoiceNote,
+  setOrderPaidTotals,
+  setOrderRealization,
   updateOrderItemAmounts,
   recomputeOrderStatusFromItems,
 } from "@/lib/repo/orders";
 import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { confirmRefusal, moneyRefusal } from "@/lib/orderRules";
-import { invoiceByFarm } from "@/lib/orderMoney";
+import { farmPayments, invoiceByFarm } from "@/lib/orderMoney";
+import { appendPayment, deletePayment, listPayments } from "@/lib/repo/payments";
+import {
+  addPaymentRefusal,
+  cleanRealization,
+  removePaymentRefusal,
+  totalsAfter,
+} from "@/lib/payments";
 import { isRetailOrder, isRetailRole } from "@/lib/retail";
 import { isRegionOrder } from "@/lib/orderKind";
 import { invoiceSentRefusal } from "@/lib/paymentStage";
@@ -28,6 +37,8 @@ import {
   MONEY_LOG_ACTIONS,
   ORDER_STATUSES,
   PAYMENT_METHODS,
+  PAID_FIELD_BY_FARM,
+  FARM_LABELS,
   ROLES,
 } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
@@ -566,6 +577,179 @@ async function setManagerConfirmedActionInner(orderId: string, confirmed: boolea
 }
 
 // ---------------------------------------------------------------------------
+// Платежи по одному (журнал Payments) и номер реализации 1С
+// ---------------------------------------------------------------------------
+
+/** Сегодня по местному времени, ГГГГ-ММ-ДД. */
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₸`;
+
+/**
+ * Пересчитать итог заявки по журналу и записать его.
+ *
+ * Итог = прежний итог ± этот платёж, а не «сумма журнала»: у заявок, оплаченных
+ * до журнала, деньги лежат в итоге одним числом, и пересчёт «по журналу»
+ * стёр бы их. День первого поступления берётся из журнала — платёж вносят и
+ * задним числом.
+ */
+async function writeTotalsAfter(
+  order: NonNullable<Awaited<ReturnType<typeof getOrderById>>>,
+  farm: string,
+  delta: number,
+  email: string,
+  method: string
+) {
+  const current = Object.fromEntries(farmPayments(order).map((f) => [f.farm, f.paidAmount]));
+  const next = totalsAfter(order.paidAmount, current, farm, delta);
+  const byField: Record<string, number> = {};
+  for (const [f, value] of Object.entries(next.byFarm)) {
+    const field = PAID_FIELD_BY_FARM[f];
+    if (field) byField[field] = value;
+  }
+  const ledger = (await listPayments({ fresh: true })).filter((p) => p.orderId === order.orderId);
+  const firstDay = ledger.map((p) => p.date).filter(Boolean).sort()[0] ?? "";
+  await setOrderPaidTotals(order.orderId, {
+    amount: next.paidAmount,
+    totalAmount: order.totalAmount,
+    accountantEmail: email,
+    paymentMethod: method,
+    byField,
+    // Были деньги ДО журнала (итог больше суммы платежей) — их день мы знаем
+    // только из прежней отметки и её не трогаем. Иначе первый день — из журнала.
+    paidAt:
+      next.paidAmount - ledger.reduce((sum, p) => sum + p.amount, 0) > 1 && order.paidAt
+        ? order.paidAt
+        : firstDay || order.paidAt || new Date().toISOString(),
+  });
+  return next.paidAmount;
+}
+
+async function addPaymentActionInner(input: {
+  orderId: string;
+  amount: number;
+  date: string;
+  method: string;
+  farm: string;
+  note?: string;
+}) {
+  const email = await requireAccountant();
+  const session = await getServerSession(authOptions);
+
+  const order = await getOrderById(input.orderId);
+  if (!order) throw new Error("Заявка не найдена");
+  const invoice = invoiceByFarm(order.items);
+
+  const refusal = addPaymentRefusal({
+    role: session?.user?.role,
+    amount: Number(input.amount),
+    date: input.date,
+    today: todayKey(),
+    method: input.method,
+    farm: input.farm || "",
+    invoiceFarms: invoice.map((f) => f.farm),
+    status: order.status,
+    noInvoice: isRetailOrder(order) || isRegionOrder(order),
+  });
+  if (refusal) throw new Error(refusal);
+
+  const amount = Math.round(Number(input.amount) * 100) / 100;
+  const farm = invoice.length > 1 ? input.farm : invoice[0]?.farm ?? "";
+
+  // Сначала журнал, потом итог: если второй запрос не дойдёт, платёж будет
+  // виден строкой, а разница с итогом — отдельной строкой «вне журнала», и её
+  // легко заметить. При обратном порядке итог вырос бы молча, без следа.
+  await appendPayment({
+    orderId: order.orderId,
+    date: input.date,
+    amount,
+    farm: invoice.length > 1 ? farm : "",
+    method: input.method,
+    accountantEmail: email,
+    note: (input.note || "").trim().slice(0, 200),
+  });
+  const after = await writeTotalsAfter(order, farm, amount, email, input.method);
+
+  await logMoney({
+    actorEmail: email,
+    orderId: order.orderId,
+    action: MONEY_LOG_ACTIONS.PAYMENT_ADDED,
+    details:
+      `Платёж ${money(amount)} за ${input.date.split("-").reverse().join(".")} · ${input.method}` +
+      (invoice.length > 1 ? ` · ${FARM_LABELS[farm] ?? farm}` : "") +
+      ` · всего получено ${money(after)} из ${money(order.totalAmount)}`,
+    amountBefore: order.paidAmount,
+    amountAfter: after,
+  });
+
+  refreshMoneyPages(order.orderId);
+  return { ok: true };
+}
+
+async function removePaymentActionInner(orderId: string, paymentId: string) {
+  const email = await requireAccountant();
+  const session = await getServerSession(authOptions);
+
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+  const payment = (await listPayments({ fresh: true })).find(
+    (p) => p.paymentId === paymentId && p.orderId === orderId
+  );
+  if (!payment) throw new Error("Платёж не найден — возможно, его уже удалили");
+
+  const refusal = removePaymentRefusal({
+    role: session?.user?.role,
+    status: order.status,
+    enteredOn: (payment.createdAt || "").slice(0, 10),
+    today: todayKey(),
+  });
+  if (refusal) throw new Error(refusal);
+
+  await deletePayment(paymentId);
+  const after = await writeTotalsAfter(order, payment.farm, -payment.amount, email, "");
+
+  await logMoney({
+    actorEmail: email,
+    orderId,
+    action: MONEY_LOG_ACTIONS.PAYMENT_REMOVED,
+    details: `Удалён платёж ${money(payment.amount)} за ${payment.date
+      .split("-")
+      .reverse()
+      .join(".")} · ${payment.method}`,
+    amountBefore: order.paidAmount,
+    amountAfter: after,
+  });
+
+  refreshMoneyPages(orderId);
+  return { ok: true };
+}
+
+async function setRealizationActionInner(orderId: string, value: string) {
+  const email = await requireAccountant();
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Заявка не найдена");
+  const clean = cleanRealization(value);
+  if (clean === order.realization1c) return { ok: true };
+
+  await setOrderRealization(orderId, clean);
+  await logMoney({
+    actorEmail: email,
+    orderId,
+    action: MONEY_LOG_ACTIONS.REALIZATION_1C,
+    details: clean
+      ? `Реализация 1С № ${clean}${order.realization1c ? ` (было ${order.realization1c})` : ""}`
+      : `Номер реализации 1С стёрт (был ${order.realization1c})`,
+    amountBefore: order.totalAmount,
+    amountAfter: order.totalAmount,
+  });
+  refreshMoneyPages(orderId);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается.
 //
 // Next.js в боевой сборке подменяет текст любой брошенной ошибки на
@@ -616,4 +800,16 @@ export async function rejectClaimAction(...args: Parameters<typeof rejectClaimAc
 
 export async function setManagerConfirmedAction(...args: Parameters<typeof setManagerConfirmedActionInner>) {
   return guard(() => setManagerConfirmedActionInner(...args));
+}
+
+export async function addPaymentAction(...args: Parameters<typeof addPaymentActionInner>) {
+  return guard(() => addPaymentActionInner(...args));
+}
+
+export async function removePaymentAction(...args: Parameters<typeof removePaymentActionInner>) {
+  return guard(() => removePaymentActionInner(...args));
+}
+
+export async function setRealizationAction(...args: Parameters<typeof setRealizationActionInner>) {
+  return guard(() => setRealizationActionInner(...args));
 }

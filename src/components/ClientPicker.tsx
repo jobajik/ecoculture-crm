@@ -27,6 +27,8 @@ export interface ClientOption {
   orders: number;
   /** Дней с последнего заказа; -1 — заказов не было. */
   daysSinceLast: number;
+  /** Чем обычно платит (из карточки) — подставляется в «вид оплаты» заявки. */
+  paymentMethod?: string;
 }
 
 /**
