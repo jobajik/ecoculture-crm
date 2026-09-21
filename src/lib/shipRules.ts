@@ -82,3 +82,75 @@ export function shipmentRefusal(input: {
 
   return "";
 }
+
+/**
+ * Отгрузка из НЕСКОЛЬКИХ партий одним нажатием.
+ *
+ * Появилась по просьбе зав. складом Rose Farm: 310 стеблей одной позиции
+ * лежали в десяти партиях по датам срезки (70, 90, 30…), и отгрузить их можно
+ * было только десятью нажатиями «Отгрузить» — выбрать партию, дождаться,
+ * выбрать следующую. На третьем-четвёртом нажатии Google вдобавок отвечал
+ * «превышен лимит запросов», потому что каждое нажатие заново читало всю
+ * таблицу.
+ *
+ * Правило то же, что и у одной партии, — `shipmentRefusal()` для каждой части,
+ * — с одной поправкой: «сколько осталось отгрузить по позиции» считается С
+ * УЧЁТОМ предыдущих частей этой же отгрузки. Иначе три части по 200 прошли бы
+ * каждая по отдельности при остатке 300, и в заявке оказалось бы отгружено
+ * вдвое больше заказанного — ровно та беда, от которой написан этот файл.
+ *
+ * Одна и та же партия дважды в одной отгрузке — отказ, а не сложение:
+ * так бывает только при ошибке в форме, и молча складывать её нельзя.
+ */
+export function shipmentPartsRefusal(input: {
+  orderId: string;
+  item: ShipItem | null | undefined;
+  batches: Map<string, ShipBatch>;
+  parts: { batchId: string; quantity: number }[];
+}): string {
+  const { orderId, item, batches, parts } = input;
+  if (parts.length === 0) return "Отметьте хотя бы одну партию";
+
+  const seen = new Set<string>();
+  let before = 0;
+  for (const part of parts) {
+    if (seen.has(part.batchId)) return `Партия ${part.batchId} отмечена дважды`;
+    seen.add(part.batchId);
+
+    const refusal = shipmentRefusal({
+      orderId,
+      item: item ? { ...item, shippedQuantity: item.shippedQuantity + before } : item,
+      batch: batches.get(part.batchId),
+      quantity: part.quantity,
+    });
+    if (refusal) {
+      // Первая часть объясняет себя сама; у следующих уточняем, что считали
+      // вместе с уже отмеченными — иначе «осталось 40» при заказе 310 выглядит
+      // как ошибка программы.
+      if (before > 0 && refusal.startsWith("По позиции осталось")) {
+        const total = parts.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
+        const left = item ? item.quantity - item.shippedQuantity : 0;
+        return `Отмечено ${total} шт., а по позиции осталось отгрузить ${left} шт.`;
+      }
+      return refusal;
+    }
+    before += part.quantity;
+  }
+  return "";
+}
+
+/**
+ * Статус заявки после отгрузки: всё уехало — «отгружена», что-то уехало — «в
+ * работе». Отменённую не трогаем. Одна функция на оба пути отгрузки, чтобы
+ * они не разошлись.
+ */
+export function statusAfterShipping(
+  status: string,
+  items: { quantity: number; shippedQuantity: number }[]
+): string {
+  if (status === "cancelled") return status;
+  const allShipped = items.length > 0 && items.every((i) => i.shippedQuantity >= i.quantity);
+  if (allShipped) return "shipped";
+  if (items.some((i) => i.shippedQuantity > 0)) return "in_progress";
+  return status;
+}

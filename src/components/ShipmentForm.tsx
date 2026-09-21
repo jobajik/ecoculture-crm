@@ -67,28 +67,96 @@ function ItemShipRow({
   onDone: () => void;
 }) {
   const remainingToShip = item.quantity - item.shippedQuantity;
-  const [batchId, setBatchId] = useState(item.availableBatches[0]?.batchId ?? "");
-  const [quantity, setQuantity] = useState(String(Math.min(remainingToShip, item.availableBatches[0]?.quantityRemaining ?? 0)));
+  const batches = item.availableBatches;
+
+  // Отмеченные партии и сколько из каждой. Раньше партия выбиралась одна, и
+  // 310 стеблей из десяти партий отгружались десятью нажатиями — зав. складом
+  // Rose Farm прислала это фотографией с экрана. Теперь отмечают сколько нужно
+  // партий и отгружают одним нажатием.
+  //
+  // По умолчанию отмечена самая старая партия — как и раньше: чаще всего её и
+  // отдают. Остальные человек отмечает сам или одной кнопкой «по порядку».
+  const [picked, setPicked] = useState<Record<string, string>>(() => {
+    const first = batches[0];
+    if (!first) return {};
+    return { [first.batchId]: String(Math.min(remainingToShip, first.quantityRemaining)) };
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  const selectedBatch = item.availableBatches.find((b) => b.batchId === batchId);
+  // Порядок частей — порядок партий на экране (сверху старые), а не порядок
+  // нажатий: так журнал отгрузок читается по датам срезки.
+  const parts = batches
+    .filter((b) => picked[b.batchId] !== undefined)
+    .map((b) => ({ batch: b, quantity: Number(picked[b.batchId]) || 0 }));
+  const total = parts.reduce((s, p) => s + p.quantity, 0);
+  const over = total > remainingToShip;
+
+  function stillNeeded(except: string): number {
+    const others = parts
+      .filter((p) => p.batch.batchId !== except)
+      .reduce((s, p) => s + p.quantity, 0);
+    return Math.max(0, remainingToShip - others);
+  }
+
+  function toggle(b: Batch) {
+    setError(null);
+    setSuccess(null);
+    setPicked((prev) => {
+      const next = { ...prev };
+      if (next[b.batchId] !== undefined) delete next[b.batchId];
+      else next[b.batchId] = String(Math.min(b.quantityRemaining, stillNeeded(b.batchId)));
+      return next;
+    });
+  }
+
+  /** Отметить партии по порядку, от старой к свежей, пока не наберётся заказ. */
+  function pickInOrder() {
+    setError(null);
+    setSuccess(null);
+    const next: Record<string, string> = {};
+    let need = remainingToShip;
+    for (const b of batches) {
+      if (need <= 0) break;
+      const take = Math.min(need, b.quantityRemaining);
+      next[b.batchId] = String(take);
+      need -= take;
+    }
+    setPicked(next);
+  }
 
   async function handleSubmit() {
     setError(null);
-    if (!batchId) return setError("Выберите партию");
-    const qty = Number(quantity);
-    if (!qty || qty <= 0) return setError("Укажите количество");
-    if (selectedBatch && qty > selectedBatch.quantityRemaining) {
-      return setError(`В партии доступно только ${selectedBatch.quantityRemaining} шт.`);
+    setSuccess(null);
+    if (parts.length === 0) return setError("Отметьте хотя бы одну партию");
+    for (const p of parts) {
+      if (!p.quantity || p.quantity <= 0) {
+        return setError(`Укажите количество для партии от ${formatHarvest(p.batch.harvestDate)}`);
+      }
+      if (p.quantity > p.batch.quantityRemaining) {
+        return setError(
+          `В партии от ${formatHarvest(p.batch.harvestDate)} только ${p.batch.quantityRemaining} шт.`
+        );
+      }
     }
-    if (qty > remainingToShip) return setError(`По заявке осталось отгрузить только ${remainingToShip} шт.`);
+    if (over) return setError(`По заявке осталось отгрузить только ${remainingToShip} шт.`);
 
     setSubmitting(true);
     try {
-      unwrap(await createShipmentAction({ orderId, itemId: item.itemId, batchId, quantity: qty }));
-      setSuccess(true);
+      unwrap(
+        await createShipmentAction({
+          orderId,
+          itemId: item.itemId,
+          parts: parts.map((p) => ({ batchId: p.batch.batchId, quantity: p.quantity })),
+        })
+      );
+      setSuccess(
+        parts.length > 1
+          ? `Отгружено ${total} шт. из ${parts.length} партий ✓`
+          : `Отгружено ${total} шт. ✓`
+      );
+      setPicked({});
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось зарегистрировать отгрузку");
@@ -97,110 +165,140 @@ function ItemShipRow({
     }
   }
 
+  // Кнопка «по порядку» нужна, только когда одной партии заказу не хватает.
+  const oneIsEnough = (batches[0]?.quantityRemaining ?? 0) >= remainingToShip;
+
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-3">
-        <div className="font-medium">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="font-medium min-w-0">
           {FLOWER_TYPE_LABELS[item.flowerType]} {item.variety} · {formatGrade(item.grade)}
         </div>
-        <div className="text-sm text-ink-secondary">
+        <div className="text-sm text-ink-secondary shrink-0">
           Отгружено {item.shippedQuantity} из {item.quantity}
         </div>
       </div>
 
-      {item.availableBatches.length === 0 ? (
+      {batches.length === 0 ? (
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
           На складе нет партий этого сорта с остатком. Сначала оформите приёмку с производства.
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Партию выбирает человек, а не программа. Сверху предлагается самая
-              старая — её и надо отдавать первой, — но заведующий складом видит
-              холодильник и решает сам: свежую партию бывает нужно отгрузить
-              вперёд старой (клиент берёт на дальнюю дорогу, старую обещали
-              другому). Поэтому это подсказка, а не запрет. */}
+          {/* Партии выбирает человек, а не программа. Сверху — самая старая, её
+              и надо отдавать первой, но заведующий складом видит холодильник и
+              решает сам: свежую партию бывает нужно отгрузить вперёд старой
+              (клиент берёт на дальнюю дорогу, старую обещали другому). Поэтому
+              порядок — подсказка, а не запрет. */}
           <div>
-            <label className="label">
-              Из какой партии отгружаем
-              <span className="font-normal text-ink-muted"> — сверху та, что дольше лежит</span>
-            </label>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-1.5">
+              <span className="label !mb-0">
+                Из каких партий отгружаем
+                <span className="font-normal text-ink-muted"> — можно отметить несколько</span>
+              </span>
+              {!oneIsEnough && batches.length > 1 && (
+                <button
+                  type="button"
+                  onClick={pickInOrder}
+                  className="text-sm text-accent hover:underline"
+                >
+                  Отметить по порядку на {remainingToShip} шт.
+                </button>
+              )}
+            </div>
             <div className="space-y-1.5">
-              {item.availableBatches.map((b, idx) => {
+              {batches.map((b, idx) => {
                 const days = daysSince(b.harvestDate);
-                const active = b.batchId === batchId;
+                const active = picked[b.batchId] !== undefined;
                 return (
-                  <button
+                  <label
                     key={b.batchId}
-                    type="button"
-                    onClick={() => {
-                      setBatchId(b.batchId);
-                      setQuantity(String(Math.min(remainingToShip, b.quantityRemaining)));
-                    }}
                     className={clsx(
-                      "w-full text-left rounded-lg border px-3 py-2 flex items-center gap-3 transition-colors",
+                      "w-full rounded-lg border px-3 py-2 flex items-center gap-3 cursor-pointer transition-colors",
                       active
                         ? "border-accent bg-accent-soft"
                         : "border-line-hairline hover:bg-surface-plane"
                     )}
                   >
-                    <span
-                      className={clsx(
-                        "w-4 h-4 rounded-full border-2 shrink-0",
-                        active ? "border-accent bg-accent" : "border-line-strong"
-                      )}
-                      aria-hidden
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={() => toggle(b)}
+                      className="w-4 h-4 shrink-0 accent-accent"
                     />
                     <span className="flex-1 min-w-0">
                       <span className="block">
-                        Срезка {new Date(b.harvestDate).toLocaleDateString("ru-RU")}
-                        <span className="text-ink-secondary">
-                          {" "}
-                          · лежит {days} {dayWord(days)}
-                        </span>
-                        {idx === 0 && item.availableBatches.length > 1 && (
+                        <span className="hidden sm:inline">Срезка </span>
+                        {formatHarvest(b.harvestDate)}
+                        {idx === 0 && batches.length > 1 && (
                           <span className="text-xs text-accent"> · самая старая</span>
                         )}
                       </span>
-                      {/* Код партии нужен редко — только чтобы сверить с ярлыком
-                          на ведре. Держим его мелким и серым, чтобы он не спорил
-                          глазами с датой и остатком. */}
-                      <span className="block text-[11px] text-ink-muted font-mono">
-                        {b.batchId}
+                      {/* Сколько лежит — вторым рядом: на телефоне в одну строку с
+                          датой это не помещалось и рассыпалось по слову в строке.
+                          Код партии нужен редко — только чтобы сверить с ярлыком
+                          на ведре, — поэтому он мелкий и серый и не спорит глазами
+                          с датой и остатком. */}
+                      <span className="block text-xs text-ink-secondary truncate">
+                        лежит {days} {dayWord(days)}
+                        <span className="hidden sm:inline text-[11px] text-ink-muted font-mono"> · {b.batchId}</span>
                       </span>
                     </span>
-                    <span className="text-right shrink-0">
+                    {active && (
+                      <input
+                        type="number"
+                        min={1}
+                        max={b.quantityRemaining}
+                        inputMode="numeric"
+                        aria-label="Сколько из этой партии"
+                        className="input !w-[4.5rem] sm:!w-20 !px-2 text-right shrink-0"
+                        value={picked[b.batchId]}
+                        onClick={(e) => e.preventDefault()}
+                        onChange={(e) =>
+                          setPicked((prev) => ({ ...prev, [b.batchId]: e.target.value }))
+                        }
+                      />
+                    )}
+                    <span className="text-right shrink-0 w-12 sm:w-14">
                       <span className="block font-semibold tabular-nums">
                         {b.quantityRemaining.toLocaleString("ru-RU")}
                       </span>
                       <span className="block text-[11px] text-ink-muted">в остатке</span>
                     </span>
-                  </button>
+                  </label>
                 );
               })}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="label">Количество, шт</label>
-            <input
-              type="number"
-              min={1}
-              max={Math.min(remainingToShip, selectedBatch?.quantityRemaining ?? remainingToShip)}
-              className="input !w-32"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
-          </div>
-          <button onClick={handleSubmit} disabled={submitting} className="btn-primary">
-            {submitting ? "Отгрузка…" : "Отгрузить"}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || parts.length === 0 || total <= 0 || over}
+              className="btn-primary disabled:opacity-50"
+            >
+              {submitting
+                ? "Отгрузка…"
+                : parts.length > 1
+                  ? `Отгрузить ${total} шт. из ${parts.length} партий`
+                  : `Отгрузить ${total} шт.`}
+            </button>
+            <span className={clsx("text-sm", over ? "text-status-critical" : "text-ink-secondary")}>
+              {over
+                ? `Отмечено ${total}, а по заявке осталось ${remainingToShip}`
+                : `Осталось по заявке ${remainingToShip} шт.`}
+            </span>
           </div>
         </div>
       )}
 
       {error && <div className="text-sm text-status-critical mt-2">{error}</div>}
-      {success && <div className="text-sm text-status-good mt-2">Отгружено ✓</div>}
+      {success && <div className="text-sm text-status-good mt-2">{success}</div>}
     </div>
   );
+}
+
+function formatHarvest(date: string): string {
+  const d = new Date(date);
+  return Number.isNaN(d.getTime()) ? date : d.toLocaleDateString("ru-RU");
 }

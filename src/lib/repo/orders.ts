@@ -1,3 +1,4 @@
+import { statusAfterShipping } from "../shipRules";
 import {
   appendRow,
   appendRows,
@@ -77,7 +78,7 @@ function toMoney(value: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function toOrderItem(record: Record<string, string>): OrderItem {
+export function toOrderItem(record: Record<string, string>): OrderItem {
   return {
     orderId: record.OrderID,
     itemId: record.ItemID,
@@ -607,12 +608,7 @@ export async function recomputeOrderStatusFromItems(orderId: string): Promise<vo
   if (!order) return;
   if (order.status === ORDER_STATUSES.CANCELLED) return;
 
-  const allShipped = order.items.length > 0 && order.items.every((i) => i.shippedQuantity >= i.quantity);
-  const anyShipped = order.items.some((i) => i.shippedQuantity > 0);
-
-  let nextStatus: OrderStatus = order.status;
-  if (allShipped) nextStatus = ORDER_STATUSES.SHIPPED;
-  else if (anyShipped) nextStatus = ORDER_STATUSES.IN_PROGRESS;
+  const nextStatus = statusAfterShipping(order.status, order.items) as OrderStatus;
 
   if (nextStatus !== order.status) {
     await updateOrderStatus(orderId, nextStatus);

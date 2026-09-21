@@ -97,8 +97,96 @@ export interface SheetTable {
   rowNumbers: number[];
 }
 
+// ---------------------------------------------------------------------------
+// Лимит Google: 60 чтений в минуту на человека.
+//
+// Упёрлись в него на складе. Зав. складом отгружала позицию из десяти партий,
+// по партии за нажатие, и на третьем-четвёртом нажатии получила от Google
+// «превышено число запросов». Каждое нажатие читало одни и те же вкладки по
+// пять-шесть раз: заявку — чтобы проверить готовность, ещё раз — чтобы
+// проверить остаток, ещё раз — чтобы пересчитать статус, и потом вся страница
+// заново, где партии читались отдельно для каждой позиции.
+//
+// Отсюда две защиты, обе здесь, чтобы работали для всех страниц сразу:
+//  1) одинаковые чтения в пределах трёх секунд склеиваются в одно. Любая
+//     запись сбрасывает запомненное целиком, так что после своей правки
+//     человек видит свою правку, а не то, что было до неё;
+//  2) если Google всё же ответил «лимит», запрос повторяется через 2 и 5
+//     секунд, и только потом человек видит отказ — по-русски и с тем, что
+//     делать.
+// Проверки перед записью (остаток партии, сколько отгружено по позиции)
+// читают таблицу СВЕЖЕЙ — `{ fresh: true }`: там три секунды старины могли бы
+// стоить двойной отгрузки.
+// ---------------------------------------------------------------------------
+
+const READ_MEMO_MS = 3000;
+const readMemo = new Map<string, { at: number; promise: Promise<SheetTable> }>();
+
+/** Забыть всё прочитанное. Зовётся после любой записи. */
+export function forgetReads(): void {
+  readMemo.clear();
+}
+
+/** Похоже ли на отказ Google по лимиту запросов. */
+export function isQuotaError(err: unknown): boolean {
+  const e = err as { code?: unknown; status?: unknown; response?: { status?: unknown }; message?: unknown };
+  if (e?.code === 429 || e?.status === 429 || e?.response?.status === 429) return true;
+  const text = String(e?.message ?? "");
+  return /quota|rate limit|too many requests|RESOURCE_EXHAUSTED|превышен/i.test(text);
+}
+
+export const QUOTA_MESSAGE =
+  "Google временно ограничил число обращений к таблице — не больше 60 в минуту на человека. " +
+  "Подождите минуту и повторите. Если это случилось во время отгрузки, сначала обновите " +
+  "страницу и посмотрите, что уже отгружено.";
+
+const RETRY_DELAYS_MS = [2000, 5000];
+
+/** Выполнить запрос к Google, переждав отказ по лимиту. */
+async function callGoogle<T>(request: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request();
+    } catch (err) {
+      if (!isQuotaError(err)) throw err;
+      if (attempt >= RETRY_DELAYS_MS.length) throw new Error(QUOTA_MESSAGE);
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+/** Запись в Google: пережидает лимит и сбрасывает запомненные чтения. */
+async function writeThrough<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await callGoogle(request);
+  } finally {
+    // И после неудачи тоже: запись могла дойти частично, и верить прежнему
+    // прочитанному уже нельзя.
+    forgetReads();
+  }
+}
+
+export interface ReadOptions {
+  /** Прочитать заново, не пользуясь запомненным. Для проверок перед записью. */
+  fresh?: boolean;
+}
+
 /** Читает вкладку целиком. Первая строка считается заголовком. */
-export async function readTable(tabName: string): Promise<SheetTable> {
+export async function readTable(tabName: string, options: ReadOptions = {}): Promise<SheetTable> {
+  const now = Date.now();
+  const memo = readMemo.get(tabName);
+  if (!options.fresh && memo && now - memo.at < READ_MEMO_MS) return memo.promise;
+
+  const promise = callGoogle(() => fetchTable(tabName));
+  readMemo.set(tabName, { at: now, promise });
+  // Неудачное чтение не запоминаем: следующий запрос должен попробовать снова.
+  promise.catch(() => {
+    if (readMemo.get(tabName)?.promise === promise) readMemo.delete(tabName);
+  });
+  return promise;
+}
+
+async function fetchTable(tabName: string): Promise<SheetTable> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
@@ -171,13 +259,13 @@ export async function readTablesWithFormulas(
 export async function writeCells(cells: { address: string; value: string }[]): Promise<void> {
   if (cells.length === 0) return;
   const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.batchUpdate({
+  await writeThrough(() => sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: getSpreadsheetId(),
     requestBody: {
       valueInputOption: "USER_ENTERED",
       data: cells.map((c) => ({ range: c.address, values: [[toCell(c.value)]] })),
     },
-  });
+  }));
 }
 
 /** Преобразует строку значений в объект по заголовкам конкретной вкладки (используются заголовки из констант, а не из самой таблицы, чтобы не зависеть от ручных правок порядка). */
@@ -199,26 +287,26 @@ export function recordToRow(tabName: string, record: Record<string, unknown>): (
 export async function appendRow(tabName: string, record: Record<string, unknown>): Promise<void> {
   const sheets = getSheetsClient();
   const row = recordToRow(tabName, record);
-  await sheets.spreadsheets.values.append({
+  await writeThrough(() => sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
     range: `${tabName}!A1`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [row] },
-  });
+  }));
 }
 
 export async function appendRows(tabName: string, records: Record<string, unknown>[]): Promise<void> {
   if (records.length === 0) return;
   const sheets = getSheetsClient();
   const rows = records.map((r) => recordToRow(tabName, r));
-  await sheets.spreadsheets.values.append({
+  await writeThrough(() => sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
     range: `${tabName}!A1`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: rows },
-  });
+  }));
 }
 
 /** Перезаписывает конкретную строку (rowNumber — абсолютный номер строки в листе, как возвращает readTable). */
@@ -229,12 +317,12 @@ export async function updateRow(
 ): Promise<void> {
   const sheets = getSheetsClient();
   const row = recordToRow(tabName, record);
-  await sheets.spreadsheets.values.update({
+  await writeThrough(() => sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
     range: `${tabName}!A${rowNumber}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [row] },
-  });
+  }));
 }
 
 /**
@@ -251,7 +339,7 @@ export async function updateRows(
 ): Promise<void> {
   if (updates.length === 0) return;
   const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.batchUpdate({
+  await writeThrough(() => sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: getSpreadsheetId(),
     requestBody: {
       valueInputOption: "USER_ENTERED",
@@ -260,7 +348,7 @@ export async function updateRows(
         values: [recordToRow(tabName, u.record)],
       })),
     },
-  });
+  }));
 }
 
 /** Находит первую запись, для которой predicate(record) истинен, и обновляет её через updater. Возвращает true, если запись найдена и обновлена. */
@@ -269,7 +357,7 @@ export async function updateWhere(
   predicate: (record: Record<string, string>) => boolean,
   updater: (record: Record<string, string>) => Record<string, unknown>
 ): Promise<boolean> {
-  const table = await readTable(tabName);
+  const table = await readTable(tabName, { fresh: true });
   for (let i = 0; i < table.rows.length; i++) {
     const record = rowToRecord(tabName, table.rows[i]);
     if (predicate(record)) {
@@ -297,7 +385,7 @@ export async function deleteWhere(
   tabName: string,
   predicate: (record: Record<string, string>) => boolean
 ): Promise<number> {
-  const table = await readTable(tabName);
+  const table = await readTable(tabName, { fresh: true });
   const rowNumbers: number[] = [];
   table.rows.forEach((row, i) => {
     if (predicate(rowToRecord(tabName, row))) rowNumbers.push(table.rowNumbers[i]);
@@ -306,14 +394,14 @@ export async function deleteWhere(
 
   const sheets = getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
-  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const meta = await callGoogle(() => sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" }));
   const sheetId = meta.data.sheets?.find((s) => s.properties?.title === tabName)?.properties
     ?.sheetId;
   if (sheetId === undefined || sheetId === null) {
     throw new Error(`Лист «${tabName}» не найден`);
   }
 
-  await sheets.spreadsheets.batchUpdate({
+  await writeThrough(() => sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
       requests: rowNumbers
@@ -332,7 +420,7 @@ export async function deleteWhere(
           },
         })),
     },
-  });
+  }));
   return rowNumbers.length;
 }
 
@@ -346,7 +434,7 @@ export async function deleteWhere(
 export async function clearDataRows(tabName: string): Promise<number> {
   const sheets = getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
-  const before = await readTable(tabName);
+  const before = await readTable(tabName, { fresh: true });
   if (before.rows.length === 0) return 0;
 
   // Строки именно УДАЛЯЮТСЯ, а не очищаются. Очистка значений оставляет формат
@@ -354,21 +442,21 @@ export async function clearDataRows(tabName: string): Promise<number> {
   // датным форматом «2026-09-03» вернётся как «03.09.2026». На этом уже
   // погорели — четыре строки старых данных испортили дату у новых, и роза
   // четырёхдневной давности показывалась свежей.
-  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const meta = await callGoogle(() => sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" }));
   const sheetId = meta.data.sheets?.find((s) => s.properties?.title === tabName)?.properties
     ?.sheetId;
 
   if (sheetId === undefined || sheetId === null) {
     // Лист не нашёлся — лучше очистить значения, чем не сделать ничего.
-    await sheets.spreadsheets.values.clear({
+    await writeThrough(() => sheets.spreadsheets.values.clear({
       spreadsheetId,
       range: `${tabName}!A2:ZZ`,
-    });
+    }));
     return before.rows.length;
   }
 
   const lastRow = Math.max(...before.rowNumbers);
-  await sheets.spreadsheets.batchUpdate({
+  await writeThrough(() => sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
       requests: [
@@ -379,7 +467,7 @@ export async function clearDataRows(tabName: string): Promise<number> {
         },
       ],
     },
-  });
+  }));
   return before.rows.length;
 }
 

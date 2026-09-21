@@ -9,7 +9,8 @@
  */
 import { ROLES, ORDER_STATUSES } from "../src/lib/constants";
 import { cancelRefusal, isClosed, moneyRefusal } from "../src/lib/orderRules";
-import { shipmentRefusal } from "../src/lib/shipRules";
+import { shipmentPartsRefusal, shipmentRefusal, statusAfterShipping } from "../src/lib/shipRules";
+import { isQuotaError } from "../src/lib/sheets";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -218,6 +219,135 @@ check(
     refused(shipmentRefusal({ orderId: "ORD-1", item: ITEM, batch: null, quantity: 10 })),
   ],
   [true, true]
+);
+
+// ---------------------------------------------------------------------------
+// Отгрузка из нескольких партий одним нажатием (просьба зав. складом Rose Farm:
+// 310 стеблей из десяти партий отгружались десятью нажатиями)
+// ---------------------------------------------------------------------------
+
+const B = (id: string, left: number, over: Partial<typeof BATCH> = {}) =>
+  [id, { ...BATCH, batchId: id, quantityRemaining: left, ...over }] as const;
+const STORE = new Map([B("P1", 70), B("P2", 90), B("P3", 30), B("P4", 500)]);
+const ITEM310 = { ...ITEM, quantity: 310 };
+const parts = (...p: [string, number][]) => p.map(([batchId, quantity]) => ({ batchId, quantity }));
+
+check(
+  "случай со снимка: 70 + 90 + 30 + 120 = 310 одним нажатием",
+  shipmentPartsRefusal({
+    orderId: "ORD-1",
+    item: ITEM310,
+    batches: STORE,
+    parts: parts(["P1", 70], ["P2", 90], ["P3", 30], ["P4", 120]),
+  }),
+  ""
+);
+check(
+  "каждая часть в пределах, а вместе больше заказа — отказ",
+  refused(
+    shipmentPartsRefusal({
+      orderId: "ORD-1",
+      item: ITEM310,
+      batches: STORE,
+      parts: parts(["P1", 70], ["P2", 90], ["P4", 200]),
+    })
+  ),
+  true
+);
+check(
+  "текст отказа говорит про сумму, а не про последнюю партию",
+  shipmentPartsRefusal({
+    orderId: "ORD-1",
+    item: ITEM310,
+    batches: STORE,
+    parts: parts(["P1", 70], ["P2", 90], ["P4", 200]),
+  }),
+  "Отмечено 360 шт., а по позиции осталось отгрузить 310 шт."
+);
+check(
+  "уже отгруженное учитывается",
+  refused(
+    shipmentPartsRefusal({
+      orderId: "ORD-1",
+      item: { ...ITEM310, shippedQuantity: 300 },
+      batches: STORE,
+      parts: parts(["P1", 5], ["P2", 6]),
+    })
+  ),
+  true
+);
+check(
+  "одна партия дважды — отказ, а не сложение",
+  refused(
+    shipmentPartsRefusal({
+      orderId: "ORD-1",
+      item: ITEM310,
+      batches: STORE,
+      parts: parts(["P1", 30], ["P1", 30]),
+    })
+  ),
+  true
+);
+check(
+  "в одной из партий не хватает — отказ всей отгрузки",
+  refused(
+    shipmentPartsRefusal({
+      orderId: "ORD-1",
+      item: ITEM310,
+      batches: STORE,
+      parts: parts(["P1", 70], ["P3", 40]),
+    })
+  ),
+  true
+);
+check(
+  "чужой сорт в одной из партий — отказ всей отгрузки",
+  refused(
+    shipmentPartsRefusal({
+      orderId: "ORD-1",
+      item: ITEM310,
+      batches: new Map([...STORE, B("P5", 100, { variety: "Avalanche" })]),
+      parts: parts(["P1", 70], ["P5", 10]),
+    })
+  ),
+  true
+);
+check(
+  "неизвестная партия и пустой список — отказ",
+  [
+    refused(shipmentPartsRefusal({ orderId: "ORD-1", item: ITEM310, batches: STORE, parts: parts(["NOPE", 1]) })),
+    refused(shipmentPartsRefusal({ orderId: "ORD-1", item: ITEM310, batches: STORE, parts: [] })),
+  ],
+  [true, true]
+);
+check(
+  "позиция чужой заявки отклоняется и для нескольких партий",
+  refused(shipmentPartsRefusal({ orderId: "ORD-2", item: ITEM310, batches: STORE, parts: parts(["P1", 10]) })),
+  true
+);
+
+check(
+  "статус после отгрузки",
+  [
+    statusAfterShipping("new", [{ quantity: 310, shippedQuantity: 310 }]),
+    statusAfterShipping("new", [{ quantity: 310, shippedQuantity: 100 }, { quantity: 50, shippedQuantity: 0 }]),
+    statusAfterShipping("new", [{ quantity: 310, shippedQuantity: 0 }]),
+    statusAfterShipping("cancelled", [{ quantity: 10, shippedQuantity: 10 }]),
+  ],
+  ["shipped", "in_progress", "new", "cancelled"]
+);
+
+check(
+  "лимит Google узнаётся",
+  [
+    isQuotaError({ code: 429 }),
+    isQuotaError({ response: { status: 429 } }),
+    isQuotaError(new Error("Quota exceeded for quota metric 'Read requests'")),
+    isQuotaError(new Error("Превышен лимит запросов")),
+    isQuotaError(new Error("Партия не найдена")),
+    isQuotaError({ code: 403 }),
+  ],
+  [true, true, true, true, false, false]
 );
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);

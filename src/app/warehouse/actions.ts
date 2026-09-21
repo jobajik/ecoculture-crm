@@ -10,7 +10,7 @@ import { getBatchById } from "@/lib/repo/batches";
 import { FLOWER_TYPE_LABELS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getOrderById } from "@/lib/repo/orders";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
-import { createShipment, type NewShipmentInput } from "@/lib/repo/shipments";
+import { createShipments, type ShipmentPart } from "@/lib/repo/shipments";
 import { createWriteoff, type NewWriteoffInput } from "@/lib/repo/writeoffs";
 import { createStaffTakeout, type NewStaffTakeoutInput } from "@/lib/repo/staffTakeouts";
 import { cleanStaffName, takeoutRefusal } from "@/lib/staffTakeout";
@@ -125,9 +125,12 @@ async function importBatchesActionInner(rows: ParsedBatchRow[]) {
   return { created: batchIds.length, totalStems: valid.reduce((sum, r) => sum + r.quantity, 0) };
 }
 
-async function createShipmentActionInner(input: Omit<NewShipmentInput, "warehouseEmail">) {
+async function createShipmentActionInner(input: {
+  orderId: string;
+  itemId: string;
+  parts: ShipmentPart[];
+}) {
   const { email, farm } = await requireWarehouse();
-  if (!input.quantity || input.quantity <= 0) throw new Error("Укажите количество к отгрузке");
 
   // Цветок не уезжает раньше денег. Проверка стоит именно здесь, а не только
   // в интерфейсе: кнопку можно не показать, а вот прямую ссылку на страницу
@@ -141,17 +144,20 @@ async function createShipmentActionInner(input: Omit<NewShipmentInput, "warehous
     );
   }
 
-  const batch = await getBatchById(input.batchId);
-  if (!batch) throw new Error("Партия не найдена");
-  assertOwnFlowerType(farm, batch.flowerType);
+  // Своё производство проверяем по ПОЗИЦИИ: партия обязана совпасть с ней по
+  // цветку, сорту и длине (это проверяет shipmentPartsRefusal), значит чужую
+  // партию сюда не подложить.
+  const item = order.items.find((i) => i.itemId === input.itemId);
+  if (!item) throw new Error("Позиция заявки не найдена");
+  assertOwnFlowerType(farm, item.flowerType);
 
-  const shipmentId = await createShipment({ ...input, warehouseEmail: email });
+  const shipmentIds = await createShipments({ ...input, warehouseEmail: email });
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
   revalidatePath(`/orders/${input.orderId}`);
   revalidatePath("/orders");
   revalidatePath("/analytics");
-  return shipmentId;
+  return shipmentIds.length;
 }
 
 async function createWriteoffActionInner(input: Omit<NewWriteoffInput, "warehouseEmail">) {

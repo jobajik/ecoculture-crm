@@ -4,7 +4,7 @@ import type { FlowerType } from "../constants";
 import type { Batch } from "../types";
 import { toIsoDate } from "../sheetDate";
 
-function toBatch(record: Record<string, string>): Batch {
+export function toBatch(record: Record<string, string>): Batch {
   return {
     batchId: record.BatchID,
     receivedAt: record.ReceivedAt,
@@ -140,7 +140,16 @@ export async function listAvailableBatchesFor(
   variety: string,
   grade?: string
 ): Promise<Batch[]> {
-  const batches = await listBatches();
+  return availableBatchesFor(await listBatches(), flowerType, variety, grade);
+}
+
+/** То же, но по уже прочитанному складу — когда позиций несколько, а читать склад надо один раз. */
+export function availableBatchesFor(
+  batches: Batch[],
+  flowerType: string,
+  variety: string,
+  grade?: string
+): Batch[] {
   return batches
     .filter(
       (b) =>

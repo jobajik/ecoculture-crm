@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { farmLabel, getFarmFor } from "@/lib/constants";
 import { getOrderById } from "@/lib/repo/orders";
-import { listAvailableBatchesFor } from "@/lib/repo/batches";
+import { availableBatchesFor, listBatches } from "@/lib/repo/batches";
 import ShipmentForm from "@/components/ShipmentForm";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import { formatDay } from "@/lib/formatDate";
@@ -22,17 +22,19 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
   // Зав. складом отгружает только позиции своего производства.
   const ownItems = order.items.filter((i) => !farm || getFarmFor(i.flowerType) === farm);
 
-  const itemsWithBatches = await Promise.all(
-    ownItems.map(async (item) => ({
-      itemId: item.itemId,
-      flowerType: item.flowerType,
-      variety: item.variety,
-      grade: item.grade,
-      quantity: item.quantity,
-      shippedQuantity: item.shippedQuantity,
-      availableBatches: await listAvailableBatchesFor(item.flowerType, item.variety, item.grade),
-    }))
-  );
+  // Склад читается ОДИН раз на всю страницу, а не по разу на позицию: заявка
+  // из восьми позиций стоила восьми чтений, и вместе с отгрузками это упиралось
+  // в лимит Google (см. `readTable` в src/lib/sheets.ts).
+  const allBatches = await listBatches();
+  const itemsWithBatches = ownItems.map((item) => ({
+    itemId: item.itemId,
+    flowerType: item.flowerType,
+    variety: item.variety,
+    grade: item.grade,
+    quantity: item.quantity,
+    shippedQuantity: item.shippedQuantity,
+    availableBatches: availableBatchesFor(allBatches, item.flowerType, item.variety, item.grade),
+  }));
 
   return (
     <div className="max-w-2xl">
