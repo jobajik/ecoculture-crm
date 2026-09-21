@@ -82,6 +82,13 @@ export interface Order {
   invoiceNote: string;
   /** Номер документа реализации в 1С; вписывает бухгалтер. */
   realization1c: string;
+  /**
+   * Условия оплаты из карточки клиента («Отсрочка 7 дней», «По факту»…).
+   * НЕ колонка заявки: подтягивается при чтении (`listOrdersWithItems`), потому
+   * что условия — договорённость с клиентом, и меняются они в карточке. По ним
+   * решается, можно ли отгрузить до оплаты (`orderReady.ts`).
+   */
+  clientPaymentTerms?: string;
 }
 
 /** Один платёж по заявке — строка вкладки Payments. */
@@ -247,6 +254,8 @@ export interface StaffTakeout {
   unitPrice: number;
   warehouseEmail: string;
   note: string;
+  /** Пусто — сотруднику в счёт зарплаты; «company» — на нужды компании. */
+  kind: string;
 }
 
 export interface PriceHistoryEntry {

@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { createStaffTakeoutAction } from "@/app/warehouse/actions";
-import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, formatGrade } from "@/lib/constants";
 import { findSimilarStaff } from "@/lib/staffTakeout";
 import { unwrap } from "@/lib/actionResult";
 
@@ -47,11 +47,19 @@ export default function StaffTakeoutForm({
   knownNames,
   today,
   defaultDate,
+  company = false,
 }: {
   batches: TakeoutBatchOption[];
+  /** Подсказки поля «кому» (или «на что» — у расхода компании). */
   knownNames: string[];
   today: string;
   defaultDate: string;
+  /**
+   * Расход на нужды компании (админ. расход) вместо выдачи сотруднику. Та же
+   * форма: партия, стебли, дата, — меняются только слова и то, что сумма здесь
+   * не удержание, а оценка по внутренней цене.
+   */
+  company?: boolean;
 }) {
   const router = useRouter();
 
@@ -100,7 +108,9 @@ export default function StaffTakeoutForm({
   const batch = options.find((b) => b.batchId === batchId) ?? null;
   const qty = Number(quantity) || 0;
   const price = Number(unitPrice) || 0;
-  const similar = findSimilarStaff(staffName, knownNames);
+  // Похожее написание ищем только у фамилий: у назначений («Подарок»,
+  // «Подарки») такая подсказка скорее мешала бы.
+  const similar = company ? "" : findSimilarStaff(staffName, knownNames);
 
   function pickFlower(value: string) {
     setFlowerType(value);
@@ -123,13 +133,13 @@ export default function StaffTakeoutForm({
     setError(null);
     setDone(null);
 
-    if (!staffName.trim()) return setError("Укажите, кому выдали");
+    if (!staffName.trim()) return setError(company ? "Укажите, на что ушли цветы" : "Укажите, кому выдали");
     if (!batch) return setError("Выберите партию");
     if (!qty || qty <= 0) return setError("Укажите количество");
     if (qty > batch.quantityRemaining) {
       return setError(`В партии осталось ${batch.quantityRemaining} шт.`);
     }
-    if (!date) return setError("Укажите дату выдачи");
+    if (!date) return setError(company ? "Укажите дату" : "Укажите дату выдачи");
 
     setSubmitting(true);
     try {
@@ -140,6 +150,7 @@ export default function StaffTakeoutForm({
         quantity: qty,
         unitPrice: price,
         note: note.trim(),
+        kind: company ? TAKEOUT_KINDS.COMPANY : TAKEOUT_KINDS.STAFF,
       }));
       setDone(`${staffName.trim()} — ${qty} шт.`);
       // Фамилию и день оставляем: следующей строкой часто идёт тот же человек
@@ -149,7 +160,7 @@ export default function StaffTakeoutForm({
       setBatchId("");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось записать выдачу");
+      setError(err instanceof Error ? err.message : company ? "Не удалось записать расход" : "Не удалось записать выдачу");
     } finally {
       setSubmitting(false);
     }
@@ -167,13 +178,13 @@ export default function StaffTakeoutForm({
     <form onSubmit={handleSubmit} className="card space-y-4">
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="text-sm">
-          <span className="label">Кому выдали</span>
+          <span className="label">{company ? "На что ушли" : "Кому выдали"}</span>
           <input
             className="input"
             list="staff-names"
             value={staffName}
             onChange={(e) => setStaffName(e.target.value)}
-            placeholder="Фамилия и имя"
+            placeholder={company ? "Подарок, офис, мероприятие…" : "Фамилия и имя"}
             autoComplete="off"
           />
           <datalist id="staff-names">
@@ -195,7 +206,7 @@ export default function StaffTakeoutForm({
           )}
         </label>
         <label className="text-sm">
-          <span className="label">Дата выдачи</span>
+          <span className="label">{company ? "Дата" : "Дата выдачи"}</span>
           <input
             type="date"
             className="input"
@@ -300,7 +311,7 @@ export default function StaffTakeoutForm({
           )}
         </label>
         <div className="text-sm">
-          <span className="label">К удержанию</span>
+          <span className="label">{company ? "По внутренней цене" : "К удержанию"}</span>
           <div
             className={clsx(
               "text-lg font-semibold tabular-nums pt-1.5",
@@ -322,7 +333,7 @@ export default function StaffTakeoutForm({
           className="input"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="например: на праздник"
+          placeholder={company ? "например: партнёрам из Астаны" : "например: на праздник"}
         />
       </label>
 
@@ -333,17 +344,18 @@ export default function StaffTakeoutForm({
       )}
       {done && (
         <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">
-          Записано: {done}. Стебли сняты со склада.
+          Записано: {done} Стебли сняты со склада.
         </div>
       )}
 
       <div>
         <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-50">
-          {submitting ? "Записываю…" : "Записать выдачу"}
+          {submitting ? "Записываю…" : company ? "Записать расход" : "Записать выдачу"}
         </button>
         <p className="text-xs text-ink-muted mt-2">
-          Стебли уйдут со склада сразу. Денег по этой записи в кассу не приходит: сумма — это то,
-          что бухгалтер удержит из зарплаты.
+          {company
+            ? "Стебли уйдут со склада сразу. Это не продажа и не списание: цветок ушёл бесплатно на нужды компании. Цена не обязательна — по ней видно, во что обошёлся расход."
+            : "Стебли уйдут со склада сразу. Денег по этой записи в кассу не приходит: сумма — это то, что бухгалтер удержит из зарплаты."}
         </p>
       </div>
     </form>

@@ -21,7 +21,7 @@ import RegionIncomePanel from "@/components/RegionIncomePanel";
 import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKind";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
-import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { isCreditTerms, isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
 import { canEditOrder } from "@/lib/orderEdit";
 import WarehouseItemsEdit from "@/components/WarehouseItemsEdit";
@@ -255,6 +255,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         retail={order.retail}
         kind={order.kind}
         consignment={isConsignment(order)}
+        creditTerms={isCreditTerms(order.clientPaymentTerms) ? order.clientPaymentTerms : ""}
         invoiceSentAt={order.invoiceSentAt}
         canConfirm={
           role === "admin" ||

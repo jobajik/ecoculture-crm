@@ -37,6 +37,7 @@ export default function FlowerSummary({
     sold: rows.reduce((s, r) => s + r.sold, 0),
     writeoff: rows.reduce((s, r) => s + r.writeoff, 0),
     takeout: rows.reduce((s, r) => s + r.takeout, 0),
+    companyUse: rows.reduce((s, r) => s + (r.companyUse ?? 0), 0),
     transfer: rows.reduce((s, r) => s + r.transfer, 0),
     stock: rows.reduce((s, r) => s + r.stock, 0),
   };
@@ -51,7 +52,7 @@ export default function FlowerSummary({
       </div>
 
       <div className="card !p-0 table-scroll">
-        <table className="w-full text-sm min-w-[840px]">
+        <table className="w-full text-sm min-w-[920px]">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
               <th className="px-4 py-2.5 font-medium">Цветок</th>
@@ -63,6 +64,7 @@ export default function FlowerSummary({
                   нет, и разница выглядит как ошибка в данных. */}
               <th className="px-3 py-2.5 font-medium text-right">В магазины и регионы</th>
               <th className="px-3 py-2.5 font-medium text-right">Сотрудникам</th>
+              <th className="px-3 py-2.5 font-medium text-right">На нужды компании</th>
               <th className="px-3 py-2.5 font-medium text-right">На складе</th>
               <th className="px-3 py-2.5 font-medium text-right">Запас</th>
               <th className="px-3 py-2.5 font-medium text-right">Ср. цена</th>
@@ -86,6 +88,7 @@ export default function FlowerSummary({
                   <td className="px-3 py-2.5 text-right tabular-nums">{num(f.writeoff)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{num(f.transfer)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{num(f.takeout)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{num(f.companyUse ?? 0)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums font-medium">
                     {num(f.stock)}
                   </td>
@@ -126,6 +129,9 @@ export default function FlowerSummary({
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {num(totals.takeout)}
+              </td>
+              <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                {num(totals.companyUse)}
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums font-medium">
                 {num(totals.stock)}

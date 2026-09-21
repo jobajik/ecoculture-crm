@@ -7,13 +7,13 @@ import { createBatch, createBatches, type NewBatchInput } from "@/lib/repo/batch
 import { parseBatchesWorkbook, type ParsedBatchRow, type ParseResult } from "@/lib/excel";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { getBatchById } from "@/lib/repo/batches";
-import { FLOWER_TYPE_LABELS, farmLabel, getFarmFor } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getOrderById } from "@/lib/repo/orders";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { createShipments, type ShipmentPart } from "@/lib/repo/shipments";
 import { createWriteoff, type NewWriteoffInput } from "@/lib/repo/writeoffs";
 import { createStaffTakeout, type NewStaffTakeoutInput } from "@/lib/repo/staffTakeouts";
-import { cleanStaffName, takeoutRefusal } from "@/lib/staffTakeout";
+import { cleanStaffName, isCompanyUse, takeoutRefusal } from "@/lib/staffTakeout";
 import { guard } from "@/lib/actionResult";
 
 async function requireWarehouse() {
@@ -201,16 +201,19 @@ async function createStaffTakeoutActionInner(
     date: input.date,
     today: todayKey(),
     batch: batch ? { flowerType: batch.flowerType, quantityRemaining: batch.quantityRemaining } : null,
+    kind: input.kind,
   });
   if (refusal) throw new Error(refusal);
 
   const takeoutId = await createStaffTakeout({
     ...input,
+    kind: isCompanyUse(input) ? TAKEOUT_KINDS.COMPANY : TAKEOUT_KINDS.STAFF,
     staffName: cleanStaffName(input.staffName),
     warehouseEmail: session.user.email,
   });
 
   revalidatePath("/warehouse/takeouts");
+  revalidatePath("/warehouse/company");
   revalidatePath("/warehouse/batches");
   revalidatePath("/finance/takeouts");
   revalidatePath("/analytics");

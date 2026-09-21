@@ -12,7 +12,7 @@ import { authOptions } from "@/lib/auth";
 import SectionTabs from "@/components/SectionTabs";
 import { WAREHOUSE_TABS } from "./tabs";
 import { formatDay } from "@/lib/formatDate";
-import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +135,9 @@ export default async function WarehousePage() {
                 </td>
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={o.status} />
+                  {creditNote(o) && (
+                    <div className="text-xs text-[#8a5a00] mt-1 whitespace-nowrap">{creditNote(o)}</div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">

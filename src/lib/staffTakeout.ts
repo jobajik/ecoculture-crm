@@ -1,4 +1,4 @@
-import { ROLES, getFarmFor, type FlowerType } from "./constants";
+import { ROLES, TAKEOUT_KINDS, getFarmFor, type FlowerType } from "./constants";
 
 /**
  * Цветы, которые сотрудник берёт в счёт зарплаты.
@@ -15,6 +15,24 @@ import { ROLES, getFarmFor, type FlowerType } from "./constants";
  * нарушать, проверяется на сервере тестируемой функцией, а не подсказкой в
  * браузере (грабли 1.11).
  */
+
+// --- Вид выдачи -------------------------------------------------------------
+
+/**
+ * Выдача «на нужды компании» (админ. расход): подарки, офис, мероприятия.
+ *
+ * Лежит в той же вкладке, но в удержание из зарплаты НЕ идёт: у неё нет
+ * сотрудника, с которого удерживать. Поэтому все расчёты по людям ниже берут
+ * только выдачи сотрудникам, а расход компании считается отдельно.
+ */
+export function isCompanyUse(t: { kind?: string | null }): boolean {
+  return String(t.kind ?? "").trim().toLowerCase() === TAKEOUT_KINDS.COMPANY;
+}
+
+/** Только выдачи сотрудникам — для всего, что считается «по людям». */
+function staffOnly<T extends { kind?: string | null }>(items: T[]): T[] {
+  return items.filter((t) => !isCompanyUse(t));
+}
 
 // --- Имя сотрудника ---------------------------------------------------------
 
@@ -76,10 +94,10 @@ export function looseStaffKey(value: string | null | undefined): string {
  * написаний берётся последнее.
  */
 export function staffSpellings(
-  takeouts: { staffName: string; date: string }[]
+  takeouts: { staffName: string; date: string; kind?: string }[]
 ): Map<string, { name: string; date: string }> {
   const best = new Map<string, { name: string; date: string; proper: boolean }>();
-  for (const t of takeouts) {
+  for (const t of staffOnly(takeouts)) {
     const key = staffKey(t.staffName);
     if (!key) continue;
     const name = cleanStaffName(t.staffName);
@@ -106,7 +124,9 @@ export function staffSpellings(
  * возьмёт и сегодня, а список из тридцати фамилий по алфавиту пришлось бы
  * читать целиком.
  */
-export function knownStaffNames(takeouts: { staffName: string; date: string }[]): string[] {
+export function knownStaffNames(
+  takeouts: { staffName: string; date: string; kind?: string }[]
+): string[] {
   return Array.from(staffSpellings(takeouts).values())
     .sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name, "ru") : a.date < b.date ? 1 : -1))
     .map((v) => v.name);
@@ -168,6 +188,8 @@ export interface TakeoutCheckInput {
   /** Сегодняшний день в формате «ГГГГ-ММ-ДД» — передаётся, чтобы функция была чистой. */
   today: string;
   batch: { flowerType: string; quantityRemaining: number } | null;
+  /** Пусто — сотруднику; «company» — на нужды компании. */
+  kind?: string;
 }
 
 /**
@@ -180,7 +202,11 @@ export function takeoutRefusal(input: TakeoutCheckInput): string {
   if (!canFillTakeouts(input.role)) {
     return "Записывать выдачи может только зав. складом или администратор";
   }
-  if (!cleanStaffName(input.staffName)) return "Укажите, кому выдали";
+  const company = isCompanyUse(input);
+  if (input.kind && !company) return "Неизвестный вид выдачи";
+  if (!cleanStaffName(input.staffName)) {
+    return company ? "Укажите, на что ушли цветы" : "Укажите, кому выдали";
+  }
   if (!input.batch) return "Партия не найдена";
 
   // Чужой цветок не выдают — то же правило, что на приёмке, отгрузке и
@@ -212,7 +238,9 @@ export function takeoutRefusal(input: TakeoutCheckInput): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return "Укажите дату выдачи";
   // Будущим днём выдать нельзя: цветок отдают из рук в руки, а запись «завтра»
   // попала бы в следующий месяц и уехала бы из удержания.
-  if (input.date > input.today) return "Дата выдачи не может быть будущей";
+  if (input.date > input.today) {
+    return company ? "Дата расхода не может быть будущей" : "Дата выдачи не может быть будущей";
+  }
 
   return "";
 }
@@ -251,6 +279,8 @@ export interface RawTakeout {
   quantity: number;
   unitPrice: number;
   note?: string;
+  /** Пусто — сотруднику; «company» — на нужды компании. */
+  kind?: string;
 }
 
 /** Отбирает выдачи своего производства. Пустая ферма — берём все. */
@@ -269,7 +299,7 @@ export function buildTakeoutDay(input: {
   // Иначе две строки одного человека («Ахметова Разия» и «ахметова разия»)
   // выглядят как два разных сотрудника, и вся склейка кажется несработавшей.
   const spellings = staffSpellings(input.takeouts);
-  const rows = scoped(input.takeouts, input.farm)
+  const rows = scoped(staffOnly(input.takeouts), input.farm)
     .filter((t) => t.date === input.date)
     .map((t) => ({
       takeoutId: t.takeoutId,
@@ -340,7 +370,9 @@ export function buildStaffMonth(input: {
   month: string;
   farm: string | null;
 }): StaffMonth {
-  const mine = scoped(input.takeouts, input.farm).filter((t) => t.date.startsWith(`${input.month}-`));
+  const mine = scoped(staffOnly(input.takeouts), input.farm).filter((t) =>
+    t.date.startsWith(`${input.month}-`)
+  );
 
   const spellings = staffSpellings(input.takeouts);
   const map = new Map<string, StaffMonthRow & { flowers: Map<string, number> }>();
@@ -388,16 +420,98 @@ export function buildStaffMonth(input: {
   };
 }
 
-/** Сколько стеблей ушло сотрудникам по каждому цветку за отрезок дат. */
+/**
+ * Сколько стеблей ушло по каждому цветку за отрезок дат: сотрудникам (по
+ * умолчанию) или, с `company: true`, на нужды компании.
+ */
 export function takeoutStemsByFlower(input: {
   takeouts: RawTakeout[];
   from: string;
   to: string;
+  company?: boolean;
 }): Record<string, number> {
   const out: Record<string, number> = {};
   for (const t of input.takeouts) {
     if (t.date < input.from || t.date > input.to) continue;
+    if (isCompanyUse(t) !== (input.company ?? false)) continue;
     out[t.flowerType] = (out[t.flowerType] ?? 0) + t.quantity;
   }
   return out;
+}
+
+// --- Нужды компании (админ. расход) ---------------------------------------
+
+export interface CompanyUseRow {
+  takeoutId: string;
+  date: string;
+  /** На что ушли цветы: «Подарок», «Офис»… */
+  purpose: string;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  note: string;
+}
+
+export interface CompanyUsePeriod {
+  rows: CompanyUseRow[];
+  stems: number;
+  /** Во что это обошлось по внутренней цене; строки без цены не считаются. */
+  amount: number;
+  noPrice: number;
+  /** Сумма по назначению: «Подарок — 120 шт.», по убыванию стеблей. */
+  byPurpose: { purpose: string; stems: number; amount: number }[];
+}
+
+/**
+ * Расход на нужды компании за отрезок дат — одним списком.
+ *
+ * Строки от свежих к старым: вопрос здесь «что и куда ушло», и начинается он
+ * с последнего. Назначения склеиваются без учёта регистра — «подарок» и
+ * «Подарок» одна строка итога.
+ */
+export function buildCompanyUse(input: {
+  takeouts: RawTakeout[];
+  from: string;
+  to: string;
+  farm: string | null;
+}): CompanyUsePeriod {
+  const rows = scoped(input.takeouts.filter(isCompanyUse), input.farm)
+    .filter((t) => t.date >= input.from && t.date <= input.to)
+    .map((t) => ({
+      takeoutId: t.takeoutId,
+      date: t.date,
+      purpose: cleanStaffName(t.staffName),
+      flowerType: t.flowerType,
+      variety: t.variety,
+      grade: t.grade,
+      quantity: t.quantity,
+      unitPrice: t.unitPrice,
+      amount: t.quantity * t.unitPrice,
+      note: t.note ?? "",
+    }))
+    .sort((a, b) => (a.date === b.date ? b.quantity - a.quantity : a.date < b.date ? 1 : -1));
+
+  const purposes = new Map<string, { purpose: string; stems: number; amount: number }>();
+  for (const r of rows) {
+    const key = staffKey(r.purpose);
+    const p = purposes.get(key) ?? { purpose: r.purpose, stems: 0, amount: 0 };
+    // Написание с заглавной бьёт строчное — как у фамилий (staffSpellings).
+    if (/^[a-zа-яё]/.test(p.purpose) && /^[A-ZА-ЯЁ]/.test(r.purpose)) p.purpose = r.purpose;
+    p.stems += r.quantity;
+    p.amount += r.amount;
+    purposes.set(key, p);
+  }
+
+  return {
+    rows,
+    stems: rows.reduce((s, r) => s + r.quantity, 0),
+    amount: rows.reduce((s, r) => s + r.amount, 0),
+    noPrice: rows.filter((r) => r.unitPrice <= 0).length,
+    byPurpose: Array.from(purposes.values()).sort(
+      (a, b) => b.stems - a.stems || a.purpose.localeCompare(b.purpose, "ru")
+    ),
+  };
 }

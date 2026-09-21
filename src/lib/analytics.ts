@@ -3,6 +3,7 @@ import { decimal, percent } from "./formatNumber";
 import { listBatches } from "./repo/batches";
 import { listWriteoffs } from "./repo/writeoffs";
 import { listStaffTakeouts } from "./repo/staffTakeouts";
+import { isCompanyUse } from "./staffTakeout";
 import { hasNoClientInvoice } from "./orderKind";
 import { listPriceHistory } from "./repo/priceHistory";
 import { listHarvestForecast } from "./repo/harvestForecast";
@@ -87,6 +88,11 @@ export interface FlowerRow {
    * разницей, из-за которой не стирают отгрузки, оставляя партии.
    */
   takeout: number;
+  /**
+   * Ушло на нужды компании (админ. расход) за период, стеблей: подарки, офис.
+   * Отдельно от выдач сотрудникам — то не удерживается из зарплаты.
+   */
+  companyUse: number;
   /** Лежит на складе сейчас. */
   stock: number;
   /** На сколько дней хватит склада при нынешнем темпе продаж. */
@@ -836,7 +842,10 @@ export async function getAnalyticsSummary(
           .reduce((s, w) => s + w.quantity, 0),
         transfer: transferNow.get(flowerType) ?? 0,
         takeout: takeoutNow
-          .filter((t) => t.flowerType === flowerType)
+          .filter((t) => t.flowerType === flowerType && !isCompanyUse(t))
+          .reduce((s, t) => s + t.quantity, 0),
+        companyUse: takeoutNow
+          .filter((t) => t.flowerType === flowerType && isCompanyUse(t))
           .reduce((s, t) => s + t.quantity, 0),
         stock,
         coverDays: perDay > 0 ? stock / perDay : null,

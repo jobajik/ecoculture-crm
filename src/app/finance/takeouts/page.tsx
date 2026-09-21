@@ -4,7 +4,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { listStaffTakeouts } from "@/lib/repo/staffTakeouts";
 import { periodLabel, periodOf, periodShift } from "@/lib/constants";
-import { buildStaffMonth, canSeeTakeouts, takeoutFarmScope } from "@/lib/staffTakeout";
+import { buildCompanyUse, buildStaffMonth, canSeeTakeouts, takeoutFarmScope } from "@/lib/staffTakeout";
+import CompanyUseReport from "@/components/CompanyUseReport";
 import SectionTabs from "@/components/SectionTabs";
 import { financeTabsFor } from "../tabs";
 import StaffTakeoutMonth from "@/components/StaffTakeoutMonth";
@@ -41,6 +42,8 @@ export default async function FinanceTakeoutsPage({
   const takeouts = await listStaffTakeouts();
   const farm = takeoutFarmScope(role, session?.user?.farm ?? null);
   const data = buildStaffMonth({ takeouts, month, farm });
+  // Расход на нужды компании — рядом, но отдельно: из зарплаты он не удерживается.
+  const company = buildCompanyUse({ takeouts, from: `${month}-01`, to: `${month}-31`, farm });
 
   // Три месяца назад и вперёд до текущего: глубже за зарплатой не ходят, а
   // список из двенадцати кнопок читался бы дольше, чем сама таблица.
@@ -81,6 +84,13 @@ export default async function FinanceTakeoutsPage({
         title={`${periodLabel(month)} — по сотрудникам`}
         hint="Сумма к удержанию из зарплаты"
       />
+
+      <div className="mt-6">
+        <CompanyUseReport
+          data={company}
+          title={`${periodLabel(month)} — на нужды компании (не удерживается)`}
+        />
+      </div>
     </div>
   );
 }

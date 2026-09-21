@@ -28,6 +28,7 @@ export default function ReadyChecks({
   retail = "",
   kind = "",
   consignment = false,
+  creditTerms = "",
   canConfirm,
 }: {
   orderId: string;
@@ -49,6 +50,11 @@ export default function ReadyChecks({
    * поэтому собирать её можно по одной галочке менеджера (orderReady.ts).
    */
   consignment?: boolean;
+  /**
+   * Условия клиента, по которым цветок уезжает раньше денег («Отсрочка 7 дней»,
+   * «По факту»). Пусто — отгрузка ждёт оплату. Правило — `isCreditTerms()`.
+   */
+  creditTerms?: string;
   canConfirm: boolean;
 }) {
   const router = useRouter();
@@ -61,7 +67,8 @@ export default function ReadyChecks({
   const isRetail = !!retail.trim();
   const isRegion = kind.trim().toLowerCase() === "region";
   const noInvoice = isRetail || isRegion;
-  const ready = managerConfirmed && (noInvoice || consignment || paid);
+  const credit = !noInvoice && !consignment && !paid && Boolean(creditTerms.trim());
+  const ready = managerConfirmed && (noInvoice || consignment || paid || credit);
   const partial = !paid && paidAmount > 0;
   // Счёт отправлен, но денег ещё нет — промежуточная ступень между «ничего не
   // сделано» и «оплачено». Без неё серая клетка означала сразу два разных
@@ -90,7 +97,9 @@ export default function ReadyChecks({
             {ready
               ? noInvoice
                 ? "✓ Готова к сборке"
-                : "✓✓ Готова к сборке"
+                : credit
+                  ? "✓ Готова к сборке — в долг"
+                  : "✓✓ Готова к сборке"
               : "Ещё не готова к сборке"}
           </h2>
           <p className="text-sm text-ink-secondary mt-0.5">
@@ -101,6 +110,8 @@ export default function ReadyChecks({
                   ? "Менеджер розницы подтвердил заявку — склад может собирать. Это наш магазин, оплата по заявке не нужна."
                   : consignment
                     ? "Менеджер подтвердил — склад может собирать. Это реализация: платят за проданное, после отгрузки."
+                    : credit
+                      ? `Менеджер подтвердил — склад может отгружать в долг: у клиента «${creditTerms.trim()}». Деньги бухгалтер отметит, когда придут.`
                     : "Менеджер согласовал заявку и бухгалтер подтвердил оплату — склад может собирать."
               : "Склад увидит заявку, но она будет помечена как неготовая."}
           </p>
@@ -181,6 +192,8 @@ export default function ReadyChecks({
                     ? `Счёт у клиента с ${formatDay(invoiceSentAt, "")} — ждём деньги`
                     : consignment
                       ? "Реализация: деньги приходят по мере продаж и сборку не держат"
+                      : credit
+                        ? `${creditTerms.trim()}: отгрузку не держит, долг идёт бухгалтеру`
                       : "Отмечает бухгалтер в разделе «Оплаты»"}
             </div>
             {partial && (

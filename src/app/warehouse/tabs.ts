@@ -11,4 +11,7 @@ export const WAREHOUSE_TABS = [
   { href: "/warehouse/receive", label: "Приёмка" },
   { href: "/warehouse/batches", label: "Партии" },
   { href: "/warehouse/takeouts", label: "Выдачи сотрудникам" },
+  // «Админ расход» зав. склада: подарки, офис, мероприятия. Рядом с выдачами —
+  // это тоже «ушло со склада без продажи».
+  { href: "/warehouse/company", label: "Нужды компании" },
 ];

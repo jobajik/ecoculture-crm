@@ -133,10 +133,33 @@ export interface NewOrderInput {
   items: NewOrderItemInput[];
 }
 
+/**
+ * Условия оплаты клиентов: ClientID → «Отсрочка 7 дней».
+ *
+ * Нужны правилу «можно ли отгрузить до оплаты» (`orderReady.ts`): клиенту с
+ * отсрочкой или «по факту» цветок уезжает раньше денег — так договорились.
+ * Не прочиталось — пустая карта: без условий отгрузка ждёт оплату, то есть
+ * сбой закрывает, а не открывает (грабли 1.10).
+ */
+async function readClientTerms(): Promise<Map<string, string>> {
+  try {
+    const table = await readTable(SHEET_TABS.CLIENTS);
+    const out = new Map<string, string>();
+    for (const row of table.rows) {
+      const r = rowToRecord(SHEET_TABS.CLIENTS, row);
+      if (r.ClientID) out.set(r.ClientID, (r.PaymentTerms || "").trim());
+    }
+    return out;
+  } catch {
+    return new Map();
+  }
+}
+
 export async function listOrdersWithItems(): Promise<OrderWithItems[]> {
-  const [ordersTable, itemsTable] = await Promise.all([
+  const [ordersTable, itemsTable, termsByClient] = await Promise.all([
     readTable(SHEET_TABS.ORDERS),
     readTable(SHEET_TABS.ORDER_ITEMS),
+    readClientTerms(),
   ]);
 
   const orders = ordersTable.rows.map((row) => toOrder(rowToRecord(SHEET_TABS.ORDERS, row)));
@@ -151,7 +174,13 @@ export async function listOrdersWithItems(): Promise<OrderWithItems[]> {
       // после обновления вся прошлая выручка разом уехала бы в долги.
       const paidAmount =
         order.paidAmount > 0 ? order.paidAmount : order.paid ? totalAmount : 0;
-      return { ...order, paidAmount, items: orderItems, totalAmount };
+      return {
+        ...order,
+        paidAmount,
+        items: orderItems,
+        totalAmount,
+        clientPaymentTerms: termsByClient.get(order.clientId) ?? "",
+      };
     })
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }

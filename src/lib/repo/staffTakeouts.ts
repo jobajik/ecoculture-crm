@@ -30,6 +30,7 @@ function toTakeout(record: Record<string, string>): StaffTakeout {
     unitPrice: Number(record.UnitPrice) || 0,
     warehouseEmail: (record.WarehouseEmail || "").toLowerCase(),
     note: record.Note || "",
+    kind: (record.Kind || "").trim().toLowerCase(),
   };
 }
 
@@ -54,6 +55,8 @@ export interface NewStaffTakeoutInput {
   quantity: number;
   unitPrice: number;
   note?: string;
+  /** Пусто — сотруднику в счёт зарплаты; «company» — на нужды компании. */
+  kind?: string;
   warehouseEmail: string;
 }
 
@@ -93,6 +96,7 @@ export async function createStaffTakeout(input: NewStaffTakeoutInput): Promise<s
     UnitPrice: input.unitPrice,
     WarehouseEmail: input.warehouseEmail,
     Note: input.note ?? "",
+    Kind: input.kind ?? "",
   });
 
   return takeoutId;

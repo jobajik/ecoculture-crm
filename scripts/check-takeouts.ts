@@ -17,7 +17,9 @@
  * Запуск: npx tsx scripts/check-takeouts.ts
  */
 import {
+  buildCompanyUse,
   buildStaffMonth,
+  isCompanyUse,
   buildTakeoutDay,
   canFillTakeouts,
   canSeeTakeouts,
@@ -289,6 +291,62 @@ check(
   takeoutStemsByFlower({ takeouts: TAKEOUTS, from: "2026-09-11", to: "2026-09-11" }),
   { rose: 30, chrysanthemum: 15 }
 );
+
+// --- Нужды компании (админ. расход) ---------------------------------------
+// Зав. складом: «Админ расход нету. Добавьте». Подарки, офис, мероприятия:
+// цветок ушёл бесплатно — в удержание из зарплаты это идти не должно.
+{
+  const COMPANY: RawTakeout[] = [
+    ...TAKEOUTS,
+    { takeoutId: "CU-1", date: "2026-09-11", staffName: "Подарок", flowerType: "rose", variety: "Freedom", grade: "60", quantity: 50, unitPrice: 150, kind: "company" },
+    { takeoutId: "CU-2", date: "2026-09-12", staffName: "подарок", flowerType: "rose", variety: "Freedom", grade: "50", quantity: 30, unitPrice: 0, kind: "company" },
+    { takeoutId: "CU-3", date: "2026-09-12", staffName: "Офис", flowerType: "chrysanthemum", variety: "Baltica", grade: "Первая", quantity: 25, unitPrice: 100, kind: "company" },
+    { takeoutId: "CU-4", date: "2026-10-01", staffName: "Офис", flowerType: "rose", variety: "Freedom", grade: "60", quantity: 99, unitPrice: 0, kind: "company" },
+  ];
+  check("вид: company узнаётся", isCompanyUse({ kind: "company" }), true);
+  check("вид: пусто — сотруднику", isCompanyUse({ kind: "" }), false);
+
+  const staffBefore = buildStaffMonth({ takeouts: TAKEOUTS, month: "2026-09", farm: null });
+  const staffAfter = buildStaffMonth({ takeouts: COMPANY, month: "2026-09", farm: null });
+  check("в удержание расход компании не попадает", staffAfter.amount, staffBefore.amount);
+  check("и людей не прибавилось", staffAfter.people, staffBefore.people);
+  check(
+    "в таблицу дня сотрудников не попадает",
+    buildTakeoutDay({ takeouts: COMPANY, date: "2026-09-11", farm: null }).rows.map((r) => r.takeoutId).includes("CU-1"),
+    false
+  );
+  check("в подсказки фамилий не попадает", knownStaffNames(COMPANY).includes("Подарок"), false);
+
+  const sep = buildCompanyUse({ takeouts: COMPANY, from: "2026-09-01", to: "2026-09-31", farm: null });
+  check("расход за сентябрь — только сентябрь", sep.rows.map((r) => r.takeoutId), ["CU-2", "CU-3", "CU-1"]);
+  check("стебли", sep.stems, 105);
+  check("сумма по внутренней цене", sep.amount, 50 * 150 + 25 * 100);
+  check("без цены", sep.noPrice, 1);
+  check(
+    "назначения склеиваются без регистра",
+    sep.byPurpose.map((p) => [p.purpose, p.stems]),
+    [["Подарок", 80], ["Офис", 25]]
+  );
+  check(
+    "зав. складом Rose Farm видит только розу",
+    buildCompanyUse({ takeouts: COMPANY, from: "2026-09-01", to: "2026-09-31", farm: "rose_farm" }).stems,
+    80
+  );
+  check(
+    "колонка «Сотрудникам» — без расхода компании",
+    takeoutStemsByFlower({ takeouts: COMPANY, from: "2026-09-01", to: "2026-09-30" }),
+    takeoutStemsByFlower({ takeouts: TAKEOUTS, from: "2026-09-01", to: "2026-09-30" })
+  );
+  check(
+    "колонка «На нужды компании»",
+    takeoutStemsByFlower({ takeouts: COMPANY, from: "2026-09-01", to: "2026-09-30", company: true }),
+    { rose: 80, chrysanthemum: 25 }
+  );
+  check("расход: без назначения — отказ", refusal({ staffName: "", kind: "company" }), "Укажите, на что ушли цветы");
+  check("расход: обычный проходит", refusal({ staffName: "Подарок", unitPrice: 0, kind: "company" }), "");
+  check("выдуманный вид — отказ", refusal({ kind: "gift" }), "Неизвестный вид выдачи");
+  check("расход чужого цветка — отказ", refusal({ kind: "company", farm: "esentai" }) !== "", true);
+}
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

@@ -41,6 +41,39 @@ export interface ShipGateOrder {
   kind?: string;
   /** Направление: по нему узнаётся заявка на реализацию (пожарка). */
   direction?: string;
+  /** Условия оплаты из карточки клиента — по ним отгрузка бывает в долг. */
+  clientPaymentTerms?: string;
+}
+
+/**
+ * Условия, при которых цветок уезжает РАНЬШЕ денег: «По факту» (платит при
+ * получении) и любая «Отсрочка N дней». Решение владельца.
+ *
+ * Зачем. Правило «сначала деньги» держало такие заявки в «ждут» навсегда:
+ * клиенту с отсрочкой цветок отдают, а программа не давала нажать
+ * «Отгрузить». Зав. складом Rose Farm: «пока „отгрузить“ не нажимаешь, со
+ * склада не отнимается» — на тот день 16 заявок с прошедшей доставкой висели
+ * в «ждут оплаты», а их стебли числились на складе.
+ *
+ * «Предоплата» и пустые условия — как раньше, деньги вперёд: пустая ячейка
+ * ничего не разрешает (грабли 1.10).
+ */
+export function isCreditTerms(terms: string | null | undefined): boolean {
+  const t = String(terms ?? "").trim().toLowerCase();
+  return t === "по факту" || t.startsWith("отсрочка");
+}
+
+/** Отгрузка идёт в долг: оплаты ещё нет, но условия клиента это позволяют. */
+export function shipsOnCredit(order: ShipGateOrder): boolean {
+  return waitsForMoney(order) && !order.paid && isCreditTerms(order.clientPaymentTerms);
+}
+
+/**
+ * Пометка для зав. складом у заявки, которую можно отгрузить без оплаты:
+ * «в долг · Отсрочка 7 дней». Пусто — если оплата есть или не нужна.
+ */
+export function creditNote(order: ShipGateOrder): string {
+  return shipsOnCredit(order) ? `в долг · ${String(order.clientPaymentTerms).trim()}` : "";
 }
 
 /**
@@ -56,7 +89,8 @@ function waitsForMoney(order: ShipGateOrder): boolean {
 /** Заявку можно отгружать. */
 export function isReadyToShip(order: ShipGateOrder): boolean {
   if (!order.managerConfirmed) return false;
-  return waitsForMoney(order) ? order.paid : true;
+  if (!waitsForMoney(order)) return true;
+  return order.paid || isCreditTerms(order.clientPaymentTerms);
 }
 
 /**
@@ -77,7 +111,7 @@ export function missingForShip(order: ShipGateOrder): string[] {
     );
   }
   // Своему магазину счёт не выставляют — оплату здесь не ждут вовсе.
-  if (waitsForMoney(order) && !order.paid) {
+  if (waitsForMoney(order) && !order.paid && !isCreditTerms(order.clientPaymentTerms)) {
     const rest = order.totalAmount - order.paidAmount;
     // Частичная оплата — это тоже «не оплачено», но зав. складом полезно
     // видеть, что деньги уже идут, а не думать, что клиент молчит.

@@ -8,7 +8,7 @@ import { availableBatchesFor, listBatches } from "@/lib/repo/batches";
 import ShipmentForm from "@/components/ShipmentForm";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import { formatDay } from "@/lib/formatDate";
-import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,12 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
         Клиент: {order.clientName}
         {order.deliveryDate && ` · доставка ${formatDay(order.deliveryDate)}`}
       </p>
+      {isReadyToShip(order) && creditNote(order) && (
+        <p className="text-sm text-[#8a5a00] bg-[#8a5a00]/10 rounded-lg px-3 py-2 mb-4">
+          Оплаты ещё нет — отгрузка идёт в долг: у клиента «{order.clientPaymentTerms}». Долг
+          увидит бухгалтер.
+        </p>
+      )}
       {isReadyToShip(order) ? (
         <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} />
       ) : (
@@ -54,7 +60,8 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
           <h2 className="font-medium">Эту заявку отгружать рано</h2>
           <p className="text-sm text-ink-secondary">
             {notReadyReason(order)}. Менеджер ставит свою галочку на заявке, оплату проводит
-            бухгалтер. Пока обе не стоят, цветок по заявке не выдаём.
+            бухгалтер. Без оплаты отгрузить можно только клиенту, у которого в карточке условия
+            «По факту» или «Отсрочка».
           </p>
           <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
             Открыть заявку
