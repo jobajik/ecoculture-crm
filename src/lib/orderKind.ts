@@ -1,4 +1,12 @@
-import { CONSIGNMENT_DIRECTIONS, ORDER_KINDS, ROLES, SHIPMENT_DIRECTIONS } from "./constants";
+import {
+  CONSIGNMENT_DIRECTIONS,
+  FLOWER_TYPE_LABELS,
+  ORDER_KINDS,
+  ROLES,
+  SHIPMENT_DIRECTIONS,
+  farmLabel,
+  getFarmFor,
+} from "./constants";
 import { cleanDirection } from "./direction";
 
 /**
@@ -75,8 +83,37 @@ export function isConsignment(
   return CONSIGNMENT_DIRECTIONS.includes(cleanDirection(order.direction));
 }
 
+/**
+ * Кто заводит оптовый объём на город. Сначала только РОП; потом владелец:
+ * «дай этот функционал зав. складам» — склад знает, что уехало в регион, и
+ * «прошлая поставка ещё не занесена» как раз оттого, что заносить было некому.
+ * Зав. складом заводит объём ТОЛЬКО своего цветка (см. `regionOrderRefusal`).
+ */
 export function canFillRegionOrders(role: string | null | undefined): boolean {
-  return role === ROLES.SALES_HEAD || role === ROLES.ADMIN;
+  return role === ROLES.SALES_HEAD || role === ROLES.ADMIN || role === ROLES.WAREHOUSE;
+}
+
+/**
+ * Зав. складом — только свой цветок (грабли 1.1-ter): Разия заводит розу и
+ * эустому, Диана — хризантему. Пусто — можно.
+ */
+export function regionFarmRefusal(
+  role: string | null | undefined,
+  farm: string | null | undefined,
+  items: { flowerType?: string }[]
+): string {
+  if (role !== ROLES.WAREHOUSE) return "";
+  if (!farm) {
+    return "У вас не указано производство. Попросите администратора заполнить колонку Farm на вкладке Users.";
+  }
+  for (const item of items) {
+    const itemFarm = getFarmFor(String(item.flowerType ?? ""));
+    if (itemFarm !== farm) {
+      const label = FLOWER_TYPE_LABELS[String(item.flowerType)] ?? item.flowerType ?? "цветок";
+      return `${label} — это производство «${farmLabel(itemFarm)}», его объём заводит их зав. складом`;
+    }
+  }
+  return "";
 }
 
 /**
@@ -90,9 +127,11 @@ export const REGION_ORDER_DIRECTIONS: string[] = SHIPMENT_DIRECTIONS;
 
 export interface RegionOrderInput {
   role: string | null | undefined;
+  /** Производство зав. складом; у РОПа и админа пусто. */
+  farm?: string | null;
   direction: string;
   deliveryDate: string;
-  items: { variety: string; grade: string; quantity: number }[];
+  items: { flowerType?: string; variety: string; grade: string; quantity: number }[];
 }
 
 /**
@@ -103,8 +142,10 @@ export interface RegionOrderInput {
  */
 export function regionOrderRefusal(input: RegionOrderInput): string {
   if (!canFillRegionOrders(input.role)) {
-    return "Заявки по регионам оформляет руководитель отдела продаж";
+    return "Опт в регионы оформляет руководитель отдела продаж или зав. складом";
   }
+  const farmRefusal = regionFarmRefusal(input.role, input.farm, input.items ?? []);
+  if (farmRefusal) return farmRefusal;
   if (!cleanDirection(input.direction)) return "Выберите регион";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.deliveryDate)) return "Укажите дату отгрузки";
   if (!input.items || input.items.length === 0) return "Добавьте хотя бы одну позицию";

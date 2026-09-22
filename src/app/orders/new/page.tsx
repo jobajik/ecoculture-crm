@@ -17,8 +17,10 @@ import {
   FLOWER_TYPE_LABELS,
   ORDER_STATUSES,
   ROLES,
+  flowerTypesForFarm,
   formatGrade,
   retailLabel,
+  type FlowerType,
 } from "@/lib/constants";
 import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
 import {
@@ -58,9 +60,6 @@ export default async function NewOrderPage({
   // ДО чтения данных, иначе в форму подставятся цены не того прайса.
   const retail = shopOrderForm(role, searchParams?.retail);
 
-  // Зав. складом заводит только заявки в регионы. Без этой строки она попадала
-  // бы на клиентскую форму, где ей нечего делать: чужие клиенты и чужой прайс.
-  if (role === ROLES.WAREHOUSE && !retail) redirect("/retail/regions");
 
   // Дата из адреса — общая для всех форм на этой странице.
   const preselectedDate =
@@ -69,7 +68,16 @@ export default async function NewOrderPage({
   // Оптовый объём на город — своя форма: регион, дата, количество. У РОПа
   // других заявок не бывает вовсе, поэтому его сюда пускаем всегда.
   const regionForm = canFillRegionOrders(role) && (searchParams?.region === "1" || role === ROLES.SALES_HEAD);
+
+  // Зав. складом заводит только заявки в регионы: в наши магазины (retail=1) и
+  // опт на город (region=1). Без этой строки она попадала бы на клиентскую
+  // форму, где ей нечего делать: чужие клиенты и чужой прайс.
+  if (role === ROLES.WAREHOUSE && !retail && !regionForm) redirect("/retail/regions");
+
   if (regionForm) {
+    // Зав. складом — только свой цветок; сервер проверяет то же самое.
+    const ownTypes =
+      role === ROLES.WAREHOUSE ? (flowerTypesForFarm(session?.user?.farm ?? null) as FlowerType[]) : undefined;
     const varietiesForRegion = await listVarietiesByType();
     const preset = cleanDirection(searchParams?.direction);
     return (
@@ -84,6 +92,7 @@ export default async function NewOrderPage({
           varieties={varietiesForRegion}
           initialDirection={preset}
           initialDate={preselectedDate}
+          allowedTypes={ownTypes}
         />
       </div>
     );

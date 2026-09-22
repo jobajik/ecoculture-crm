@@ -162,7 +162,10 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // до своего цветка (зав. складом), править отсюда нельзя: она видит не всю
   // заявку, и «сохранить» стёрло бы чужие позиции. Поэтому правила спрашиваем
   // по ПОЛНОЙ заявке, а кнопку показываем, только когда показана она вся.
-  const canEdit = !farm && canEditOrder(loaded, role, session?.user?.email);
+  // Исключение — свой опт на город у зав. складом: он заведён только её цветком,
+  // значит показан целиком, и править его ей можно.
+  const shownWhole = !farm || (region && order.items.length === loaded.items.length);
+  const canEdit = shownWhole && canEditOrder(loaded, role, session?.user?.email);
 
   // Правка склада — отдельная дверь с отдельными правилами: свой цветок, только
   // количество, ростовка и цена. Считаем по ПОЛНОЙ заявке (`loaded`), а не по

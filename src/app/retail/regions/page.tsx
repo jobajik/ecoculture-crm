@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { canFillRegionOrders } from "@/lib/orderKind";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -107,14 +108,23 @@ export default async function RetailRegionsPage({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <h1 className="text-xl font-semibold">Розница — регионы</h1>
-        {canOrder && card && (
-          <Link
-            href={`/orders/new?retail=1&client=${card.clientId}&date=${date}`}
-            className="btn-primary"
-          >
-            + Заявка в {city}
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {/* Опт на город — отдельная заявка без клиента: объём оптовикам региона.
+              Рядом с розницей, потому что заполняет их один и тот же человек. */}
+          {canFillRegionOrders(role) && (
+            <Link href={`/orders/new?region=1&date=${date}`} className="btn-secondary">
+              + Опт в регион
+            </Link>
+          )}
+          {canOrder && card && (
+            <Link
+              href={`/orders/new?retail=1&client=${card.clientId}&date=${date}`}
+              className="btn-primary"
+            >
+              + Заявка в {city}
+            </Link>
+          )}
+        </div>
       </div>
       <SectionTabs tabs={retailTabsFor(role)} />
 

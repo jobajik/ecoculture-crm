@@ -67,10 +67,12 @@ check("администратор тоже", canFillRegionOrders(ROLES.ADMIN), t
 check("менеджер не заводит", canFillRegionOrders(ROLES.MANAGER), false);
 check("бухгалтер не заводит", canFillRegionOrders(ROLES.ACCOUNTANT), false);
 check("пустая роль не заводит (грабли 1.10)", canFillRegionOrders(""), false);
+// Владелец: «дай этот функционал зав. складам» — они знают, что уехало в регион.
+check("зав. складом заводит опт на город", canFillRegionOrders(ROLES.WAREHOUSE), true);
 
 // --- Отказ сервера при оформлении -------------------------------------------
 
-const GOOD: { role: string; direction: string; deliveryDate: string; items: { variety: string; grade: string; quantity: number }[] } = {
+const GOOD: { role: string; farm?: string | null; direction: string; deliveryDate: string; items: { flowerType?: string; variety: string; grade: string; quantity: number }[] } = {
   role: ROLES.SALES_HEAD,
   direction: "Астана",
   deliveryDate: "2026-09-15",
@@ -99,6 +101,36 @@ check(
   "без сорта нельзя",
   refusal({ items: [{ variety: " ", grade: "60", quantity: 10 }] }) !== "",
   true
+);
+
+// --- Зав. складом — только свой цветок ----------------------------------------
+const WH = { role: ROLES.WAREHOUSE, farm: "rose_farm" };
+check(
+  "зав. складом Rose Farm — розу можно",
+  refusal({ ...WH, items: [{ flowerType: "rose", variety: "Freedom", grade: "60", quantity: 100 }] }),
+  ""
+);
+check(
+  "и эустому можно",
+  refusal({ ...WH, items: [{ flowerType: "eustoma", variety: "Rosita", grade: "Стандарт", quantity: 100 }] }),
+  ""
+);
+check(
+  "хризантему — нельзя, это Есентай",
+  /Есентай/.test(
+    refusal({ ...WH, items: [{ flowerType: "chrysanthemum", variety: "Baltica", grade: "Первая", quantity: 100 }] })
+  ),
+  true
+);
+check(
+  "зав. складом без производства — нельзя (грабли 1.10)",
+  refusal({ role: ROLES.WAREHOUSE, farm: "", items: [{ flowerType: "rose", variety: "Freedom", grade: "60", quantity: 1 }] }) !== "",
+  true
+);
+check(
+  "РОПу производство не нужно",
+  refusal({ items: [{ flowerType: "chrysanthemum", variety: "Baltica", grade: "Первая", quantity: 1 }] }),
+  ""
 );
 
 // --- Одна галочка, а не две -------------------------------------------------
@@ -323,9 +355,9 @@ check(
 check("у менеджера обычная заявка", newOrderLinkFor(ROLES.MANAGER)?.href, "/orders/new");
 check("у администратора тоже", newOrderLinkFor(ROLES.ADMIN)?.href, "/orders/new");
 check("у менеджера розницы тоже", newOrderLinkFor(ROLES.RETAIL_ALMATY)?.href, "/orders/new");
-// Зав. складом заполняет регионы в своём разделе, бухгалтеру и агроному заводить
-// нечего: лишняя кнопка — это лишний способ попасть не туда.
-check("зав. складом кнопки здесь нет", newOrderLinkFor(ROLES.WAREHOUSE), null);
+// Зав. складом заводит здесь опт на город (своим цветком); бухгалтеру и
+// агроному заводить нечего: лишняя кнопка — лишний способ попасть не туда.
+check("у зав. складом — опт в регион", newOrderLinkFor(ROLES.WAREHOUSE)?.href, "/orders/new?region=1");
 check("бухгалтеру нечего заводить", newOrderLinkFor(ROLES.ACCOUNTANT), null);
 check("агроному тоже", newOrderLinkFor(ROLES.AGRONOMIST), null);
 check("пустая роль — ничего (грабли 1.10)", newOrderLinkFor(""), null);

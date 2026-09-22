@@ -19,11 +19,11 @@ interface DraftRow {
   quantity: string;
 }
 
-function emptyRow(varieties: Record<string, string[]>): DraftRow {
+function emptyRow(varieties: Record<string, string[]>, flower: FlowerType = FLOWER_TYPES.ROSE): DraftRow {
   return {
-    flowerType: FLOWER_TYPES.ROSE,
-    variety: varieties.rose?.[0] ?? "",
-    grade: getGradesFor(FLOWER_TYPES.ROSE)[0] ?? "",
+    flowerType: flower,
+    variety: varieties[flower]?.[0] ?? "",
+    grade: getGradesFor(flower)[0] ?? "",
     quantity: "",
   };
 }
@@ -52,18 +52,26 @@ export default function RegionOrderForm({
   varieties,
   initialDirection = "",
   initialDate = "",
+  allowedTypes,
 }: {
   /** Закрытый список направлений — тот же, что в плане отгрузок. */
   directions: string[];
   varieties: Record<string, string[]>;
   initialDirection?: string;
   initialDate?: string;
+  /**
+   * Какие цветки можно выбрать. У зав. складом — только своего производства
+   * (сервер проверяет то же самое); у РОПа и админа — все.
+   */
+  allowedTypes?: FlowerType[];
 }) {
+  const flowerChoices: FlowerType[] =
+    allowedTypes && allowedTypes.length > 0 ? allowedTypes : (Object.values(FLOWER_TYPES) as FlowerType[]);
   const router = useRouter();
 
   const [direction, setDirection] = useState(initialDirection);
   const [deliveryDate, setDeliveryDate] = useState(initialDate);
-  const [rows, setRows] = useState<DraftRow[]>([emptyRow(varieties)]);
+  const [rows, setRows] = useState<DraftRow[]>([emptyRow(varieties, flowerChoices[0])]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,7 +175,7 @@ export default function RegionOrderForm({
           <h2 className="font-medium">Сколько отгружаем</h2>
           <button
             type="button"
-            onClick={() => setRows((prev) => [...prev, emptyRow(varieties)])}
+            onClick={() => setRows((prev) => [...prev, emptyRow(varieties, flowerChoices[0])])}
             className="btn-secondary !py-1.5 text-sm"
           >
             + Добавить позицию
@@ -184,7 +192,7 @@ export default function RegionOrderForm({
                   value={row.flowerType}
                   onChange={(e) => update(idx, { flowerType: e.target.value as FlowerType })}
                 >
-                  {Object.values(FLOWER_TYPES).map((t) => (
+                  {flowerChoices.map((t) => (
                     <option key={t} value={t}>
                       {FLOWER_TYPE_LABELS[t] ?? t}
                     </option>

@@ -38,6 +38,7 @@ import {
   canFillRegionOrders,
   isRegionOrder,
   regionIncomeRefusal,
+  regionFarmRefusal,
   regionOrderRefusal,
 } from "@/lib/orderKind";
 import {
@@ -199,6 +200,11 @@ async function updateOrderActionInner(
 
     const refusal = editedItemsRefusal({ current: order.items, next, region });
     if (refusal) throw new Error(refusal);
+    // Зав. складом правит свой объём на город — и только своим цветком.
+    if (region) {
+      const farmRefusal = regionFarmRefusal(role, session.user.farm ?? null, next);
+      if (farmRefusal) throw new Error(farmRefusal);
+    }
 
     changes = describeItemChanges({ current: order.items, next, region });
     if (changes.length > 0) {
@@ -421,6 +427,7 @@ async function createRegionOrderActionInner(input: {
   const direction = cleanDirection(input.direction);
   const refusal = regionOrderRefusal({
     role,
+    farm: role === "warehouse" ? session.user.farm ?? null : null,
     direction,
     deliveryDate: input.deliveryDate,
     items: input.items,

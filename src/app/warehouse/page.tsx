@@ -69,6 +69,9 @@ export default async function WarehousePage() {
 
       <div className="flex items-center justify-end mb-4 flex-wrap gap-2">
         <div className="flex gap-2">
+          <Link href="/orders/new?region=1" className="btn-secondary">
+            + Опт в регион
+          </Link>
           <Link href="/warehouse/picklist" className="btn-secondary">
             Заявка на день (печать)
           </Link>
