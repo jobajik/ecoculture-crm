@@ -9,7 +9,7 @@ import { getStockSnapshot } from "@/lib/stock";
 import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
 import { editHeaderRefusal, editItemsRefusal } from "@/lib/orderEdit";
 import { isRegionOrder } from "@/lib/orderKind";
-import { isRetailOrder, retailLabel, retailTerritoryFor } from "@/lib/retail";
+import { isOwnClientOrder, isRetailOrder, retailLabel, retailTerritoryFor } from "@/lib/retail";
 import { ROLES } from "@/lib/constants";
 import OrderEditForm from "@/components/OrderEditForm";
 import type { DraftItem } from "@/components/OrderItemsEditor";
@@ -39,7 +39,9 @@ export default async function EditOrderPage({ params }: { params: { id: string }
   const territory = retailTerritoryFor(role);
   const retail = isRetailOrder(order);
   const region = isRegionOrder(order);
-  if (territory && (!retail || order.retail !== territory)) notFound();
+  if (territory && !isOwnClientOrder(order, email) && (!retail || order.retail !== territory)) {
+    notFound();
+  }
   if (retail && (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT)) notFound();
 
   const refusal = editHeaderRefusal(order, role, email);

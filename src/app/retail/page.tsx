@@ -92,9 +92,16 @@ export default async function RetailDayPage({
           Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
         </h1>
         {canOrder && (
-          <Link href={`/orders/new?retail=1&date=${date}`} className="btn-primary">
-            + Заявка магазину
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {isRetailRole(role) && (
+              <Link href="/orders/new?sale=1" className="btn-secondary">
+                + Заявка клиенту
+              </Link>
+            )}
+            <Link href={`/orders/new?retail=1&date=${date}`} className="btn-primary">
+              + Заявка магазину
+            </Link>
+          </div>
         )}
       </div>
       <SectionTabs tabs={retailTabsFor(role)} />

@@ -1,5 +1,5 @@
 import { ORDER_STATUSES, ROLES } from "./constants";
-import { canFillRegions, isRetailOrder, isRetailRole } from "./retail";
+import { canFillRegions, canSellToClients, isRetailOrder, isRetailRole } from "./retail";
 import { canFillRegionOrders, hasNoClientInvoice, isRegionOrder } from "./orderKind";
 
 /**
@@ -89,7 +89,8 @@ export function ownerRoleFor(
 ): boolean {
   if (isRegionOrder(order)) return canFillRegionOrders(role);
   if (isRetailOrder(order)) return isRetailRole(role) || canFillRegions(role);
-  return role === ROLES.MANAGER;
+  // Клиентскую заявку ведёт менеджер — или менеджер розницы (мелкие заказы).
+  return canSellToClients(role);
 }
 
 /**

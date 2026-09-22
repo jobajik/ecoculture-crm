@@ -3,7 +3,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { ROLES, farmLabel, getFarmFor, retailLabel } from "@/lib/constants";
-import { farmScopeFor, isRetailOrder, isRetailRole, retailTerritoryFor } from "@/lib/retail";
+import {
+  farmScopeFor,
+  isOwnClientOrder,
+  isRetailOrder,
+  isRetailRole,
+  retailTerritoryFor,
+} from "@/lib/retail";
 import { isRegionOrder } from "@/lib/orderKind";
 import { newOrderLinkFor } from "@/lib/newOrder";
 import OrdersTable from "@/components/OrdersTable";
@@ -29,7 +35,8 @@ export default async function OrdersPage() {
   // ни денег). Склад видит всё — он собирает и то, и другое.
   const territory = retailTerritoryFor(role);
   const visible = all.filter((o) => {
-    if (territory) return isRetailOrder(o) && o.retail === territory;
+    // Плюс свои клиентские заявки: менеджер розницы продаёт и мелким клиентам.
+    if (territory) return (isRetailOrder(o) && o.retail === territory) || isOwnClientOrder(o, myEmail);
     // Менеджеру городская заявка не нужна: она не его и клиента в ней нет.
     // Бухгалтеру нужна — по ней она подтверждает поступления.
     if (role === ROLES.MANAGER) return !isRetailOrder(o) && !isRegionOrder(o);
@@ -69,11 +76,19 @@ export default async function OrdersPage() {
             У РОПа её здесь не было вовсе, и он решил, что заявку на регион
             завести нельзя: возможность, о которой нельзя догадаться, ничем не
             отличается от отсутствующей. */}
-        {newOrderLink && (
-          <Link href={newOrderLink.href} className="btn-primary">
-            {newOrderLink.label}
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {/* Менеджер розницы продаёт и клиентам — мелкие заказы. */}
+          {isRetailRole(role) && (
+            <Link href="/orders/new?sale=1" className="btn-secondary">
+              + Заявка клиенту
+            </Link>
+          )}
+          {newOrderLink && (
+            <Link href={newOrderLink.href} className="btn-primary">
+              {isRetailRole(role) ? "+ Заявка магазину" : newOrderLink.label}
+            </Link>
+          )}
+        </div>
       </div>
       {farm && (
         <p className="text-sm text-ink-secondary mb-4">

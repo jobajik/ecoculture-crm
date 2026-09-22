@@ -13,6 +13,8 @@ import {
   buildRetailSummary,
   buildShopDay,
   canCreateCard,
+  canSellToClients,
+  isOwnClientOrder,
   canFillRegions,
   canOrderForShop,
   canSeeRegions,
@@ -30,7 +32,7 @@ import {
   shopOrderForm,
 } from "../src/lib/retail";
 import { isReadyToShip, missingForShip, notReadyReason } from "../src/lib/orderReady";
-import { cancelRefusal, confirmRefusal } from "../src/lib/orderRules";
+import { cancelRefusal, confirmRefusal, ownerRoleFor } from "../src/lib/orderRules";
 import { buildClientStats } from "../src/lib/clientStats";
 import { getFinanceSnapshot } from "../src/lib/finance";
 import { getLeaderboard } from "../src/lib/leaderboard";
@@ -90,8 +92,10 @@ check("админ может всё", canOrderForShop(ROLES.ADMIN, SHOP_REGION),
 
 // Список магазинов закрытый: менеджер розницы выбирает из готового, а не
 // набирает руками. Иначе одна точка появится под тремя написаниями.
-check("менеджер розницы карточек не заводит", canCreateCard(ROLES.RETAIL_ALMATY), false);
-check("и региональный тоже", canCreateCard(ROLES.RETAIL_REGIONS), false);
+// Менеджер розницы продаёт и мелким клиентам — значит, клиента заводит. Магазин —
+// по-прежнему только РОП (это проверяет createClientAction).
+check("менеджер розницы заводит клиента", canCreateCard(ROLES.RETAIL_ALMATY), true);
+check("пустая роль не заводит", canCreateCard(""), false);
 check("РОП заводит", canCreateCard(ROLES.SALES_HEAD), true);
 check("обычный менеджер заводит клиента", canCreateCard(ROLES.MANAGER), true);
 
@@ -109,6 +113,34 @@ check("розничные роли опознаются", [isRetailRole(ROLES.RE
 
 check("менеджеру розницы всегда магазинная форма", shopOrderForm(ROLES.RETAIL_ALMATY, undefined), true);
 check("и региональному тоже", shopOrderForm(ROLES.RETAIL_REGIONS, ""), true);
+check("менеджеру розницы с sale=1 — клиентская форма", shopOrderForm(ROLES.RETAIL_ALMATY, undefined, "1"), false);
+check("обычному менеджеру sale ничего не меняет", shopOrderForm(ROLES.MANAGER, undefined, "1"), false);
+check("менеджер розницы продаёт клиентам", canSellToClients(ROLES.RETAIL_ALMATY), true);
+check("менеджер — тоже", canSellToClients(ROLES.MANAGER), true);
+check("склад — нет", canSellToClients(ROLES.WAREHOUSE), false);
+check("РОП — нет", canSellToClients(ROLES.SALES_HEAD), false);
+check(
+  "своя клиентская заявка розницы",
+  isOwnClientOrder({ managerEmail: "asem@x.kz", retail: "", kind: "" }, "ASEM@x.kz"),
+  true
+);
+check(
+  "чужая клиентская — не своя",
+  isOwnClientOrder({ managerEmail: "ilyas@x.kz", retail: "", kind: "" }, "asem@x.kz"),
+  false
+);
+check(
+  "заявка в магазин — не клиентская",
+  isOwnClientOrder({ managerEmail: "asem@x.kz", retail: "almaty", kind: "" }, "asem@x.kz"),
+  false
+);
+check(
+  "объём на город — не клиентская",
+  isOwnClientOrder({ managerEmail: "asem@x.kz", retail: "", kind: "region" }, "asem@x.kz"),
+  false
+);
+check("клиентскую заявку ведёт и менеджер розницы", ownerRoleFor({ retail: "", kind: "" }, ROLES.RETAIL_ALMATY), true);
+check("а склад — нет", ownerRoleFor({ retail: "", kind: "" }, ROLES.WAREHOUSE), false);
 check("администратору по умолчанию клиентская", shopOrderForm(ROLES.ADMIN, undefined), false);
 check("а из раздела «Розница» — магазинная", shopOrderForm(ROLES.ADMIN, "1"), true);
 check("обычному менеджеру магазинной формы нет никогда", shopOrderForm(ROLES.MANAGER, "1"), false);

@@ -33,6 +33,7 @@ import {
   canFillRegions,
   farmScopeFor,
   isRetailOrder,
+  isOwnClientOrder,
   isRetailRole,
   retailLabel,
   retailTerritoryFor,
@@ -70,7 +71,10 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // Оптовый объём на город: клиента нет, счёта нет, а деньги подтверждает
   // бухгалтер отдельной суммой.
   const region = isRegionOrder(loaded);
-  if (territory && (!retail || loaded.retail !== territory)) notFound();
+  // Своя клиентская заявка менеджера розницы (мелкий заказ) — открывается.
+  if (territory && !isOwnClientOrder(loaded, myEmail) && (!retail || loaded.retail !== territory)) {
+    notFound();
+  }
   if (retail && (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT)) notFound();
 
   // Зав. складом видит в заявке только свои позиции. Если своего цветка в заявке

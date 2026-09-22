@@ -37,7 +37,11 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   if (shop && role !== ROLES.ADMIN && role !== ROLES.SALES_HEAD && !canSeeShop(role, client)) {
     notFound();
   }
-  if (!shop && isRetailRole(role)) notFound();
+  // Менеджеру розницы из клиентов открыты только СВОИ карточки: он продаёт
+  // мелким клиентам, которых сам и завёл.
+  if (!shop && isRetailRole(role) && client.managerEmail !== (session?.user?.email ?? "").toLowerCase()) {
+    notFound();
+  }
 
   const [clients, orders, users] = await Promise.all([
     listClients(),

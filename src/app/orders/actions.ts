@@ -89,7 +89,9 @@ async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">
   if (shop && !canOrderForShop(role, client)) {
     throw new Error("Это магазин другого направления");
   }
-  if (!shop && (isRetailRole(role) || role === ROLES.WAREHOUSE)) {
+  // Менеджер розницы продаёт и клиентам — мелкие заказы (просьба Асем,
+  // решение владельца). Склад клиентам не продаёт.
+  if (!shop && role === ROLES.WAREHOUSE) {
     throw new Error("Эта роль оформляет заявки только на наши магазины");
   }
 

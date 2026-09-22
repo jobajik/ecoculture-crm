@@ -50,6 +50,32 @@ export function isRetailRole(role: string | null | undefined): boolean {
 }
 
 /**
+ * Кто продаёт клиентам (оформляет обычную заявку со счётом).
+ *
+ * Менеджер — само собой. Менеджер розницы — тоже: Асем попросила «мне нужно
+ * мелкие заказы оформлять», владелец сказал «сделай». Магазины при этом
+ * остаются магазинами: её клиентская заявка — обычная продажа (счёт, долг,
+ * оплата), видна ей как менеджеру, а в рознице не участвует.
+ */
+export function canSellToClients(role: string | null | undefined): boolean {
+  return role === ROLES.MANAGER || isRetailRole(role);
+}
+
+/**
+ * Своя клиентская заявка менеджера розницы: обычная продажа (не магазин и не
+ * объём на город), оформленная им самим. Её он видит, открывает и правит, как
+ * менеджер свою; чужие клиентские заявки — нет.
+ */
+export function isOwnClientOrder(
+  order: { managerEmail: string; retail?: string | null; kind?: string | null },
+  email: string | null | undefined
+): boolean {
+  if (isRetailOrder(order)) return false;
+  if ((order.kind ?? "").trim()) return false;
+  return (order.managerEmail || "").trim().toLowerCase() === (email || "").trim().toLowerCase();
+}
+
+/**
  * Кто видит магазин.
  *
  * Менеджер розницы — только своё направление: в этом и был смысл двух ролей.
@@ -137,7 +163,10 @@ export function canOrderForShop(
  * карточек.
  */
 export function canCreateCard(role: string | null | undefined): boolean {
-  return !isRetailRole(role);
+  // Менеджер розницы теперь продаёт и клиентам (мелкие заказы) — значит и
+  // заводит КЛИЕНТА, как обычный менеджер. Запрет остался на МАГАЗИНЫ: отметить
+  // карточку нашим магазином может только РОП (`createClientAction`).
+  return !!role;
 }
 
 /**
@@ -154,9 +183,11 @@ export function canCreateCard(role: string | null | undefined): boolean {
  */
 export function shopOrderForm(
   role: string | null | undefined,
-  retailParam: string | null | undefined
+  retailParam: string | null | undefined,
+  /** «sale=1» — менеджер розницы оформляет заявку КЛИЕНТУ (мелкий заказ). */
+  saleParam?: string | null
 ): boolean {
-  if (isRetailRole(role)) return true;
+  if (isRetailRole(role)) return (saleParam ?? "") !== "1";
   // У зав. складом и админа есть и другие заявки, поэтому решает адрес: все
   // ссылки раздела «Розница» несут retail=1.
   if (role === ROLES.WAREHOUSE || role === ROLES.ADMIN) {

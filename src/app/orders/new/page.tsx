@@ -48,6 +48,8 @@ export default async function NewOrderPage({
     retail?: string;
     direction?: string;
     region?: string;
+    /** «1» — менеджер розницы оформляет заявку клиенту, а не магазину. */
+    sale?: string;
   };
 }) {
   const session = await getServerSession(authOptions);
@@ -58,7 +60,7 @@ export default async function NewOrderPage({
   // решает адрес: все ссылки из раздела «Розница» несут `retail=1`. Гадать по
   // выбранной карточке нельзя — прайс (клиентский или внутренний) нужно знать
   // ДО чтения данных, иначе в форму подставятся цены не того прайса.
-  const retail = shopOrderForm(role, searchParams?.retail);
+  const retail = shopOrderForm(role, searchParams?.retail, searchParams?.sale);
 
 
   // Дата из адреса — общая для всех форм на этой странице.
