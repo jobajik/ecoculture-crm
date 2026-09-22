@@ -199,7 +199,7 @@ export default function ShipmentPlanGrid({
     try {
       const { cells, fromMonth } = unwrapValue(await copyPreviousShipmentPlanAction(month));
       if (cells.length === 0) {
-        setNote(`В ${periodLabel(fromMonth)} плана не было — копировать нечего.`);
+        setNote(`В ${periodLabel(fromMonth)} плана не было.`);
         return;
       }
       setValues((prev) => {
@@ -214,7 +214,7 @@ export default function ShipmentPlanGrid({
       });
       setNote(
         `Подставлен план за ${periodLabel(fromMonth)}: ${cells.length} ячеек. ` +
-          "Проверьте и нажмите «Сохранить» — пока ничего не записано."
+          "Ещё не записано — нажмите «Сохранить»."
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось взять прошлый месяц");
@@ -257,7 +257,7 @@ export default function ShipmentPlanGrid({
                 .map((p) => p.error)
                 .join("; ")}${problems.length > 3 ? "…" : ""}. `
             : "") +
-          "Проверьте и нажмите «Сохранить» — пока ничего не записано."
+          "Ещё не записано — нажмите «Сохранить»."
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
@@ -304,7 +304,7 @@ export default function ShipmentPlanGrid({
       {/* --- Цена и кнопки --------------------------------------------------- */}
       <div className="card flex flex-wrap items-end gap-x-6 gap-y-3">
         <div>
-          <label className="label">Цена стебля для расчёта суммы</label>
+          <label className="label">Цена стебля</label>
           <div className="flex items-baseline gap-2">
             <input
               className="input !w-28 text-right tabular-nums"
@@ -319,14 +319,14 @@ export default function ShipmentPlanGrid({
                 }))
               }
             />
-            <span className="text-sm text-ink-secondary">₸ за стебель</span>
+            <span className="text-sm text-ink-secondary">₸</span>
           </div>
           <p className="text-xs text-ink-muted mt-1 max-w-sm">
             {prices[activeFlower] > 0
-              ? `Средняя по прайс-листу — ${fmt(prices[activeFlower])} ₸. Сумма плана считается сама, вводить её не нужно.`
-              : "В прайсе нет цен на этот цветок — впишите цену здесь, иначе план будет только в стеблях."}
+              ? `По прайсу — ${fmt(prices[activeFlower])} ₸.`
+              : "В прайсе цены нет — без неё план только в стеблях."}
             {price !== (prices[activeFlower] ?? 0) &&
-              " Цена изменена — при сохранении суммы по всему цветку пересчитаются."}
+              " Суммы цветка пересчитаются при сохранении."}
           </p>
         </div>
 
@@ -462,9 +462,6 @@ export default function ShipmentPlanGrid({
                 <tr className="border-t border-line-hairline">
                   <td className="px-4 py-1.5 sticky left-0 bg-surface font-medium">
                     Остаток без плана
-                    <span className="block text-[11px] font-normal text-ink-muted">
-                      вырастет минус обещано
-                    </span>
                   </td>
                   {weeks.map((week) => {
                     const rest = (forecastByWeek[week.code] ?? 0) - (totals.byWeek[week.code] ?? 0);
@@ -500,12 +497,6 @@ export default function ShipmentPlanGrid({
         </table>
       </div>
 
-      {hasForecast && (
-        <p className="text-xs text-ink-muted">
-          Жёлтый остаток — эти стебли ещё никому не обещаны. Красный — обещано больше, чем вырастет.
-        </p>
-      )}
-
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -513,7 +504,7 @@ export default function ShipmentPlanGrid({
           disabled={saving || changed.length === 0}
           className="btn-primary disabled:opacity-50"
         >
-          {saving ? "Сохраняю…" : `Сохранить план на ${periodLabel(month).toLowerCase()}`}
+          {saving ? "Сохраняю…" : "Сохранить"}
         </button>
         <span className="text-sm text-ink-muted">
           {changed.length === 0 ? "Изменений нет" : `Изменено ячеек: ${changed.length}`}

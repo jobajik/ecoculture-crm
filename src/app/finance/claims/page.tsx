@@ -5,6 +5,7 @@ import { listClaims } from "@/lib/repo/claims";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { ROLES, formatGrade } from "@/lib/constants";
+import Hint from "@/components/Hint";
 import SectionTabs from "@/components/SectionTabs";
 import ClaimsBoard, { type ClaimView } from "@/components/ClaimsBoard";
 import { financeTabsFor } from "../tabs";
@@ -65,13 +66,13 @@ export default async function ClaimsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Рекламации</h1>
-        <p className="text-sm text-ink-secondary">
-          Клиент пожаловался менеджеру — менеджер заводит рекламацию на своей заявке, а решение
-          принимает бухгалтер. Провести рекламацию значит пересчитать заявку: количество или цена
-          меняются, сумма, долг и бонус менеджера едут следом. Отгруженное количество остаётся как
-          было — цветок со склада уехал.
-        </p>
+        <h1 className="text-xl font-semibold">
+          Рекламации
+          <Hint>
+            Менеджер заводит рекламацию, решает бухгалтер. Провести — значит пересчитать заявку:
+            сумма, долг и бонус менеджера меняются. Отгруженное количество не меняется.
+          </Hint>
+        </h1>
       </div>
 
       <SectionTabs tabs={financeTabsFor(role)} />

@@ -31,9 +31,6 @@ export default async function FinanceReportPage({
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Отчёт по продажам и оплатам</h1>
-        <p className="text-sm text-ink-secondary">
-          За день, неделю или месяц. Выгружается в Excel одной кнопкой.
-        </p>
       </div>
 
       <SectionTabs tabs={financeTabsFor(role)} />

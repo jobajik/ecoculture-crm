@@ -168,11 +168,9 @@ export default function OrderForm({
                 </option>
               ))}
             </select>
-            <span className="block text-xs text-ink-muted mt-1">
-              {client?.city
-                ? `Город клиента — ${client.city}. Подставлено по нему, можно поменять.`
-                : "По этому полю заявка попадает в план отгрузок по регионам."}
-            </span>
+            {client?.city && (
+              <span className="block text-xs text-ink-muted mt-1">Город клиента — {client.city}</span>
+            )}
           </div>
         )}
         <div>
@@ -192,9 +190,6 @@ export default function OrderForm({
               </option>
             ))}
           </select>
-          <span className="block text-xs text-ink-muted mt-1">
-            «Смешанная» — если клиент платит частями разными способами. Бухгалтер увидит это в списке оплат — до того, как придут деньги.
-          </span>
         </div>
         <div className="sm:col-span-2">
           <label className="label">Комментарий</label>

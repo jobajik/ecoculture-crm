@@ -44,10 +44,7 @@ export default function ForecastView({ summary }: { summary: ForecastSummary }) 
         <p className="font-medium text-ink-primary mb-1">
           Прогноза на {periodLabel(summary.month).toLowerCase()} ещё нет
         </p>
-        <p>
-          Скачайте шаблон выше, заполните его в Excel и загрузите обратно. После загрузки здесь
-          появится, что вырастет: по неделям, по сортам и по ростовке, с выходом высшей категории.
-        </p>
+        <p>Загрузите файл выше.</p>
       </div>
     );
   }
@@ -160,7 +157,7 @@ function FlowerDetail({
         <Tile
           label="Всего за месяц"
           value={`${fmt(flower.total)} шт`}
-          hint={`по таблице сортов · ${fmt(flower.total / Math.max(1, summary.weeks.length))} шт в среднем за неделю`}
+          hint={`≈ ${fmt(flower.total / Math.max(1, summary.weeks.length))} шт в неделю`}
         />
         <Tile
           label="Высшая категория"
@@ -179,7 +176,7 @@ function FlowerDetail({
         <Tile
           label="Ликвидное качество"
           value={flower.liquidPercent === null ? "—" : pct(flower.liquidPercent)}
-          hint={`${fmt(flower.liquidStems)} шт · то, что уходит без скидок`}
+          hint={`${fmt(flower.liquidStems)} шт`}
           tone={
             flower.liquidPercent === null
               ? "neutral"
@@ -195,8 +192,8 @@ function FlowerDetail({
           value={flower.mismatch === 0 ? "сходятся" : `${flower.mismatch > 0 ? "+" : "−"}${fmt(Math.abs(flower.mismatch))}`}
           hint={
             flower.mismatch === 0
-              ? "две таблицы файла дали одну и ту же цифру"
-              : `по сортам ${fmt(flower.total)}, по ростовке ${fmt(flower.mixTotal)} — это один урожай, цифры должны сходиться`
+              ? ""
+              : `по сортам ${fmt(flower.total)}, по ростовке ${fmt(flower.mixTotal)}`
           }
           tone={flower.mismatch === 0 ? "good" : "warning"}
         />
@@ -204,7 +201,7 @@ function FlowerDetail({
 
       <ForecastTable
         title="Сколько даст каждый сорт"
-        hint="Сверху то, что даёт больше всего"
+        hint=""
         firstColumn="Сорт"
         rows={flower.varieties.map((line) => ({ ...line, label: line.label }))}
         weeks={summary.weeks}
@@ -214,7 +211,7 @@ function FlowerDetail({
 
       <ForecastTable
         title={`Какая получится ${gradeColumn.toLowerCase() === "категория" ? "категория" : "ростовка"}`}
-        hint="В обычном порядке цветка, а не по объёму"
+        hint=""
         firstColumn={gradeColumn}
         rows={flower.grades.map((line) => ({
           ...line,

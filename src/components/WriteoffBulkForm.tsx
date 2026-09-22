@@ -138,11 +138,11 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
           <div>
             <h2 className="font-medium">Файлом</h2>
             <p className="text-sm text-ink-secondary mt-0.5">
-              В шаблоне уже стоит весь склад — впишите «Списать, шт» напротив нужных строк.
+              Впишите «Списать, шт» напротив нужных строк.
             </p>
           </div>
           <a href="/api/warehouse/writeoff-template" className="btn-secondary !py-1.5">
-            ↓ Скачать шаблон
+            ↓ Шаблон
           </a>
         </div>
         <input
@@ -159,7 +159,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
           <div className="text-sm">
             Строк из файла: <b>{fileLines.length}</b>, всего {nf(linesTotal)} шт.{" "}
             <button type="button" className="underline text-ink-secondary" onClick={clearFile}>
-              убрать файл и вписать вручную
+              убрать файл
             </button>
           </div>
         )}
@@ -175,12 +175,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
       {!fileLines && (
         <div className="card !p-0">
           <div className="p-4 flex flex-wrap items-end justify-between gap-3 border-b border-line-hairline">
-            <div>
-              <h2 className="font-medium">Вручную — по позициям</h2>
-              <p className="text-sm text-ink-secondary mt-0.5">
-                Партию и дату выбирать не нужно: спишется с самых старых партий позиции.
-              </p>
-            </div>
+            <h2 className="font-medium">Вручную</h2>
             <input
               className="input !w-56"
               placeholder="Найти сорт…"
@@ -238,7 +233,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
       <div className="card space-y-3">
         <div className="grid sm:grid-cols-2 gap-3">
           <label className="text-sm">
-            <span className="label">Причина {fileLines && "(для строк файла без своей причины)"}</span>
+            <span className="label">Причина {fileLines && "(если нет в файле)"}</span>
             <input
               className="input"
               list="writeoff-reasons"
@@ -255,11 +250,11 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
             </datalist>
           </label>
           <label className="text-sm">
-            <span className="label">Примечание (не обязательно)</span>
+            <span className="label">Примечание</span>
             <input
               className="input"
               value={note}
-              placeholder="например: списание с 24.08 по 07.09"
+              placeholder="с 24.08 по 07.09"
               onChange={(e) => {
                 setPlan(null);
                 setNote(e.target.value);
@@ -304,7 +299,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
         <div className="flex flex-wrap items-center gap-3">
           {!planOk ? (
             <button type="button" className="btn-primary" disabled={busy || lines.length === 0} onClick={check}>
-              {busy ? "Проверяю…" : `Проверить списание${linesTotal > 0 ? ` · ${nf(linesTotal)} шт.` : ""}`}
+              {busy ? "Проверяю…" : `Проверить${linesTotal > 0 ? ` · ${nf(linesTotal)} шт.` : ""}`}
             </button>
           ) : (
             <>
@@ -318,8 +313,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
           )}
         </div>
         <p className="text-xs text-ink-muted">
-          Пока не нажата «Списать», ничего не записывается. Если хоть одна строка не сходится с
-          остатком, не спишется ничего — поправьте её и проверьте снова.
+          Если хоть одна строка не сходится с остатком — не спишется ничего.
         </p>
       </div>
     </div>

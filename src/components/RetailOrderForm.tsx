@@ -116,12 +116,10 @@ export default function RetailOrderForm({
   if (!shop) {
     return (
       <div className="max-w-3xl">
-        <h2 className="font-medium mb-1">В какой магазин?</h2>
-        <p className="text-sm text-ink-secondary mb-3">
-          {shops.length === 0
-            ? "Магазинов в вашем направлении пока нет. Новую точку заводит руководитель отдела продаж."
-            : "Выберите точку — дальше добавите позиции."}
-        </p>
+        <h2 className="font-medium mb-3">В какой магазин?</h2>
+        {shops.length === 0 && (
+          <p className="text-sm text-ink-secondary mb-3">Магазинов пока нет — их заводит РОП.</p>
+        )}
         <div className="grid sm:grid-cols-2 gap-3">
           {shops.map((s) => (
             <button
@@ -194,10 +192,6 @@ export default function RetailOrderForm({
         <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-50">
           {submitting ? "Отправляю…" : "Отправить заявку"}
         </button>
-        <p className="text-xs text-ink-muted mt-2">
-          Сумма посчитана по внутреннему прайсу — это не выручка. Оплату по заявке никто не ждёт:
-          подтвердите её, и склад сможет собирать.
-        </p>
       </div>
     </form>
   );

@@ -91,17 +91,9 @@ export default async function OrdersPage() {
         </div>
       </div>
       {farm && (
-        <p className="text-sm text-ink-secondary mb-4">
-          Только заявки вашего производства — {farmLabel(farm)}. Позиции другого производства скрыты.
-        </p>
+        <p className="text-sm text-ink-secondary mb-4">Только {farmLabel(farm)}</p>
       )}
-      {territory && (
-        <p className="text-sm text-ink-secondary mb-4">
-          Заявки в наши магазины вашего направления. Оплата по ним не проводится: это внутреннее
-          перемещение, и отгрузку открывает ваше подтверждение.
-        </p>
-      )}
-      {!farm && !territory && <div className="mb-4" />}
+      {!farm && <div className="mb-4" />}
       <OrdersTable orders={orders} managerNames={managerNames} />
     </div>
   );

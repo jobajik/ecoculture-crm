@@ -86,10 +86,7 @@ export default function Leaderboard({
       {snapshot.rows.length === 0 ? (
         <div className="card text-center py-12">
           <div className="text-2xl mb-2">🏁</div>
-          <p className="font-medium">За этот период продаж пока нет</p>
-          <p className="text-sm text-ink-secondary mt-1">
-            Как только менеджеры оформят заявки, здесь появится рейтинг.
-          </p>
+          <p className="font-medium">За этот период продаж нет</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -193,8 +190,7 @@ export default function Leaderboard({
           руками, хотя планы давно ставит РОП на странице «Планы». Подсказка,
           которая врёт, хуже, чем её отсутствие. */}
       <p className="text-xs text-ink-muted">
-        Бонус начисляется только с оплаченных заявок. Планы менеджерам ставит руководитель отдела
-        продаж в разделе «Планы»; в рейтинге они видны на месячном периоде.
+        План виден на периоде «месяц».
       </p>
     </div>
   );

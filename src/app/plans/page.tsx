@@ -48,20 +48,14 @@ export default async function PlansPage({
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Планы</h1>
-        <p className="text-sm text-ink-secondary">
-          План продаж по менеджерам на месяц, отдельно по каждому цветку. План менеджера — это
-          сумма его цветков; отдельным числом он не вводится. Отсюда план попадает в раздел
-          «Продажи»: рейтинг показывает выполнение, а бонус считается от фактически оплаченного.
-        </p>
+        <p className="text-sm text-ink-secondary">План продаж менеджерам на месяц, по цветкам.</p>
       </div>
 
       <SectionTabs tabs={plansTabsFor(role)} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PeriodPicker period={period} />
-        <p className="text-sm text-ink-muted">
-          Менеджеров в списке: {managers.length}
-        </p>
+        <p className="text-sm text-ink-muted">Менеджеров: {managers.length}</p>
       </div>
 
       {/* key по месяцу: при переключении форма пересоздаётся с нуля,

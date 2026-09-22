@@ -76,9 +76,7 @@ export default function PaymentPanel({
       <RealizationRow orderId={orderId} realizations={realizations} />
       {consignment && (
         <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">
-          Это заявка на реализацию: клиент платит за то, что продал, и остаток здесь не долг, а
-          непроданный цветок. В долги и звонки она не попадает — вносите деньги платежами по мере
-          поступления.
+          Реализация: остаток — непроданный цветок, а не долг.
         </p>
       )}
       <PaymentsList
@@ -105,8 +103,7 @@ export default function PaymentPanel({
         </summary>
         <div className="pt-3">
           <p className="text-xs text-ink-muted mb-3">
-            Здесь вписывается «получено всего» одним числом, мимо списка платежей. Нужно только для
-            исправлений — разница с платежами будет видна отдельной строкой.
+            Итог одним числом, а не очередной платёж. Только для исправлений.
           </p>
           {farms.length > 1 ? (
             <SplitPayment orderId={orderId} totalAmount={totalAmount} farms={farms} onDone={onDone} />
@@ -171,7 +168,7 @@ function RealizationRow({ orderId, realizations }: { orderId: string; realizatio
     <div className="pb-3 border-b border-line-hairline space-y-2">
       {several && (
         <div className="text-sm text-ink-secondary">
-          Реализаций в 1С — {realizations.length}: по одной на цветок
+          Реализаций в 1С: {realizations.length}
         </div>
       )}
       <div className="flex flex-wrap items-end gap-3">
@@ -253,7 +250,7 @@ function PaymentsList({
   }
 
   if (history.rows.length === 0 && history.unrecorded === 0) {
-    return <p className="text-sm text-ink-muted">Платежей по заявке пока нет.</p>;
+    return <p className="text-sm text-ink-muted">Платежей пока нет.</p>;
   }
 
   const left = totalAmount - paidAmount;
@@ -266,7 +263,7 @@ function PaymentsList({
             <span className="tabular-nums font-medium w-28">{money(history.unrecorded)}</span>
             <span className="flex-1 min-w-0">
               {history.unrecorded > 0
-                ? "внесено раньше одной суммой, без разбивки на платежи"
+                ? "внесено раньше одной суммой"
                 : "исправление итога вручную"}
             </span>
           </li>
@@ -463,7 +460,7 @@ function AddPayment({
             onClick={() => setLines((prev) => [...prev, { amount: 0, method: unusedMethod }])}
             className="text-sm text-accent hover:underline"
           >
-            + часть другим способом (смешанная оплата)
+            + часть другим способом
           </button>
         )}
       </div>
@@ -493,7 +490,7 @@ function AddPayment({
         )}
       </div>
       {defaultMethod && (
-        <p className="text-xs text-ink-muted">Менеджер указал в заявке: {defaultMethod}.</p>
+        <p className="text-xs text-ink-muted">Менеджер указал: {defaultMethod}</p>
       )}
       {error && (
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
@@ -638,13 +635,11 @@ function WholePayment({
       </div>
 
       <p className="text-xs text-ink-muted">
-        Это сумма, полученная по заявке ВСЕГО, а не очередной платёж. Счёт{" "}
-        {money(totalAmount)}
-        {paidAmount > 0 && ` · уже внесено ${money(paidAmount)}`}
+        Счёт {money(totalAmount)}
+        {paidAmount > 0 && ` · внесено ${money(paidAmount)}`}
         {debt > 0 && ` · остаток ${money(debt)}`}
         {paidAmount > totalAmount + 1 &&
-          ` · переплата ${money(paidAmount - totalAmount)} — её придётся вернуть или зачесть`}
-        . Галочку «оплачено целиком» система поставит сама, когда сумма догонит счёт.
+          ` · переплата ${money(paidAmount - totalAmount)} — вернуть или зачесть`}
       </p>
 
       {error && (
@@ -705,11 +700,6 @@ function SplitPayment({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-ink-secondary">
-        В заявке цветок обоих производств — счёта два, и клиент платит двумя переводами.
-        Отметьте каждый отдельно.
-      </p>
-
       <div className="grid sm:grid-cols-2 gap-3">
         {farms.map((f) => {
           const left = Math.max(0, f.amount - (values[f.farm] ?? 0));
@@ -777,8 +767,7 @@ function SplitPayment({
         Всего по заявке {money(totalAmount)} · будет записано {money(entered)}
         {entered < totalAmount - 1 && ` · остаток ${money(totalAmount - entered)}`}
         {entered > totalAmount + 1 &&
-          ` · переплата ${money(entered - totalAmount)} — её придётся вернуть или зачесть`}
-        . Это суммы, полученные ВСЕГО по каждой компании, а не очередной платёж.
+          ` · переплата ${money(entered - totalAmount)} — вернуть или зачесть`}
       </p>
 
       {error && (

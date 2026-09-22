@@ -26,9 +26,6 @@ export default async function SalesPage({
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Рейтинг менеджеров</h1>
-        <p className="text-sm text-ink-secondary">
-          Кто сколько продал и какой бонус заработал. Бонус считается с оплаченных заявок.
-        </p>
       </div>
 
       <SectionTabs tabs={salesTabsFor(role)} />

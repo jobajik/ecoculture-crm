@@ -118,10 +118,7 @@ export default function DailySalesDashboard({ initial }: { initial: DailySalesSn
       {t.orders === 0 ? (
         <div className="card text-center py-12">
           <div className="text-2xl mb-2">🌤</div>
-          <p className="font-medium">За этот день заявок пока нет</p>
-          <p className="text-sm text-ink-secondary mt-1">
-            Как только менеджер оформит заявку, она появится здесь автоматически.
-          </p>
+          <p className="font-medium">За этот день заявок нет</p>
         </div>
       ) : (
         <>
@@ -144,8 +141,7 @@ export default function DailySalesDashboard({ initial }: { initial: DailySalesSn
             </ChartCard>
 
             <div className="card">
-              <h3 className="font-medium mb-1">Что продавали</h3>
-              <p className="text-xs text-ink-muted mb-3">Доля выручки по типам цветка</p>
+              <h3 className="font-medium mb-3">Что продавали</h3>
 
               {snapshot.byFarm.length > 1 && (
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm mb-3 pb-3 border-b border-line-hairline">

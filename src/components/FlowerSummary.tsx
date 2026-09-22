@@ -47,7 +47,7 @@ export default function FlowerSummary({
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2">
         <h2 className="font-medium">По цветку</h2>
         <span className="text-sm text-ink-muted">
-          Что пришло, что ушло и что осталось за {days} дней
+          за {days} дней
         </span>
       </div>
 

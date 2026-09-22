@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot } from "@/lib/finance";
 import { DEBT_OVERDUE_DAYS, ROLES } from "@/lib/constants";
 
+import Hint from "@/components/Hint";
 import SectionTabs from "@/components/SectionTabs";
 import CallsBoard from "@/components/CallsBoard";
 import { financeTabsFor } from "../tabs";
@@ -39,14 +40,13 @@ export default async function DebtsPage() {
   return (
     <div className="space-y-5 max-w-4xl">
       <div>
-        <h1 className="text-xl font-semibold">Долги и звонки</h1>
-        <p className="text-sm text-ink-secondary">
-          Долг — это ОСТАТОК по заявке: клиент с предоплатой висит только на невнесённую часть.
-          Возраст считается от даты доставки, а если её не проставили — от дня оформления; после{" "}
-          {DEBT_OVERDUE_DAYS} дней долг помечается просроченным. Просрочка считается по каждой
-          заявке отдельно, поэтому у клиента со старым и свежим долгом просрочена только старая
-          часть. Сверху — список на сегодня, ниже — сколько всего должен каждый клиент.
-        </p>
+        <h1 className="text-xl font-semibold">
+          Долги и звонки
+          <Hint>
+            Долг — неоплаченный остаток по заявке. Возраст — от даты доставки (нет её — от дня
+            оформления). Просрочка — дольше {DEBT_OVERDUE_DAYS} дней, по каждой заявке отдельно.
+          </Hint>
+        </h1>
       </div>
 
       <SectionTabs tabs={financeTabsFor(role)} />
@@ -134,7 +134,6 @@ export default async function DebtsPage() {
                 <td colSpan={6} className="px-4 py-12 text-center">
                   <div className="text-2xl mb-2">✓</div>
                   <p className="font-medium">Долгов нет</p>
-                  <p className="text-sm text-ink-secondary mt-1">Все заявки оплачены.</p>
                 </td>
               </tr>
             )}

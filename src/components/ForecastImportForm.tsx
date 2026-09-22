@@ -6,6 +6,7 @@ import { importForecastAction, parseForecastFileAction } from "@/app/forecast/ac
 import { FLOWER_TYPE_LABELS, formatGrade, periodLabel, weekLabel } from "@/lib/constants";
 import type { ForecastParseResult } from "@/lib/excel";
 import { unwrapValue } from "@/lib/actionResult";
+import Hint from "./Hint";
 
 /**
  * Загрузка прогноза срезки файлом. Сначала показываем, что распозналось, и
@@ -79,10 +80,11 @@ export default function ForecastImportForm({ month }: { month: string }) {
         <div>
           <h2 className="font-medium">Загрузка из Excel</h2>
           <p className="text-sm text-ink-secondary mt-0.5">
-            На каждый цветок два листа: «сорта» (строки — сорта) и «ростовка» (строки — длины, на
-            весь цветок). Колонки — недели, в ячейках количество. Загружается в{" "}
-            <b className="capitalize">{periodLabel(month)}</b> — файл <b>заменяет</b> месяц целиком:
-            позиции, которых в нём нет, обнуляются. Цветок, листа которого в файле нет, не трогается.
+            Файл <b>заменит</b> <span className="capitalize">{periodLabel(month)}</span> целиком.
+            <Hint>
+              Позиции, которых нет в файле, обнулятся. Цветок без своего листа в файле не
+              трогается. На цветок два листа: «сорта» и «ростовка», колонки — недели.
+            </Hint>
           </p>
         </div>
         <a href={`/api/forecast/template?period=${month}`} className="btn-secondary !py-1.5">
@@ -111,9 +113,9 @@ export default function ForecastImportForm({ month }: { month: string }) {
 
       {done && (
         <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">
-          Записано позиций: <b>{done.updated + done.created}</b> (обновлено {done.updated}, добавлено{" "}
-          {done.created}), по сортам {done.totalStems.toLocaleString("ru-RU")} шт.
-          {done.cleared > 0 && ` Обнулено позиций, которых в файле не было: ${done.cleared}.`}
+          Записано позиций: <b>{done.updated + done.created}</b>, по сортам{" "}
+          {done.totalStems.toLocaleString("ru-RU")} шт.
+          {done.cleared > 0 && ` Обнулено: ${done.cleared}.`}
         </div>
       )}
 
@@ -168,8 +170,7 @@ export default function ForecastImportForm({ month }: { month: string }) {
 
           {result.errorCount > 0 && (
             <p className="text-xs text-ink-muted">
-              Строки с ошибками загружены не будут — исправьте их в файле и загрузите снова либо
-              введите вручную в таблицах ниже.
+              Строки с ошибками не загрузятся.
             </p>
           )}
 
@@ -179,7 +180,7 @@ export default function ForecastImportForm({ month }: { month: string }) {
               disabled={importing || result.validCount === 0}
               className="btn-primary disabled:opacity-50"
             >
-              {importing ? "Загрузка…" : `Записать ${result.validCount} позиций в прогноз`}
+              {importing ? "Загрузка…" : `Записать ${result.validCount} позиций`}
             </button>
             <button onClick={reset} className="btn-secondary" disabled={importing}>
               Отмена

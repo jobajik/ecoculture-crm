@@ -48,7 +48,7 @@ export default function ShipmentForm({
   return (
     <div className="space-y-4">
       {remainingItems.length === 0 && (
-        <div className="card text-ink-secondary">Все позиции по этой заявке уже отгружены.</div>
+        <div className="card text-ink-secondary">Всё отгружено.</div>
       )}
       {remainingItems.map((item) => (
         <ItemShipRow key={item.itemId} orderId={order.orderId} item={item} onDone={() => router.refresh()} />
@@ -181,7 +181,7 @@ function ItemShipRow({
 
       {batches.length === 0 ? (
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
-          На складе нет партий этого сорта с остатком. Сначала оформите приёмку с производства.
+          Нет партий с остатком — сначала приёмка.
         </div>
       ) : (
         <div className="space-y-3">
@@ -193,8 +193,7 @@ function ItemShipRow({
           <div>
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-1.5">
               <span className="label !mb-0">
-                Из каких партий отгружаем
-                <span className="font-normal text-ink-muted"> — можно отметить несколько</span>
+                Из каких партий
               </span>
               {!oneIsEnough && batches.length > 1 && (
                 <button

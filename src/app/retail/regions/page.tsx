@@ -132,17 +132,13 @@ export default async function RetailRegionsPage({
         <CityTabs cities={[...RETAIL_REGION_CITIES]} current={city} date={date} />
       </div>
 
-      <p className="text-sm text-ink-secondary mt-4 mb-3">
-        Заявка на весь город на доставку {formatDay(date)}. Оплата по ней не проводится: это
-        перемещение внутри компании, и отгрузку открывает подтверждение того, кто заявку составил.
-      </p>
+      <div className="mt-4" />
 
       <DayNav date={date} today={dayKey(new Date())} basePath="/retail/regions" extra={{ city }} />
 
       {!card ? (
         <div className="card mt-4 text-sm text-ink-secondary">
-          Карточки города «{city}» ещё нет в базе. Её заводит руководитель отдела продаж или
-          администратор — до этого заявку по городу оформить нельзя.
+          Города «{city}» ещё нет в базе — его заводит РОП или администратор.
         </div>
       ) : (
         <>
@@ -150,14 +146,10 @@ export default async function RetailRegionsPage({
             <Tile
               title="Заявка на день"
               value={row && !row.empty ? "оформлена" : "нет"}
-              hint={row && !row.empty ? "Можно добавить добор" : "Город ждёт заявку"}
+              hint={row && !row.empty ? undefined : "Город ждёт заявку"}
               warn={!row || row.empty}
             />
-            <Tile
-              title="Стеблей"
-              value={row ? row.stems.toLocaleString("ru-RU") : "0"}
-              hint="На этот день"
-            />
+            <Tile title="Стеблей" value={row ? row.stems.toLocaleString("ru-RU") : "0"} />
             <Tile
               title="По внутренней цене"
               value={money(row?.amount ?? 0)}
@@ -201,7 +193,7 @@ export default async function RetailRegionsPage({
                 {(!row || row.empty) && (
                   <tr>
                     <td colSpan={5} className="px-4 py-10 text-center text-ink-muted">
-                      На {formatDay(date)} заявки по городу {city} нет.
+                      Заявки нет.
                       {canOrder && (
                         <>
                           {" "}
@@ -273,14 +265,14 @@ function Tile({
 }: {
   title: string;
   value: string;
-  hint: string;
+  hint?: string;
   warn?: boolean;
 }) {
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
       <div className={`text-2xl font-semibold mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>{value}</div>
-      <div className="text-xs text-ink-muted mt-1">{hint}</div>
+      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

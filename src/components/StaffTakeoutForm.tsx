@@ -169,7 +169,7 @@ export default function StaffTakeoutForm({
   if (batches.length === 0) {
     return (
       <div className="card text-sm text-ink-secondary">
-        На складе нет партий с остатком — выдавать нечего. Сначала оформите приёмку.
+        На складе нет партий с остатком.
       </div>
     );
   }
@@ -328,12 +328,12 @@ export default function StaffTakeoutForm({
       </div>
 
       <label className="text-sm block">
-        <span className="label">Примечание (не обязательно)</span>
+        <span className="label">Примечание</span>
         <input
           className="input"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder={company ? "например: партнёрам из Астаны" : "например: на праздник"}
+          placeholder={company ? "партнёрам из Астаны" : "на праздник"}
         />
       </label>
 
@@ -344,7 +344,7 @@ export default function StaffTakeoutForm({
       )}
       {done && (
         <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">
-          Записано: {done} Стебли сняты со склада.
+          Записано: {done}
         </div>
       )}
 
@@ -352,11 +352,7 @@ export default function StaffTakeoutForm({
         <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-50">
           {submitting ? "Записываю…" : company ? "Записать расход" : "Записать выдачу"}
         </button>
-        <p className="text-xs text-ink-muted mt-2">
-          {company
-            ? "Стебли уйдут со склада сразу. Это не продажа и не списание: цветок ушёл бесплатно на нужды компании. Цена не обязательна — по ней видно, во что обошёлся расход."
-            : "Стебли уйдут со склада сразу. Денег по этой записи в кассу не приходит: сумма — это то, что бухгалтер удержит из зарплаты."}
-        </p>
+        <p className="text-xs text-ink-muted mt-2">Стебли уйдут со склада сразу.</p>
       </div>
     </form>
   );

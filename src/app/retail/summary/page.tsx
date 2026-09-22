@@ -73,21 +73,19 @@ export default async function RetailSummaryPage() {
       <SectionTabs tabs={retailTabsFor(role)} />
 
       <p className="text-sm text-ink-secondary mt-4 mb-4">
-        За последние {DAYS} дней, по дате оформления заявки. Суммы посчитаны по внутреннему прайсу:
-        это объём переданного в магазины, а не выручка — выручка появится, когда магазин продаст
-        цветок покупателю.
+        За последние {DAYS} дней, по дате оформления.
       </p>
 
       {t.orders === 0 ? (
         <div className="card text-sm text-ink-secondary">
-          За этот период заявок в магазины не было.
+          Заявок в магазины не было.
         </div>
       ) : (
         <>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             <Tile title="Заявок" value={String(t.orders)} hint="Кроме отменённых" />
-            <Tile title="Магазинов" value={String(t.shops)} hint="Кому возили" />
-            <Tile title="Стеблей" value={t.stems.toLocaleString("ru-RU")} hint="Передано в розницу" />
+            <Tile title="Магазинов" value={String(t.shops)} />
+            <Tile title="Стеблей" value={t.stems.toLocaleString("ru-RU")} />
             <Tile title="По внутренней цене" value={money(t.amount)} hint="Это не выручка" />
           </div>
 
@@ -191,12 +189,12 @@ export default async function RetailSummaryPage() {
   );
 }
 
-function Tile({ title, value, hint }: { title: string; value: string; hint: string }) {
+function Tile({ title, value, hint }: { title: string; value: string; hint?: string }) {
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
       <div className="text-2xl font-semibold mt-1">{value}</div>
-      <div className="text-xs text-ink-muted mt-1">{hint}</div>
+      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

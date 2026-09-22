@@ -6,6 +6,7 @@ import { ROLES, isValidPeriod, periodOf } from "@/lib/constants";
 import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
 import CalendarBoard from "@/components/CalendarBoard";
+import Hint from "@/components/Hint";
 import { analyticsTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -40,9 +41,8 @@ export default async function CalendarPage({
       <div>
         <h1 className="text-xl font-semibold">Календарь</h1>
         <p className="text-sm text-ink-secondary">
-          День за днём: что срезали, что продали, что отгрузили и сколько денег пришло. Нажмите на
-          любой день — под календарём раскроется, из чего сложились его цифры. Продажи считаются по
-          дате оформления заявки, деньги — по дате оплаты: это разные дни, и так и должно быть.
+          Нажмите на день — откроются подробности.
+          <Hint>Продажи — по дню оформления заявки, деньги — по дню оплаты.</Hint>
         </p>
       </div>
 

@@ -6,7 +6,6 @@ import clsx from "clsx";
 import { savePricesAction } from "@/app/prices/actions";
 import {
   FLOWER_TYPE_LABELS_PLURAL,
-  GRADE_LABELS,
   formatGrade,
   getGradesFor,
 } from "@/lib/constants";
@@ -169,7 +168,7 @@ function FlowerPrices({
         {FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType}
         <span className="text-sm font-normal text-ink-muted">
           {" "}
-          — цена за стебель, ₸ · по колонке «{GRADE_LABELS[flowerType] ?? "Длина"}»
+          — ₸ за стебель
         </span>
       </h3>
 
@@ -229,7 +228,7 @@ function FlowerPrices({
           what="сортов"
         />
         <span className="text-xs text-ink-muted">
-          Пустая ячейка сорта — цена как в строке «{BASE_VARIETY_LABEL}» (она подсказана серым).
+          Пусто — как в «{BASE_VARIETY_LABEL}»
         </span>
       </div>
     </div>

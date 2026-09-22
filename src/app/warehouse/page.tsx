@@ -72,21 +72,15 @@ export default async function WarehousePage() {
           <Link href="/orders/new?region=1" className="btn-secondary">
             + Опт в регион
           </Link>
-          <Link href="/warehouse/picklist" className="btn-secondary">
-            Заявка на день (печать)
-          </Link>
-          <Link href="/warehouse/batches" className="btn-secondary">
-            Партии на складе
-          </Link>
           <Link href="/warehouse/receive" className="btn-primary">
-            + Приёмка с производства
+            + Приёмка
           </Link>
         </div>
       </div>
 
       {alerts.length > 0 && (
         <div className="card mb-6 border-status-warning/40">
-          <h2 className="font-medium mb-2">⚠ Партии, требующие внимания по сроку хранения</h2>
+          <h2 className="font-medium mb-2">⚠ Истекает срок хранения</h2>
           <ul className="text-sm space-y-1">
             {alerts.map((a) => (
               <li key={a.batch.batchId} className="flex justify-between text-ink-secondary">
@@ -100,7 +94,7 @@ export default async function WarehousePage() {
             ))}
           </ul>
           <Link href="/warehouse/batches" className="text-sm text-series-1 mt-2 inline-block">
-            Смотреть все партии →
+            Все партии →
           </Link>
         </div>
       )}
@@ -152,9 +146,7 @@ export default async function WarehousePage() {
             {readyToShip.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
-                  {waiting.length > 0
-                    ? "Готовых заявок нет — те, что ниже, ещё ждут менеджера или бухгалтера"
-                    : "Нет заявок, ожидающих отгрузки"}
+                  {waiting.length > 0 ? "Готовых заявок нет" : "Отгружать нечего"}
                 </td>
               </tr>
             )}
@@ -164,11 +156,7 @@ export default async function WarehousePage() {
 
       {waiting.length > 0 && (
         <>
-          <h2 className="font-medium mb-1">Ждут подтверждения</h2>
-          <p className="text-sm text-ink-secondary mb-2">
-            Эти заявки уже заведены, но отгружать их рано: цветок не выдаём, пока менеджер не
-            согласовал заявку, а бухгалтер не провёл оплату.
-          </p>
+          <h2 className="font-medium mb-2">Ждут подтверждения</h2>
           <div className="card !p-0 table-scroll table-cards">
             <table className="w-full text-sm">
               <thead>

@@ -120,7 +120,7 @@ export default function ClientCard({
             <div key={label}>
               <dt className="label">{label}</dt>
               <dd>
-                {value || <span className="text-ink-muted">не заполнено</span>}
+                {value || <span className="text-ink-muted">—</span>}
               </dd>
             </div>
           ))}
@@ -132,7 +132,7 @@ export default function ClientCard({
               {kaspi.map(([label, value]) => (
                 <div key={label}>
                   <dt className="label">{label}</dt>
-                  <dd>{value || <span className="text-ink-muted">не заполнено</span>}</dd>
+                  <dd>{value || <span className="text-ink-muted">—</span>}</dd>
                 </div>
               ))}
             </dl>

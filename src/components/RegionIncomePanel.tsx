@@ -61,14 +61,10 @@ export default function RegionIncomePanel({
 
   return (
     <div className="card mb-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
         <h2 className="font-medium">Поступления по городу {direction}</h2>
         <span className="text-sm text-ink-muted">ушло {nf(stems)} шт.</span>
       </div>
-      <p className="text-sm text-ink-secondary mb-3">
-        Счёта по этой заявке нет: в неё заводят объём, а не продажу клиенту. Сюда вписывается то,
-        что по городу реально поступило.
-      </p>
 
       {canEdit ? (
         <div className="flex flex-wrap items-end gap-2">

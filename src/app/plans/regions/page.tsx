@@ -24,6 +24,7 @@ import {
 } from "@/lib/direction";
 import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
+import Hint from "@/components/Hint";
 import { plansTabsFor } from "../tabs";
 import DirectionFixRow from "@/components/DirectionFixRow";
 import { buildRegionIncome, isRegionOrder } from "@/lib/orderKind";
@@ -180,9 +181,11 @@ export default async function RegionSalesPage({
         </Link>
       </div>
       <p className="text-ink-secondary mb-3">
-        План отгрузок против того, что реально ушло. Заявка в регион — это объём на город:
-        количество и сорт, без клиента. Алматы здесь нет намеренно: такого направления в плане не
-        существует.
+        План отгрузок против факта.
+        <Hint>
+          Считаются заявки с доставкой {formatDay(from)} — {formatDay(to)}. Отменённые и заявки в
+          наши магазины не в счёт. Алматы в плане нет.
+        </Hint>
       </p>
 
       <div className="mb-4">
@@ -224,11 +227,6 @@ export default async function RegionSalesPage({
           );
         })}
       </div>
-
-      <p className="text-xs text-ink-muted mb-3">
-        Считаются заявки с датой доставки {formatDay(from)} — {formatDay(to)}. Отменённые и заявки в
-        наши магазины не в счёт.
-      </p>
 
       <div className="grid sm:grid-cols-4 gap-3 mb-5">
         <Tile title="План" value={nf(fact.planStems)} hint="стеблей за период" />
@@ -273,8 +271,7 @@ export default async function RegionSalesPage({
         <div className="card mb-5 border-[#d9b25c]">
           <h2 className="font-medium mb-1">Похоже на регион, но направление не стоит</h2>
           <p className="text-sm text-ink-secondary mb-3">
-            Эти заявки завёл менеджер — у него поля направления нет. По городу клиента видно, куда
-            они едут. Поставьте направление, иначе в план они не попадут.
+            Без направления заявка не попадёт в план.
           </p>
           <div className="space-y-2">
             {missing.map((m) => (

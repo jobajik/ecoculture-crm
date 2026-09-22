@@ -227,9 +227,6 @@ export default function ClientPicker({
             Отмена
           </button>
         </div>
-        <p className="text-xs text-ink-muted">
-          Обязательны только название и город — остальное можно дозаполнить потом в карточке.
-        </p>
       </div>
     );
   }
@@ -238,7 +235,7 @@ export default function ClientPicker({
     <div className="space-y-2">
       <input
         className="input"
-        placeholder="Начните вводить название, город или телефон"
+        placeholder="Название, город или телефон"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
@@ -274,8 +271,7 @@ export default function ClientPicker({
       )}
       {!search.trim() && clients.length > found.length && (
         <p className="text-xs text-ink-muted">
-          Показаны последние, с кем работали. Начните вводить название — найдётся любой из{" "}
-          {clients.length}.
+          Недавние. Поиск — по всем {clients.length}.
         </p>
       )}
       {search.trim() && found.length === 0 && (
@@ -341,8 +337,7 @@ export function KaspiFields({
         </label>
       </div>
       <p className="text-xs text-ink-muted">
-        Это номера, С КОТОРЫХ приходит перевод: по ним бухгалтер узнаёт платёж. Счёт выставляет
-        то ТОО, чей цветок в заявке, — это считается само, выбирать не нужно.
+        Номера, с которых клиент переводит деньги.
       </p>
     </div>
   );

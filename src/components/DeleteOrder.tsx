@@ -54,18 +54,12 @@ export default function DeleteOrder({ orderId }: { orderId: string }) {
       <div>
         <h2 className="font-medium text-status-critical">Удалить заявку насовсем</h2>
         <p className="text-sm text-ink-secondary mt-0.5">
-          Заявка и её позиции исчезнут из базы. <b>Вернуть их будет нельзя</b> — корзины в
-          таблице нет. В журнале останется запись: кто, когда, какая была заявка и почему её
-          убрали.
-        </p>
-        <p className="text-sm text-ink-secondary mt-2">
-          Если клиент просто отказался — не удаляйте, а <b>отмените</b>: тогда заявка выйдет из
-          выручки и планов, но останется видна, и через месяц будет понятно, что произошло.
+          <b>Вернуть будет нельзя.</b> Если клиент отказался — лучше <b>отменить</b>.
         </p>
       </div>
       <input
         className="input"
-        placeholder="Почему удаляем — например: завели дважды, тестовая заявка"
+        placeholder="Причина удаления"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
       />

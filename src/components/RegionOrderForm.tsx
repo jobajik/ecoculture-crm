@@ -122,10 +122,7 @@ export default function RegionOrderForm({
   if (!direction) {
     return (
       <div className="max-w-3xl">
-        <h2 className="font-medium mb-1">В какой регион?</h2>
-        <p className="text-sm text-ink-secondary mb-3">
-          Выберите город — дальше проставите количество.
-        </p>
+        <h2 className="font-medium mb-3">В какой регион?</h2>
         <div className="grid sm:grid-cols-3 gap-3">
           {directions.map((d) => (
             <button
@@ -268,10 +265,6 @@ export default function RegionOrderForm({
         <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-50">
           {submitting ? "Отправляю…" : "Отправить заявку"}
         </button>
-        <p className="text-xs text-ink-muted mt-2">
-          Цены здесь нет намеренно: это объём на город, а не продажа клиенту. Сумму поступлений
-          вписывает бухгалтер позже, прямо на заявке.
-        </p>
       </div>
     </form>
   );

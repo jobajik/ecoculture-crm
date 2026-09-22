@@ -23,6 +23,7 @@ import {
   type DistributeMode,
 } from "@/lib/planBalance";
 import WeekTabs from "./WeekTabs";
+import Hint from "./Hint";
 import { unwrap } from "@/lib/actionResult";
 
 export interface BalanceInput {
@@ -296,13 +297,6 @@ export default function PlanBalanceBoard({
             {shown.diff === 0 ? "0" : `${shown.diff > 0 ? "+" : "−"}${fmt(Math.abs(shown.diff))}`}{" "}
             <span className="text-sm font-normal">шт</span>
           </div>
-          <div className="text-xs text-ink-muted mt-0.5">
-            {surplus
-              ? "эти стебли ещё никому не обещаны"
-              : deficit
-                ? "обещано больше, чем вырастет"
-                : "план ровно под прогноз"}
-          </div>
         </div>
       </div>
 
@@ -310,11 +304,17 @@ export default function PlanBalanceBoard({
       {surplus && (
         <div className="card space-y-3">
           <div>
-            <h2 className="font-medium">Куда деть остаток</h2>
+            <h2 className="font-medium">
+              Куда деть остаток
+              <Hint>
+                «Пропорционально» сохраняет сложившиеся доли. «Поровну» даст и тем направлениям, где
+                сейчас ноль. Сумма в тенге едет за стеблями по цене направления, а где цены нет — по
+                средней по цветку.
+              </Hint>
+            </h2>
             <p className="text-sm text-ink-secondary mt-0.5">
-              {fmt(shown.diff)} шт{" "}
-              {FLOWER_TYPE_LABELS_PLURAL[active]?.toLowerCase() ?? ""} вырастет сверх того, что уже
-              распределено. Разложу по направлениям — цифры покажу до сохранения.
+              {fmt(shown.diff)} шт {FLOWER_TYPE_LABELS_PLURAL[active]?.toLowerCase() ?? ""} сверх
+              плана.
             </p>
           </div>
 
@@ -357,12 +357,6 @@ export default function PlanBalanceBoard({
               Разложить остаток
             </button>
           </div>
-
-          <p className="text-xs text-ink-muted">
-            «Пропорционально» сохраняет сложившиеся доли: кто берёт больше, тот больше и получит.
-            «Поровну» даст и тем направлениям, где сейчас ноль. Сумма в тенге едет за стеблями по
-            цене самого направления; там, где цены ещё нет, берётся средняя по цветку.
-          </p>
         </div>
       )}
 
@@ -371,9 +365,7 @@ export default function PlanBalanceBoard({
           <div>
             <h2 className="font-medium">Обещано больше, чем вырастет</h2>
             <p className="text-sm text-ink-secondary mt-0.5">
-              Не хватает {fmt(-shown.diff)} шт. Можно ужать план под прогноз — пропорционально по
-              всем направлениям, чтобы недостача легла на всех, а не на последних в списке. Или
-              оставить как есть и разбираться вручную.
+              Не хватает {fmt(-shown.diff)} шт. «Ужать» уменьшит все направления пропорционально.
             </p>
           </div>
           <button onClick={handleTrim} className="btn-secondary" disabled={saving}>
@@ -596,13 +588,13 @@ export default function PlanBalanceBoard({
       {activeDraft && (
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={handleSave} disabled={saving} className="btn-primary disabled:opacity-50">
-            {saving ? "Сохраняю…" : `Записать в план на ${weekLabel(activeWeek)}`}
+            {saving ? "Сохраняю…" : "Записать в план"}
           </button>
           <button onClick={handleReset} disabled={saving} className="btn-secondary">
-            Отменить предложение
+            Отменить
           </button>
           <span className="text-sm text-ink-muted">
-            Пока ничего не записано — это предпросмотр.
+            Ещё не записано
           </span>
         </div>
       )}

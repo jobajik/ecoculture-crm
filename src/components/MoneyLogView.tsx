@@ -70,10 +70,6 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
     return (
       <div className="card text-center py-10">
         <p className="font-medium">Записей пока нет</p>
-        <p className="text-sm text-ink-secondary mt-1">
-          Журнал заполняется сам: как только кто-то отметит оплату, пересчитает заявку или проведёт
-          рекламацию, здесь появится строка.
-        </p>
       </div>
     );
   }
@@ -95,7 +91,7 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
         </select>
         <input
           className="input !w-auto flex-1 min-w-[200px] !py-1.5"
-          placeholder="Поиск по клиенту, сотруднику или тексту"
+          placeholder="Клиент, сотрудник или текст"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

@@ -84,11 +84,7 @@ export default async function NewOrderPage({
     const preset = cleanDirection(searchParams?.direction);
     return (
       <div>
-        <h1 className="text-xl font-semibold mb-1">Объём в регион</h1>
-        <p className="text-sm text-ink-secondary mb-4">
-          Оптовая отгрузка в город: количество и сорт, без клиента. Сумму поступлений подтвердит
-          бухгалтер позже.
-        </p>
+        <h1 className="text-xl font-semibold mb-4">Объём в регион</h1>
         <RegionOrderForm
           directions={REGION_ORDER_DIRECTIONS}
           varieties={varietiesForRegion}
@@ -158,13 +154,9 @@ export default async function NewOrderPage({
 
     return (
       <div>
-        <h1 className="text-xl font-semibold mb-1">
+        <h1 className="text-xl font-semibold mb-4">
           Заявка в магазин{territory ? ` — ${retailLabel(territory)}` : ""}
         </h1>
-        <p className="text-sm text-ink-secondary mb-4">
-          Выберите магазин и добавьте позиции. Это перемещение внутри компании: оплату по заявке
-          никто не ждёт, а цены берутся из внутреннего прайса.
-        </p>
         <RetailOrderForm
           shops={shops}
           varieties={varieties}
@@ -237,13 +229,7 @@ export default async function NewOrderPage({
       <h1 className="text-xl font-semibold mb-1">
         {presetDirection ? `Новая заявка — ${presetDirection}` : "Новая заявка"}
       </h1>
-      {presetDirection && (
-        <p className="text-sm text-ink-secondary mb-4">
-          Оптовая отгрузка в регион. Направление уже проставлено — по нему заявка попадёт в план
-          отгрузок.
-        </p>
-      )}
-      <div className={presetDirection ? "" : "mt-4"}>
+      <div className="mt-4">
         <OrderForm
           varieties={varieties}
           prices={priceMapForClient(prices)}

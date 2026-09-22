@@ -53,12 +53,12 @@ const ROLE_GUIDE: { code: string; does: string; farm: string }[] = [
   },
   {
     code: "retail_almaty",
-    does: "Собирает заявки на НАШИ магазины в Алматы. Оплата по ним не проводится — это внутреннее перемещение, и отгрузку открывает его подтверждение",
+    does: "Заявки на наши магазины в Алматы",
     farm: "не нужна",
   },
   {
     code: "retail_regions",
-    does: "То же самое по нашим магазинам в регионах. Направления разделены жёстко: чужие магазины он не видит",
+    does: "Заявки на наши магазины в регионах",
     farm: "не нужна",
   },
 ];
@@ -76,12 +76,7 @@ export default async function AdminPage() {
 
       <div className="card">
         <h2 className="font-medium mb-1">Сотрудники и роли</h2>
-        <p className="text-sm text-ink-secondary mb-3">
-          Принять человека, сменить ему роль или закрыть доступ уволенному — прямо здесь. Раньше для
-          этого приходилось открывать Google-таблицу и вписывать строку руками; таблица никуда не
-          делась и остаётся аварийным выходом, но обычный путь теперь этот. Новое право начинает
-          действовать в течение минуты, перезапускать ничего не нужно. Ниже — что делает каждая роль.
-        </p>
+        <p className="text-sm text-ink-secondary mb-3">Права меняются в течение минуты.</p>
 
         <StaffForm
           users={users}
@@ -127,10 +122,7 @@ export default async function AdminPage() {
 
       <div className="card">
         <h2 className="font-medium mb-1">Производства</h2>
-        <p className="text-sm text-ink-secondary mb-3">
-          У каждого производства свой зав. складом: он видит остатки, принимает партии и отгружает
-          только свой цветок. Менеджеры и администратор работают по обоим.
-        </p>
+        <p className="text-sm text-ink-secondary mb-3">Зав. складом видит только свой цветок.</p>
         <div className="grid sm:grid-cols-2 gap-3">
           {FARM_ORDER.map((f) => (
             <div key={f} className="border border-line-hairline rounded-lg p-3">
@@ -162,11 +154,7 @@ export default async function AdminPage() {
 
       <div className="card">
         <h2 className="font-medium mb-1">Сроки хранения</h2>
-        <p className="text-sm text-ink-secondary mb-4">
-          Сколько дней цветок считается годным. Это решение хозяйства, а не настройка программы,
-          поэтому меняется здесь. От этих чисел красится весь склад и считается, на сколько дней
-          хватит запаса.
-        </p>
+        <p className="text-sm text-ink-secondary mb-4">Сколько дней цветок считается годным.</p>
         <ShelfLifeForm
           days={settings.shelfLifeDays}
           warningPercent={Math.round(settings.warningThreshold * 100)}

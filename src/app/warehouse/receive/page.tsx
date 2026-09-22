@@ -21,13 +21,9 @@ export default async function ReceivePage() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold mb-1">
+        <h1 className="text-xl font-semibold">
           Приёмка с производства{farm ? ` · ${farmLabel(farm)}` : ""}
         </h1>
-        <p className="text-ink-secondary">
-          Загрузите файл со списком партий за день или добавьте партию вручную. Дата сбора важна —
-          по ней считается срок хранения.
-        </p>
       </div>
 
       <SectionTabs tabs={WAREHOUSE_TABS} />
@@ -35,7 +31,7 @@ export default async function ReceivePage() {
       <BatchImportForm />
 
       <div>
-        <h2 className="font-medium mb-2">Добавить одну партию вручную</h2>
+        <h2 className="font-medium mb-2">Одна партия вручную</h2>
         <BatchReceiveForm varieties={varieties} allowedTypes={allowedTypes} />
       </div>
     </div>

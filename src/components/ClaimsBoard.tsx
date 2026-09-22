@@ -71,9 +71,6 @@ export default function ClaimsBoard({
           <div className="card text-center py-10">
             <div className="text-2xl mb-2">✓</div>
             <p className="font-medium">Нерешённых рекламаций нет</p>
-            <p className="text-sm text-ink-secondary mt-1">
-              Менеджеры не сообщали о проблемах по заявкам.
-            </p>
           </div>
         ) : (
           open.map((claim) => (
@@ -318,8 +315,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
 
           {overpaid > 0 && (
             <div className="text-sm text-[#8a5a00] bg-[#8a5a00]/10 rounded-lg px-3 py-2">
-              После пересчёта по заявке будет переплата {money(overpaid)} — эти деньги придётся
-              вернуть клиенту или зачесть в следующую заявку.
+              Будет переплата {money(overpaid)} — вернуть клиенту или зачесть.
             </div>
           )}
 
@@ -335,7 +331,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
 
           <div className="flex gap-2">
             <button onClick={submitRecalc} disabled={pending} className="btn-primary disabled:opacity-50">
-              {pending ? "Сохраняю…" : "Пересчитать и провести рекламацию"}
+              {pending ? "Сохраняю…" : "Пересчитать и провести"}
             </button>
             <button onClick={() => setMode("none")} disabled={pending} className="btn-secondary">
               Отмена
@@ -352,14 +348,14 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
             </span>
             <input
               className="input"
-              placeholder="Например: цветок приняли без замечаний, претензия через неделю"
+              placeholder="например, приняли без замечаний"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
           </label>
           <div className="flex gap-2">
             <button onClick={submitReject} disabled={pending} className="btn-primary disabled:opacity-50">
-              {pending ? "Сохраняю…" : "Отклонить рекламацию"}
+              {pending ? "Сохраняю…" : "Отклонить"}
             </button>
             <button onClick={() => setMode("none")} disabled={pending} className="btn-secondary">
               Отмена
@@ -370,7 +366,7 @@ function OpenClaim({ claim, canDecide }: { claim: ClaimView; canDecide: boolean 
 
       {!canDecide && (
         <p className="text-xs text-ink-muted border-t border-line-hairline pt-3">
-          Решение по рекламации принимает бухгалтер.
+          Решает бухгалтер.
         </p>
       )}
 

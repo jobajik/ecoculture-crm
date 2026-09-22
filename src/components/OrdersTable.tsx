@@ -78,7 +78,7 @@ export default function OrdersTable({
         </select>
         <input
           className="input !w-auto flex-1 min-w-[200px]"
-          placeholder="Поиск по клиенту, менеджеру, номеру заявки"
+          placeholder="Клиент, менеджер или номер"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

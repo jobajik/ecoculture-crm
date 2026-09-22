@@ -46,9 +46,7 @@ export default async function FinancePage({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Оплаты</h1>
-          <p className="text-sm text-ink-secondary">
-            Заявки менеджеров и отметка об оплате. Две галочки — заявку можно собирать.
-          </p>
+          <p className="text-sm text-ink-secondary">Две галочки — заявку можно собирать.</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
@@ -78,9 +76,7 @@ export default async function FinancePage({
           пропали из-за сбоя связи с таблицей (грабли 1.14). */}
       {!canEdit && (
         <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">
-          Раздел открыт вам <b>на просмотр</b>: видно, кто и сколько заплатил, что в долге и по
-          каким заявкам ждём денег. Отмечает оплаты и счета бухгалтер — так у одной записи остаётся
-          одна дверь.
+          Только <b>просмотр</b>: оплаты и счета отмечает бухгалтер.
         </p>
       )}
 

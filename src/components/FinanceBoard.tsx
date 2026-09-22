@@ -207,7 +207,7 @@ export default function FinanceBoard({
         </div>
         <input
           className="input !w-auto flex-1 min-w-[200px] !py-1.5"
-          placeholder="Номер заявки, 1С, клиент, менеджер или сумма"
+          placeholder="Клиент, менеджер, №, 1С или сумма"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -215,8 +215,7 @@ export default function FinanceBoard({
 
       {searching && (
         <p className="text-sm text-ink-muted -mt-2">
-          Найдено заявок: {rows.length.toLocaleString("ru-RU")}. Номер заявки — последние пять
-          знаков, он написан серым в колонке «№».
+          Найдено заявок: {rows.length.toLocaleString("ru-RU")}
         </p>
       )}
 
@@ -454,28 +453,20 @@ export default function FinanceBoard({
                 <td colSpan={COLS} className="px-4 py-10 text-center">
                   {snapshot.orders.length === 0 ? (
                     <>
-                      <p className="font-medium">За этот период заявок не оформляли</p>
+                      <p className="font-medium">За этот период заявок нет</p>
                       <p className="text-sm text-ink-secondary mt-1">
-                        Долги и деньги по прошлым заявкам никуда не делись — они в карточках
-                        сверху и на вкладке «Долги и звонки». Период переключается кнопками
-                        «День · Неделя · Месяц».
+                        Старые долги — во вкладке «Долги и звонки».
                       </p>
                     </>
                   ) : search.trim() ? (
                     <>
                       <p className="font-medium">Ничего не нашлось</p>
-                      <p className="text-sm text-ink-secondary mt-1">
-                        За период заявок {snapshot.orders.length.toLocaleString("ru-RU")}, но под
-                        «{search.trim()}» не подходит ни одна. Попробуйте номер заявки или часть
-                        названия клиента.
-                      </p>
                     </>
                   ) : (
                     <>
-                      <p className="font-medium">Под этот отбор не попала ни одна заявка</p>
+                      <p className="font-medium">По этому отбору заявок нет</p>
                       <p className="text-sm text-ink-secondary mt-1">
-                        За период их {snapshot.orders.length.toLocaleString("ru-RU")} — нажмите
-                        «Все», чтобы увидеть.
+                        Всего за период: {snapshot.orders.length.toLocaleString("ru-RU")}
                       </p>
                     </>
                   )}
@@ -488,9 +479,7 @@ export default function FinanceBoard({
 
       {groups.length > 0 && !searching && (
         <p className="text-sm text-ink-muted">
-          Менеджеров: {groups.length} · заявок: {rows.length.toLocaleString("ru-RU")}. Нажмите на
-          строку менеджера, чтобы раскрыть его заявки. Зелёная галочка у клиента — менеджер
-          подтвердил заявку.
+          Менеджеров: {groups.length} · заявок: {rows.length.toLocaleString("ru-RU")}
         </p>
       )}
     </div>

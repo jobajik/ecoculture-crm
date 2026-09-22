@@ -5,6 +5,7 @@ import { listMoneyLog } from "@/lib/repo/moneyLog";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { ROLES } from "@/lib/constants";
+import Hint from "@/components/Hint";
 import SectionTabs from "@/components/SectionTabs";
 import MoneyLogView, { type MoneyLogRow } from "@/components/MoneyLogView";
 import { financeTabsFor } from "../tabs";
@@ -45,13 +46,13 @@ export default async function MoneyLogPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Журнал действий по деньгам</h1>
-        <p className="text-sm text-ink-secondary">
-          Кто и когда отметил оплату, снял её, пересчитал заявку или провёл рекламацию. Записи
-          только добавляются — править их нельзя, в этом и смысл: спорный случай разбирается по
-          записи, а не по памяти. В последней колонке — то, что изменило действие: у оплаты это
-          полученная сумма, у пересчёта — сумма заявки.
-        </p>
+        <h1 className="text-xl font-semibold">
+          Журнал действий по деньгам
+          <Hint>
+            Записи только добавляются, править нельзя. Последняя колонка: у оплаты — полученная
+            сумма, у пересчёта — сумма заявки.
+          </Hint>
+        </h1>
       </div>
 
       <SectionTabs tabs={financeTabsFor(role)} />

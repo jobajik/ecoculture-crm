@@ -74,7 +74,7 @@ export default function CompanyUseReport({
             {data.rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
-                  За этот месяц расхода на нужды компании не записано.
+                  За месяц расхода нет.
                 </td>
               </tr>
             )}

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import { saveManagerPlansAction } from "@/app/plans/actions";
-import { periodLabel } from "@/lib/constants";
 import { PLAN_FLOWERS, planCellKey, planFlowerLabel } from "@/lib/managerPlans";
 import NumberCell from "./NumberCell";
 import { unwrap } from "@/lib/actionResult";
@@ -171,9 +170,7 @@ export default function ManagerPlansForm({
   if (initial.length === 0) {
     return (
       <div className="card text-sm text-ink-secondary">
-        В системе пока нет ни одного активного менеджера. Менеджеры заводятся на вкладке{" "}
-        <b>Users</b> Google-таблицы — как только там появится строка с ролью <code>manager</code>,
-        она появится и здесь.
+        Активных менеджеров нет — добавьте их в «Настройках».
       </div>
     );
   }
@@ -223,9 +220,6 @@ export default function ManagerPlansForm({
               </th>
               <th className="px-4 py-3 font-medium w-40">
                 План стеблей
-                <div className="text-xs font-normal text-ink-muted">
-                  {planFlowerLabel(flower).toLowerCase()}
-                </div>
               </th>
               {/* На телефоне четвёртая колонка не влезает: поля ввода сжимаются
                   так, что числа в них обрезаются. Там итог показан строкой под
@@ -250,7 +244,7 @@ export default function ManagerPlansForm({
                     </div>
                     {total.legacy && (
                       <div className="text-xs text-status-warning mt-0.5">
-                        план стоит старым числом, без разбивки по цветку
+                        старый план, без разбивки по цветку
                       </div>
                     )}
                   </td>
@@ -288,9 +282,6 @@ export default function ManagerPlansForm({
             <tr className="bg-surface-plane">
               <td className="px-4 py-3 font-medium">
                 Итого по отделу
-                <div className="text-xs font-normal text-ink-muted">
-                  в колонках — {planFlowerLabel(flower).toLowerCase()}
-                </div>
                 <div className="text-xs font-normal text-ink-secondary sm:hidden tabular-nums">
                   всего за месяц: {nf(grandTotal.amount)} ₸
                 </div>
@@ -317,10 +308,8 @@ export default function ManagerPlansForm({
 
       {unsplit.length > 0 && (
         <div className="text-sm text-ink-secondary bg-status-warning/10 rounded-lg px-3 py-2">
-          У {unsplit.length === 1 ? "одного менеджера" : `${unsplit.length} менеджеров`} план стоит
-          старым числом, без разбивки по цветку — он и считается планом, пока цветки не заполнены.
-          Как только вы впишете хотя бы один цветок, планом станет сумма цветков, а старое число
-          обнулится.
+          Старый план без разбивки ({unsplit.length}) обнулится, как только впишете хотя бы один
+          цветок.
         </div>
       )}
 
@@ -339,7 +328,7 @@ export default function ManagerPlansForm({
           disabled={saving || changed.length === 0}
           className="btn-primary disabled:opacity-50"
         >
-          {saving ? "Сохраняю…" : `Сохранить план на ${periodLabel(period)}`}
+          {saving ? "Сохраняю…" : "Сохранить"}
         </button>
         <span className="text-sm text-ink-muted">
           {changed.length === 0

@@ -98,12 +98,9 @@ export default function PicklistView({
       <div className="no-print flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Заявка на сборку</h1>
-          <p className="text-ink-secondary text-sm">
-            Один лист A4, альбомный: строки — позиции, колонки — клиенты.
-            {scale < 1 && (
-              <span className="text-ink-muted"> Масштаб печати {Math.round(scale * 100)}%.</span>
-            )}
-          </p>
+          {scale < 1 && (
+            <p className="text-ink-muted text-sm">Масштаб печати {Math.round(scale * 100)}%</p>
+          )}
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div>
@@ -156,8 +153,7 @@ export default function PicklistView({
 
       {tooSmall && (
         <div className="no-print text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
-          На этот день столько заявок, что лист ужимается до {Math.round(scale * 100)}% — на бумаге
-          будет мелко. Лучше напечатать на A3 или разделить день на две отгрузки.
+          Лист ужат до {Math.round(scale * 100)}% — будет мелко. Лучше A3 или две отгрузки.
         </div>
       )}
 
@@ -166,10 +162,7 @@ export default function PicklistView({
           <p className="font-medium">На эту дату заявок нет</p>
           {picklist.nearbyDates.length > 0 ? (
             <>
-              <p className="text-sm text-ink-secondary mt-1">
-                Лист открывается на сегодня, а доставку чаще ставят на другой день. Вот когда
-                заявки есть — нажмите на дату:
-              </p>
+              <p className="text-sm text-ink-secondary mt-1">Заявки есть на эти дни:</p>
               <div className="flex flex-wrap justify-center gap-2 mt-3">
                 {picklist.nearbyDates.map((d) => (
                   <button
@@ -192,15 +185,9 @@ export default function PicklistView({
               </div>
             </>
           ) : picklist.ordersWithoutDate.length > 0 ? (
-            <p className="text-sm text-ink-secondary mt-1">
-              Заявки есть, но у них не проставлена дата доставки — они перечислены ниже. Дату
-              ставит менеджер на своей заявке.
-            </p>
+            <p className="text-sm text-ink-secondary mt-1">Есть заявки без даты доставки — ниже.</p>
           ) : (
-            <p className="text-sm text-ink-secondary mt-1">
-              Заявок пока нет вовсе — ни на этот день, ни на другие. Лист появится, как только
-              менеджеры оформят первые.
-            </p>
+            <p className="text-sm text-ink-secondary mt-1">На другие дни тоже нет.</p>
           )}
         </div>
       ) : (
@@ -419,10 +406,7 @@ export default function PicklistView({
 
       {picklist.ordersWithoutDate.length > 0 && (
         <section className="no-print">
-          <h2 className="font-semibold mb-1">Заявки без даты доставки</h2>
-          <p className="text-sm text-ink-secondary mb-2">
-            Они не попадут ни в один дневной лист, пока менеджер не проставит дату.
-          </p>
+          <h2 className="font-semibold mb-2">Заявки без даты доставки</h2>
           <div className="card !p-0 overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>

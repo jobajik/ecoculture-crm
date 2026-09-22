@@ -1,5 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
+import Hint from "@/components/Hint";
 import type { HomeFocus as Focus } from "@/lib/homeFocus";
 
 /**
@@ -21,8 +22,10 @@ export default function HomeFocusBoard({ focus }: { focus: Focus }) {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-lg font-semibold">{focus.title}</h2>
-          <p className="text-sm text-ink-secondary">{focus.subtitle}</p>
+          <h2 className="text-lg font-semibold">
+            {focus.title}
+            {focus.subtitle && <Hint>{focus.subtitle}</Hint>}
+          </h2>
         </div>
         {focus.action && (
           <Link href={focus.action.href} className="btn-primary">

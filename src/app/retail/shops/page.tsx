@@ -66,8 +66,8 @@ export default async function RetailShopsPage() {
 
       <p className="text-sm text-ink-secondary mt-4 mb-4">
         {shops.length === 0
-          ? "Магазинов пока нет. Карточку заводит РОП в клиентской базе — или вы сами при оформлении заявки."
-          : `${shops.length} ${shops.length === 1 ? "магазин" : "магазинов"}. Отправки считаются по всем заявкам, кроме отменённых.`}
+          ? "Магазинов пока нет."
+          : `${shops.length} ${shops.length === 1 ? "магазин" : "магазинов"}`}
       </p>
 
       <div className="card !p-0 table-scroll table-cards">

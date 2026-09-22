@@ -81,8 +81,8 @@ export default function StaffForm({
       const result = unwrapValue(await save(draft)) as { created: boolean; summary: string };
       setDone(
         result.created
-          ? `Сотрудник заведён: ${draft.name}. Он сможет войти своей Google-почтой.`
-          : `Сохранено: ${result.summary}. Права начнут действовать в течение минуты.`
+          ? `Сотрудник заведён: ${draft.name}.`
+          : `Сохранено: ${result.summary}.`
       );
       setOpen(false);
       router.refresh();
@@ -173,8 +173,8 @@ export default function StaffForm({
                   второго человека вместо переименования первого. */}
               <p className="text-xs text-ink-muted mt-1">
                 {existing
-                  ? "Почту менять нельзя: по ней человек входит и по ней найдены все его заявки."
-                  : "Той же почтой, которой он входит в Google."}
+                  ? "Почту менять нельзя."
+                  : "Google-почта для входа."}
               </p>
             </div>
             <div>
@@ -185,9 +185,6 @@ export default function StaffForm({
                 placeholder="Разия Ахметова"
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
               />
-              <p className="text-xs text-ink-muted mt-1">
-                Так его увидят в заявках, рейтинге и долгах.
-              </p>
             </div>
           </div>
 
@@ -209,7 +206,7 @@ export default function StaffForm({
               </select>
               {isMe && (
                 <p className="text-xs text-ink-muted mt-1">
-                  Свою роль изменить нельзя: ошибка закрыла бы вам эту страницу навсегда.
+                  Свою роль изменить нельзя.
                 </p>
               )}
             </div>
@@ -247,7 +244,7 @@ export default function StaffForm({
             />
             Доступ открыт
             <span className="text-ink-muted">
-              — снимите, когда человек уволился: заявки и история останутся на месте
+              — снимите, если человек уволился
             </span>
           </label>
 

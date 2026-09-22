@@ -25,23 +25,14 @@ export default function PriceChangesView({ days }: { days: PriceChangeDay[] }) {
     return (
       <div className="card">
         <h2 className="font-medium">История изменений</h2>
-        <p className="text-sm text-ink-secondary mt-1">
-          Прайс ещё ни разу не меняли. Как только цена изменится, здесь появится дата и что именно
-          поменялось.
-        </p>
+        <p className="text-sm text-ink-secondary mt-1">Изменений пока не было.</p>
       </div>
     );
   }
 
   return (
     <div className="card space-y-3">
-      <div>
-        <h2 className="font-medium">История изменений</h2>
-        <p className="text-sm text-ink-secondary mt-0.5">
-          Каждая правка цены запоминается с датой. Это и есть бенчмарк: в аналитике продажи
-          сравниваются с ценой, которая действовала в день заявки.
-        </p>
-      </div>
+      <h2 className="font-medium">История изменений</h2>
 
       <div className="divide-y divide-line-hairline border border-line-hairline rounded-lg">
         {shown.map((day) => (

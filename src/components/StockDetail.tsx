@@ -13,6 +13,7 @@ import type { StockVarietyCard } from "@/lib/stock";
 import { groupByGrade, type GradeCard, type GradeVarietyRow } from "@/lib/stockByGrade";
 import type { StorageStatus } from "@/lib/shelfLife";
 import MoreToggle from "./MoreToggle";
+import Hint from "./Hint";
 
 /**
  * «Подробно по позициям» — блок по каждому цветку, строка по каждой РОСТОВКЕ
@@ -172,14 +173,14 @@ export default function StockDetail({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
         <h3 className="font-medium">
           Подробно по позициям
-          <span className="text-sm font-normal text-ink-muted">
-            {" "}
-            — у роз по ростовке, у хризантем по категории
-          </span>
+          <Hint>
+            Дни — с даты срезки. Полоса — сколько прошло из срока хранения: жёлтый — скоро
+            истечёт, красный — просрочено. Нажмите на строку, чтобы увидеть сорта.
+          </Hint>
         </h3>
         <input
           className="input w-full sm:!w-auto sm:min-w-[220px]"
-          placeholder="Поиск по длине, категории или сорту"
+          placeholder="Поиск: длина, категория, сорт"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -187,7 +188,7 @@ export default function StockDetail({
 
       {nothingFound ? (
         <div className="card text-sm text-ink-muted py-8 text-center">
-          {query ? "По этому запросу ничего не нашлось." : emptyHint}
+          {query ? "Ничего не нашлось." : emptyHint}
         </div>
       ) : (
         <div className="space-y-3">
@@ -205,13 +206,6 @@ export default function StockDetail({
           ))}
         </div>
       )}
-
-      <p className="text-xs text-ink-muted mt-2">
-        «Лежит» — дней с даты срезки. Полоса — сколько прошло из положенного срока:{" "}
-        <span className={STATUS_TEXT.warning}>жёлтый — скоро истечёт</span>,{" "}
-        <span className={STATUS_TEXT.critical}>красный — просрочено</span>. Нажмите на строку,
-        чтобы увидеть сорта.
-      </p>
     </div>
   );
 }

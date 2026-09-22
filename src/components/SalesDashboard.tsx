@@ -144,7 +144,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
               {money(t.amountMonth)} из {money(t.targetAmount)}
               {t.requiredPerDay > 0 && (
                 <span className="text-ink-muted">
-                  {" "}· нужно {money(t.requiredPerDay)}/день до конца месяца
+                  {" "}· нужно {money(t.requiredPerDay)}/день
                 </span>
               )}
             </span>
@@ -163,7 +163,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
           </div>
           <div className="flex justify-between text-xs text-ink-muted mt-1.5">
             <span>0</span>
-            <span>ровный темп на сегодня — {(daysShare * 100).toFixed(0)}%</span>
+            <span>темп на сегодня — {(daysShare * 100).toFixed(0)}%</span>
             <span>{shortMoney(t.targetAmount)}</span>
           </div>
         </div>
@@ -173,10 +173,6 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
         <div className="card !p-0 table-scroll">
           <div className="px-4 pt-4 pb-2">
             <h3 className="font-medium">План и факт по цветку</h3>
-            <p className="text-xs text-ink-muted">
-              План ставится отдельно по розам, хризантемам и эустоме. Считаются позиции заявок:
-              в одной заявке едет и роза, и хризантема.
-            </p>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -227,8 +223,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
           </table>
           {snapshot.unsplitTargetAmount > 0 && (
             <p className="px-4 py-2 text-xs text-status-warning">
-              Ещё {money(snapshot.unsplitTargetAmount)} плана стоит старым числом, без разбивки по
-              цветку, — в эту таблицу они не попали. Разнести их можно в разделе «Планы».
+              Ещё {money(snapshot.unsplitTargetAmount)} плана без разбивки по цветку — не в таблице.
             </p>
           )}
         </div>
@@ -238,7 +233,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
         <div className="card">
           <h3 className="font-medium mb-1">Продажи по производствам</h3>
           <p className="text-xs text-ink-muted mb-3">
-            Rose Farm — розы и эустома, Есентай Агро Хим — хризантема
+            Rose Farm — роза и эустома, Есентай — хризантема
           </p>
           <div className="space-y-3">
             {snapshot.byFarm.map((f) => (

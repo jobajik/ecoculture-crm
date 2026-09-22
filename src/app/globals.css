@@ -139,10 +139,46 @@ h3 {
     max-width: none;
   }
 
+  /* Подпись слева, значение справа — на одной строке. Раньше подпись стояла
+     над значением, и карточка заявки из четырёх полей занимала полэкрана:
+     очередь склада на телефоне листалась четыре экрана. Подпись плавает
+     слева, поэтому ячейка с несколькими блоками (позиции + статус) не
+     разъезжается в ряд, а просто прижимается вправо. */
+  .table-cards td[data-label] {
+    display: flow-root;
+    text-align: right;
+  }
+
   .table-cards td[data-label]::before {
-    content: attr(data-label) ": ";
+    content: attr(data-label);
+    float: left;
+    margin-right: 0.75rem;
     color: #8b918a;
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
+    text-align: left;
+  }
+
+  /* Блоки с ограниченной шириной и flex-ряды внутри ячейки тоже прижимаются
+     вправо, иначе «Позиции» стояли бы у подписи, а остальное — у края. */
+  .table-cards td[data-label] > div {
+    margin-left: auto;
+  }
+
+  .table-cards td[data-label] .flex {
+    justify-content: flex-end;
+  }
+
+  .table-cards td:first-child {
+    text-align: left;
+    font-weight: 500;
+  }
+
+  .table-cards td:first-child > div {
+    margin-left: 0;
+  }
+
+  .table-cards td:first-child .flex {
+    justify-content: flex-start;
   }
 
   /* Первая ячейка — заголовок карточки: подпись ей не нужна. */

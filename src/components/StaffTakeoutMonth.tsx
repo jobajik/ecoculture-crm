@@ -36,7 +36,7 @@ export default function StaffTakeoutMonth({
 
       {month.rows.length === 0 ? (
         <div className="card text-sm text-ink-secondary">
-          В этом месяце цветы в счёт зарплаты никто не брал.
+          В этом месяце выдач нет.
         </div>
       ) : (
         <>
@@ -106,9 +106,7 @@ export default function StaffTakeoutMonth({
 
           {month.noPrice > 0 && (
             <p className="text-xs text-[#8a5a00] mt-2">
-              {month.noPrice === 1 ? "В одной строке" : `В ${month.noPrice} строках`} не указана
-              цена — стебли со склада ушли, а в сумму к удержанию они не попали. Цену вписывает
-              зав. складом при записи выдачи.
+              Без цены: {month.noPrice} {rowWord(month.noPrice)} — не попали в сумму к удержанию.
             </p>
           )}
         </>

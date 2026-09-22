@@ -1,5 +1,6 @@
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { CashByFlower } from "@/lib/cashByFlower";
+import Hint from "./Hint";
 
 /**
  * Касса по цветкам.
@@ -33,18 +34,19 @@ export default function CashByFlowerCard({
 
   return (
     <div className="card">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-        <h3 className="font-medium">Касса по цветкам</h3>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h3 className="font-medium">
+          Касса по цветкам
+          <Hint>
+            Считается по дню, когда пришли деньги, поэтому может не совпадать с остальными цифрами
+            страницы (они — по дню оформления). Смешанный платёж делится по сумме позиций.
+          </Hint>
+        </h3>
         <span className="text-xs text-ink-muted">{periodLabel}</span>
       </div>
-      <p className="text-xs text-ink-muted mb-3">
-        Деньги, которые ПРИШЛИ за этот период — по дню поступления. Остальные цифры на странице
-        считаются по дню оформления заявки, поэтому итог кассы с ними не обязан совпадать. В
-        смешанной заявке платёж делится между цветками по сумме позиций.
-      </p>
 
       {rows.length === 0 && cash.unsplit === 0 ? (
-        <p className="text-sm text-ink-secondary">За этот период денег не поступало.</p>
+        <p className="text-sm text-ink-secondary">Денег не поступало.</p>
       ) : (
         <table className="w-full text-sm">
           <tbody>

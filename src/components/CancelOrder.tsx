@@ -50,13 +50,12 @@ export default function CancelOrder({ orderId }: { orderId: string }) {
       <div>
         <h2 className="font-medium">Отменить заявку</h2>
         <p className="text-sm text-ink-secondary mt-0.5">
-          Заявка исчезнет из листа сборки, из долгов и из продаж менеджера. Вернуть её будет
-          нельзя — придётся оформлять заново.
+          Заявка уйдёт из сборки, долгов и продаж. Вернуть нельзя.
         </p>
       </div>
       <input
         className="input"
-        placeholder="Почему отменяем — например: клиент отказался, везёт другой поставщик"
+        placeholder="Причина отмены"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
       />

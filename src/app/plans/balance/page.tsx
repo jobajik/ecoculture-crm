@@ -89,8 +89,7 @@ export default async function BalancePage({
       <div>
         <h1 className="text-xl font-semibold">Планы</h1>
         <p className="text-sm text-ink-secondary">
-          Хватит ли того, что вырастет, на то, что уже обещано клиентам — по каждой неделе. Остаток
-          можно разложить по направлениям, нехватку — ужать по всем сразу.
+          Хватит ли срезки на план отгрузок — по неделям.
         </p>
       </div>
 
@@ -102,8 +101,7 @@ export default async function BalancePage({
 
       {nothingYet ? (
         <div className="card text-sm text-ink-secondary">
-          За этот месяц пока нет ни прогноза срезки, ни плана отгрузок. Баланс появится, как только
-          агрономы внесут ростовку, а вы — план по направлениям.
+          За этот месяц нет ни прогноза срезки, ни плана отгрузок.
         </div>
       ) : (
         <PlanBalanceBoard

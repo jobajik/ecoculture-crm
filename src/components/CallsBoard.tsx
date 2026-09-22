@@ -55,7 +55,6 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
       <div className="card text-center py-10">
         <div className="text-2xl mb-2">✓</div>
         <p className="font-medium">Звонить некому</p>
-        <p className="text-sm text-ink-secondary mt-1">Все заявки оплачены полностью.</p>
       </div>
     );
   }
@@ -72,7 +71,7 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
               onChange={(e) => setOnlyDue(e.target.checked)}
               className="w-4 h-4"
             />
-            Скрыть тех, кто обещал заплатить позже ({laterCount})
+            Скрыть обещавших позже ({laterCount})
           </label>
         )}
       </div>
@@ -212,7 +211,7 @@ function PromiseForm({ row, onDone }: { row: CallRow; onDone: () => void }) {
           <span className="block text-ink-secondary mb-1">О чём договорились</span>
           <input
             className="input"
-            placeholder="Например: обещал перевести после отгрузки в Астану"
+            placeholder="например, переведёт в пятницу"
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />

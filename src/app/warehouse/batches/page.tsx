@@ -22,12 +22,9 @@ export default async function BatchesPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-1">
+      <h1 className="text-xl font-semibold mb-3">
         Партии на складе{farm ? ` · ${farmLabel(farm)}` : ""}
       </h1>
-      <p className="text-ink-secondary mb-3">
-        Срок хранения считается от даты сбора. Партии ближе к концу срока показаны жёлтым, просроченные — красным.
-      </p>
 
       <div className="mb-4">
         <SectionTabs tabs={WAREHOUSE_TABS} />

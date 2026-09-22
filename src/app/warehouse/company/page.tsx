@@ -101,10 +101,7 @@ export default async function CompanyUsePage({
       <h1 className="text-xl font-semibold mb-1">
         Нужды компании{farm ? ` · ${farmLabel(farm)}` : ""}
       </h1>
-      <p className="text-ink-secondary mb-3">
-        Админ. расход: подарки, офис, мероприятия, образцы клиентам. Стебли уходят со склада
-        бесплатно — это не продажа, не списание и не выдача в счёт зарплаты.
-      </p>
+      <p className="text-ink-secondary mb-3">Подарки, офис, мероприятия, образцы.</p>
 
       <div className="mb-4">
         <SectionTabs tabs={WAREHOUSE_TABS} />
@@ -138,7 +135,7 @@ export default async function CompanyUsePage({
         ))}
       </div>
 
-      <CompanyUseReport data={data} title={`${periodLabel(month)} — на нужды компании`} />
+      <CompanyUseReport data={data} title={periodLabel(month)} />
     </div>
   );
 }

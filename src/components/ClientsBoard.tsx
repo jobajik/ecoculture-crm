@@ -120,7 +120,7 @@ export default function ClientsBoard({
         {tab("never", "Без заказов", rows.filter((r) => r.neverOrdered).length)}
         <input
           className="input !w-auto flex-1 min-w-[200px] !py-1.5"
-          placeholder="Поиск по названию, городу, телефону"
+          placeholder="Название, город, телефон"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -178,7 +178,7 @@ export default function ClientsBoard({
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
-                  По этому фильтру клиентов нет
+                  Клиентов нет
                 </td>
               </tr>
             )}

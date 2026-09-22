@@ -68,11 +68,9 @@ export default function OrderClaims({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-medium">Рекламации</h2>
-          <p className="text-sm text-ink-secondary mt-0.5">
-            {hasOpen
-              ? "Рекламация отправлена бухгалтеру — она пересчитает заявку или объяснит отказ."
-              : "Если клиент жалуется на цветок, сообщите — бухгалтер пересчитает заявку."}
-          </p>
+          {hasOpen && (
+            <p className="text-sm text-ink-secondary mt-0.5">Отправлена бухгалтеру</p>
+          )}
         </div>
         {canCreate && !hasOpen && (
           <button onClick={() => setOpen((v) => !v)} className="btn-secondary !py-1.5">
@@ -99,12 +97,10 @@ export default function OrderClaims({
               </select>
             </label>
             <label className="text-sm flex-1 min-w-[240px]">
-              <span className="block text-ink-secondary mb-1">
-                Подробнее — что именно и сколько
-              </span>
+              <span className="block text-ink-secondary mb-1">Что именно и сколько</span>
               <input
                 className="input"
-                placeholder="Например: из 1000 роз 60 см двести пришли с раскрытым бутоном"
+                placeholder="Например: 200 роз 60 см раскрылись"
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
               />
@@ -113,10 +109,6 @@ export default function OrderClaims({
           <button onClick={submit} disabled={pending} className="btn-primary disabled:opacity-50">
             {pending ? "Отправляю…" : "Отправить бухгалтеру"}
           </button>
-          <p className="text-xs text-ink-muted">
-            Сумму править не нужно: её пересчитает бухгалтер. Напишите как есть — от этого зависит,
-            за сколько стеблей заплатит клиент.
-          </p>
         </div>
       )}
 

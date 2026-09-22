@@ -128,13 +128,11 @@ const d = (delta: Delta | undefined) => delta?.prev ?? null;
 const SECTIONS: Section[] = [
   {
     title: "Продажи за 30 дней",
-    emptyText:
-      "Продаж за период не было — заявки не оформлялись. Как только менеджеры начнут вносить заявки, здесь появятся выручка, цена стебля и клиенты.",
+    emptyText: "Продаж за период не было.",
     rows: [
       {
         key: "revenue",
         label: "Выручка по заявкам",
-        hint: "Сумма всех заявок, оформленных за период. Не путать с оплаченным",
         kind: "money",
         pick: (s) => s.revenue.value,
         prev: (s) => d(s.revenue),
@@ -143,7 +141,6 @@ const SECTIONS: Section[] = [
       {
         key: "stems",
         label: "Продано стеблей",
-        hint: "Сколько штук ушло в заявки",
         kind: "stems",
         pick: (s) => s.stems.value,
         prev: (s) => d(s.stems),
@@ -152,7 +149,6 @@ const SECTIONS: Section[] = [
       {
         key: "avgPrice",
         label: "Средняя цена стебля",
-        hint: "Выручка, делённая на стебли",
         kind: "price",
         pick: (s) => s.avgPrice.value,
         prev: (s) => d(s.avgPrice),
@@ -160,7 +156,7 @@ const SECTIONS: Section[] = [
       {
         key: "orders",
         label: "Заявок",
-        hint: "Без отменённых. Смешанная заявка считается у обоих производств, поэтому колонки не складываются в итог",
+        hint: "колонки не складываются в итог",
         kind: "count",
         pick: (s) => s.orders.value,
         prev: (s) => d(s.orders),
@@ -168,7 +164,6 @@ const SECTIONS: Section[] = [
       {
         key: "avgCheck",
         label: "Средний чек",
-        hint: "Выручка на одну заявку",
         kind: "money",
         pick: (s) => s.avgCheck.value,
         prev: (s) => d(s.avgCheck),
@@ -176,7 +171,6 @@ const SECTIONS: Section[] = [
       {
         key: "clients",
         label: "Клиентов",
-        hint: "Разных покупателей за период. Один клиент может брать у обоих производств",
         kind: "count",
         pick: (s) => s.clients.value,
         prev: (s) => d(s.clients),
@@ -184,14 +178,13 @@ const SECTIONS: Section[] = [
       {
         key: "repeat",
         label: "Повторные клиенты",
-        hint: "Доля тех, кто покупал и в прошлые 30 дней",
+        hint: "покупали и в прошлые 30 дней",
         kind: "percent",
         pick: (s) => s.repeatClientPercent,
       },
       {
         key: "lead",
         label: "От заявки до доставки",
-        hint: "Сколько дней в среднем проходит",
         kind: "days",
         pick: (s) => s.avgLeadDays,
         betterUp: false,
@@ -199,7 +192,7 @@ const SECTIONS: Section[] = [
       {
         key: "fill",
         label: "Выполнено по отгрузке",
-        hint: `Сколько из заказанного реально уехало по заявкам с прошедшей доставкой. Ориентир — от ${BENCHMARKS.fillRatePercent.good} %`,
+        hint: `ориентир от ${BENCHMARKS.fillRatePercent.good} %`,
         kind: "percent",
         pick: (s) => s.fillRatePercent,
         tone: (v) => toneHigherBetter(v, BENCHMARKS.fillRatePercent),
@@ -211,13 +204,12 @@ const SECTIONS: Section[] = [
     // бенчмарк по отклонению от заданной цены. Менять цену в заявке менеджеру
     // можно — но видно, насколько и кто.
     title: "Прайс и отклонение от него",
-    emptyText:
-      "Сравнивать не с чем: либо за период не продавали, либо у проданных позиций нет цены в прайсе.",
+    emptyText: "Сравнивать не с чем.",
     rows: [
       {
         key: "discount",
         label: "Отклонение от прайса",
-        hint: `Насколько дешевле заданной цены продали. Сравнивается с прайсом, который действовал в день заявки. Ориентир — до ${BENCHMARKS.discountPercent.good} %`,
+        hint: `ориентир до ${BENCHMARKS.discountPercent.good} %`,
         kind: "percent",
         pick: (s) => s.discountPercent,
         // Отрицательная «скидка» означает, что продали дороже прайса. Показывать
@@ -234,7 +226,6 @@ const SECTIONS: Section[] = [
       {
         key: "discountMoney",
         label: "Разница в деньгах",
-        hint: "Сколько недобрали (или добрали) относительно прайса за период",
         kind: "money",
         pick: (s) => (s.listRevenue > 0 ? s.discountMoney : null),
         // Округление до тысяч легко даёт «−0 ₸», а это читается как ошибка.
@@ -249,7 +240,6 @@ const SECTIONS: Section[] = [
       {
         key: "listRevenue",
         label: "Стоило бы по прайсу",
-        hint: "Во что оценивались бы заявки по заданной цене. Только позиции, у которых цена в прайсе есть",
         kind: "money",
         pick: (s) => s.listRevenue,
         splitBar: true,
@@ -257,7 +247,7 @@ const SECTIONS: Section[] = [
       {
         key: "priced",
         label: "Сравнимо с прайсом",
-        hint: `Какая доля выручки вообще имеет цену в прайсе. Ориентир — от ${BENCHMARKS.pricedRevenuePercent.good} %: иначе отклонение считается по части продаж`,
+        hint: `доля выручки с ценой в прайсе, ориентир от ${BENCHMARKS.pricedRevenuePercent.good} %`,
         kind: "percent",
         pick: (s) => s.pricedRevenuePercent,
         tone: (v) => toneHigherBetter(v, BENCHMARKS.pricedRevenuePercent),
@@ -265,7 +255,7 @@ const SECTIONS: Section[] = [
       {
         key: "priceAge",
         label: "Прайс не меняли",
-        hint: `Дней с последней правки цены. Ориентир — до ${BENCHMARKS.priceListAgeDays.good} дн.: старый прайс перестаёт быть ориентиром`,
+        hint: `ориентир до ${BENCHMARKS.priceListAgeDays.good} дн.`,
         kind: "daysInt",
         pick: (s) => s.priceListAgeDays,
         tone: (v) => toneLowerBetter(v, BENCHMARKS.priceListAgeDays),
@@ -280,14 +270,13 @@ const SECTIONS: Section[] = [
       {
         key: "paid",
         label: "Оплачено за период",
-        hint: "Сумма заявок, по которым бухгалтер отметил оплату",
         kind: "money",
         pick: (s) => s.paidRevenue,
       },
       {
         key: "collect",
         label: "Собираемость",
-        hint: `Какая доля оформленного уже оплачена. Ориентир — от ${BENCHMARKS.collectPercent.good} %`,
+        hint: `ориентир от ${BENCHMARKS.collectPercent.good} %`,
         kind: "percent",
         pick: (s) => (s.revenue.value > 0 ? s.collectPercent : null),
         tone: (v) => toneHigherBetter(v, BENCHMARKS.collectPercent),
@@ -295,7 +284,6 @@ const SECTIONS: Section[] = [
       {
         key: "debt",
         label: "Долг по всей базе",
-        hint: "Все неоплаченные заявки, а не только за период",
         kind: "money",
         pick: (s) => s.debtTotal,
         tone: (v) => (v > 0 ? "critical" : "good"),
@@ -305,12 +293,11 @@ const SECTIONS: Section[] = [
   },
   {
     title: "Производство за 30 дней",
-    emptyText: "Приёмки за период не было — партии на склад не заводились.",
+    emptyText: "Приёмки за период не было.",
     rows: [
       {
         key: "received",
         label: "Срезано и принято",
-        hint: "Сколько стеблей завели на склад за период",
         kind: "stems",
         pick: (s) => s.receivedStems.value,
         prev: (s) => d(s.receivedStems),
@@ -319,14 +306,12 @@ const SECTIONS: Section[] = [
       {
         key: "receivedDay",
         label: "В среднем в день",
-        hint: "Принятое, делённое на 30 дней",
         kind: "stems",
         pick: (s) => (s.receivedStems.value > 0 ? s.receivedStems.value / s.days : null),
       },
       {
         key: "liquidCut",
         label: "Ликвидное качество в срезке",
-        hint: "Хризантема — высшая, первая, вторая; роза — первый сорт по длинам",
         kind: "percent",
         pick: (s) => s.liquidReceivedPercent,
         tone: (v) => (v >= 70 ? "good" : v >= 50 ? "warning" : "critical"),
@@ -334,21 +319,20 @@ const SECTIONS: Section[] = [
       {
         key: "topCut",
         label: "Высшая категория в срезке",
-        hint: "Роза от 80 см, хризантема «Высшая», эустома «Стандарт»",
+        hint: "роза от 80 см, хризантема «Высшая»",
         kind: "percent",
         pick: (s) => s.topGradePercent,
       },
       {
         key: "receivedMoney",
         label: "Вырастили на сумму",
-        hint: "Принятое, оценённое по действующему прайсу",
         kind: "money",
         pick: (s) => (s.receivedMoney > 0 ? s.receivedMoney : null),
       },
       {
         key: "soldOfReceived",
         label: "Продано от срезанного",
-        hint: "Меньше 100 % — склад растёт, больше — распродаём накопленное",
+        hint: "меньше 100 % — склад растёт",
         kind: "percent",
         pick: (s) => s.soldOfReceivedPercent,
         tone: (v) => (v >= 90 ? "good" : v >= 60 ? "warning" : "critical"),
@@ -356,7 +340,6 @@ const SECTIONS: Section[] = [
       {
         key: "plan",
         label: "Прогноз срезки на месяц",
-        hint: "Сколько агроном обещал на текущий месяц",
         kind: "stems",
         pick: (s) => {
           const total = s.harvestPlan.reduce((sum, h) => sum + h.planStems, 0);
@@ -366,7 +349,7 @@ const SECTIONS: Section[] = [
       {
         key: "planFact",
         label: "Выполнение прогноза",
-        hint: "Срезано с начала месяца от обещанного",
+        hint: "с начала месяца",
         kind: "percent",
         pick: (s) => {
           const plan = s.harvestPlan.reduce((sum, h) => sum + h.planStems, 0);
@@ -383,7 +366,6 @@ const SECTIONS: Section[] = [
       {
         key: "writeoff",
         label: "Списано",
-        hint: "Сколько стеблей списали за период",
         kind: "stems",
         pick: (s) => (s.writeoffStems.value > 0 ? s.writeoffStems.value : null),
         prev: (s) => d(s.writeoffStems),
@@ -392,7 +374,7 @@ const SECTIONS: Section[] = [
       {
         key: "writeoffPct",
         label: "Списание от принятого",
-        hint: `Доля потерь от того, что приняли. Ориентир — до ${BENCHMARKS.writeoffPercent.good} %`,
+        hint: `ориентир до ${BENCHMARKS.writeoffPercent.good} %`,
         kind: "percent",
         pick: (s) => s.writeoffPercent,
         tone: (v) => toneLowerBetter(v, BENCHMARKS.writeoffPercent),
@@ -401,7 +383,6 @@ const SECTIONS: Section[] = [
       {
         key: "writeoffMoney",
         label: "Потери на списании",
-        hint: "Списанное по действующему прайсу",
         kind: "money",
         pick: (s) => (s.writeoffMoney > 0 ? s.writeoffMoney : null),
         tone: () => "critical",
@@ -416,7 +397,6 @@ const SECTIONS: Section[] = [
       {
         key: "stock",
         label: "Лежит стеблей",
-        hint: "Остаток по всем партиям прямо сейчас",
         kind: "stems",
         pick: (s) => s.stockStems,
         splitBar: true,
@@ -424,14 +404,12 @@ const SECTIONS: Section[] = [
       {
         key: "stockMoney",
         label: "Стоимость склада",
-        hint: "Остаток по действующему прайсу",
         kind: "money",
         pick: (s) => (s.stockMoney > 0 ? s.stockMoney : null),
       },
       {
         key: "age",
         label: "Средний возраст",
-        hint: "Дней с даты срезки, взвешенно по количеству",
         kind: "days",
         pick: (s) => (s.stockStems > 0 ? s.stockAvgAge : null),
         betterUp: false,
@@ -439,7 +417,6 @@ const SECTIONS: Section[] = [
       {
         key: "liquidStock",
         label: "Ликвид на складе",
-        hint: "Остальное — мини-микс, второй сорт, третья и четвёртая категории",
         kind: "percent",
         pick: (s) => s.liquidStockPercent,
         tone: (v) => (v >= 70 ? "good" : v >= 50 ? "warning" : "critical"),
@@ -447,7 +424,7 @@ const SECTIONS: Section[] = [
       {
         key: "cover",
         label: "Запаса хватит на",
-        hint: "При нынешнем темпе продаж. Дольше срока хранения — часть не успеет уйти",
+        hint: "при нынешнем темпе продаж",
         kind: "daysInt",
         pick: (s) => s.coverDays,
         betterUp: false,
@@ -455,7 +432,7 @@ const SECTIONS: Section[] = [
       {
         key: "expiring",
         label: "Скоро истечёт",
-        hint: "Прошло больше 70 % срока хранения",
+        hint: "прошло больше 70 % срока",
         kind: "stems",
         pick: (s) => (s.expiringStems > 0 ? s.expiringStems : null),
         tone: () => "warning",
@@ -464,7 +441,6 @@ const SECTIONS: Section[] = [
       {
         key: "expired",
         label: "Просрочено",
-        hint: "Срок хранения уже вышел",
         kind: "stems",
         pick: (s) => (s.expiredStems > 0 ? s.expiredStems : null),
         tone: () => "critical",
@@ -764,13 +740,6 @@ function Details({
     : ["rose", "chrysanthemum", "eustoma"];
   const gradeColumn = gradeColumnLabelFor(flowers);
   const gradeWord = (n: number) => gradeNounFor(flowers, n);
-  /** «по ростовке» / «по категориям» — чтобы подписи читались по-русски. */
-  const gradePhrase =
-    gradeColumn === "Категория"
-      ? "категориям"
-      : gradeColumn === "Ростовка"
-        ? "ростовке"
-        : "ростовке и категориям";
   const single = flowers.length === 1;
   const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сортов");
   const clientWord = (n: number) => plural(n, "клиент", "клиента", "клиентов");
@@ -794,13 +763,13 @@ function Details({
         className="text-sm font-medium text-accent hover:underline"
         aria-expanded={open}
       >
-        {open ? "▲ Свернуть подробности" : "▼ Показать подробности: позиции, клиенты, менеджеры"}
+        {open ? "▲ Свернуть" : "▼ Подробнее: позиции, клиенты, менеджеры"}
       </button>
 
       {open && (
         <div className="space-y-6 mt-3">
           {all.byGrade.length > 0 && (
-            <Block title="Что продаётся" hint={`Разрез по ${gradePhrase}`}>
+            <Block title="Что продаётся">
               <Collapsible
                 rows={all.byGrade}
                 what={gradeWord}
@@ -832,7 +801,7 @@ function Details({
           )}
 
           {all.receivedByGrade.length > 0 && (
-            <Block title="Что вырастили" hint={`Приёмка в разрезе по ${gradePhrase}`}>
+            <Block title="Что вырастили">
               <Collapsible
                 rows={all.receivedByGrade}
                 what={gradeWord}
@@ -870,7 +839,7 @@ function Details({
           {all.priceDeviation.length > 0 && (
             <Block
               title="Отклонение от прайса"
-              hint={`По ${gradePhrase}: во что позиция оценивалась по прайсу и за сколько ушла на самом деле. Ориентир — до ${BENCHMARKS.discountPercent.good} %`}
+              hint={`ориентир до ${BENCHMARKS.discountPercent.good} %`}
             >
               <Collapsible
                 rows={all.priceDeviation}
@@ -906,7 +875,7 @@ function Details({
 
           <div className="grid gap-6 lg:grid-cols-2">
             {all.topVarieties.length > 0 && (
-              <Block title="Сорта по выручке" hint="Изменение — к предыдущим 30 дням">
+              <Block title="Сорта по выручке">
                 <Collapsible
                   rows={all.topVarieties}
                   what={varietyWord}
@@ -994,7 +963,7 @@ function Details({
             {all.managers.length > 0 && (
               <Block
                 title="Менеджеры"
-                hint="Собрано — сколько из оформленного оплачено. К прайсу — ↑ продавал дороже заданной цены, ↓ дешевле"
+                hint="К прайсу: ↑ дороже, ↓ дешевле"
               >
                 <Collapsible
                   rows={all.managers}
@@ -1045,7 +1014,7 @@ function Details({
             )}
 
             {all.writeoffReasons.length > 0 && (
-              <Block title="Из-за чего списывали" hint="Деньги — по действующему прайсу">
+              <Block title="Из-за чего списывали">
                 <Collapsible
                   rows={all.writeoffReasons}
                   what={reasonWord}

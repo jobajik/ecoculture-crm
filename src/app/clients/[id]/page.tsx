@@ -101,7 +101,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           <Tile
             title={row.debt > 0 ? "Должен" : "Оплачено"}
             value={row.debt > 0 ? money(row.debt) : money(row.paid)}
-            hint={row.debt > 0 ? "Не закрыто по счетам" : "Долгов нет"}
+            hint={row.debt > 0 ? undefined : "Долгов нет"}
             warn={row.debt > 0}
           />
         </div>
@@ -109,7 +109,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
 
       {row?.sleeping && (
         <div className="card mb-6 text-sm text-[#8a5a00]">
-          Последний заказ был {formatDay(row.lastOrderDate)} — больше месяца назад. Повод позвонить.
+          Не заказывает больше месяца (последний — {formatDay(row.lastOrderDate)}).
         </div>
       )}
 
@@ -201,14 +201,14 @@ function Tile({
 }: {
   title: string;
   value: string;
-  hint: string;
+  hint?: string;
   warn?: boolean;
 }) {
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
       <div className={`text-2xl font-semibold mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>{value}</div>
-      <div className="text-xs text-ink-muted mt-1">{hint}</div>
+      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

@@ -30,7 +30,7 @@ export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
     <div>
       <label className="flex items-center gap-2 text-sm text-ink-secondary mb-3">
         <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
-        Показывать только партии с остатком
+        Только с остатком
       </label>
 
       <div className="card !p-0 table-scroll table-cards">
@@ -64,7 +64,7 @@ export default function BatchesList({ infos }: { infos: BatchStorageInfo[] }) {
             {visible.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
-                  Партий не найдено
+                  Партий нет
                 </td>
               </tr>
             )}
@@ -162,7 +162,7 @@ function BatchRow({
           <td colSpan={7} className="px-4 py-3">
             <div className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="label">Количество к списанию</label>
+                <label className="label">Количество</label>
                 <input
                   type="number"
                   min={1}
@@ -177,7 +177,7 @@ function BatchRow({
                 <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} />
               </div>
               <button onClick={handleWriteoff} disabled={submitting} className="btn-primary">
-                {submitting ? "Списание…" : "Подтвердить списание"}
+                {submitting ? "Списание…" : "Списать"}
               </button>
             </div>
             {error && <div className="text-sm text-status-critical mt-2">{error}</div>}

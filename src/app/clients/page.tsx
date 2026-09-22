@@ -47,32 +47,24 @@ export default async function ClientsPage() {
       <h1 className="text-xl font-semibold mb-1">Клиенты</h1>
       <p className="text-sm text-ink-secondary mb-4">
         {t.clients === 0
-          ? "База пока пуста. Клиент заводится при оформлении заявки — или здесь, заранее."
+          ? "Клиентов пока нет."
           : `${clientsWord(t.clients)} · ${ordersWord(t.orders)} · ${money(t.revenue)} выручки`}
       </p>
 
       {t.clients > 0 && (
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <Tile
-            title="Средний чек"
-            value={money(t.avgCheck)}
-            hint="Выручка, делённая на число заявок"
-          />
-          <Tile
-            title="В среднем с клиента"
-            value={money(t.revenuePerClient)}
-            hint="Сколько приносит одна карточка базы"
-          />
+          <Tile title="Средний чек" value={money(t.avgCheck)} />
+          <Tile title="В среднем с клиента" value={money(t.revenuePerClient)} />
           <Tile
             title="Молчат больше месяца"
             value={String(t.sleepingClients)}
-            hint={t.sleepingClients > 0 ? "Повод позвонить, а не ждать" : "Все на связи"}
+            hint={t.sleepingClients > 0 ? "Повод позвонить" : undefined}
             warn={t.sleepingClients > 0}
           />
           <Tile
             title="Три крупнейших клиента"
             value={`${Math.round(t.top3Share)} %`}
-            hint="Какая доля выручки держится на трёх точках"
+            hint="Доля выручки"
             warn={t.top3Share > 50}
           />
         </div>
@@ -80,8 +72,7 @@ export default async function ClientsPage() {
 
       {stats.ordersWithoutClient > 0 && (
         <div className="card mb-6 text-sm text-[#8a5a00]">
-          Без карточки клиента: {ordersWord(stats.ordersWithoutClient)}. Они оформлены до появления
-          базы и в разрезах ниже не считаются.
+          Без карточки клиента: {ordersWord(stats.ordersWithoutClient)} — в разрезах не считаются.
         </div>
       )}
 
@@ -122,14 +113,14 @@ function Tile({
 }: {
   title: string;
   value: string;
-  hint: string;
+  hint?: string;
   warn?: boolean;
 }) {
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
       <div className={`text-2xl font-semibold mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>{value}</div>
-      <div className="text-xs text-ink-muted mt-1">{hint}</div>
+      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

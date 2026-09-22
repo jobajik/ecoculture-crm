@@ -64,14 +64,9 @@ export default function BatchImportForm() {
   return (
     <div className="card space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-medium">Загрузка файлом</h2>
-          <p className="text-sm text-ink-secondary mt-0.5">
-            Excel-файл со списком партий за день. Перед записью покажу, что распозналось.
-          </p>
-        </div>
+        <h2 className="font-medium">Загрузка файлом</h2>
         <a href="/api/warehouse/template" className="btn-secondary !py-1.5">
-          ↓ Скачать шаблон
+          ↓ Шаблон
         </a>
       </div>
 
@@ -136,7 +131,7 @@ export default function BatchImportForm() {
                 {result.rows.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-6 text-center text-ink-muted">
-                      В файле не нашлось ни одной строки с данными
+                      В файле нет строк с данными
                     </td>
                   </tr>
                 )}
@@ -145,10 +140,7 @@ export default function BatchImportForm() {
           </div>
 
           {result.errorCount > 0 && (
-            <p className="text-xs text-ink-muted">
-              Строки с ошибками загружены не будут — исправьте их в файле и загрузите снова, либо
-              добавьте вручную ниже.
-            </p>
+            <p className="text-xs text-ink-muted">Строки с ошибками не загрузятся.</p>
           )}
 
           <div className="flex gap-2">
@@ -157,7 +149,7 @@ export default function BatchImportForm() {
               disabled={importing || result.validCount === 0}
               className="btn-primary disabled:opacity-50"
             >
-              {importing ? "Загрузка…" : `Загрузить ${result.validCount} партий на склад`}
+              {importing ? "Загрузка…" : `Загрузить ${result.validCount} партий`}
             </button>
             <button onClick={reset} className="btn-secondary" disabled={importing}>
               Отмена

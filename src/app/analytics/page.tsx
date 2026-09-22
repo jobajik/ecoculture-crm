@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAnalyticsByFarm } from "@/lib/analytics";
-import { farmLabel } from "@/lib/constants";
+import Hint from "@/components/Hint";
 import AnalyticsReport from "@/components/AnalyticsReport";
 import FlowerSummary from "@/components/FlowerSummary";
 import SectionTabs from "@/components/SectionTabs";
@@ -36,9 +36,12 @@ export default async function AnalyticsPage() {
         <div>
           <h1 className="text-xl font-semibold">Аналитика</h1>
           <p className="text-sm text-ink-secondary">
-            Последние {all.days} дней ({all.periodLabel}). Стрелка под цифрой — сравнение с
-            предыдущими {all.days} ({all.prevLabel}).
-            {ownFarm && ` Только ваше производство — ${farmLabel(ownFarm)}.`}
+            Последние {all.days} дней · {all.periodLabel}
+            <Hint>
+              Стрелка под цифрой — сравнение с предыдущими {all.days} днями ({all.prevLabel}).
+              Заявки и клиенты по производствам не складываются в итог: смешанная заявка
+              считается у обоих.
+            </Hint>
           </p>
         </div>
         <span className="text-xs text-ink-muted">

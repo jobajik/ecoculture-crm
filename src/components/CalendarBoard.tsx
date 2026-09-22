@@ -102,9 +102,6 @@ export default function CalendarBoard({ data }: { data: CalendarMonth }) {
             </button>
           ))}
         </div>
-        <span className="text-xs text-ink-muted">
-          Цветом выделено «{HEAT_LABELS[heat].toLowerCase()}»: чем насыщеннее клетка, тем больше день
-        </span>
       </div>
 
       <div className="card !p-0 table-scroll">
@@ -288,13 +285,13 @@ function DayDetails({ day }: { day: CalendarDay }) {
       {nothing ? (
         <div className="card text-center py-8 text-sm text-ink-secondary">
           {day.future
-            ? "Это будущий день — здесь появятся срез, заявки и отгрузки."
-            : "В этот день ничего не оформляли, не принимали и не отгружали."}
+            ? "Пока пусто."
+            : "В этот день ничего не было."}
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {day.byManager.length > 0 && (
-            <Block title="Кто продал" hint="Заявки, оформленные в этот день">
+            <Block title="Кто продал">
               <Table
                 head={["Менеджер", "Заявок", "Стеблей", "Сумма"]}
                 rows={day.byManager.map((m) => [
@@ -308,7 +305,7 @@ function DayDetails({ day }: { day: CalendarDay }) {
           )}
 
           {day.receivedByFlower.length > 0 && (
-            <Block title="Что срезали" hint="Приёмка на склад">
+            <Block title="Что срезали">
               <Table
                 head={["Цветок", "Партий", "Стеблей", "По прайсу"]}
                 rows={day.receivedByFlower.map((f) => [
@@ -322,7 +319,7 @@ function DayDetails({ day }: { day: CalendarDay }) {
           )}
 
           {day.orders.length > 0 && (
-            <Block title="Заявки за день" hint="Кому продали и оплачено ли">
+            <Block title="Заявки за день">
               <Table
                 head={["Клиент", "Менеджер", "Сумма", "Оплата"]}
                 rows={orders.map((o) => [
@@ -357,7 +354,7 @@ function DayDetails({ day }: { day: CalendarDay }) {
           )}
 
           {day.receivedByGrade.length > 0 && (
-            <Block title="Срез по ростовке и категории" hint="Что именно дало производство">
+            <Block title="Срез по ростовке и категории">
               <Table
                 head={["Позиция", "Стеблей"]}
                 rows={grades.map((g) => [g.label, nf(g.stems)])}
@@ -373,7 +370,7 @@ function DayDetails({ day }: { day: CalendarDay }) {
           )}
 
           {day.shippedByFlower.length > 0 && (
-            <Block title="Что отгрузили" hint="Ушло со склада в этот день">
+            <Block title="Что отгрузили">
               <Table
                 head={["Цветок", "Отгрузок", "Стеблей"]}
                 rows={day.shippedByFlower.map((f) => [f.label, String(f.count), nf(f.stems)])}
@@ -382,7 +379,7 @@ function DayDetails({ day }: { day: CalendarDay }) {
           )}
 
           {day.payments.length > 0 && (
-            <Block title="Оплаты" hint="Деньги, пришедшие в этот день">
+            <Block title="Оплаты">
               <Table
                 head={["Клиент", "Способ", "Сумма"]}
                 rows={day.payments.map((p) => [
@@ -397,7 +394,7 @@ function DayDetails({ day }: { day: CalendarDay }) {
           )}
 
           {day.writeoffs.length > 0 && (
-            <Block title="Списания" hint="Что не дожило до продажи">
+            <Block title="Списания">
               <Table
                 head={["Причина", "Стеблей"]}
                 rows={day.writeoffs.map((w) => [w.reason, nf(w.stems)])}

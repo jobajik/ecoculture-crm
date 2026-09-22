@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { FLOWER_TYPE_LABELS, formatGrade, gradeColumnLabelFor, getGradesFor } from "@/lib/constants";
 import { unwrapValue } from "@/lib/actionResult";
+import Hint from "./Hint";
 import {
   describeWarehouseChanges,
   moneyWarning,
@@ -138,23 +139,18 @@ export default function WarehouseItemsEdit({
         <button type="button" className="btn" onClick={() => setOpen(true)}>
           Поправить по факту склада
         </button>
-        <p className="text-xs text-ink-muted mt-1">
-          Заказали одно, в холодильнике другое — поправьте количество, ростовку или цену по своим
-          позициям. Менеджеру звонить не нужно, но причину написать придётся.
-        </p>
       </div>
     );
   }
 
   return (
     <form onSubmit={submit} noValidate className="card mb-6 space-y-3">
-      <div>
-        <div className="font-medium">Поправить по факту склада</div>
-        <p className="text-sm text-ink-secondary">
-          Только ваши позиции. Сорт и цветок не меняются — это договорённость менеджера с клиентом.
-          Добавить или убрать строку тоже нельзя: правка про то, чего не хватило, а не про состав
-          заказа.
-        </p>
+      <div className="font-medium">
+        Поправить по факту склада
+        <Hint>
+          Только ваши позиции: количество, ростовка, цена. Сорт и цветок не меняются, строки не
+          добавляются и не удаляются.
+        </Hint>
       </div>
 
       <div className="space-y-3">
@@ -219,12 +215,9 @@ export default function WarehouseItemsEdit({
         <input
           className="input"
           value={reason}
-          placeholder="Например: в холодильнике только 640 шестидесятки, остальное 50 см"
+          placeholder="В холодильнике только 640 шт. 60 см"
           onChange={(e) => setReason(e.target.value)}
         />
-        <p className="text-xs text-ink-muted mt-1">
-          Уйдёт в журнал бухгалтера вместе с суммой до и после.
-        </p>
       </div>
 
       {changes.length > 0 && !region && (

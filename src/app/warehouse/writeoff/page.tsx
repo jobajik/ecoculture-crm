@@ -22,10 +22,7 @@ export default async function WriteoffPage() {
   return (
     <div className="max-w-4xl">
       <h1 className="text-xl font-semibold mb-1">Списание{farm ? ` · ${farmLabel(farm)}` : ""}</h1>
-      <p className="text-ink-secondary mb-3">
-        Впишите, сколько списать по позиции, — вручную или файлом. Партию и дату выбирать не
-        нужно: количество снимется с самых старых партий этой позиции.
-      </p>
+      <p className="text-ink-secondary mb-3">Снимается с самых старых партий позиции.</p>
       <div className="mb-4">
         <SectionTabs tabs={WAREHOUSE_TABS} />
       </div>

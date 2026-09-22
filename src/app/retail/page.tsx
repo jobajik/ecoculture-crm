@@ -6,7 +6,6 @@ import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { ORDER_STATUSES, formatGrade } from "@/lib/constants";
 import { buildShopDay, isRetailRole, retailShortLabel, territoriesFor } from "@/lib/retail";
-import { formatDay } from "@/lib/formatDate";
 import SectionTabs from "@/components/SectionTabs";
 import { retailTabsFor } from "./tabs";
 import DayNav from "@/components/DayNav";
@@ -106,22 +105,19 @@ export default async function RetailDayPage({
       </div>
       <SectionTabs tabs={retailTabsFor(role)} />
 
-      <p className="text-sm text-ink-secondary mt-4 mb-3">
-        Заявки на доставку {formatDay(date)}. Это наши магазины: оплата по таким заявкам не
-        проводится — отгрузку открывает ваше подтверждение.
-      </p>
+      <div className="mt-4" />
 
       <DayNav date={date} today={todayKey()} />
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 my-4">
-        <Tile title="Магазинов" value={String(totals.shops)} hint="В вашем направлении" />
+        <Tile title="Магазинов" value={String(totals.shops)} />
         <Tile
           title="Заявка есть"
           value={`${totals.covered} из ${totals.shops}`}
           hint={missing > 0 ? `${missing} без заявки` : "Все закрыты"}
           warn={missing > 0}
         />
-        <Tile title="Стеблей" value={totals.stems.toLocaleString("ru-RU")} hint="На этот день" />
+        <Tile title="Стеблей" value={totals.stems.toLocaleString("ru-RU")} />
         <Tile title="По внутренней цене" value={money(totals.amount)} hint="Это не выручка" />
       </div>
 
@@ -154,7 +150,7 @@ export default async function RetailDayPage({
                 </td>
                 <td data-label="Что заказано" className="px-4 py-2.5 align-top text-ink-secondary">
                   {row.empty ? (
-                    <span className="text-[#8a5a00]">заявки на этот день нет</span>
+                    <span className="text-[#8a5a00]">заявки нет</span>
                   ) : (
                     row.orders.map((o) => (
                       <div key={o.orderId}>
@@ -200,7 +196,7 @@ export default async function RetailDayPage({
                       )}
                     </div>
                   ) : (
-                    <span className="text-xs text-[#8a5a00]">ждёт вашего подтверждения</span>
+                    <span className="text-xs text-[#8a5a00]">ждёт подтверждения</span>
                   )}
                 </td>
               </tr>
@@ -208,8 +204,7 @@ export default async function RetailDayPage({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-ink-muted">
-                  Магазинов в вашем направлении пока нет. Карточку магазина заводит РОП — или вы
-                  сами, кнопкой «Заявка магазину».
+                  Магазинов пока нет
                 </td>
               </tr>
             )}
@@ -228,14 +223,14 @@ function Tile({
 }: {
   title: string;
   value: string;
-  hint: string;
+  hint?: string;
   warn?: boolean;
 }) {
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
       <div className={`text-2xl font-semibold mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>{value}</div>
-      <div className="text-xs text-ink-muted mt-1">{hint}</div>
+      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

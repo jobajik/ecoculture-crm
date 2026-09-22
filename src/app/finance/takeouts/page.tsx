@@ -52,11 +52,7 @@ export default async function FinanceTakeoutsPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-1">Цветы в счёт зарплаты</h1>
-      <p className="text-ink-secondary mb-3">
-        Что сотрудники взяли со склада. Это не продажа: выручки по таким строкам нет, а сумма —
-        то, что удерживается из зарплаты. Записывают зав. складами.
-      </p>
+      <h1 className="text-xl font-semibold mb-3">Цветы в счёт зарплаты</h1>
 
       <div className="mb-4">
         <SectionTabs tabs={financeTabsFor(role)} />

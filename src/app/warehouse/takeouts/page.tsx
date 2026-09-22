@@ -109,10 +109,7 @@ export default async function StaffTakeoutsPage({
       <h1 className="text-xl font-semibold mb-1">
         Выдачи сотрудникам{farm ? ` · ${farmLabel(farm)}` : ""}
       </h1>
-      <p className="text-ink-secondary mb-3">
-        Цветы, которые сотрудник взял в счёт зарплаты. Стебли уходят со склада, денег в кассу не
-        приходит — сумма идёт бухгалтеру на удержание.
-      </p>
+      <p className="text-ink-secondary mb-3">В счёт зарплаты.</p>
 
       <div className="mb-4">
         <SectionTabs tabs={WAREHOUSE_TABS} />
@@ -137,11 +134,11 @@ export default async function StaffTakeoutsPage({
 
       <div className="grid sm:grid-cols-3 gap-3 mb-4">
         <Tile title="Стеблей за день" value={nf(day.stems)} hint={formatDay(date)} />
-        <Tile title="Человек" value={String(day.people)} hint="брали цветок в этот день" />
+        <Tile title="Человек" value={String(day.people)} />
         <Tile
           title="На сумму"
           value={`${nf(day.amount)} ₸`}
-          hint={day.noPrice > 0 ? `${day.noPrice} ${rowWord(day.noPrice)} без цены` : "это не выручка"}
+          hint={day.noPrice > 0 ? `${day.noPrice} ${rowWord(day.noPrice)} без цены` : undefined}
           warn={day.noPrice > 0}
         />
       </div>
@@ -204,9 +201,7 @@ export default async function StaffTakeoutsPage({
       {canFill && unpriced.length > 0 && (
         <div className="mb-6">
           <h2 className="font-medium mb-1">Без цены за {periodLabel(monthKey)} — {unpriced.length}</h2>
-          <p className="text-sm text-ink-secondary mb-2">
-            Эти выдачи не попадут в удержание, пока нет цены. Впишите цену за стебель и нажмите «✓».
-          </p>
+          <p className="text-sm text-ink-secondary mb-2">Без цены не попадут в удержание.</p>
           <div className="card !p-0 table-scroll table-cards">
             <table className="w-full text-sm min-w-[560px]">
               <thead>
@@ -243,7 +238,7 @@ export default async function StaffTakeoutsPage({
       <StaffTakeoutMonth
         month={month}
         title={`Итог за ${periodLabel(periodOf(new Date(`${date}T00:00:00`)))}`}
-        hint="Это сумма к удержанию из зарплаты"
+        hint="К удержанию из зарплаты"
       />
     </div>
   );
@@ -257,14 +252,16 @@ function Tile({
 }: {
   title: string;
   value: string;
-  hint: string;
+  hint?: string;
   warn?: boolean;
 }) {
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
       <div className="text-2xl font-semibold mt-1">{value}</div>
-      <div className={`text-xs mt-1 ${warn ? "text-[#8a5a00]" : "text-ink-muted"}`}>{hint}</div>
+      {hint && (
+        <div className={`text-xs mt-1 ${warn ? "text-[#8a5a00]" : "text-ink-muted"}`}>{hint}</div>
+      )}
     </div>
   );
 }

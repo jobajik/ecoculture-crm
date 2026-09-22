@@ -208,9 +208,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // списке РОПа: предложенное уже выбрано, и нажатие ровно одно. Записывать оно
   // ничего не записывает, человек видит его до сохранения.
   const suggestedDirection = directionForCity(client?.city);
-  const directionHint = client?.city
-    ? `Город клиента — ${client.city}. По этому полю заявка попадает в план отгрузок по регионам.`
-    : "По этому полю заявка попадает в план отгрузок по регионам.";
+  const directionHint = client?.city ? `Город клиента — ${client.city}` : "";
 
   return (
     <div className="max-w-3xl">
@@ -227,7 +225,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       </div>
       {canEdit && !order.deliveryDate && (
         <div className="text-sm text-[#8a5a00] bg-status-warning/10 rounded-lg px-3 py-2 mb-3">
-          У заявки не указана дата доставки — без неё она не попадёт в лист сборки склада.{" "}
+          Нет даты доставки — склад не увидит заявку.{" "}
           <Link href={`/orders/${order.orderId}/edit`} className="underline">
             Указать дату
           </Link>
@@ -323,13 +321,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               );
             })}
           </div>
-          <p className="text-xs text-ink-muted mt-2">
-            {invoice.length > 1
-              ? "В заявке цветок обоих производств — счёта два, и клиент платит двумя переводами. Бухгалтер отмечает каждый отдельно."
-              : "Компания определяется по цветку в заявке, выбирать её не нужно."}
-            {kaspiOfClient.length > 0 && ` Клиент платит с Kaspi ${kaspiOfClient.join(" / ")}.`}
-            {order.paymentMethod && ` Вид оплаты по заявке: ${order.paymentMethod}.`}
-          </p>
+          {(kaspiOfClient.length > 0 || order.paymentMethod) && (
+            <p className="text-xs text-ink-muted mt-2">
+              {order.paymentMethod && `Оплата: ${order.paymentMethod}.`}
+              {kaspiOfClient.length > 0 && ` Kaspi клиента: ${kaspiOfClient.join(" / ")}.`}
+            </p>
+          )}
           {/* Реализации 1С — по одной на цветок: розу и эустому продаёт одна
               компания, но в 1С это два документа, и у каждого своя сумма
               (просьба бухгалтера). У заявки из одного цветка — одна строка. */}
@@ -494,15 +491,14 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
       {canShip && (
         <Link href={`/warehouse/ship/${order.orderId}`} className="btn-primary mb-6 inline-flex">
-          Отгрузить по этой заявке
+          Отгрузить
         </Link>
       )}
 
       {shipBlockedReason && (
         <div className="card mb-6 text-sm text-ink-secondary">
-          <span className="font-medium text-ink-primary">Отгрузка пока закрыта.</span>{" "}
-          {shipBlockedReason}. Как только обе галочки наверху станут зелёными, здесь появится
-          кнопка отгрузки.
+          <span className="font-medium text-ink-primary">Отгрузка закрыта:</span>{" "}
+          {shipBlockedReason}
         </div>
       )}
 

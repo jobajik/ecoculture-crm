@@ -22,8 +22,7 @@ export default async function SalesPlanPage({
       <div>
         <h1 className="text-xl font-semibold">План и факт</h1>
         <p className="text-sm text-ink-secondary">
-          Выполнение месячного плана. Продажа засчитывается по дате оформления заявки, отменённые
-          не учитываются.
+          Продажа засчитывается по дате оформления заявки.
         </p>
       </div>
 

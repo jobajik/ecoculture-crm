@@ -6,6 +6,7 @@ import { farmLabel, getFarmFor } from "@/lib/constants";
 import { getOrderById } from "@/lib/repo/orders";
 import { availableBatchesFor, listBatches } from "@/lib/repo/batches";
 import ShipmentForm from "@/components/ShipmentForm";
+import Hint from "@/components/Hint";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
@@ -39,30 +40,31 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
   return (
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-1">
-        <h1 className="text-xl font-semibold">Отгрузка по заявке {order.orderId}</h1>
+        <h1 className="text-xl font-semibold">Отгрузка {order.orderId}</h1>
         <OrderStatusBadge status={order.status} />
       </div>
       <p className="text-ink-secondary mb-6">
-        {farm && <>Производство: {farmLabel(farm)} · </>}
-        Клиент: {order.clientName}
+        {farm && <>{farmLabel(farm)} · </>}
+        {order.clientName}
         {order.deliveryDate && ` · доставка ${formatDay(order.deliveryDate)}`}
       </p>
       {isReadyToShip(order) && creditNote(order) && (
         <p className="text-sm text-[#8a5a00] bg-[#8a5a00]/10 rounded-lg px-3 py-2 mb-4">
-          Оплаты ещё нет — отгрузка идёт в долг: у клиента «{order.clientPaymentTerms}». Долг
-          увидит бухгалтер.
+          Отгрузка в долг: у клиента «{order.clientPaymentTerms}».
         </p>
       )}
       {isReadyToShip(order) ? (
         <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} />
       ) : (
         <div className="card space-y-2">
-          <h2 className="font-medium">Эту заявку отгружать рано</h2>
-          <p className="text-sm text-ink-secondary">
-            {notReadyReason(order)}. Менеджер ставит свою галочку на заявке, оплату проводит
-            бухгалтер. Без оплаты отгрузить можно только клиенту, у которого в карточке условия
-            «По факту» или «Отсрочка».
-          </p>
+          <h2 className="font-medium">
+            Отгружать рано
+            <Hint>
+              Нужны галочка менеджера и оплата. Без оплаты — только клиенту с условиями «По
+              факту» или «Отсрочка».
+            </Hint>
+          </h2>
+          <p className="text-sm text-ink-secondary">{notReadyReason(order)}</p>
           <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
             Открыть заявку
           </Link>

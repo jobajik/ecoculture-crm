@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { updateOrderAction } from "@/app/orders/actions";
 import OrderItemsEditor, { type DraftItem } from "./OrderItemsEditor";
+import Hint from "@/components/Hint";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import { unwrap } from "@/lib/actionResult";
 
@@ -123,9 +124,11 @@ export default function OrderEditForm({
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
       <div className="card grid sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
-          <div className="label">{counterpartyLabel}</div>
+          <div className="label">
+            {counterpartyLabel}
+            <Hint>{clientHint}</Hint>
+          </div>
           <div className="font-medium">{clientLabel}</div>
-          <p className="text-xs text-ink-muted mt-1">{clientHint}</p>
         </div>
         <div>
           <label className="label">{dateLabel}</label>
@@ -137,7 +140,7 @@ export default function OrderEditForm({
           />
           {!initialDeliveryDate && (
             <span className="block text-xs text-[#8a5a00] mt-1">
-              Сейчас даты нет — без неё заявка не попадёт в лист сборки склада.
+              Без даты склад не увидит заявку.
             </span>
           )}
         </div>
@@ -172,9 +175,7 @@ export default function OrderEditForm({
           />
           {wasConfirmed && (
             <div className="text-sm text-ink-secondary bg-status-warning/10 rounded-lg px-3 py-2">
-              Заявка подтверждена вашей зелёной галочкой. Если вы измените позиции, галочка
-              снимется: склад собирает по подтверждённому составу, и согласиться с новым нужно
-              заново.
+              Правка позиций снимет подтверждение — его нужно будет поставить заново.
             </div>
           )}
         </>
@@ -206,7 +207,7 @@ export default function OrderEditForm({
 
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={saving} className="btn-primary disabled:opacity-50">
-          {saving ? "Сохраняю…" : "Сохранить изменения"}
+          {saving ? "Сохраняю…" : "Сохранить"}
         </button>
         <button
           type="button"

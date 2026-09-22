@@ -98,7 +98,7 @@ export default function FinanceReport({
 
       <ChartCard
         title="Выручка по дням"
-        description="Столбик — сумма заявок за день; цветом показано, какая часть уже оплачена"
+        description="Сумма заявок за день и оплаченная часть"
         height={260}
       >
         <ResponsiveContainer>
@@ -172,7 +172,7 @@ export default function FinanceReport({
           <h3 className="font-medium mb-1">Чем платили</h3>
           <p className="text-xs text-ink-muted mb-3">Только по оплаченным заявкам периода</p>
           {snapshot.byMethod.length === 0 ? (
-            <p className="text-sm text-ink-muted">Оплат за период пока нет.</p>
+            <p className="text-sm text-ink-muted">Оплат пока нет.</p>
           ) : (
             <div className="space-y-2">
               {snapshot.byMethod.map((m) => (
@@ -205,7 +205,6 @@ export default function FinanceReport({
         <div className="card !p-0 overflow-hidden">
           <div className="p-4 pb-2">
             <h3 className="font-medium">По менеджерам</h3>
-            <p className="text-xs text-ink-muted mt-0.5">Оформлено и сколько из этого оплачено</p>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -238,7 +237,7 @@ export default function FinanceReport({
       {/* Таблица данных графика — обязательное сопровождение, когда контраст
           заливки к фону ниже 3:1 (см. dataviz: relief required). */}
       <details className="card">
-        <summary className="cursor-pointer font-medium">Показать данные графика таблицей</summary>
+        <summary className="cursor-pointer font-medium">Таблица по дням</summary>
         <table className="w-full text-sm mt-3">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">

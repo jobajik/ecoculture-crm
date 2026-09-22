@@ -22,9 +22,6 @@ export default async function DailySalesPage({
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Продажи за день</h1>
-        <p className="text-sm text-ink-secondary">
-          Кто сколько продал, каких цветов и в какое время. Обновляется автоматически.
-        </p>
       </div>
 
       <SectionTabs tabs={salesTabsFor(role)} />

@@ -45,7 +45,7 @@ export default function ShelfLifeForm({
     setBusy(true);
     try {
       unwrapValue(await save(draft));
-      setDone("Сохранено. Склад и аналитика пересчитаются сразу.");
+      setDone("Сохранено.");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить");
@@ -92,8 +92,7 @@ export default function ShelfLifeForm({
       </div>
 
       <p className="text-xs text-ink-muted">
-        Партия желтеет, когда прошло столько процентов от её срока, и краснеет, когда срок вышел.
-        Сейчас жёлтой роза становится на {Math.round((draft.days.rose ?? 0) * draft.warningPercent / 100)}-й
+        Сейчас роза желтеет на {Math.round((draft.days.rose ?? 0) * draft.warningPercent / 100)}-й
         день из {draft.days.rose ?? 0}.
       </p>
 
@@ -107,7 +106,7 @@ export default function ShelfLifeForm({
       )}
 
       <button type="submit" className="btn-primary disabled:opacity-50" disabled={busy || !changed}>
-        {busy ? "Сохраняю…" : changed ? "Сохранить сроки" : "Изменений нет"}
+        {busy ? "Сохраняю…" : changed ? "Сохранить" : "Изменений нет"}
       </button>
     </form>
   );

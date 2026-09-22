@@ -13,6 +13,7 @@ import {
 } from "@/lib/constants";
 import MoreToggle, { COLLAPSED_LIST_SIZE } from "./MoreToggle";
 import StockDetail from "./StockDetail";
+import Hint from "./Hint";
 import type {
   AgeBucketFlower as AgeBucketFlowerBlock,
   AgeBucketRow,
@@ -277,14 +278,11 @@ export default function StockBoard({
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
           <h3 className="font-medium">
             Сколько дней лежит
-            <span className="text-sm font-normal text-ink-muted">
-              {" "}
-              — от даты срезки; нажмите на цветок, чтобы увидеть длины и категории
-            </span>
+            <Hint>
+              От даты срезки. Цвет — по сроку хранения цветка: роза 7 дней, хризантема 18,
+              эустома 10. Нажмите на цветок — покажет длины и категории.
+            </Hint>
           </h3>
-          <span className="text-xs text-ink-muted">
-            Цвет — по сроку хранения своего цветка: роза 7 дней, хризантема 18, эустома 10
-          </span>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -300,7 +298,7 @@ export default function StockBoard({
         allowedTypes={allowedTypes}
         emptyHint={
           snapshot.totalStems === 0
-            ? "На складе пусто. Как только зав. складом оформит приёмку, остатки появятся здесь."
+            ? "На складе пусто."
             : "Ничего не нашлось."
         }
       />

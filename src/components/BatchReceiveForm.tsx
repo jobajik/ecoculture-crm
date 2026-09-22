@@ -109,7 +109,7 @@ export default function BatchReceiveForm({
           />
         </div>
         <div>
-          <label className="label">Дата сбора/срезки *</label>
+          <label className="label">Дата срезки *</label>
           <input
             type="date"
             className="input"
@@ -120,7 +120,7 @@ export default function BatchReceiveForm({
         </div>
         <div>
           <label className="label">Место хранения</label>
-          <input className="input" placeholder="например, Холодильник 1" value={location} onChange={(e) => setLocation(e.target.value)} />
+          <input className="input" placeholder="Холодильник 1" value={location} onChange={(e) => setLocation(e.target.value)} />
         </div>
       </div>
 
