@@ -1,4 +1,4 @@
-import { appendRow, readTable, rowToRecord, SHEET_TABS } from "../sheets";
+import { appendRow, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import type { FlowerType } from "../constants";
@@ -100,4 +100,23 @@ export async function createStaffTakeout(input: NewStaffTakeoutInput): Promise<s
   });
 
   return takeoutId;
+}
+
+/** Выдача по номеру — для проверки перед правкой цены (читается свежей). */
+export async function getStaffTakeout(takeoutId: string): Promise<StaffTakeout | null> {
+  const table = await readTable(SHEET_TABS.STAFF_TAKEOUTS, { fresh: true });
+  for (const row of table.rows) {
+    const t = toTakeout(rowToRecord(SHEET_TABS.STAFF_TAKEOUTS, row));
+    if (t.takeoutId === takeoutId) return t;
+  }
+  return null;
+}
+
+/** Поставить цену уже записанной выдачи. Стебли и партия не трогаются. */
+export async function setStaffTakeoutPrice(takeoutId: string, unitPrice: number): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.STAFF_TAKEOUTS,
+    (r) => r.TakeoutID === takeoutId,
+    () => ({ UnitPrice: unitPrice })
+  );
 }

@@ -515,3 +515,64 @@ export function buildCompanyUse(input: {
     ),
   };
 }
+
+// --- Цена задним числом ------------------------------------------------------
+
+/**
+ * Можно ли поставить или поправить цену уже записанной выдачи. Пусто — можно.
+ *
+ * Просьба зав. складом Есентая со снимком итога за месяц: «здесь цену нужно
+ * забить, разрешение дайте на изменение». Выдачу пишут у холодильника, а цену
+ * часто узнают позже — и строка висела «без цены», то есть без удержания.
+ * Правит только тот, кто записывает выдачи (склад своего цветка и админ):
+ * бухгалтер итог видит, но не правит — одна дверь к одной записи.
+ */
+export function takeoutPriceRefusal(input: {
+  role: string | null | undefined;
+  farm: string | null | undefined;
+  takeout: { flowerType: string } | null;
+  unitPrice: number;
+}): string {
+  if (!canFillTakeouts(input.role)) return "Цену выдачи ставит зав. складом или администратор";
+  if (!input.takeout) return "Выдача не найдена";
+  if (input.role === ROLES.WAREHOUSE) {
+    if (!input.farm) return "У вас не указано производство";
+    if (getFarmFor(input.takeout.flowerType as FlowerType) !== input.farm) {
+      return "Эта выдача — цветок другого производства";
+    }
+  }
+  if (!Number.isFinite(input.unitPrice) || input.unitPrice < 0) return "Цена не может быть отрицательной";
+  if (input.unitPrice > 100_000) return "Слишком большая цена за стебель — проверьте число";
+  return "";
+}
+
+export interface UnpricedTakeout {
+  takeoutId: string;
+  date: string;
+  staffName: string;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  quantity: number;
+}
+
+/** Выдачи сотрудникам за месяц, у которых нет цены, — их сумма не удерживается. */
+export function unpricedTakeouts(input: {
+  takeouts: RawTakeout[];
+  month: string;
+  farm: string | null;
+}): UnpricedTakeout[] {
+  const spellings = staffSpellings(input.takeouts);
+  return scoped(staffOnly(input.takeouts), input.farm)
+    .filter((t) => t.date.startsWith(`${input.month}-`) && !(t.unitPrice > 0))
+    .map((t) => ({
+      takeoutId: t.takeoutId,
+      date: t.date,
+      staffName: spellings.get(staffKey(t.staffName))?.name ?? cleanStaffName(t.staffName),
+      flowerType: t.flowerType,
+      variety: t.variety,
+      grade: t.grade,
+      quantity: t.quantity,
+    }))
+    .sort((a, b) => (a.date === b.date ? staffKey(a.staffName).localeCompare(staffKey(b.staffName), "ru") : a.date < b.date ? -1 : 1));
+}

@@ -19,8 +19,13 @@ import {
 } from "@/lib/repo/writeoffs";
 import { parseWriteoffWorkbook, type WriteoffParseResult } from "@/lib/excel";
 import type { WriteoffLine, WriteoffPlan } from "@/lib/writeoffPlan";
-import { createStaffTakeout, type NewStaffTakeoutInput } from "@/lib/repo/staffTakeouts";
-import { cleanStaffName, isCompanyUse, takeoutRefusal } from "@/lib/staffTakeout";
+import {
+  createStaffTakeout,
+  getStaffTakeout,
+  setStaffTakeoutPrice,
+  type NewStaffTakeoutInput,
+} from "@/lib/repo/staffTakeouts";
+import { cleanStaffName, isCompanyUse, takeoutPriceRefusal, takeoutRefusal } from "@/lib/staffTakeout";
 import { guard } from "@/lib/actionResult";
 
 async function requireWarehouse() {
@@ -272,6 +277,26 @@ async function createStaffTakeoutActionInner(
   return takeoutId;
 }
 
+/**
+ * Цена уже записанной выдачи — «здесь цену нужно забить, разрешение дайте на
+ * изменение» (зав. складом Есентая). Правило — `takeoutPriceRefusal()`.
+ */
+async function setTakeoutPriceActionInner(takeoutId: string, unitPrice: number) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const role = session.user.role ?? "";
+  const farm = role === "warehouse" ? session.user.farm ?? null : null;
+  const price = Math.round(Number(unitPrice) * 100) / 100;
+  const takeout = await getStaffTakeout(String(takeoutId || ""));
+  const refusal = takeoutPriceRefusal({ role, farm, takeout, unitPrice: price });
+  if (refusal) throw new Error(refusal);
+  await setStaffTakeoutPrice(takeout!.takeoutId, price);
+  revalidatePath("/warehouse/takeouts");
+  revalidatePath("/warehouse/company");
+  revalidatePath("/finance/takeouts");
+  return price;
+}
+
 /** Сегодняшний день по местному времени — «ГГГГ-ММ-ДД». */
 function todayKey(): string {
   const d = new Date();
@@ -327,4 +352,8 @@ export async function previewWriteoffsAction(...args: Parameters<typeof previewW
 
 export async function applyWriteoffsAction(...args: Parameters<typeof applyWriteoffsActionInner>) {
   return guard(() => applyWriteoffsActionInner(...args));
+}
+
+export async function setTakeoutPriceAction(...args: Parameters<typeof setTakeoutPriceActionInner>) {
+  return guard(() => setTakeoutPriceActionInner(...args));
 }

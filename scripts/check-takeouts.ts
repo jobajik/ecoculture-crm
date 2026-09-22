@@ -30,7 +30,9 @@ import {
   staffSpellings,
   staffKey,
   takeoutFarmScope,
+  takeoutPriceRefusal,
   takeoutRefusal,
+  unpricedTakeouts,
   takeoutStemsByFlower,
   type RawTakeout,
 } from "../src/lib/staffTakeout";
@@ -346,6 +348,34 @@ check(
   check("расход: обычный проходит", refusal({ staffName: "Подарок", unitPrice: 0, kind: "company" }), "");
   check("выдуманный вид — отказ", refusal({ kind: "gift" }), "Неизвестный вид выдачи");
   check("расход чужого цветка — отказ", refusal({ kind: "company", farm: "esentai" }) !== "", true);
+}
+
+// --- Цена задним числом («здесь цену нужно забить») -------------------------
+{
+  const pr = (patch: Partial<Parameters<typeof takeoutPriceRefusal>[0]>) =>
+    takeoutPriceRefusal({ role: ROLES.WAREHOUSE, farm: "rose_farm", takeout: { flowerType: "rose" }, unitPrice: 150, ...patch });
+  check("зав. складом ставит цену своей выдаче", pr({}), "");
+  check("ноль — можно (снять цену)", pr({ unitPrice: 0 }), "");
+  check("чужой цветок — нельзя", pr({ takeout: { flowerType: "chrysanthemum" } }) !== "", true);
+  check("без производства — нельзя", pr({ farm: "" }) !== "", true);
+  check("бухгалтер — нельзя (только смотрит)", pr({ role: ROLES.ACCOUNTANT }) !== "", true);
+  check("админ — любой цветок", pr({ role: ROLES.ADMIN, farm: null, takeout: { flowerType: "chrysanthemum" } }), "");
+  check("отрицательная — нельзя", pr({ unitPrice: -1 }) !== "", true);
+  check("нет выдачи — отказ", pr({ takeout: null }), "Выдача не найдена");
+  const list = unpricedTakeouts({
+    takeouts: [
+      ...TAKEOUTS,
+      { takeoutId: "NP-1", date: "2026-09-05", staffName: "Иванова Анна", flowerType: "rose", variety: "Freedom", grade: "60", quantity: 7, unitPrice: 0 },
+      { takeoutId: "NP-2", date: "2026-09-06", staffName: "Подарок", flowerType: "rose", variety: "Freedom", grade: "60", quantity: 9, unitPrice: 0, kind: "company" },
+      { takeoutId: "NP-3", date: "2026-10-01", staffName: "Иванова Анна", flowerType: "rose", variety: "Freedom", grade: "60", quantity: 3, unitPrice: 0 },
+    ],
+    month: "2026-09",
+    farm: "rose_farm",
+  });
+  check("без цены — только сотрудникам, только месяц, только своё", list.map((t) => t.takeoutId).includes("NP-1"), true);
+  check("расход компании туда не попадает", list.some((t) => t.takeoutId === "NP-2"), false);
+  check("чужой месяц не попадает", list.some((t) => t.takeoutId === "NP-3"), false);
+  check("строки с ценой не попадают", list.every((t) => !["TK-1"].includes(t.takeoutId)), true);
 }
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);

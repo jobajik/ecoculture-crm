@@ -21,7 +21,9 @@ import {
   canSeeTakeouts,
   knownStaffNames,
   takeoutFarmScope,
+  unpricedTakeouts,
 } from "@/lib/staffTakeout";
+import TakeoutPriceCell from "@/components/TakeoutPriceCell";
 import SectionTabs from "@/components/SectionTabs";
 import { WAREHOUSE_TABS } from "../tabs";
 import DayNav from "@/components/DayNav";
@@ -87,7 +89,12 @@ export default async function StaffTakeoutsPage({
     }));
 
   const day = buildTakeoutDay({ takeouts, date, farm });
-  const month = buildStaffMonth({ takeouts, month: periodOf(new Date(`${date}T00:00:00`)), farm });
+  const monthKey = periodOf(new Date(`${date}T00:00:00`));
+  const month = buildStaffMonth({ takeouts, month: monthKey, farm });
+  // Выдачи без цены — их сумма не удерживается; цену ставят здесь же.
+  const unpriced = unpricedTakeouts({ takeouts, month: monthKey, farm });
+  const suggestedFor = (t: { flowerType: string; variety: string; grade: string }) =>
+    priceFromMap(priceMap, t.flowerType, t.variety, t.grade);
   // Подсказка фамилий — по тем же выдачам, что видит этот человек: зав. складом
   // Есентая незачем предлагать сотрудников чужой теплицы.
   const known = knownStaffNames(
@@ -161,7 +168,17 @@ export default async function StaffTakeoutsPage({
                 </td>
                 <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(r.quantity)}</td>
                 <td data-label="Цена" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
-                  {r.unitPrice > 0 ? `${nf(r.unitPrice)} ₸` : "—"}
+                  {canFill ? (
+                    <TakeoutPriceCell
+                      takeoutId={r.takeoutId}
+                      unitPrice={r.unitPrice}
+                      suggested={suggestedFor(r)}
+                    />
+                  ) : r.unitPrice > 0 ? (
+                    `${nf(r.unitPrice)} ₸`
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td data-label="Сумма" className="px-3 py-2.5 text-right tabular-nums">
                   {r.unitPrice > 0 ? (
@@ -183,6 +200,45 @@ export default async function StaffTakeoutsPage({
           </tbody>
         </table>
       </div>
+
+      {canFill && unpriced.length > 0 && (
+        <div className="mb-6">
+          <h2 className="font-medium mb-1">Без цены за {periodLabel(monthKey)} — {unpriced.length}</h2>
+          <p className="text-sm text-ink-secondary mb-2">
+            Эти выдачи не попадут в удержание, пока нет цены. Впишите цену за стебель и нажмите «✓».
+          </p>
+          <div className="card !p-0 table-scroll table-cards">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                  <th className="px-4 py-2.5 font-medium">Кому</th>
+                  <th className="px-3 py-2.5 font-medium">Дата</th>
+                  <th className="px-3 py-2.5 font-medium">Что взял</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Стеблей</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Цена, ₸</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unpriced.map((t) => (
+                  <tr key={t.takeoutId} className="border-b border-line-hairline last:border-0">
+                    <td className="px-4 py-2.5 font-medium">{t.staffName}</td>
+                    <td data-label="Дата" className="px-3 py-2.5 text-ink-secondary whitespace-nowrap">
+                      {formatDay(t.date)}
+                    </td>
+                    <td data-label="Что взял" className="px-3 py-2.5 text-ink-secondary">
+                      {FLOWER_TYPE_LABELS[t.flowerType] ?? t.flowerType} {t.variety} · {formatGrade(t.grade)}
+                    </td>
+                    <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(t.quantity)}</td>
+                    <td data-label="Цена, ₸" className="px-3 py-2.5 text-right">
+                      <TakeoutPriceCell takeoutId={t.takeoutId} unitPrice={0} suggested={suggestedFor(t)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <StaffTakeoutMonth
         month={month}
