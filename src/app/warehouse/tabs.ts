@@ -10,6 +10,8 @@ export const WAREHOUSE_TABS = [
   { href: "/warehouse/picklist", label: "Заявка на день" },
   { href: "/warehouse/receive", label: "Приёмка" },
   { href: "/warehouse/batches", label: "Партии" },
+  // Списание общим количеством, без партии и даты — просьба склада Есентая.
+  { href: "/warehouse/writeoff", label: "Списание" },
   { href: "/warehouse/takeouts", label: "Выдачи сотрудникам" },
   // «Админ расход» зав. склада: подарки, офис, мероприятия. Рядом с выдачами —
   // это тоже «ушло со склада без продажи».

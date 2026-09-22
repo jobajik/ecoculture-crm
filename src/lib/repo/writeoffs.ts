@@ -1,8 +1,9 @@
-import { appendRow, readTable, rowToRecord, SHEET_TABS } from "../sheets";
+import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateRows } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import type { Writeoff } from "../types";
-import { deductBatchQuantity, getBatchById } from "./batches";
+import { deductBatchQuantity, getBatchById, toBatch } from "./batches";
+import { planWriteoffs, type WriteoffLine, type WriteoffPlan } from "../writeoffPlan";
 
 function toWriteoff(record: Record<string, string>): Writeoff {
   return {
@@ -50,4 +51,69 @@ export async function createWriteoff(input: NewWriteoffInput): Promise<string> {
   });
 
   return writeoffId;
+}
+
+/**
+ * Списание общим количеством: разложить по партиям (от старых к свежим) и
+ * записать. Склад читается СВЕЖИМ одним запросом, остатки пишутся пакетом,
+ * журнал — строкой на партию (грабли 1.15). Любая ошибка — до первой записи.
+ */
+export async function planWriteoffsFromSheet(input: {
+  lines: WriteoffLine[];
+  farm: string | null;
+  note?: string;
+}): Promise<WriteoffPlan> {
+  const table = await readTable(SHEET_TABS.BATCHES, { fresh: true });
+  const batches = table.rows.map((row) => toBatch(rowToRecord(SHEET_TABS.BATCHES, row)));
+  return planWriteoffs({ ...input, batches });
+}
+
+export async function createWriteoffsByPlan(input: {
+  lines: WriteoffLine[];
+  farm: string | null;
+  note?: string;
+  warehouseEmail: string;
+}): Promise<{ plan: WriteoffPlan; ids: string[] }> {
+  const table = await readTable(SHEET_TABS.BATCHES, { fresh: true });
+  const rows = table.rows.map((row, i) => ({
+    record: rowToRecord(SHEET_TABS.BATCHES, row),
+    rowNumber: table.rowNumbers[i],
+  }));
+  const plan = planWriteoffs({
+    lines: input.lines,
+    farm: input.farm,
+    note: input.note,
+    batches: rows.map((r) => toBatch(r.record)),
+  });
+  const firstError = plan.errors.findIndex(Boolean);
+  if (firstError >= 0) {
+    throw new Error(`Строка ${firstError + 1}: ${plan.errors[firstError]}. Ничего не списано.`);
+  }
+  if (plan.parts.length === 0) throw new Error("Нечего списывать");
+
+  const byBatch = new Map<string, number>();
+  for (const p of plan.parts) byBatch.set(p.batchId, (byBatch.get(p.batchId) ?? 0) + p.quantity);
+  await updateRows(
+    SHEET_TABS.BATCHES,
+    Array.from(byBatch.entries()).map(([batchId, qty]) => {
+      const r = rows.find((x) => x.record.BatchID === batchId)!;
+      const remaining = Number(r.record.QuantityRemaining) || 0;
+      return { rowNumber: r.rowNumber, record: { ...r.record, QuantityRemaining: remaining - qty } };
+    })
+  );
+
+  const createdAt = new Date().toISOString();
+  const ids = plan.parts.map(() => generateId("WO"));
+  await appendRows(
+    SHEET_TABS.WRITEOFFS,
+    plan.parts.map((p, i) => ({
+      WriteoffID: ids[i],
+      CreatedAt: createdAt,
+      BatchID: p.batchId,
+      Quantity: p.quantity,
+      Reason: p.reason,
+      WarehouseEmail: input.warehouseEmail,
+    }))
+  );
+  return { plan, ids };
 }

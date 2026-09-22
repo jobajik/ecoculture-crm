@@ -11,7 +11,14 @@ import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, farmLabel, getFarmFor } from "@/lib/
 import { getOrderById } from "@/lib/repo/orders";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { createShipments, type ShipmentPart } from "@/lib/repo/shipments";
-import { createWriteoff, type NewWriteoffInput } from "@/lib/repo/writeoffs";
+import {
+  createWriteoff,
+  createWriteoffsByPlan,
+  planWriteoffsFromSheet,
+  type NewWriteoffInput,
+} from "@/lib/repo/writeoffs";
+import { parseWriteoffWorkbook, type WriteoffParseResult } from "@/lib/excel";
+import type { WriteoffLine, WriteoffPlan } from "@/lib/writeoffPlan";
 import { createStaffTakeout, type NewStaffTakeoutInput } from "@/lib/repo/staffTakeouts";
 import { cleanStaffName, isCompanyUse, takeoutRefusal } from "@/lib/staffTakeout";
 import { guard } from "@/lib/actionResult";
@@ -176,6 +183,51 @@ async function createWriteoffActionInner(input: Omit<NewWriteoffInput, "warehous
 }
 
 /**
+ * Списание общим количеством — без партии и даты (просьба склада Есентая).
+ * Раскладка по партиям от старых к свежим — `planWriteoffs()`; предпросмотр и
+ * запись считают её заново по СВЕЖЕМУ складу, поэтому показанное до записи и
+ * записанное не разъедутся, даже если между ними была отгрузка.
+ */
+function cleanWriteoffLines(lines: WriteoffLine[]): WriteoffLine[] {
+  if (!Array.isArray(lines) || lines.length === 0) throw new Error("Нет строк для списания");
+  if (lines.length > 500) throw new Error("Слишком много строк за раз — не больше 500");
+  return lines.map((l) => ({
+    flowerType: String(l.flowerType ?? ""),
+    variety: String(l.variety ?? "").trim(),
+    grade: String(l.grade ?? "").trim(),
+    quantity: Number(l.quantity),
+    reason: String(l.reason ?? ""),
+  }));
+}
+
+async function parseWriteoffFileActionInner(formData: FormData): Promise<WriteoffParseResult> {
+  await requireWarehouse();
+  const file = formData.get("file");
+  if (!file || typeof file === "string") return { rows: [], fatalError: "Файл не получен" };
+  return parseWriteoffWorkbook(await (file as File).arrayBuffer());
+}
+
+async function previewWriteoffsActionInner(lines: WriteoffLine[], note: string): Promise<WriteoffPlan> {
+  const { farm } = await requireWarehouse();
+  return planWriteoffsFromSheet({ lines: cleanWriteoffLines(lines), farm, note });
+}
+
+async function applyWriteoffsActionInner(lines: WriteoffLine[], note: string) {
+  const { email, farm } = await requireWarehouse();
+  const { plan } = await createWriteoffsByPlan({
+    lines: cleanWriteoffLines(lines),
+    farm,
+    note,
+    warehouseEmail: email,
+  });
+  revalidatePath("/warehouse/batches");
+  revalidatePath("/warehouse/writeoff");
+  revalidatePath("/analytics");
+  revalidatePath("/");
+  return { total: plan.total, batches: plan.parts.length };
+}
+
+/**
  * Выдача цветка сотруднику в счёт зарплаты.
  *
  * Все правила — одной чистой функцией `takeoutRefusal()`: и роль, и своё
@@ -263,4 +315,16 @@ export async function createWriteoffAction(...args: Parameters<typeof createWrit
 
 export async function createStaffTakeoutAction(...args: Parameters<typeof createStaffTakeoutActionInner>) {
   return guard(() => createStaffTakeoutActionInner(...args));
+}
+
+export async function parseWriteoffFileAction(...args: Parameters<typeof parseWriteoffFileActionInner>) {
+  return guard(() => parseWriteoffFileActionInner(...args));
+}
+
+export async function previewWriteoffsAction(...args: Parameters<typeof previewWriteoffsActionInner>) {
+  return guard(() => previewWriteoffsActionInner(...args));
+}
+
+export async function applyWriteoffsAction(...args: Parameters<typeof applyWriteoffsActionInner>) {
+  return guard(() => applyWriteoffsActionInner(...args));
 }

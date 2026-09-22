@@ -1601,3 +1601,153 @@ export async function buildPriceTemplate(
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
+
+// ---------------------------------------------------------------------------
+// Списание файлом — «как приёмке», по просьбе зав. складом Есентая.
+//
+// Шаблон выгружается УЖЕ заполненным позициями склада (цветок, сорт, длина и
+// сколько лежит): остаётся вписать «Списать, шт» напротив нужных строк.
+// Партий и дат в файле нет — количество снимается с партий позиции от старых
+// к свежим (`planWriteoffs` в `writeoffPlan.ts`).
+// ---------------------------------------------------------------------------
+
+const WRITEOFF_ALIASES: Record<string, string[]> = {
+  flowerType: ["тип цветка", "тип", "культура", "цветок"],
+  variety: ["сорт", "variety"],
+  grade: ["длина / категория", "длина/категория", "длина", "категория", "ростовка"],
+  quantity: ["списать, шт", "списать", "списание", "к списанию", "количество, шт", "количество", "кол-во"],
+  reason: ["причина", "причина списания"],
+};
+
+export interface ParsedWriteoffRow {
+  rowNumber: number;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  quantity: number;
+  reason: string;
+  error?: string;
+}
+
+export interface WriteoffParseResult {
+  rows: ParsedWriteoffRow[];
+  fatalError?: string;
+}
+
+export async function buildWriteoffTemplate(
+  positions: { flowerType: string; variety: string; grade: string; stock: number }[],
+  farm?: string | null
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Ecoculture-CRM";
+  const sheet = workbook.addWorksheet("Списание");
+  sheet.columns = [
+    { header: "Тип цветка", key: "flowerType", width: 14 },
+    { header: "Сорт", key: "variety", width: 26 },
+    { header: "Длина / категория", key: "grade", width: 18 },
+    { header: "На складе, шт", key: "stock", width: 14 },
+    { header: "Списать, шт", key: "quantity", width: 14 },
+    { header: "Причина", key: "reason", width: 34 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  for (const p of positions) {
+    sheet.addRow({
+      flowerType: FLOWER_TYPE_LABELS[p.flowerType] ?? p.flowerType,
+      variety: p.variety,
+      grade: p.grade,
+      stock: p.stock,
+      quantity: null,
+      reason: "",
+    });
+  }
+  // Колонка, которую заполняют, — жёлтая: глаз сразу находит, куда писать.
+  for (let r = 2; r <= positions.length + 1; r++) {
+    sheet.getCell(`E${r}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF4CC" } };
+    sheet.getCell(`D${r}`).font = { color: { argb: "FF777777" } };
+  }
+
+  const notes = workbook.addWorksheet("Как заполнять");
+  notes.columns = [{ width: 110 }];
+  [
+    farm ? `Списание файлом — ${farmLabel(farm)}` : "Списание файлом",
+    "",
+    "1. В файле уже стоят все позиции, которые сейчас лежат на складе, и их остаток.",
+    "2. Впишите «Списать, шт» напротив нужных строк. Пустые строки не трогаются.",
+    "3. «Причина» — необязательно. Пусто — «Порча / истёк срок хранения».",
+    "4. Партию и дату выбирать не нужно: программа снимет количество с самых старых партий этой позиции.",
+    "5. Если хоть одна строка не сходится (больше, чем на складе), не спишется ничего — это видно до записи.",
+    "",
+    "Остаток в файле — на момент скачивания. Если после этого была отгрузка, программа проверит заново.",
+  ].forEach((line) => notes.addRow([line]));
+  notes.getRow(1).font = { bold: true };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+export async function parseWriteoffWorkbook(buffer: ArrayBuffer): Promise<WriteoffParseResult> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    return { rows: [], fatalError: "Не удалось прочитать файл. Нужен файл Excel в формате .xlsx." };
+  }
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return { rows: [], fatalError: "В файле нет ни одного листа." };
+
+  let headerRow = 0;
+  const col: Record<string, number> = {};
+  for (let r = 1; r <= Math.min(10, sheet.rowCount); r++) {
+    const found: Record<string, number> = {};
+    sheet.getRow(r).eachCell((cell, n) => {
+      const h = normalizeHeader(cellText(cell));
+      for (const [field, aliases] of Object.entries(WRITEOFF_ALIASES)) {
+        if (found[field] === undefined && aliases.includes(h)) found[field] = n;
+      }
+    });
+    if (found.variety !== undefined && found.quantity !== undefined && found.flowerType !== undefined) {
+      headerRow = r;
+      Object.assign(col, found);
+      break;
+    }
+  }
+  if (!headerRow) {
+    return {
+      rows: [],
+      fatalError:
+        "Не нашёл заголовки «Тип цветка», «Сорт» и «Списать, шт». Проще всего скачать шаблон — в нём уже стоит весь склад.",
+    };
+  }
+
+  const rows: ParsedWriteoffRow[] = [];
+  for (let r = headerRow + 1; r <= sheet.rowCount; r++) {
+    const row = sheet.getRow(r);
+    const rawQty = cellText(row.getCell(col.quantity));
+    // Шаблон содержит весь склад: строка без количества — просто не списываем.
+    if (!rawQty || rawQty === "0") continue;
+    const rawType = cellText(row.getCell(col.flowerType));
+    const variety = cellText(row.getCell(col.variety)).replace(/\s+/g, " ");
+    const rawGrade = col.grade ? cellText(row.getCell(col.grade)) : "";
+    const reason = col.reason ? cellText(row.getCell(col.reason)) : "";
+    const errors: string[] = [];
+    const flowerType = detectFlowerType(rawType);
+    if (!flowerType) errors.push(`тип цветка «${rawType || "пусто"}» непонятен`);
+    if (!variety) errors.push("не указан сорт");
+    const grade = flowerType ? normalizeGrade(rawGrade, flowerType) ?? rawGrade.trim() : rawGrade.trim();
+    if (!grade) errors.push("не указана длина / категория");
+    const quantity = Number(rawQty.replace(/\s/g, "").replace(",", "."));
+    if (!Number.isFinite(quantity) || quantity <= 0) errors.push(`«${rawQty}» — не число больше нуля`);
+    rows.push({
+      rowNumber: r,
+      flowerType: flowerType ?? "",
+      variety,
+      grade,
+      quantity: Number.isFinite(quantity) ? quantity : 0,
+      reason,
+      error: errors.length ? errors.join("; ") : undefined,
+    });
+  }
+  return { rows };
+}
