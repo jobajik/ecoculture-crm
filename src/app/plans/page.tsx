@@ -310,7 +310,7 @@ function ShipmentsCard({ ov, href }: { ov: PlanOverview; href: string }) {
 function HarvestCard({ ov, href }: { ov: PlanOverview; href: string }) {
   const h = ov.harvest;
   return (
-    <CardShell title="Срезка против плана отгрузок" href={href} action="Баланс">
+    <CardShell title="Срезка против плана отгрузок" href={href} action="По неделям">
       {!h.hasForecast && !h.hasPlan ? (
         <p className="text-sm text-ink-secondary">Нет ни прогноза срезки, ни плана отгрузок на этот месяц.</p>
       ) : (
