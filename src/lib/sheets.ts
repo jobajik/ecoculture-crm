@@ -421,7 +421,14 @@ export function changedCells(
 
 export type WriteOp =
   | { kind: "update"; tab: string; rowNumber: number; changes: Record<string, unknown> }
-  | { kind: "append"; tab: string; records: Record<string, unknown>[] };
+  | { kind: "append"; tab: string; records: Record<string, unknown>[] }
+  /**
+   * Удалить строки целиком (номера — как при чтении). Удаления выполняются
+   * ПОСЛЕДНИМИ и снизу вверх, какой бы ни был порядок в списке: удаление
+   * сдвигает всё, что ниже, и правка по старому номеру после него попала бы в
+   * соседнюю строку (то же правило, что у `deleteWhere`).
+   */
+  | { kind: "delete"; tab: string; rowNumbers: number[] };
 
 const NUMERIC_TEXT = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 
@@ -461,10 +468,16 @@ async function sheetIdOf(tabName: string): Promise<number> {
 /** Все записи — одним запросом, который Google применяет целиком или никак. */
 export async function commitAtomic(ops: WriteOp[]): Promise<void> {
   const requests: sheets_v4.Schema$Request[] = [];
+  const deletes: { sheetId: number; rowNumber: number }[] = [];
   for (const op of ops) {
     const headers = SHEET_HEADERS[op.tab] ?? [];
     const sheetId = await sheetIdOf(op.tab);
-    if (op.kind === "update") {
+    if (op.kind === "delete") {
+      for (const rowNumber of op.rowNumbers) {
+        // Строка 1 — заголовки; её не удаляем ни при каких данных.
+        if (rowNumber >= 2) deletes.push({ sheetId, rowNumber });
+      }
+    } else if (op.kind === "update") {
       for (const [column, value] of Object.entries(op.changes)) {
         const col = headers.indexOf(column);
         if (col < 0) throw new Error(`Колонки «${column}» нет во вкладке «${op.tab}»`);
@@ -492,6 +505,17 @@ export async function commitAtomic(ops: WriteOp[]): Promise<void> {
       });
     }
   }
+  deletes
+    .sort((a, b) => (a.sheetId === b.sheetId ? b.rowNumber - a.rowNumber : a.sheetId - b.sheetId))
+    .forEach((d, i, all) => {
+      // Одна и та же строка дважды удалила бы соседнюю.
+      if (i > 0 && all[i - 1].sheetId === d.sheetId && all[i - 1].rowNumber === d.rowNumber) return;
+      requests.push({
+        deleteDimension: {
+          range: { sheetId: d.sheetId, dimension: "ROWS", startIndex: d.rowNumber - 1, endIndex: d.rowNumber },
+        },
+      });
+    });
   if (requests.length === 0) return;
   const sheets = getSheetsClient();
   await writeThrough(() =>

@@ -28,12 +28,16 @@ import { isCreditTerms, isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { cancelRefusal } from "@/lib/orderRules";
 import { canEditOrder } from "@/lib/orderEdit";
 import WarehouseItemsEdit from "@/components/WarehouseItemsEdit";
-import { adjustOrderByWarehouseAction } from "../actions";
+import { adjustOrderByWarehouseAction, returnOrderItemsAction } from "../actions";
+import ReturnItems, { type ReturnShopOption } from "@/components/ReturnItems";
+import { RETURN_CANCELLED, returnAccess } from "@/lib/orderReturn";
+import { listClients } from "@/lib/repo/clients";
 import { myItems, warehouseEditRefusal } from "@/lib/warehouseOrderEdit";
 import { getClientById } from "@/lib/repo/clients";
 import { farmPayments } from "@/lib/orderMoney";
 import {
   canFillRegions,
+  isOwnShop,
   farmScopeFor,
   isRetailOrder,
   isOwnClientOrder,
@@ -186,6 +190,26 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const otherItemsTotal = loaded.items
     .filter((i) => !warehouseItems.some((m) => m.itemId === i.itemId))
     .reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+  // Возврат и перемещение в наш магазин (src/lib/orderReturn.ts): менеджер своей
+  // заявки, зав. складом по своему цветку, администратор. Правила считаются по
+  // ПОЛНОЙ заявке: без чужих строк не понять, опустеет ли она после возврата.
+  const returnRights = returnAccess(loaded, role, myEmail, session?.user?.farm ?? null);
+  const returnShops: ReturnShopOption[] =
+    returnRights.refusal === "" && returnRights.canMove
+      ? (await listClients())
+          .filter((c) => isOwnShop(c) && c.active)
+          .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+          .map((c) => ({ clientId: c.clientId, name: c.name, retail: c.retail }))
+      : [];
+  // Складу чужие строки нужны только чтобы понять «опустеет ли заявка»: цену,
+  // сорт и ростовку чужого цветка в страницу не отдаём (грабли 1.1-ter).
+  const returnOrder = {
+    ...loaded,
+    items: loaded.items.map((i) =>
+      returnRights.itemIds.includes(i.itemId) ? i : { ...i, unitPrice: 0, variety: "", grade: "" }
+    ),
+  };
+
   // Удалять заявку совсем может только администратор, и только «чистую»:
   // без отгрузок, без денег, без рекламаций. Правило то же, что проверит
   // сервер (src/lib/orderDelete.ts), и считается по ПОЛНОЙ заявке.
@@ -542,6 +566,19 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         />
       )}
 
+      {/* Показывается и без прав: после возврата, отменившего заявку, прав уже
+          нет, а итог (и ссылку на заявку магазину) человек увидеть должен. Без
+          сделанного в этот раз возврата компонент ничего не рисует. */}
+      {(returnRights.refusal === "" || returnRights.refusal === RETURN_CANCELLED) && (
+        <ReturnItems
+          order={returnOrder}
+          access={returnRights}
+          shops={returnShops}
+          showMoney={!farm && !retail && !region}
+          save={returnOrderItemsAction}
+        />
+      )}
+
       <h2 className="font-medium mb-2">История отгрузок</h2>
       <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
@@ -558,7 +595,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               <tr key={s.shipmentId} className="border-b border-line-hairline last:border-0">
                 <td className="px-4 py-3">{formatMoment(s.createdAt)}</td>
                 <td className="px-4 py-3">{s.batchId}</td>
-                <td className="px-4 py-3">{s.quantity}</td>
+                <td className="px-4 py-3">
+                  {s.quantity < 0 ? <span className="text-[#8a5a00]">возврат {-s.quantity}</span> : s.quantity}
+                </td>
                 <td className="px-4 py-3 text-ink-secondary">{s.warehouseEmail ? personName(s.warehouseEmail, managerNames) : (s.notes ? "восстановлено" : "—")}</td>
               </tr>
             ))}

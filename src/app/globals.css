@@ -236,3 +236,9 @@ h3 {
     print-color-adjust: exact;
   }
 }
+
+/* Полоска перехода между страницами (NavProgress): бежит слева направо. */
+@keyframes navprogress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

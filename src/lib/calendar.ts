@@ -299,7 +299,8 @@ export function buildCalendarMonth(input: {
     const day = byDate.get(date);
     if (!day) continue;
     day.shippedStems += shipment.quantity;
-    day.shipmentCount += 1;
+    // Строка с минусом — возврат, а не ещё одна отгрузка: стебли вычитаются, счётчик не растёт.
+    if (shipment.quantity > 0) day.shipmentCount += 1;
     const batch = batchById.get(shipment.batchId);
     const flowerType = batch?.flowerType ?? "";
     line(

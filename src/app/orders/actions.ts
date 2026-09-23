@@ -60,6 +60,10 @@ import {
 import { setOrderDirection } from "@/lib/repo/orders";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ORDER_PAYMENT_METHODS, ROLES } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
+import { commitReturn } from "@/lib/repo/orderReturn";
+import type { ReturnLineInput } from "@/lib/orderReturn";
+import { getCurrentPrices } from "@/lib/repo/prices";
+import { PRICE_KINDS } from "@/lib/priceList";
 
 async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">) {
   const session = await getServerSession(authOptions);
@@ -683,4 +687,77 @@ export async function adjustOrderByWarehouseAction(
   ...args: Parameters<typeof adjustOrderByWarehouseActionInner>
 ) {
   return guard(() => adjustOrderByWarehouseActionInner(...args));
+}
+
+/**
+ * Возврат и перемещение в наш магазин — по строкам заявки.
+ *
+ * Просьба менеджера Ильяса: «из-за неоплаты вернул хризантемы на теплицу — как
+ * возврат оформить?» и «45 шт. Love Lydia переместил на Спутник — как
+ * перемещение сделать?». Правила (кто, что и сколько) — `src/lib/orderReturn.ts`,
+ * запись одним атомарным запросом — `src/lib/repo/orderReturn.ts`. Здесь —
+ * сессия, магазин, внутренний прайс и след в журнале.
+ */
+async function returnOrderItemsActionInner(
+  orderId: string,
+  input: { lines: ReturnLineInput[]; reason: string; shopClientId?: string; shipNow?: boolean }
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const email = session.user.email.toLowerCase();
+  const today = localDayKey();
+
+  const moving = input.lines.some((l) => Number(l.toShop) > 0);
+  let shop = null;
+  if (moving) {
+    shop = input.shopClientId ? await getClientById(input.shopClientId) : null;
+    // Только НАША точка и только действующая: перемещение к клиенту — это
+    // продажа, её оформляют заявкой, а не этой кнопкой.
+    if (!shop || !isOwnShop(shop) || !shop.active) throw new Error("Выберите наш магазин из списка");
+  }
+  const retailPrices = moving ? await getCurrentPrices(today, PRICE_KINDS.RETAIL) : new Map();
+
+  const result = await commitReturn({
+    orderId,
+    actor: { email, role: session.user.role, farm: session.user.farm ?? null },
+    lines: input.lines,
+    reason: input.reason,
+    shop,
+    shipNow: Boolean(input.shipNow),
+    retailPrices,
+    today,
+  });
+  const { plan } = result;
+
+  const details =
+    `${plan.describe.join("; ")}` +
+    (result.shopOrderId && shop ? ` · в магазин «${shop.name}», заявка ${result.shopOrderId}` : "") +
+    (plan.outcome === "cancel" ? " · в заявке ничего не осталось — отменена" : "") +
+    ` · причина: ${input.reason.trim()}`;
+  await logMoney({
+    actorEmail: email,
+    orderId,
+    action: plan.outcome === "cancel" ? MONEY_LOG_ACTIONS.ORDER_CANCELLED : MONEY_LOG_ACTIONS.ITEMS_RETURNED,
+    details,
+    amountBefore: plan.totalBefore,
+    amountAfter: plan.totalAfter,
+  });
+
+  for (const path of ["/orders", `/orders/${orderId}`, "/warehouse", "/warehouse/picklist", "/finance", "/analytics", "/retail", "/"]) {
+    revalidatePath(path);
+  }
+  if (result.shopOrderId) revalidatePath(`/orders/${result.shopOrderId}`);
+
+  return {
+    outcome: plan.outcome,
+    describe: plan.describe,
+    shopOrderId: result.shopOrderId,
+    shopName: shop?.name ?? "",
+    shippedNow: result.shippedNow,
+    backToStock: plan.backToStock,
+  };
+}
+
+export async function returnOrderItemsAction(...args: Parameters<typeof returnOrderItemsActionInner>) {
+  return guard(() => returnOrderItemsActionInner(...args));
 }

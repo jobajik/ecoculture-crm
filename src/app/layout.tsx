@@ -9,6 +9,8 @@ import "./globals.css";
 import Providers from "./providers";
 import Nav from "@/components/Nav";
 import MobileNav from "@/components/MobileNav";
+import NavProgress from "@/components/NavProgress";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Ecoculture-CRM",
@@ -20,6 +22,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru">
       <body className="min-h-screen font-sans antialiased">
         <Providers>
+          {/* Suspense — потому что полоска читает адрес (useSearchParams), а
+              такие компоненты без него ломают сборку статичных страниц. */}
+          <Suspense fallback={null}>
+            <NavProgress />
+          </Suspense>
           <Nav />
           {/* Отступ снизу — под нижнюю панель на телефоне, иначе она закрывает
               последнюю строку списка. */}

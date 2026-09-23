@@ -37,7 +37,7 @@ function toFlag(value: string | undefined): boolean {
  * Если дату разобрать не удалось, поле остаётся пустым: «даты нет» честнее
  * выдуманной, а по пустому полю сразу видно, что с ячейкой что-то не так.
  */
-function toOrder(record: Record<string, string>): Order {
+export function toOrder(record: Record<string, string>): Order {
   return {
     orderId: record.OrderID,
     // Дата оформления не должна теряться совсем: по ней заявка попадает в
@@ -205,10 +205,17 @@ export async function getOrderById(orderId: string): Promise<OrderWithItems | nu
   return all.find((o) => o.orderId === orderId) ?? null;
 }
 
-export async function createOrder(input: NewOrderInput): Promise<string> {
-  const orderId = generateId("ORD");
-  const createdAt = new Date().toISOString();
-
+/**
+ * Строки новой заявки — шапка и позиции — без записи. Нужны отдельно, чтобы
+ * новую заявку можно было положить в ОДИН атомарный запрос вместе с другими
+ * правками (перемещение в магазин: клиентская заявка уменьшается, заявка
+ * магазину появляется — целиком или никак).
+ */
+export function buildNewOrder(
+  input: NewOrderInput,
+  orderId: string = generateId("ORD"),
+  createdAt: string = new Date().toISOString()
+): { orderId: string; orderRecord: Record<string, unknown>; itemRecords: Record<string, unknown>[] } {
   const orderRecord = {
     OrderID: orderId,
     CreatedAt: createdAt,
@@ -251,6 +258,11 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     UnitPrice: item.unitPrice,
     ShippedQuantity: 0,
   }));
+  return { orderId, orderRecord, itemRecords };
+}
+
+export async function createOrder(input: NewOrderInput): Promise<string> {
+  const { orderId, orderRecord, itemRecords } = buildNewOrder(input);
   // Шапка и позиции — одной атомарной записью: раньше это были два запроса, и
   // при отказе Google на втором в базе оставалась заявка без единой позиции.
   await commitAtomic([

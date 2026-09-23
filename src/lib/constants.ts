@@ -525,6 +525,8 @@ export const MONEY_LOG_ACTIONS = {
   PAYMENT_ADDED: "payment_added",
   PAYMENT_REMOVED: "payment_removed",
   REALIZATION_1C: "realization_1c",
+  // Часть заявки вернули (клиент не взял) или переместили в наш магазин.
+  ITEMS_RETURNED: "items_returned",
 } as const;
 export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
 
@@ -538,6 +540,7 @@ export const MONEY_LOG_LABELS: Record<string, string> = {
   payment_added: "Платёж",
   payment_removed: "Платёж удалён",
   realization_1c: "Номер реализации 1С",
+  items_returned: "Возврат / в магазин",
   payment: "Оплата",
   payment_cleared: "Оплата снята",
   recalculated: "Пересчёт заявки",
