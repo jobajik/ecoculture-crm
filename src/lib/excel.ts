@@ -1,3 +1,4 @@
+import { localDayKey } from "./timezone";
 import ExcelJS from "exceljs";
 import {
   FLOWER_TYPES,
@@ -311,7 +312,7 @@ export async function buildBatchesTemplate(
   sheet.getRow(1).font = { bold: true };
   sheet.getRow(1).alignment = { vertical: "middle" };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
   allowedTypes.forEach((type, idx) => {
     sheet.addRow({
       harvestDate: today,

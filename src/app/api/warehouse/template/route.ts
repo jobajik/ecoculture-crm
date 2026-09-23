@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { MISSING_FARM_MESSAGE, missingFarm } from "@/lib/access";
 import { buildBatchesTemplate } from "@/lib/excel";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 
@@ -16,6 +17,8 @@ export async function GET() {
   }
 
   // Зав. складом получает шаблон только по своему производству, админ — общий.
+  if (missingFarm(session.user.role, session.user.farm)) return new Response(MISSING_FARM_MESSAGE, { status: 403 });
+
   const farm = session.user.role === "admin" ? null : session.user.farm ?? null;
 
   const varieties = await listVarietiesByType();

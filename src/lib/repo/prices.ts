@@ -1,3 +1,4 @@
+import { localDayKey } from "../timezone";
 import { appendRows, readTable, rowToRecord, updateRows, SHEET_TABS } from "../sheets";
 import { toIsoDate } from "../sheetDate";
 import { cleanPriceKind, currentPrices, PRICE_KINDS, priceKey, type PriceRow } from "../priceList";
@@ -45,7 +46,7 @@ export async function getCurrentPrices(
   asOf?: string,
   kind: string = PRICE_KINDS.CLIENT
 ): Promise<Map<string, PriceRow>> {
-  const date = asOf ?? new Date().toISOString().slice(0, 10);
+  const date = asOf ?? localDayKey();
   return currentPrices(await listPrices(kind), date);
 }
 
@@ -67,7 +68,7 @@ export async function savePrices(
   kind: string = PRICE_KINDS.CLIENT
 ): Promise<{ updated: number; created: number }> {
   if (inputs.length === 0) return { updated: 0, created: 0 };
-  const day = date ?? new Date().toISOString().slice(0, 10);
+  const day = date ?? localDayKey();
   const want = cleanPriceKind(kind);
 
   const table = await readTable(SHEET_TABS.PRICE_HISTORY);

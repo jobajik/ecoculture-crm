@@ -1,4 +1,4 @@
-import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
+import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import type { FlowerType } from "../constants";
 import type { Batch } from "../types";
@@ -92,6 +92,35 @@ export async function createBatches(inputs: NewBatchInput[]): Promise<string[]> 
 }
 
 /** Списывает (уменьшает остаток) количество у партии — используется и при отгрузке, и при списании порчи. Бросает ошибку, если остатка не хватает. */
+/**
+ * Свежая партия и готовая запись «снять N стеблей» — для атомарной записи
+ * вместе со строкой журнала (`commitAtomic`). Отказ, если стеблей не хватает.
+ */
+export async function batchDeduction(
+  batchId: string,
+  quantity: number
+): Promise<{ batch: Batch; op: WriteOp }> {
+  const table = await readTable(SHEET_TABS.BATCHES, { fresh: true });
+  for (let i = 0; i < table.rows.length; i++) {
+    const record = rowToRecord(SHEET_TABS.BATCHES, table.rows[i]);
+    if (record.BatchID !== batchId) continue;
+    const batch = toBatch(record);
+    if (batch.quantityRemaining < quantity) {
+      throw new Error(`В партии ${batchId} осталось ${batch.quantityRemaining} шт., запрошено ${quantity}`);
+    }
+    return {
+      batch,
+      op: {
+        kind: "update",
+        tab: SHEET_TABS.BATCHES,
+        rowNumber: table.rowNumbers[i],
+        changes: { QuantityRemaining: batch.quantityRemaining - quantity },
+      },
+    };
+  }
+  throw new Error("Партия не найдена");
+}
+
 export async function deductBatchQuantity(batchId: string, quantity: number): Promise<void> {
   const ok = await updateWhere(
     SHEET_TABS.BATCHES,

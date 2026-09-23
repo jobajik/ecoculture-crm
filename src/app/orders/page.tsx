@@ -15,10 +15,15 @@ import { newOrderLinkFor } from "@/lib/newOrder";
 import OrdersTable from "@/components/OrdersTable";
 import { listUsers } from "@/lib/repo/users";
 import { nameIndex } from "@/lib/personName";
+import { localDayKey } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
-export default async function OrdersPage() {
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams?: { stage?: string };
+}) {
   const session = await getServerSession(authOptions);
   const all = await listOrdersWithItems();
   const role = session?.user?.role;
@@ -51,11 +56,11 @@ export default async function OrdersPage() {
       const scope = farmScopeFor({ role, farm: session?.user?.farm, order, email: myEmail });
       if (!scope) return order;
       const items = order.items.filter((i) => getFarmFor(i.flowerType) === scope);
-      return {
-        ...order,
-        items,
-        totalAmount: items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),
-      };
+      const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+      // Полученное — пропорционально своей доле, как на странице заявки: иначе
+      // «ждёт остатка оплаты» в списке называл бы сумму, которой не бывает.
+      const share = order.totalAmount > 0 ? totalAmount / order.totalAmount : 0;
+      return { ...order, items, totalAmount, paidAmount: order.paidAmount * share };
     })
     .filter((order) => order.items.length > 0);
 
@@ -94,7 +99,12 @@ export default async function OrdersPage() {
         <p className="text-sm text-ink-secondary mb-4">Только {farmLabel(farm)}</p>
       )}
       {!farm && <div className="mb-4" />}
-      <OrdersTable orders={orders} managerNames={managerNames} />
+      <OrdersTable
+        orders={orders}
+        managerNames={managerNames}
+        today={localDayKey()}
+        initialFilter={searchParams?.stage}
+      />
     </div>
   );
 }

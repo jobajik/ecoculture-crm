@@ -1,3 +1,4 @@
+import "./timezone";
 import { google, sheets_v4 } from "googleapis";
 import { SHEET_HEADERS, SHEET_TABS } from "./constants";
 import { sheetSafeText } from "./sheetCell";
@@ -136,7 +137,7 @@ export function isQuotaError(err: unknown): boolean {
 }
 
 export const QUOTA_MESSAGE =
-  "Google временно ограничил число обращений к таблице — не больше 60 в минуту на человека. " +
+  "Google временно ограничил число обращений к таблице — лимит общий на всю компанию. " +
   "Подождите минуту и повторите. Если это случилось во время отгрузки, сначала обновите " +
   "страницу и посмотрите, что уже отгружено.";
 
@@ -192,7 +193,10 @@ async function fetchTable(tabName: string): Promise<SheetTable> {
     spreadsheetId: getSpreadsheetId(),
     range: `${tabName}!A:ZZ`,
   });
-  const values = res.data.values ?? [];
+  return toSheetTable(tabName, (res.data.values ?? []) as string[][]);
+}
+
+function toSheetTable(tabName: string, values: string[][]): SheetTable {
   if (values.length === 0) {
     return { headers: SHEET_HEADERS[tabName] ?? [], rows: [], rowNumbers: [] };
   }
@@ -351,7 +355,16 @@ export async function updateRows(
   }));
 }
 
-/** Находит первую запись, для которой predicate(record) истинен, и обновляет её через updater. Возвращает true, если запись найдена и обновлена. */
+/**
+ * Находит первую запись, для которой predicate(record) истинен, и обновляет её
+ * через updater. Возвращает true, если запись найдена.
+ *
+ * Пишутся ТОЛЬКО изменившиеся ячейки, а не строка целиком. Раньше строка
+ * переписывалась вся — значениями, прочитанными за долю секунды до записи. Если
+ * в эту долю секунды кто-то другой менял в той же строке другое поле (склад
+ * ставил статус, бухгалтер — сумму оплаты), его правка молча откатывалась.
+ * Аудит сентября нашёл, что так и бывает: см. `commitAtomic`.
+ */
 export async function updateWhere(
   tabName: string,
   predicate: (record: Record<string, string>) => boolean,
@@ -361,12 +374,163 @@ export async function updateWhere(
   for (let i = 0; i < table.rows.length; i++) {
     const record = rowToRecord(tabName, table.rows[i]);
     if (predicate(record)) {
-      const updated = updater(record);
-      await updateRow(tabName, table.rowNumbers[i], { ...record, ...updated });
+      const changes = changedCells(record, updater(record));
+      if (Object.keys(changes).length > 0) {
+        await commitAtomic([{ kind: "update", tab: tabName, rowNumber: table.rowNumbers[i], changes }]);
+      }
       return true;
     }
   }
   return false;
+}
+
+/** Только те поля, чьё значение действительно меняется (в виде, как его покажет таблица). */
+export function changedCells(
+  before: Record<string, string>,
+  after: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(after)) {
+    const next = value === null || value === undefined ? "" : String(value);
+    if (next !== (before[key] ?? "")) out[key] = value;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Атомарная запись: всё или ничего, одним запросом.
+//
+// Отгрузка раньше писалась ЧЕТЫРЬМЯ запросами подряд: остаток партии,
+// «отгружено» по позиции, статус заявки, журнал отгрузок. Google Sheets
+// транзакций не знает, и когда четвёртый запрос упирался в лимит, первые три
+// уже были записаны. Аудит живой базы в сентябре нашёл ровно это: 18 позиций,
+// у которых «отгружено» больше суммы журнала, и 25 партий, опустевших без
+// единой строки отгрузки, — 2 820 стеблей ушли без следа в отчётах.
+//
+// `spreadsheets.batchUpdate` Google применяет целиком или никак, поэтому все
+// шаги одного действия собираются в один такой запрос: правка отдельных ячеек
+// (`updateCells`) и дописывание строк (`appendCells`). Плюс это один запрос к
+// лимиту вместо четырёх.
+//
+// Значения пишутся как есть, без разбора «как если бы человек набрал руками»:
+// число — числом, строка — строкой. Текст, начинающийся с «+» или «=», поэтому
+// не превращается в формулу (грабли 1.9-ter), а «2026-09-18» остаётся текстом и
+// не становится серийным числом (грабли 1.9-bis). Строка из одних цифр пишется
+// числом — как было при прежней записи, чтобы суммы в самой таблице считались.
+// ---------------------------------------------------------------------------
+
+export type WriteOp =
+  | { kind: "update"; tab: string; rowNumber: number; changes: Record<string, unknown> }
+  | { kind: "append"; tab: string; records: Record<string, unknown>[] };
+
+const NUMERIC_TEXT = /^-?(0|[1-9]\d*)(\.\d+)?$/;
+
+/** Значение ячейки для `batchUpdate`. Экспортировано ради проверки. */
+export function toCellData(value: unknown): sheets_v4.Schema$CellData {
+  if (value === null || value === undefined || value === "") return { userEnteredValue: { stringValue: "" } };
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? { userEnteredValue: { numberValue: value } } : { userEnteredValue: { stringValue: "" } };
+  }
+  if (typeof value === "boolean") return { userEnteredValue: { stringValue: value ? "TRUE" : "FALSE" } };
+  const text = String(value);
+  if (NUMERIC_TEXT.test(text) && text.length <= 15) return { userEnteredValue: { numberValue: Number(text) } };
+  return { userEnteredValue: { stringValue: text } };
+}
+
+let sheetIdCache: { at: number; ids: Map<string, number> } | null = null;
+const SHEET_ID_TTL_MS = 10 * 60 * 1000;
+
+async function sheetIdOf(tabName: string): Promise<number> {
+  const now = Date.now();
+  if (!sheetIdCache || now - sheetIdCache.at > SHEET_ID_TTL_MS || !sheetIdCache.ids.has(tabName)) {
+    const sheets = getSheetsClient();
+    const meta = await callGoogle(() =>
+      sheets.spreadsheets.get({ spreadsheetId: getSpreadsheetId(), fields: "sheets.properties" })
+    );
+    const ids = new Map<string, number>();
+    for (const s of meta.data.sheets ?? []) {
+      if (s.properties?.title && typeof s.properties.sheetId === "number") ids.set(s.properties.title, s.properties.sheetId);
+    }
+    sheetIdCache = { at: now, ids };
+  }
+  const id = sheetIdCache.ids.get(tabName);
+  if (id === undefined) throw new Error(`Лист «${tabName}» не найден`);
+  return id;
+}
+
+/** Все записи — одним запросом, который Google применяет целиком или никак. */
+export async function commitAtomic(ops: WriteOp[]): Promise<void> {
+  const requests: sheets_v4.Schema$Request[] = [];
+  for (const op of ops) {
+    const headers = SHEET_HEADERS[op.tab] ?? [];
+    const sheetId = await sheetIdOf(op.tab);
+    if (op.kind === "update") {
+      for (const [column, value] of Object.entries(op.changes)) {
+        const col = headers.indexOf(column);
+        if (col < 0) throw new Error(`Колонки «${column}» нет во вкладке «${op.tab}»`);
+        requests.push({
+          updateCells: {
+            range: {
+              sheetId,
+              startRowIndex: op.rowNumber - 1,
+              endRowIndex: op.rowNumber,
+              startColumnIndex: col,
+              endColumnIndex: col + 1,
+            },
+            rows: [{ values: [toCellData(value)] }],
+            fields: "userEnteredValue",
+          },
+        });
+      }
+    } else if (op.records.length > 0) {
+      requests.push({
+        appendCells: {
+          sheetId,
+          rows: op.records.map((r) => ({ values: headers.map((h) => toCellData(r[h])) })),
+          fields: "userEnteredValue",
+        },
+      });
+    }
+  }
+  if (requests.length === 0) return;
+  const sheets = getSheetsClient();
+  await writeThrough(() =>
+    sheets.spreadsheets.batchUpdate({ spreadsheetId: getSpreadsheetId(), requestBody: { requests } })
+  );
+}
+
+/**
+ * Прочитать несколько вкладок ОДНИМ запросом и положить их в память чтений.
+ *
+ * Все сотрудники ходят в таблицу под одним доступом (refresh-токен владельца),
+ * поэтому лимит Google «60 чтений в минуту» у них ОБЩИЙ, а не у каждого свой.
+ * Страница, которой нужны заявки, позиции, клиенты и партии, раньше стоила
+ * четыре чтения; после этого вызова — одно, а следующие `readTable` в течение
+ * трёх секунд берут готовое.
+ */
+export async function prefetchTables(tabNames: string[]): Promise<void> {
+  const now = Date.now();
+  const need = tabNames.filter((t) => {
+    const memo = readMemo.get(t);
+    return !(memo && now - memo.at < READ_MEMO_MS);
+  });
+  if (need.length === 0) return;
+  const sheets = getSheetsClient();
+  try {
+    const res = await callGoogle(() =>
+      sheets.spreadsheets.values.batchGet({
+        spreadsheetId: getSpreadsheetId(),
+        ranges: need.map((t) => `${t}!A:ZZ`),
+      })
+    );
+    need.forEach((tab, i) => {
+      const table = toSheetTable(tab, (res.data.valueRanges?.[i]?.values ?? []) as string[][]);
+      readMemo.set(tab, { at: now, promise: Promise.resolve(table) });
+    });
+  } catch {
+    // Пакет не прочитался (например, одной из вкладок ещё нет) — не беда:
+    // каждый `readTable` дальше прочитает свою вкладку сам, как раньше.
+  }
 }
 
 /**

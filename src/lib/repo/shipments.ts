@@ -1,4 +1,4 @@
-import { appendRows, readTable, rowToRecord, SHEET_TABS, updateRows } from "../sheets";
+import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { toIsoDateTime } from "../sheetDate";
 import { generateId } from "../id";
 import type { Shipment } from "../types";
@@ -37,25 +37,46 @@ export interface NewShipmentsInput {
 }
 
 /**
- * Регистрирует отгрузку позиции заявки из одной или нескольких партий:
+ * Регистрирует отгрузку позиции заявки из одной или нескольких партий.
+ * Тонкая обёртка над `createOrderShipments` — отгрузкой нескольких позиций разом.
+ */
+export async function createShipments(input: NewShipmentsInput): Promise<string[]> {
+  return createOrderShipments({
+    orderId: input.orderId,
+    warehouseEmail: input.warehouseEmail,
+    lines: [{ itemId: input.itemId, parts: input.parts }],
+  });
+}
+
+export interface OrderShipmentLine {
+  itemId: string;
+  parts: ShipmentPart[];
+}
+
+/**
+ * Отгрузка одной или нескольких позиций заявки:
  * 1) проверяет все части разом — до первой записи,
  * 2) списывает остатки партий,
- * 3) увеличивает отгруженное по позиции,
+ * 3) увеличивает отгруженное по позициям,
  * 4) пересчитывает статус заявки,
  * 5) пишет по строке журнала на каждую партию.
  *
- * Таблица читается ОДИН раз на вкладку и свежей, а пишется пакетами: четыре
- * записи на всю отгрузку, сколько бы партий в ней ни было. Раньше одна партия
- * стоила десятка чтений, и отгрузка из десяти партий упиралась в лимит Google
- * (см. комментарий у `readTable` в src/lib/sheets.ts).
- *
- * Google Sheets не даёт настоящих транзакций, поэтому в случае сбоя между
- * шагами возможна рассинхронизация — она видна и легко правится вручную в
- * таблице (это осознанный компромисс для небольшой компании). Все проверки
- * сделаны до первой записи, так что обычный отказ ничего не оставляет.
+ * Таблица читается один раз на вкладку и свежей, а пишется ОДНИМ атомарным
+ * запросом (`commitAtomic`): все пять шагов применяются целиком или никак.
+ * Раньше это были четыре отдельных записи, и при отказе Google на последней
+ * склад списывался, а журнал отгрузок — нет (аудит сентября: 2 820 стеблей без
+ * следа). Если один сорт идёт в двух позициях из одной партии, остаток партии
+ * учитывается общий — вторая позиция не может взять то, что уже взяла первая.
  */
-export async function createShipments(input: NewShipmentsInput): Promise<string[]> {
-  const parts = input.parts.map((p) => ({ batchId: p.batchId, quantity: Number(p.quantity) }));
+export async function createOrderShipments(input: {
+  orderId: string;
+  warehouseEmail: string;
+  lines: OrderShipmentLine[];
+}): Promise<string[]> {
+  const lines = input.lines
+    .map((l) => ({ itemId: l.itemId, parts: l.parts.map((p) => ({ batchId: p.batchId, quantity: Number(p.quantity) })) }))
+    .filter((l) => l.parts.length > 0);
+  if (lines.length === 0) throw new Error("Отметьте хотя бы одну партию");
 
   const [batchTable, itemTable, orderTable] = await Promise.all([
     readTable(SHEET_TABS.BATCHES, { fresh: true }),
@@ -63,45 +84,53 @@ export async function createShipments(input: NewShipmentsInput): Promise<string[
     readTable(SHEET_TABS.ORDERS, { fresh: true }),
   ]);
 
-  // Партии: запись + номер строки, чтобы потом переписать ровно её.
   const batchRows = new Map<string, { record: Record<string, string>; rowNumber: number }>();
   batchTable.rows.forEach((row, i) => {
     const record = rowToRecord(SHEET_TABS.BATCHES, row);
     batchRows.set(record.BatchID, { record, rowNumber: batchTable.rowNumbers[i] });
   });
-  const batches = new Map(
-    Array.from(batchRows.entries()).map(([id, b]) => [id, toBatch(b.record)])
-  );
+  // Рабочая копия остатков: уменьшается по мере проверки позиций.
+  const batches = new Map(Array.from(batchRows.entries()).map(([id, b]) => [id, toBatch(b.record)]));
 
   const orderItems = itemTable.rows.map((row, i) => ({
     record: rowToRecord(SHEET_TABS.ORDER_ITEMS, row),
     rowNumber: itemTable.rowNumbers[i],
   }));
-  const itemRow = orderItems.find((r) => r.record.ItemID === input.itemId) ?? null;
-  const item = itemRow ? toOrderItem(itemRow.record) : null;
 
-  const refusal = shipmentPartsRefusal({ orderId: input.orderId, item, batches, parts });
-  if (refusal) throw new Error(refusal);
-  if (!itemRow || !item) throw new Error("Позиция заявки не найдена");
+  const ops: WriteOp[] = [];
+  const shippedNow = new Map<string, number>();
+  const taken = new Map<string, number>();
+  for (const line of lines) {
+    const itemRow = orderItems.find((r) => r.record.ItemID === line.itemId) ?? null;
+    const item = itemRow ? toOrderItem(itemRow.record) : null;
+    const refusal = shipmentPartsRefusal({ orderId: input.orderId, item, batches, parts: line.parts });
+    if (refusal) throw new Error(lines.length > 1 && item ? `${item.variety} ${item.grade}: ${refusal}` : refusal);
+    if (!itemRow || !item) throw new Error("Позиция заявки не найдена");
+    for (const p of line.parts) {
+      const b = batches.get(p.batchId)!;
+      batches.set(p.batchId, { ...b, quantityRemaining: b.quantityRemaining - p.quantity });
+      taken.set(p.batchId, (taken.get(p.batchId) ?? 0) + p.quantity);
+    }
+    const total = line.parts.reduce((s, p) => s + p.quantity, 0);
+    shippedNow.set(line.itemId, item.shippedQuantity + total);
+    ops.push({
+      kind: "update",
+      tab: SHEET_TABS.ORDER_ITEMS,
+      rowNumber: itemRow.rowNumber,
+      changes: { ShippedQuantity: item.shippedQuantity + total },
+    });
+  }
 
-  // 1. Остатки партий — одним запросом.
-  await updateRows(
-    SHEET_TABS.BATCHES,
-    parts.map((p) => {
-      const b = batchRows.get(p.batchId)!;
-      const remaining = Number(b.record.QuantityRemaining) || 0;
-      return { rowNumber: b.rowNumber, record: { ...b.record, QuantityRemaining: remaining - p.quantity } };
-    })
-  );
+  for (const [batchId, qty] of taken) {
+    const b = batchRows.get(batchId)!;
+    ops.push({
+      kind: "update",
+      tab: SHEET_TABS.BATCHES,
+      rowNumber: b.rowNumber,
+      changes: { QuantityRemaining: (Number(b.record.QuantityRemaining) || 0) - qty },
+    });
+  }
 
-  // 2. Отгружено по позиции.
-  const total = parts.reduce((s, p) => s + p.quantity, 0);
-  const shippedNow = item.shippedQuantity + total;
-  await updateRows(SHEET_TABS.ORDER_ITEMS, [
-    { rowNumber: itemRow.rowNumber, record: { ...itemRow.record, ShippedQuantity: shippedNow } },
-  ]);
-
-  // 3. Статус заявки — по свежим позициям с учётом этой отгрузки.
   const orderIndex = orderTable.rows.findIndex(
     (row) => rowToRecord(SHEET_TABS.ORDERS, row).OrderID === input.orderId
   );
@@ -111,31 +140,30 @@ export async function createShipments(input: NewShipmentsInput): Promise<string[
       .filter((r) => r.record.OrderID === input.orderId)
       .map((r) => {
         const it = toOrderItem(r.record);
-        return r.record.ItemID === input.itemId ? { ...it, shippedQuantity: shippedNow } : it;
+        const now = shippedNow.get(r.record.ItemID);
+        return now === undefined ? it : { ...it, shippedQuantity: now };
       });
     const next = statusAfterShipping(orderRecord.Status, itemsNow);
     if (next !== orderRecord.Status) {
-      await updateRows(SHEET_TABS.ORDERS, [
-        { rowNumber: orderTable.rowNumbers[orderIndex], record: { ...orderRecord, Status: next } },
-      ]);
+      ops.push({ kind: "update", tab: SHEET_TABS.ORDERS, rowNumber: orderTable.rowNumbers[orderIndex], changes: { Status: next } });
     }
   }
 
-  // 4. Журнал — строка на партию: так по журналу видно, из какого ведра что ушло.
   const createdAt = new Date().toISOString();
-  const ids = parts.map(() => generateId("SHIP"));
-  await appendRows(
-    SHEET_TABS.SHIPMENTS,
-    parts.map((p, i) => ({
-      ShipmentID: ids[i],
+  const journal = lines.flatMap((line) =>
+    line.parts.map((p) => ({
+      ShipmentID: generateId("SHIP"),
       CreatedAt: createdAt,
       OrderID: input.orderId,
-      ItemID: input.itemId,
+      ItemID: line.itemId,
       BatchID: p.batchId,
       Quantity: p.quantity,
       WarehouseEmail: input.warehouseEmail,
       Notes: "",
     }))
   );
-  return ids;
+  ops.push({ kind: "append", tab: SHEET_TABS.SHIPMENTS, records: journal });
+
+  await commitAtomic(ops);
+  return journal.map((j) => j.ShipmentID);
 }

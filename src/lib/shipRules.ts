@@ -154,3 +154,76 @@ export function statusAfterShipping(
   if (items.some((i) => i.shippedQuantity > 0)) return "in_progress";
   return status;
 }
+
+// ---------------------------------------------------------------------------
+// «Отгрузить всю заявку» — одним нажатием
+//
+// По журналу видно, как склад отгружал: заявка из девяти позиций — девять
+// отдельных отгрузок, серии по десять записей с интервалом в минуту. На это
+// уходило время, и отметку откладывали: 63 % отгрузок по живой базе отмечены
+// уже после дня доставки. Теперь программа сама раскладывает всю заявку по
+// партиям — от старых срезок к свежим (та же подсказка FIFO, что и в ручной
+// отгрузке), а человек видит раскладку и подтверждает одним нажатием. Ручной
+// выбор партий остаётся для случаев, когда нужно отдать не самую старую.
+// ---------------------------------------------------------------------------
+
+export interface WholeShipItem {
+  itemId: string;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  quantity: number;
+  shippedQuantity: number;
+}
+
+export interface WholeShipBatch {
+  batchId: string;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  harvestDate: string;
+  quantityRemaining: number;
+}
+
+export interface WholeShipPlan {
+  lines: { itemId: string; parts: { batchId: string; quantity: number }[] }[];
+  /** Сколько стеблей отгрузится. */
+  total: number;
+  /** Чего не хватает на складе: позиция и сколько стеблей. */
+  shortages: { itemId: string; label: string; missing: number }[];
+}
+
+const norm = (s: string) => s.trim().toLowerCase();
+
+export function planWholeOrderShipment(items: WholeShipItem[], batches: WholeShipBatch[]): WholeShipPlan {
+  const left = new Map(batches.map((b) => [b.batchId, Math.max(0, b.quantityRemaining)]));
+  const lines: WholeShipPlan["lines"] = [];
+  const shortages: WholeShipPlan["shortages"] = [];
+  let total = 0;
+  for (const item of items) {
+    let need = Math.max(0, item.quantity - item.shippedQuantity);
+    if (need === 0) continue;
+    const pool = batches
+      .filter(
+        (b) =>
+          b.flowerType === item.flowerType &&
+          norm(b.variety) === norm(item.variety) &&
+          norm(b.grade) === norm(item.grade) &&
+          (left.get(b.batchId) ?? 0) > 0
+      )
+      .sort((a, b) => (a.harvestDate < b.harvestDate ? -1 : a.harvestDate > b.harvestDate ? 1 : 0));
+    const parts: { batchId: string; quantity: number }[] = [];
+    for (const b of pool) {
+      if (need === 0) break;
+      const take = Math.min(need, left.get(b.batchId) ?? 0);
+      if (take <= 0) continue;
+      parts.push({ batchId: b.batchId, quantity: take });
+      left.set(b.batchId, (left.get(b.batchId) ?? 0) - take);
+      need -= take;
+      total += take;
+    }
+    if (parts.length > 0) lines.push({ itemId: item.itemId, parts });
+    if (need > 0) shortages.push({ itemId: item.itemId, label: `${item.variety} ${item.grade}`, missing: need });
+  }
+  return { lines, total, shortages };
+}

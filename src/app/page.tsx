@@ -1,125 +1,97 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import { authOptions } from "@/lib/auth";
 import { getStockSnapshot } from "@/lib/stock";
-import { farmLabel, flowerTypesForFarm, isFarmBoundRole } from "@/lib/constants";
+import { CLAIM_STATUSES, farmLabel, flowerTypesForFarm, getFarmFor, isFarmBoundRole, ROLES } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
-import HomeFocusBoard from "@/components/HomeFocus";
+import HomeFocusBoard, { HomeFocusStrip } from "@/components/HomeFocus";
 import { homeFocus } from "@/lib/homeFocus";
 import { listOrdersWithItems } from "@/lib/repo/orders";
+import { listBatches } from "@/lib/repo/batches";
+import { getSettings } from "@/lib/repo/settings";
+import { listClaims } from "@/lib/repo/claims";
+import { computeBatchStorageInfo } from "@/lib/shelfLife";
+import { localDayKey } from "@/lib/timezone";
+import { MISSING_FARM_MESSAGE, missingFarm } from "@/lib/access";
+import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function HomePage() {
+/**
+ * Главная — «что у вас сегодня», а не одна и та же сводка склада для всех.
+ *
+ * Аудит сентября: у всех ролей главная была тремя экранами остатков. Владелец
+ * видел четыре цифры, которые никуда не вели, а предупреждения лежали в
+ * «Аналитика → Отчёт»; бухгалтеру склад не нужен вовсе; у зав. складом очередь
+ * начиналась с 3,5-го экрана. Теперь наверху — своя работа роли (`homeFocus`),
+ * у владельца и РОПа — ранжированный список «Требует внимания», где каждая
+ * строка ведёт в уже отфильтрованный список. Плитки «Разделы» убраны: они
+ * повторяли меню.
+ */
+export default async function HomePage({ searchParams }: { searchParams?: { error?: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
-  const role = session.user?.role ?? "manager";
+  // Без роли — никуда (грабли 1.10): раньше здесь подставлялась роль менеджера.
+  const role = session.user?.role;
+  if (!role) {
+    return <div className="card max-w-xl">Для вашей почты не назначена роль. Обратитесь к администратору.</div>;
+  }
+  if (missingFarm(role, session.user?.farm)) {
+    return <div className="card max-w-xl">{MISSING_FARM_MESSAGE}</div>;
+  }
+
   // Зав. складом и агроном привязаны к производству — им и остатки показываем
   // только по своему цветку. Остальные роли видят всё.
   const farm = isFarmBoundRole(role) ? session.user?.farm ?? null : null;
-  const snapshot = await getStockSnapshot(new Date(), undefined, farm);
+  const withClaims = role === ROLES.ADMIN || role === ROLES.ACCOUNTANT || role === ROLES.SALES_HEAD;
 
-  // «Что у вас сегодня» — короткий блок про СВОЮ работу. До него главная у всех
-  // была одной и той же сводкой по складу: зав. складом это ровно её дело, а
-  // менеджеру — три экрана чужих цифр, под которыми лежит кнопка «Принять
-  // заявку» (на телефоне девять экранов прокрутки). Считается чистой функцией
-  // из уже прочитанных заявок — `scripts/check-home-focus.ts`.
+  // Всё, что нужно главной, — одним запросом к Google (лимит у компании общий).
+  await prefetchTables([
+    SHEET_TABS.ORDERS,
+    SHEET_TABS.ORDER_ITEMS,
+    SHEET_TABS.CLIENTS,
+    SHEET_TABS.BATCHES,
+    SHEET_TABS.SETTINGS,
+    ...(withClaims ? [SHEET_TABS.CLAIMS] : []),
+  ]);
   const now = new Date();
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-    now.getDate()
-  ).padStart(2, "0")}`;
+  const [snapshot, orders, batches, settings, claims] = await Promise.all([
+    getStockSnapshot(now, undefined, farm),
+    listOrdersWithItems(),
+    listBatches(),
+    getSettings(),
+    withClaims ? listClaims().catch(() => []) : Promise.resolve([]),
+  ]);
+
+  const inStock = batches.filter((b) => b.quantityRemaining > 0 && (!farm || getFarmFor(b.flowerType) === farm));
+  const expiredStems = inStock
+    .map((b) => computeBatchStorageInfo(b, settings, now))
+    // «Просрочено» — то же правило, что у сводки склада ниже (`computeBatchStorageInfo`):
+    // два разных числа об одном и том же на одном экране читаются как ошибка.
+    .filter((i) => i.status === "critical")
+    .reduce((s, i) => s + i.batch.quantityRemaining, 0);
+
   const focus = homeFocus({
     role,
     email: session.user?.email ?? "",
-    orders: await listOrdersWithItems(),
-    todayKey,
+    orders,
+    todayKey: localDayKey(now),
+    extras: {
+      expiredStems,
+      stockStems: inStock.reduce((s, b) => s + b.quantityRemaining, 0),
+      openClaims: claims.filter((c) => c.status === CLAIM_STATUSES.NEW).length,
+    },
   });
-
-  // На главной — только разделы, по одному на область работы. Подстраницы
-  // открываются вкладками внутри раздела, чтобы не заваливать человека выбором.
-  const cards = [
-    {
-      href: "/orders/new",
-      title: "Принять заявку",
-      desc: "Новая заявка клиента",
-      show: role === "manager" || role === "admin",
-      emoji: "📝",
-    },
-    {
-      href: "/orders",
-      title: "Заявки",
-      desc: "Все заявки и их статусы",
-      show: true,
-      emoji: "📋",
-    },
-    {
-      href: "/warehouse",
-      title: "Склад",
-      desc: "Отгрузка, сборка, приёмка",
-      show: role === "warehouse" || role === "admin",
-      emoji: "📦",
-    },
-    {
-      href: "/finance",
-      title: "Оплаты",
-      desc: "Оплаты, долги, отчёт",
-      show: role === "accountant" || role === "admin",
-      emoji: "💳",
-    },
-    {
-      href: "/sales",
-      title: "Продажи",
-      desc: "Рейтинг, бонусы, план-факт",
-      show: role === "manager" || role === "sales_head" || role === "admin",
-      emoji: "🏆",
-    },
-    {
-      href: "/plans",
-      title: "Планы",
-      desc:
-        role === "admin"
-          ? "Продажи, отгрузки, срезка"
-          : "Продажи и отгрузки",
-      show: role === "sales_head" || role === "admin",
-      emoji: "🎯",
-    },
-    {
-      href: "/forecast",
-      title: "Прогноз срезки",
-      desc: "Ростовка на месяц",
-      show: role === "agronomist",
-      emoji: "🌱",
-    },
-    {
-      href: "/analytics",
-      title: "Аналитика",
-      desc: "Продажи, цены, списания",
-      show: true,
-      emoji: "📊",
-    },
-    {
-      href: "/admin",
-      title: "Настройки",
-      desc: "Сотрудники и сроки хранения",
-      show: role === "admin",
-      emoji: "⚙️",
-    },
-  ].filter((c) => c.show);
+  const showStock = focus?.showStock ?? true;
 
   return (
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">
-            Добро пожаловать, {session.user?.name?.split(" ")[0]}
-          </h1>
-          {/* Подпись описывает страницу целиком, а не один блок на ней: с
-              появлением «что у вас сегодня» обещание «здесь про склад» стало
-              наполовину неверным. */}
+          <h1 className="text-xl font-semibold">Здравствуйте, {session.user?.name?.split(" ")[0]}</h1>
           {farm && <p className="text-ink-secondary">Производство {farmLabel(farm)}</p>}
         </div>
         {/* Логотип компании — только на широком экране, чтобы не съедать место на телефоне. */}
@@ -133,24 +105,15 @@ export default async function HomePage() {
         />
       </div>
 
+      {searchParams?.error === "nofarm" && <div className="card text-sm">{MISSING_FARM_MESSAGE}</div>}
+
+      {focus && !focus.aboveStock && <HomeFocusStrip focus={focus} />}
+
       {focus?.aboveStock && <HomeFocusBoard focus={focus} />}
 
-      <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />
+      {showStock && <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />}
 
       {focus && !focus.aboveStock && <HomeFocusBoard focus={focus} />}
-
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Разделы</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {cards.map((c) => (
-            <Link key={c.href} href={c.href} className="card hover:shadow-md transition-shadow">
-              <div className="text-2xl mb-2">{c.emoji}</div>
-              <div className="font-medium mb-1">{c.title}</div>
-              <div className="text-sm text-ink-secondary">{c.desc}</div>
-            </Link>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

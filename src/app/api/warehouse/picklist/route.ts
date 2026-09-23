@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { MISSING_FARM_MESSAGE, missingFarm } from "@/lib/access";
 import { getPicklist } from "@/lib/picklist";
 import { buildPicklistWorkbook } from "@/lib/excel";
 
@@ -12,6 +13,8 @@ export async function GET(request: Request) {
   if (session.user.role !== "warehouse" && session.user.role !== "admin") {
     return new Response("Недостаточно прав", { status: 403 });
   }
+
+  if (missingFarm(session.user.role, session.user.farm)) return new Response(MISSING_FARM_MESSAGE, { status: 403 });
 
   const params = new URL(request.url).searchParams;
   const dateParam = params.get("date");

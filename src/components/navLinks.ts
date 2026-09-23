@@ -90,8 +90,29 @@ const RETAIL_HREF_BY_ROLE: Record<string, string> = {
   warehouse: "/retail/regions",
 };
 
+/**
+ * Что у роли идёт ПЕРВЫМ. На телефоне в нижнюю панель помещаются четыре пункта,
+ * остальное уходит под «Ещё», — и аудит сентября нашёл, что у владельца под
+ * «Ещё» оказались Оплаты и Склад, у склада «Розница» стояла раньше «Склада», а у
+ * бухгалтера «Клиенты» раньше «Оплат». Порядок здесь — по тому, что человек
+ * открывает каждый день; не упомянутые пункты идут следом в общем порядке.
+ */
+const FIRST_BY_ROLE: Record<string, string[]> = {
+  admin: ["/", "/orders", "/finance", "/warehouse"],
+  warehouse: ["/", "/warehouse", "/orders", "/retail"],
+  accountant: ["/", "/finance", "/orders", "/clients"],
+  sales_head: ["/", "/orders", "/sales", "/finance"],
+};
+
 export function navLinksFor(role: string): NavLink[] {
-  return NAV_LINKS.filter((l) => !l.roles || l.roles.includes(role)).map((link) => {
+  const first = FIRST_BY_ROLE[role] ?? [];
+  const rank = (l: NavLink) => {
+    const i = first.indexOf(l.href);
+    return i === -1 ? first.length + NAV_LINKS.indexOf(l) : i;
+  };
+  return NAV_LINKS.filter((l) => !l.roles || l.roles.includes(role))
+    .sort((a, b) => rank(a) - rank(b))
+    .map((link) => {
     if (link.href === "/analytics" && ANALYTICS_HREF_BY_ROLE[role]) {
       return { ...link, href: ANALYTICS_HREF_BY_ROLE[role], match: "/analytics" };
     }

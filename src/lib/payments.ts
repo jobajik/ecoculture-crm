@@ -191,6 +191,47 @@ export function splitPaymentLines(
   };
 }
 
+/** Окно, в котором одинаковый платёж считается повтором, а не вторым платежом. */
+export const DUPLICATE_PAYMENT_WINDOW_MS = 2 * 60 * 1000;
+
+/**
+ * Не повтор ли это только что внесённого платежа.
+ *
+ * Двойное нажатие, повтор запроса после сбоя связи, тот же перевод, внесённый с
+ * компьютера и с телефона, — все выглядят как «та же сумма, тот же день, тот же
+ * способ по той же заявке, минуту назад». Два настоящих одинаковых платежа за
+ * две минуты почти не бывают, а если бывают — второй вносится после паузы, и
+ * отказ говорит об этом прямо. Без этой защиты журнал и итог заявки
+ * расходились навсегда.
+ */
+export function duplicatePaymentRefusal(input: {
+  lines: { amount: number; method: string }[];
+  date: string;
+  recent: { amount: number; method: string; date: string; createdAt: string }[];
+  now: number;
+}): string {
+  for (const line of input.lines) {
+    const twin = input.recent.find((p) => {
+      const at = new Date(p.createdAt).getTime();
+      return (
+        Number.isFinite(at) &&
+        input.now - at >= 0 &&
+        input.now - at < DUPLICATE_PAYMENT_WINDOW_MS &&
+        Math.abs(p.amount - line.amount) < 0.01 &&
+        p.method === line.method &&
+        p.date === input.date
+      );
+    });
+    if (twin) {
+      return (
+        `Такой платёж (${Math.round(line.amount).toLocaleString("ru-RU")} ₸, ${line.method}) по этой заявке ` +
+        "внесён меньше двух минут назад. Если это действительно второй платёж — подождите пару минут и внесите снова."
+      );
+    }
+  }
+  return "";
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }

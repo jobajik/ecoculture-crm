@@ -12,8 +12,10 @@ import { unwrapValue } from "@/lib/actionResult";
 import { formatDay } from "@/lib/formatDate";
 import {
   DEFAULT_WRITEOFF_REASON,
+  RECOUNT_REASON,
   positionKey,
   positionLabel,
+  recountLines,
   type StockPosition,
   type WriteoffLine,
   type WriteoffPlan,
@@ -30,8 +32,17 @@ const REASONS = [DEFAULT_WRITEOFF_REASON, "Брак", "Сломан при сб�
  * сервер раскладывает по партиям от старых к свежим и показывает, откуда что
  * снимет → «Списать». До нажатия второй кнопки ничего не пишется.
  */
-export default function WriteoffBulkForm({ positions }: { positions: StockPosition[] }) {
+export default function WriteoffBulkForm({
+  positions,
+  initialMode = "writeoff",
+}: {
+  positions: StockPosition[];
+  /** «recount» — пересчёт: вписывают, сколько лежит на самом деле. */
+  initialMode?: "writeoff" | "recount";
+}) {
   const router = useRouter();
+  const [mode, setMode] = useState<"writeoff" | "recount">(initialMode);
+  const recount = mode === "recount";
   const fileRef = useRef<HTMLInputElement>(null);
   const [qty, setQty] = useState<Record<string, string>>({});
   const [reason, setReason] = useState(DEFAULT_WRITEOFF_REASON);
@@ -59,7 +70,15 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
       quantity: Number(qty[positionKey(p)]),
       reason,
     }));
-  const lines = fileLines ?? manualLines;
+  // В пересчёте пустое поле — «не считали», а «0» — «не осталось ни одного».
+  const recounted = recountLines(
+    positions,
+    Object.fromEntries(
+      Object.entries(qty).map(([k, v]) => [k, v === "" || v === undefined ? undefined : Number(v)])
+    ),
+    RECOUNT_REASON
+  );
+  const lines = recount ? recounted.lines : fileLines ?? manualLines;
   const linesTotal = lines.reduce((s, l) => s + (Number(l.quantity) || 0), 0);
 
   async function handleFile(file: File) {
@@ -131,8 +150,48 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
 
   const planOk = plan && !plan.result.errors.some(Boolean);
 
+  function switchMode(next: "writeoff" | "recount") {
+    setMode(next);
+    setQty({});
+    setPlan(null);
+    setDone(null);
+    setError(null);
+    clearFile();
+  }
+
   return (
     <div className="space-y-6">
+      <div className="inline-flex rounded-lg border border-line-hairline p-1 bg-surface-plane" role="tablist">
+        {(
+          [
+            ["writeoff", "Списать количество"],
+            ["recount", "Пересчёт: сколько лежит"],
+          ] as const
+        ).map(([m, label]) => (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={mode === m}
+            onClick={() => switchMode(m)}
+            className={clsx(
+              "px-3 py-1.5 rounded-md text-sm",
+              mode === m ? "bg-surface shadow-sm font-medium" : "text-ink-secondary"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {recount && (
+        <p className="text-sm text-ink-secondary -mt-3">
+          Впишите, сколько <b>фактически</b> лежит. Разницу программа спишет сама, со старых партий. Пустое
+          поле — позицию не считали.
+        </p>
+      )}
+
+      {!recount && (
       <div className="card space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -172,10 +231,12 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
         )}
       </div>
 
-      {!fileLines && (
+      )}
+
+      {(recount || !fileLines) && (
         <div className="card !p-0">
           <div className="p-4 flex flex-wrap items-end justify-between gap-3 border-b border-line-hairline">
-            <h2 className="font-medium">Вручную</h2>
+            <h2 className="font-medium">{recount ? "Позиции склада" : "Вручную"}</h2>
             <input
               className="input !w-56"
               placeholder="Найти сорт…"
@@ -189,7 +250,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
                   <th className="px-4 py-2.5 font-medium">Позиция</th>
                   <th className="px-3 py-2.5 font-medium text-right">На складе</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Списать, шт</th>
+                  <th className="px-3 py-2.5 font-medium text-right">{recount ? "Фактически, шт" : "Списать, шт"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -202,9 +263,14 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
                       <td data-label="На складе" className="px-3 py-2 text-right tabular-nums text-ink-secondary">
                         {nf(p.stock)}
                       </td>
-                      <td data-label="Списать, шт" className="px-3 py-2 text-right">
+                      <td data-label={recount ? "Фактически, шт" : "Списать, шт"} className="px-3 py-2 text-right">
                         <input
-                          className={clsx("input !w-28 text-right", v > p.stock && "!border-status-critical")}
+                          id={`wo-${k}`}
+                          className={clsx(
+                            "input !w-28 text-right",
+                            !recount && v > p.stock && "!border-status-critical",
+                            recount && qty[k] !== undefined && qty[k] !== "" && v > p.stock && "!border-status-warning"
+                          )}
                           inputMode="numeric"
                           value={qty[k] ?? ""}
                           placeholder="—"
@@ -232,6 +298,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
 
       <div className="card space-y-3">
         <div className="grid sm:grid-cols-2 gap-3">
+          {!recount && (
           <label className="text-sm">
             <span className="label">Причина {fileLines && "(если нет в файле)"}</span>
             <input
@@ -249,6 +316,7 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
               ))}
             </datalist>
           </label>
+          )}
           <label className="text-sm">
             <span className="label">Примечание</span>
             <input
@@ -262,6 +330,18 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
             />
           </label>
         </div>
+
+        {recount && recounted.surplus.length > 0 && (
+          <div className="text-sm text-[#8a5a00] bg-status-warning/10 rounded-lg px-3 py-2">
+            Больше, чем в программе: {recounted.surplus.map((x) => `${x.label} +${nf(x.extra)}`).join("; ")}. Это
+            непринятая срезка — оформите её приёмкой, списание по этим позициям не нужно.
+          </div>
+        )}
+        {recount && recounted.counted > 0 && recounted.lines.length === 0 && recounted.surplus.length === 0 && (
+          <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">
+            Посчитанное сходится с программой — списывать нечего.
+          </div>
+        )}
 
         {plan && (
           <div className="border border-line-hairline rounded-lg overflow-hidden">
@@ -299,7 +379,9 @@ export default function WriteoffBulkForm({ positions }: { positions: StockPositi
         <div className="flex flex-wrap items-center gap-3">
           {!planOk ? (
             <button type="button" className="btn-primary" disabled={busy || lines.length === 0} onClick={check}>
-              {busy ? "Проверяю…" : `Проверить${linesTotal > 0 ? ` · ${nf(linesTotal)} шт.` : ""}`}
+              {busy
+                ? "Проверяю…"
+                : `Проверить${linesTotal > 0 ? ` · ${recount ? "спишется " : ""}${nf(linesTotal)} шт.` : ""}`}
             </button>
           ) : (
             <>

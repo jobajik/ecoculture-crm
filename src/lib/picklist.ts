@@ -81,6 +81,12 @@ export interface Picklist {
    * перейти одним нажатием.
    */
   nearbyDates: { date: string; orders: number; stems: number }[];
+  /**
+   * Заявки, чья доставка РАНЬШЕ выбранного дня, а свой цветок по ним ещё не
+   * отгружен целиком. Лист показывает ровно один день, и вчерашняя
+   * неотгруженная заявка просто исчезала с глаз — по живой базе таких было 28.
+   */
+  overdue: { orders: number; stems: number };
 }
 
 function toDateKey(value: string): string {
@@ -237,6 +243,17 @@ export async function getPicklist(
   const before = allDates.filter((d) => d.date < date).slice(-5);
   const after = allDates.filter((d) => d.date > date).slice(0, 5);
   const nearbyDates = [...before, ...after];
+  const overdue = { orders: 0, stems: 0 };
+  for (const o of active) {
+    const day = toDateKey(o.deliveryDate);
+    if (!day || day >= date) continue;
+    const left = o.items
+      .filter((i) => belongsToFarm(i.flowerType))
+      .reduce((sum, i) => sum + Math.max(0, i.quantity - (Number(i.shippedQuantity) || 0)), 0);
+    if (left <= 0) continue;
+    overdue.orders += 1;
+    overdue.stems += left;
+  }
 
   const picklistOrders = forDate
     .map(toPicklistOrder)
@@ -268,6 +285,7 @@ export async function getPicklist(
     orders: picklistOrders,
     ordersWithoutDate: withoutDate.map(toPicklistOrder).filter((o) => o.items.length > 0),
     nearbyDates,
+    overdue,
   };
 }
 

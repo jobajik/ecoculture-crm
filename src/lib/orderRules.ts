@@ -18,6 +18,8 @@ export interface CancelCheckOrder {
   status: string;
   managerEmail: string;
   items: { shippedQuantity: number }[];
+  /** Сколько денег уже получено: отменять заявку с деньгами нельзя. */
+  paidAmount?: number;
   /** Направление собственной розницы; пусто — обычная продажа наружу. */
   retail?: string;
   /** Вид заявки: «region» — оптовый объём на город. */
@@ -71,6 +73,15 @@ export function cancelRefusal(
       "а отмена стёрла бы его из всех отчётов. Уменьшите количество через рекламацию."
     );
   }
+  // Деньги по отменённой заявке пропадают из кассы и долгов, а снять платёж с
+  // отменённой уже нельзя — то есть поступление исчезло бы из учёта целиком.
+  const paid = Number(order.paidAmount) || 0;
+  if (paid > 1) {
+    return (
+      `По заявке уже получено ${Math.round(paid).toLocaleString("ru-RU")} ₸ — отменить нельзя, ` +
+      "иначе деньги пропадут из кассы. Сначала бухгалтер снимает платёж или оформляет возврат."
+    );
+  }
   return "";
 }
 
@@ -111,12 +122,14 @@ export function confirmRefusal(
   email: string | null | undefined,
   confirmed: boolean
 ): string {
+  // Снять подтверждение с отгруженной поздно; поставить его на отменённую —
+  // значит открыть ей отгрузку (так и было: проверка готовности отмену не видела).
   const closed =
-    !confirmed && isClosed(order.status)
-      ? order.status === ORDER_STATUSES.SHIPPED
+    order.status === ORDER_STATUSES.CANCELLED
+      ? "Заявка отменена"
+      : !confirmed && order.status === ORDER_STATUSES.SHIPPED
         ? "Заявка отгружена — снимать подтверждение поздно"
-        : "Заявка отменена"
-      : "";
+        : "";
 
   if (role === ROLES.ADMIN) return closed;
 

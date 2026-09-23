@@ -23,6 +23,7 @@ import { farmPayments, invoiceByFarm } from "@/lib/orderMoney";
 import { appendPayments, deletePayment, listPayments } from "@/lib/repo/payments";
 import {
   addPaymentRefusal,
+  duplicatePaymentRefusal,
   joinRealizations,
   methodOfPayments,
   parseRealizations,
@@ -46,6 +47,7 @@ import {
   ROLES,
 } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
+import { forgetReads } from "@/lib/sheets";
 
 /**
  * Заявка в наш магазин деньгами не сопровождается вовсе: счёта нет, платить
@@ -650,6 +652,10 @@ async function addPaymentActionInner(input: {
   const email = await requireAccountant();
   const session = await getServerSession(authOptions);
 
+  // Заявка — СВЕЖАЯ: новый итог считается как «прежний итог + платёж», и
+  // прежний итог трёхсекундной давности означал бы потерянный платёж, если
+  // рядом его только что внесли с другого устройства.
+  forgetReads();
   const order = await getOrderById(input.orderId);
   if (!order) throw new Error("Заявка не найдена");
   const invoice = invoiceByFarm(order.items);
@@ -675,6 +681,16 @@ async function addPaymentActionInner(input: {
 
   const farm = invoice.length > 1 ? input.farm : invoice[0]?.farm ?? "";
   const amount = Math.round(total * 100) / 100;
+
+  // Повтор того же платежа: второе нажатие, повтор после сбоя связи или то же
+  // поступление, внесённое с другого устройства. Правило — `duplicatePaymentRefusal`.
+  const dup = duplicatePaymentRefusal({
+    lines: split.lines,
+    date: input.date,
+    recent: (await listPayments({ fresh: true })).filter((p) => p.orderId === order.orderId),
+    now: Date.now(),
+  });
+  if (dup) throw new Error(dup);
 
   // Сначала журнал, потом итог: если второй запрос не дойдёт, платежи будут
   // видны строками, а разница с итогом — отдельной строкой «вне журнала», и её

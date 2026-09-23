@@ -95,6 +95,9 @@ export default function RetailOrderForm({
         clientName: shop.name,
         clientPhone: "",
         deliveryDate,
+        // Заявку в свой магазин менеджер розницы и составляет, и подтверждает —
+        // отдельная галочка следом была лишним шагом.
+        confirmed: true,
         items: items.map((it) => ({
           flowerType: it.flowerType,
           variety: it.variety.trim(),

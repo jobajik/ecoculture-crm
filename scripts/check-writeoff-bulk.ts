@@ -6,7 +6,7 @@
  * Запуск: npx tsx scripts/check-writeoff-bulk.ts
  */
 import ExcelJS from "exceljs";
-import { planWriteoffs, stockPositions, cleanReason } from "../src/lib/writeoffPlan";
+import { planWriteoffs, stockPositions, cleanReason, recountLines, positionKey, RECOUNT_REASON } from "../src/lib/writeoffPlan";
 import { buildWriteoffTemplate, parseWriteoffWorkbook } from "../src/lib/excel";
 
 let fails = 0;
@@ -87,6 +87,29 @@ async function main() {
 
   const bad = await parseWriteoffWorkbook(new ArrayBuffer(10));
   check("не Excel — понятная ошибка", Boolean(bad.fatalError), true);
+
+  console.log("\n— Пересчёт: вписывают факт, списывается разница —");
+  {
+    const pos = [
+      { flowerType: "rose", variety: "Avalanche", grade: "60", stock: 500 },
+      { flowerType: "rose", variety: "Kamala", grade: "50", stock: 200 },
+      { flowerType: "rose", variety: "Jana", grade: "50", stock: 80 },
+      { flowerType: "rose", variety: "Freedom", grade: "70", stock: 40 },
+    ];
+    const r = recountLines(pos, {
+      [positionKey(pos[0])]: 320,
+      [positionKey(pos[1])]: 200,
+      [positionKey(pos[2])]: 95,
+      // Freedom не считали — поле пустое.
+    });
+    check("списывается разница: 500 − 320 = 180", r.lines.map((l) => [l.variety, l.quantity]), [["Avalanche", 180]]);
+    check("причина — пересчёт", r.lines[0]?.reason, RECOUNT_REASON);
+    check("совпало — ничего не списывается", r.lines.some((l) => l.variety === "Kamala"), false);
+    check("больше, чем в программе — не списание, а подсказка про приёмку", r.surplus, [{ label: "Роза Jana · 50 см", extra: 15 }]);
+    check("пустое поле — не «ноль», позицию просто не считали", r.counted, 3);
+    const zero = recountLines(pos, { [positionKey(pos[3])]: 0 });
+    check("вписан ноль — списывается всё", zero.lines.map((l) => l.quantity), [40]);
+  }
 
   console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

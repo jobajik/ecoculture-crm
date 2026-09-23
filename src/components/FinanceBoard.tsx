@@ -19,7 +19,7 @@ const FILTER_LABELS: Record<Filter, string> = {
   unpaid: "Не оплачены",
   partial: "Оплачены частично",
   paid: "Оплачены",
-  ready: "Готовы к сборке",
+  ready: "Готовы к отгрузке",
 };
 
 /** Сколько колонок в таблице — под colSpan. */

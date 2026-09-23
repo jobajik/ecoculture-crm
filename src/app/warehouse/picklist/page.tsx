@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getPicklist } from "@/lib/picklist";
@@ -42,6 +43,21 @@ export default async function PicklistPage({
       <div className="mb-4">
         <SectionTabs tabs={WAREHOUSE_TABS} />
       </div>
+      {picklist.overdue.orders > 0 && (
+        <Link
+          href="/warehouse"
+          className="no-print card !py-3 mb-4 flex flex-wrap items-center justify-between gap-2 border-status-critical/40 text-sm"
+        >
+          <span>
+            <span className="font-medium text-status-critical">
+              Не отгружено с прошлых дней: {picklist.overdue.orders} заявок,{" "}
+              {picklist.overdue.stems.toLocaleString("ru-RU")} шт.
+            </span>{" "}
+            <span className="text-ink-secondary">Их нет в листе на этот день.</span>
+          </span>
+          <span className="text-series-1 whitespace-nowrap">В очередь склада →</span>
+        </Link>
+      )}
       <PicklistView picklist={picklist} canSwitchFarm={isAdmin} />
     </div>
   );

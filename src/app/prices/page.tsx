@@ -1,3 +1,4 @@
+import { localDayKey } from "@/lib/timezone";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
@@ -50,7 +51,7 @@ export default async function PricesPage({
   ]);
 
   const changeDays = priceChangeDays(all);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
   const sinceChange = daysSinceLastChange(changeDays, today);
   const filled = Array.from(prices.values()).filter((r) => r.price > 0).length;
 

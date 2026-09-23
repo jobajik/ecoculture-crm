@@ -73,6 +73,10 @@ export default function OrderForm({
   const [paymentMethod, setPaymentMethod] = useState(methodOf(initialClient));
   const [methodTouched, setMethodTouched] = useState(false);
   const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties, prices)]);
+  // «Согласовано с клиентом» — подтверждение сразу при оформлении. По живой
+  // базе менеджер жал отдельную галочку в ту же минуту, то есть это был лишний
+  // шаг на каждую заявку. Снять — если состав ещё обсуждается.
+  const [confirmed, setConfirmed] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,6 +105,7 @@ export default function OrderForm({
         notes,
         direction,
         paymentMethod,
+        confirmed,
         items: items.map((it) => ({
           flowerType: it.flowerType,
           variety: it.variety.trim(),
@@ -209,9 +214,21 @@ export default function OrderForm({
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>
       )}
 
-      <button type="submit" disabled={submitting} className="btn-primary">
-        {submitting ? "Сохранение…" : "Создать заявку"}
-      </button>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <button type="submit" disabled={submitting} className="btn-primary">
+          {submitting ? "Сохранение…" : "Создать заявку"}
+        </button>
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            id="order-confirmed"
+            type="checkbox"
+            className="w-5 h-5 accent-accent"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+          />
+          Согласовано с клиентом — можно собирать
+        </label>
+      </div>
     </form>
   );
 }

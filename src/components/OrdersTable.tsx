@@ -2,14 +2,22 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ORDER_STATUS_LABELS, FLOWER_TYPE_LABELS } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { OrderWithItems } from "@/lib/types";
-import OrderStatusBadge from "./OrderStatusBadge";
+import OrderStageBadge from "./OrderStageBadge";
 import ItemsCell from "./ItemsCell";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import { formatDay } from "@/lib/formatDate";
-import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { byUrgency, orderStage, STAGE_LABELS, STAGE_ORDER, type OrderStage } from "@/lib/orderStage";
 import { personName, type NameByEmail } from "@/lib/personName";
+
+/** Фильтр списка: этап заявки, «опаздывают» или все. */
+export const STAGE_FILTERS: { value: string; label: string }[] = [
+  { value: "all", label: "Все заявки" },
+  { value: "open", label: "Открытые" },
+  { value: "late", label: "Опаздывают" },
+  ...STAGE_ORDER.map((k) => ({ value: k, label: STAGE_LABELS[k] })),
+];
 
 /**
  * Список заявок.
@@ -34,17 +42,36 @@ import { personName, type NameByEmail } from "@/lib/personName";
 export default function OrdersTable({
   orders,
   managerNames = {},
+  today,
+  initialFilter = "all",
 }: {
   orders: OrderWithItems[];
   /** Почта → имя из вкладки `Users`. Без неё в колонке стоял бы адрес. */
   managerNames?: NameByEmail;
+  /** Сегодня по Алматы — от сервера, чтобы опоздание не зависело от часов телефона. */
+  today: string;
+  /** Фильтр из адреса (`?stage=late`) — плитки главной ведут сразу в нужный список. */
+  initialFilter?: string;
 }) {
-  const [status, setStatus] = useState<string>("all");
+  const [status, setStatus] = useState<string>(
+    STAGE_FILTERS.some((f) => f.value === initialFilter) ? initialFilter : "all"
+  );
   const [search, setSearch] = useState("");
 
+  // Этап считается один раз на заявку: им пользуются фильтр, сортировка и бейдж.
+  const stages = useMemo(() => {
+    const m = new Map<string, OrderStage>();
+    for (const o of orders) m.set(o.orderId, orderStage(o, today));
+    return m;
+  }, [orders, today]);
+  const stageOf = (o: OrderWithItems) => stages.get(o.orderId)!;
+
   const filtered = useMemo(() => {
-    return orders.filter((o) => {
-      if (status !== "all" && o.status !== status) return false;
+    const list = orders.filter((o) => {
+      const st = stages.get(o.orderId)!;
+      if (status === "open" && (st.key === "shipped" || st.key === "cancelled")) return false;
+      if (status === "late" && st.lateDays <= 0) return false;
+      if (status !== "all" && status !== "open" && status !== "late" && st.key !== status) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         const haystack = `${o.clientName} ${o.managerEmail} ${o.orderId}`.toLowerCase();
@@ -52,7 +79,9 @@ export default function OrdersTable({
       }
       return true;
     });
-  }, [orders, status, search]);
+    // В рабочих отборах — сначала те, что опаздывают сильнее всего.
+    return status === "all" ? list : [...list].sort(byUrgency((o: OrderWithItems) => stages.get(o.orderId)!));
+  }, [orders, stages, status, search]);
 
   // Заявок со временем накопится много. Показываем начало списка, остальное по
   // кнопке; при поиске и фильтре по статусу показываем всё найденное — там
@@ -68,11 +97,16 @@ export default function OrdersTable({
   return (
     <div>
       <div className="flex flex-wrap gap-3 mb-4">
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="input !w-auto">
-          <option value="all">Все статусы</option>
-          {Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
+        <select
+          id="orders-stage"
+          aria-label="Этап заявки"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="input !w-auto"
+        >
+          {STAGE_FILTERS.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
             </option>
           ))}
         </select>
@@ -94,12 +128,12 @@ export default function OrdersTable({
               <th className="px-4 py-3 font-medium">Позиции</th>
               <th className="px-4 py-3 font-medium text-right">Сумма</th>
               <th className="px-4 py-3 font-medium">Доставка</th>
-              <th className="px-4 py-3 font-medium">Статус</th>
+              <th className="px-4 py-3 font-medium">Этап</th>
             </tr>
           </thead>
           <tbody>
             {shown.map((o) => {
-              const reason = o.status === "new" && !isReadyToShip(o) ? notReadyReason(o) : "";
+              const stage = stageOf(o);
               return (
                 <tr
                   key={o.orderId}
@@ -135,30 +169,15 @@ export default function OrdersTable({
                   <td className="px-4 py-3 text-ink-secondary whitespace-nowrap" data-label="Доставка">
                     {formatDay(o.deliveryDate)}
                   </td>
-                  {/* Под статусом — готовность к сборке. Статус отвечает на
-                      вопрос «где заявка в своей жизни», готовность — на вопрос
-                      «что мешает её собрать», и это разные вопросы. Раньше
-                      второй ответ был только внутри заявки: в списке у всех
-                      строк стояло одинаковое «Новая», и понять, какая из своих
-                      заявок застряла, можно было только открыв каждую. */}
-                  <td className="px-4 py-3">
-                    <OrderStatusBadge status={o.status} />
-                    {o.status === "new" &&
-                      (isReadyToShip(o) ? (
-                        <div className="text-xs text-status-good mt-1 whitespace-nowrap">
-                          ✓✓ можно собирать
-                        </div>
-                      ) : (
-                        // Причина обрезается по ширине, а не переносится: целиком
-                        // она есть в подсказке и на самой заявке, а здесь важнее,
-                        // чтобы строки списка стояли ровно.
-                        <div
-                          className="text-xs text-ink-muted mt-1 truncate max-w-[150px]"
-                          title={reason}
-                        >
-                          {reason}
-                        </div>
-                      ))}
+                  {/* Один этап вместо пары «статус + готовность»: раньше у всех
+                      строк стояло одинаковое «Новая», а что мешает собрать
+                      заявку, было написано мелко под ним и пятью разными
+                      словами на разных экранах (`orderStage`). */}
+                  <td className="px-4 py-3" data-label="Этап">
+                    <OrderStageBadge stage={stage} compact />
+                    {stage.actor && (
+                      <div className="text-xs text-ink-muted mt-1 whitespace-nowrap">ход: {stage.actor}</div>
+                    )}
                   </td>
                 </tr>
               );

@@ -4,7 +4,9 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listBatches } from "@/lib/repo/batches";
 import { getSettings } from "@/lib/repo/settings";
 import { computeBatchStorageInfo } from "@/lib/shelfLife";
-import OrderStatusBadge from "@/components/OrderStatusBadge";
+import OrderStageBadge from "@/components/OrderStageBadge";
+import { byUrgency, orderStage } from "@/lib/orderStage";
+import { localDayKey } from "@/lib/timezone";
 import { FLOWER_TYPE_LABELS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -12,7 +14,7 @@ import { authOptions } from "@/lib/auth";
 import SectionTabs from "@/components/SectionTabs";
 import { WAREHOUSE_TABS } from "./tabs";
 import { formatDay } from "@/lib/formatDate";
-import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { creditNote, isReadyToShip } from "@/lib/orderReady";
 
 export const dynamic = "force-dynamic";
 
@@ -34,17 +36,21 @@ export default async function WarehousePage() {
     }))
     .filter((o) => o.items.length > 0);
 
+  // В очереди — то, что ещё есть отгружать СВОИМ цветком: заявка, по которой
+  // своё уже уехало целиком, здесь только мешает (раньше она висела с кнопкой
+  // «Отгрузить» при 600/600). Сначала опоздавшие — давние выше, дальше по дню
+  // доставки (`byUrgency`): по живой базе 63 % отгрузок отмечались уже после
+  // дня доставки, и главная причина — прошлые заявки терялись среди будущих.
+  const today = localDayKey();
+  const stageOf = (o: (typeof scoped)[number]) => orderStage(o, today);
   const pending = scoped
-    .filter((o) => o.status === "new" || o.status === "in_progress" || o.status === "ready")
-    .sort((a, b) => {
-      const da = a.deliveryDate || "9999-12-31";
-      const db = b.deliveryDate || "9999-12-31";
-      return da < db ? -1 : da > db ? 1 : 0;
-    });
+    .filter((o) => {
+      const k = stageOf(o).key;
+      return k !== "shipped" && k !== "cancelled";
+    })
+    .sort(byUrgency(stageOf));
+  const lateCount = pending.filter((o) => isReadyToShip(o) && stageOf(o).lateDays > 0).length;
 
-  // Заявку видно в обоих случаях — зав. складом должна знать, что готовится.
-  // Но собирать и выдавать можно только ту, где менеджер подтвердил и
-  // бухгалтер провёл оплату. Поэтому два списка, а не одна кнопка с отказом.
   const readyToShip = pending.filter((o) => isReadyToShip(o));
   const waiting = pending.filter((o) => !isReadyToShip(o));
 
@@ -80,26 +86,43 @@ export default async function WarehousePage() {
 
       {alerts.length > 0 && (
         <div className="card mb-6 border-status-warning/40">
-          <h2 className="font-medium mb-2">⚠ Истекает срок хранения</h2>
+          <h2 className="font-medium mb-2">⚠ Срок хранения</h2>
           <ul className="text-sm space-y-1">
             {alerts.map((a) => (
-              <li key={a.batch.batchId} className="flex justify-between text-ink-secondary">
-                <span>
-                  {FLOWER_TYPE_LABELS[a.batch.flowerType]} {a.batch.variety} — {a.batch.quantityRemaining} шт.
+              <li key={a.batch.batchId} className="flex justify-between gap-3 text-ink-secondary">
+                <span className="min-w-0 truncate">
+                  {FLOWER_TYPE_LABELS[a.batch.flowerType]} {a.batch.variety} — {a.batch.quantityRemaining.toLocaleString("ru-RU")} шт.
                 </span>
-                <span className={a.status === "critical" ? "text-status-critical font-medium" : "text-[#8a5a00] font-medium"}>
-                  {a.daysInStorage} из {a.maxDays} дней
+                <span
+                  className={
+                    "shrink-0 whitespace-nowrap font-medium " +
+                    (a.status === "critical" ? "text-status-critical" : "text-[#8a5a00]")
+                  }
+                >
+                  {a.daysInStorage} дн.{a.daysInStorage >= a.maxDays ? ` · срок ${a.maxDays}` : ` из ${a.maxDays}`}
                 </span>
               </li>
             ))}
           </ul>
-          <Link href="/warehouse/batches" className="text-sm text-series-1 mt-2 inline-block">
-            Все партии →
-          </Link>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm">
+            <Link href="/warehouse/batches" className="text-series-1">
+              Все партии →
+            </Link>
+            <Link href="/warehouse/writeoff?mode=recount" className="text-series-1">
+              Сверить остаток →
+            </Link>
+          </div>
         </div>
       )}
 
-      <h2 className="font-medium mb-2">Можно отгружать</h2>
+      <h2 className="font-medium mb-2">
+        Можно отгружать
+        {lateCount > 0 && (
+          <span className="ml-2 badge bg-status-critical/10 text-status-critical align-middle">
+            опаздывают: {lateCount}
+          </span>
+        )}
+      </h2>
       <div className="card !p-0 table-scroll table-cards mb-6">
         <table className="w-full text-sm">
           <thead>
@@ -108,7 +131,7 @@ export default async function WarehousePage() {
               <th className="px-4 py-3 font-medium">Клиент</th>
               <th className="px-4 py-3 font-medium">Доставка</th>
               <th className="px-4 py-3 font-medium">Позиции</th>
-              <th className="px-4 py-3 font-medium">Статус</th>
+              <th className="px-4 py-3 font-medium">Этап</th>
               <th className="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
@@ -130,8 +153,8 @@ export default async function WarehousePage() {
                     width="max-w-[260px]"
                   />
                 </td>
-                <td className="px-4 py-3">
-                  <OrderStatusBadge status={o.status} />
+                <td className="px-4 py-3" data-label="Этап">
+                  <OrderStageBadge stage={stageOf(o)} compact />
                   {creditNote(o) && (
                     <div className="text-xs text-[#8a5a00] mt-1 whitespace-nowrap">{creditNote(o)}</div>
                   )}
@@ -156,7 +179,7 @@ export default async function WarehousePage() {
 
       {waiting.length > 0 && (
         <>
-          <h2 className="font-medium mb-2">Ждут подтверждения</h2>
+          <h2 className="font-medium mb-2">Ждут подтверждения или оплаты</h2>
           <div className="card !p-0 table-scroll table-cards">
             <table className="w-full text-sm">
               <thead>
@@ -191,10 +214,8 @@ export default async function WarehousePage() {
                         width="max-w-[260px]"
                       />
                     </td>
-                    <td className="px-4 py-3 text-[#8a5a00]" data-label="Чего ждём">
-                      <div className="truncate max-w-[210px]" title={notReadyReason(o)}>
-                        {notReadyReason(o)}
-                      </div>
+                    <td className="px-4 py-3" data-label="Чего ждём">
+                      <OrderStageBadge stage={stageOf(o)} compact showActor />
                     </td>
                   </tr>
                 ))}

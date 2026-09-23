@@ -71,14 +71,29 @@ const m = homeFocus({
 check("менеджеру блок показывается выше склада", m?.aboveStock, true);
 check("можно собирать — только с обеими галочками", value(m, "Можно собирать"), "2");
 check("ждут галочки менеджера", value(m, "Ждут вашей галочки"), "1");
-check("без даты доставки", value(m, "Без даты доставки"), "1");
+check("без даты доставки — строкой «требует внимания»", m?.attention?.[0]?.label, "Без даты доставки: 1");
 check("всего открытых — без отгруженных и отменённых", value(m, "Всего открытых"), "4");
 check("у менеджера есть кнопка новой заявки", m?.action?.href, "/orders/new");
 check(
   "заявка без даты помечена тревожно — она выпадает из листа сборки",
-  m?.stats.find((s) => s.label === "Без даты доставки")?.tone,
+  m?.attention?.[0]?.tone,
   "critical"
 );
+check("плитка ведёт в отфильтрованный список, а не в общий", m?.stats.find((s) => s.label === "Ждут вашей галочки")?.href, "/orders?stage=wait_confirm");
+
+// Опоздание: доставка прошла, заявка не отгружена.
+const lateM = homeFocus({
+  role: ROLES.MANAGER,
+  email: "emil@x.kz",
+  orders: [
+    order({ orderId: "L1", deliveryDate: day(-3), items: [{ quantity: 10, shippedQuantity: 0 }] }),
+    order({ orderId: "L2", deliveryDate: day(-3), items: [{ quantity: 10, shippedQuantity: 10 }] }),
+    order({ orderId: "L3", status: "in_progress", deliveryDate: day(-1), items: [{ quantity: 10, shippedQuantity: 4 }] }),
+  ],
+  todayKey: TODAY,
+});
+check("опаздывают — не отгруженные с прошедшей доставкой (частичные тоже)", value(lateM, "Опаздывают"), "2");
+check("частично отгруженная — открытая (раньше выпадала из счёта)", value(lateM, "Всего открытых"), "2");
 
 // Всё в порядке — ничего не мигает красным.
 const calm = homeFocus({
@@ -134,6 +149,7 @@ check("просрочено — только по просроченным за�
 check("заявка без даты доставки считается от дня оформления", value(acc, "Заявок в просрочке"), "3");
 
 check("бухгалтеру блок выше склада", acc?.aboveStock, true);
+check("бухгалтеру склад на главной не показывается", acc?.showStock, false);
 check("бухгалтеру кнопки новой заявки нет", acc?.action, undefined);
 
 const rop = homeFocus({
@@ -142,12 +158,9 @@ const rop = homeFocus({
   orders: moneyOrders,
   todayKey: TODAY,
 });
-check("у РОПа те же цифры, что у бухгалтера", value(rop, "Должны нам"), money(840_000));
-check(
-  "но написано, что это только просмотр",
-  rop?.subtitle.includes("просмотр"),
-  true
-);
+check("у РОПа те же деньги, что у бухгалтера", value(rop, "Должны нам всего"), money(840_000));
+check("РОП видит просрочку", value(rop, "Просрочено"), money(790_000));
+check("и написано, что оплаты отмечает бухгалтер", rop?.subtitle.includes("бухгалтер"), true);
 
 // --- Зав. складом ----------------------------------------------------------
 const whOrders: FocusOrder[] = [
@@ -162,6 +175,7 @@ const wh = homeFocus({
   todayKey: TODAY,
 });
 check("можно отгружать", value(wh, "Можно отгружать"), "2");
+check("у склада строка очереди над сводкой", wh?.strip?.text, "К отгрузке: 2");
 check("ждут", value(wh, "Ждут"), "1");
 check("доставка сегодня — считает и неготовые", value(wh, "Доставка сегодня"), "2");
 check(
@@ -175,9 +189,22 @@ check("кнопка ведёт в лист сборки", wh?.action?.href, "/wa
 // --- Администратор ---------------------------------------------------------
 // Владельцу нужен не свой участок, а то, что стоит на месте.
 const adm = homeFocus({ role: ROLES.ADMIN, email: "a@x.kz", orders: moneyOrders.concat(whOrders), todayKey: TODAY });
-check("у админа блок есть и он про затыки", adm?.title, "Где сейчас затык");
+check("у админа блок «Требует внимания»", adm?.title, "Требует внимания");
 check("админ видит просрочку", value(adm, "Просрочено"), money(790_000));
-check("админ видит стоящие заявки", value(adm, "Заявки стоят"), "6");
+check("просрочка долгов — в списке внимания со ссылкой на долги", adm?.attention?.find((a) => a.href === "/finance/debts")?.tone, "critical");
+const admX = homeFocus({
+  role: ROLES.ADMIN,
+  email: "a@x.kz",
+  orders: [order({ orderId: "OVER", paidAmount: 640_000, totalAmount: 100_000 })],
+  todayKey: TODAY,
+  extras: { expiredStems: 5000, stockStems: 20000, openClaims: 2 },
+});
+check(
+  "переплата, залежавшийся склад и рекламации — в списке внимания",
+  admX?.attention?.map((a) => a.href),
+  ["/warehouse/writeoff?mode=recount", "/finance", "/finance/claims"]
+);
+check("25 % склада просрочено — красным", admX?.attention?.[0]?.tone, "critical");
 check(
   "пустая база у админа ничего не красит",
   homeFocus({ role: ROLES.ADMIN, email: "a@x.kz", orders: [], todayKey: TODAY })?.stats.every(

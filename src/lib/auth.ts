@@ -1,3 +1,4 @@
+import "./timezone";
 import type { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getUserByEmail } from "./repo/users";

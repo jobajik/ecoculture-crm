@@ -24,8 +24,10 @@ import {
   editHeaderRefusal,
   editItemsRefusal,
   editedItemsRefusal,
+  newOrderDateRefusal,
   type EditedItem,
 } from "@/lib/orderEdit";
+import { localDayKey } from "@/lib/timezone";
 import { getClientById } from "@/lib/repo/clients";
 import { canFillRegions, canOrderForShop, isOwnShop, isRetailRole } from "@/lib/retail";
 import {
@@ -77,6 +79,17 @@ async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">
   if (!input.items || input.items.length === 0) {
     throw new Error("Добавьте хотя бы одну позицию в заявку");
   }
+  // Позиции и дату проверяем по тем же правилам, что и при правке: раньше
+  // оформление принимало что угодно — ноль и минус в количестве, отрицательную
+  // цену, выдуманную градацию, дату с опечаткой в годе (аудит сентября).
+  const itemsRefusal = editedItemsRefusal({
+    current: [],
+    next: input.items.map((i) => ({ ...i, itemId: "" })),
+    region: false,
+  });
+  if (itemsRefusal) throw new Error(itemsRefusal);
+  const dateRefusal = newOrderDateRefusal(input.deliveryDate, localDayKey());
+  if (dateRefusal) throw new Error(dateRefusal);
 
   // На кого оформлена заявка — на клиента или на наш магазин, — решает КАРТОЧКА,
   // а не то, что прислал браузер (грабли 1.11). Отсюда же берётся направление
@@ -128,11 +141,27 @@ async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">
 
   const orderId = await createOrder({
     ...input,
+    // Имя — из карточки, а не из браузера: это снимок на момент оформления.
+    clientName: client.name,
+    clientPhone: (input.clientPhone || "").trim() || client.phone || "",
+    confirmed: input.confirmed === true,
     retail: shop ? client.retail : "",
     direction,
     paymentMethod: shop ? "" : paymentMethod,
     managerEmail: session.user.email,
   });
+  if (input.confirmed === true) {
+    // Подтверждение при оформлении — такое же событие, как отдельная галочка,
+    // и в журнале должно выглядеть так же.
+    await logMoney({
+      actorEmail: session.user.email,
+      orderId,
+      action: MONEY_LOG_ACTIONS.MANAGER_CONFIRMED,
+      details: "Подтверждена при оформлении",
+      amountBefore: 0,
+      amountAfter: 0,
+    });
+  }
   revalidatePath("/orders");
   revalidatePath("/retail");
   revalidatePath("/plans/regions");

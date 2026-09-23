@@ -321,3 +321,30 @@ export function cleanDeliveryDate(value: string | null | undefined): string {
   }
   return raw;
 }
+
+/**
+ * Разумна ли дата доставки НОВОЙ заявки.
+ *
+ * Правка давно проверяла дату, а оформление — нет: сервер принимал любую
+ * строку, и «2062-09-18» или «2026-02-31» уходили в базу (опечатка в годе —
+ * обычное дело на телефоне). Задним числом до недели можно: заявку иногда
+ * вносят после того, как цветок уже уехал. Вперёд — не дальше двух месяцев:
+ * дальше это почти наверняка опечатка, а не договорённость.
+ */
+export const NEW_ORDER_BACKDATE_DAYS = 7;
+export const NEW_ORDER_AHEAD_DAYS = 62;
+
+export function newOrderDateRefusal(value: string | null | undefined, today: string): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const clean = cleanDeliveryDate(raw);
+  if (!clean) return "Дата доставки указана неверно";
+  const days = Math.round(
+    (new Date(`${clean}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000
+  );
+  if (days < -NEW_ORDER_BACKDATE_DAYS) {
+    return `Дата доставки больше чем на ${NEW_ORDER_BACKDATE_DAYS} дней в прошлом — проверьте год и месяц`;
+  }
+  if (days > NEW_ORDER_AHEAD_DAYS) return "Дата доставки дальше двух месяцев вперёд — проверьте год и месяц";
+  return "";
+}

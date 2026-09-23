@@ -96,10 +96,10 @@ export default function ReadyChecks({
           <h2 className="font-medium">
             {ready
               ? noInvoice
-                ? "✓ Готова к сборке"
+                ? "✓ Готова к отгрузке"
                 : credit
-                  ? "✓ Готова к сборке — в долг"
-                  : "✓✓ Готова к сборке"
+                  ? "✓ Готова к отгрузке · в долг"
+                  : "✓✓ Готова к отгрузке"
               : !managerConfirmed
                 ? "Ждёт подтверждения"
                 : "Ждёт оплаты"}

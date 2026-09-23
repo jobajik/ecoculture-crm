@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { MISSING_FARM_MESSAGE, missingFarm } from "@/lib/access";
 import { buildForecastTemplate } from "@/lib/excel";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { ROLES, isValidPeriod, periodOf } from "@/lib/constants";
@@ -18,6 +19,8 @@ export async function GET(request: Request) {
   }
 
   // Агроном получает шаблон только по своему производству, админ — общий.
+  if (missingFarm(role, session.user.farm)) return new Response(MISSING_FARM_MESSAGE, { status: 403 });
+
   const farm = role === ROLES.ADMIN ? null : session.user.farm ?? null;
 
   const requested = new URL(request.url).searchParams.get("period") ?? "";

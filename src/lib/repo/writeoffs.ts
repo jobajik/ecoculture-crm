@@ -1,8 +1,8 @@
-import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateRows } from "../sheets";
+import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import type { Writeoff } from "../types";
-import { deductBatchQuantity, getBatchById, toBatch } from "./batches";
+import { batchDeduction, toBatch } from "./batches";
 import { planWriteoffs, type WriteoffLine, type WriteoffPlan } from "../writeoffPlan";
 
 function toWriteoff(record: Record<string, string>): Writeoff {
@@ -30,26 +30,27 @@ export interface NewWriteoffInput {
 
 /** Списание испорченного/просроченного цветка из партии (порча, брак, истёк срок хранения). */
 export async function createWriteoff(input: NewWriteoffInput): Promise<string> {
-  const batch = await getBatchById(input.batchId);
-  if (!batch) throw new Error("Партия не найдена");
-  if (batch.quantityRemaining < input.quantity) {
-    throw new Error(
-      `В партии ${input.batchId} осталось ${batch.quantityRemaining} шт., к списанию запрошено ${input.quantity}`
-    );
-  }
-
-  await deductBatchQuantity(input.batchId, input.quantity);
-
+  // Остаток партии и строка журнала — одной атомарной записью: раньше это были
+  // два запроса, и при отказе Google на втором стебли пропадали без следа.
+  const { op } = await batchDeduction(input.batchId, input.quantity);
   const writeoffId = generateId("WO");
-  await appendRow(SHEET_TABS.WRITEOFFS, {
-    WriteoffID: writeoffId,
-    CreatedAt: new Date().toISOString(),
-    BatchID: input.batchId,
-    Quantity: input.quantity,
-    Reason: input.reason,
-    WarehouseEmail: input.warehouseEmail,
-  });
-
+  await commitAtomic([
+    op,
+    {
+      kind: "append",
+      tab: SHEET_TABS.WRITEOFFS,
+      records: [
+        {
+          WriteoffID: writeoffId,
+          CreatedAt: new Date().toISOString(),
+          BatchID: input.batchId,
+          Quantity: input.quantity,
+          Reason: input.reason,
+          WarehouseEmail: input.warehouseEmail,
+        },
+      ],
+    },
+  ]);
   return writeoffId;
 }
 
@@ -93,27 +94,27 @@ export async function createWriteoffsByPlan(input: {
 
   const byBatch = new Map<string, number>();
   for (const p of plan.parts) byBatch.set(p.batchId, (byBatch.get(p.batchId) ?? 0) + p.quantity);
-  await updateRows(
-    SHEET_TABS.BATCHES,
-    Array.from(byBatch.entries()).map(([batchId, qty]) => {
-      const r = rows.find((x) => x.record.BatchID === batchId)!;
-      const remaining = Number(r.record.QuantityRemaining) || 0;
-      return { rowNumber: r.rowNumber, record: { ...r.record, QuantityRemaining: remaining - qty } };
-    })
-  );
-
   const createdAt = new Date().toISOString();
   const ids = plan.parts.map(() => generateId("WO"));
-  await appendRows(
-    SHEET_TABS.WRITEOFFS,
-    plan.parts.map((p, i) => ({
-      WriteoffID: ids[i],
-      CreatedAt: createdAt,
-      BatchID: p.batchId,
-      Quantity: p.quantity,
-      Reason: p.reason,
-      WarehouseEmail: input.warehouseEmail,
-    }))
-  );
+  // Остатки партий и журнал — одной атомарной записью (см. `commitAtomic`).
+  await commitAtomic([
+    ...Array.from(byBatch.entries()).map(([batchId, qty]): WriteOp => {
+      const r = rows.find((x) => x.record.BatchID === batchId)!;
+      const remaining = Number(r.record.QuantityRemaining) || 0;
+      return { kind: "update", tab: SHEET_TABS.BATCHES, rowNumber: r.rowNumber, changes: { QuantityRemaining: remaining - qty } };
+    }),
+    {
+      kind: "append",
+      tab: SHEET_TABS.WRITEOFFS,
+      records: plan.parts.map((p, i) => ({
+        WriteoffID: ids[i],
+        CreatedAt: createdAt,
+        BatchID: p.batchId,
+        Quantity: p.quantity,
+        Reason: p.reason,
+        WarehouseEmail: input.warehouseEmail,
+      })),
+    },
+  ]);
   return { plan, ids };
 }

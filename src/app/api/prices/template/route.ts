@@ -1,3 +1,4 @@
+import { localDayKey } from "@/lib/timezone";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
   ]);
   const buffer = await buildPriceTemplate(varieties, priceMapForClient(prices));
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
   const title = kind === PRICE_KINDS.RETAIL ? "Внутренний прайс" : "Прайс-лист";
   return new NextResponse(buffer, {
     headers: {

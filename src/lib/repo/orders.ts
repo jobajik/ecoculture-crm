@@ -1,13 +1,14 @@
 import { statusAfterShipping } from "../shipRules";
 import {
-  appendRow,
-  appendRows,
+  changedCells,
+  commitAtomic,
   deleteWhere,
+  prefetchTables,
   readTable,
   rowToRecord,
   SHEET_TABS,
-  updateRows,
   updateWhere,
+  type WriteOp,
 } from "../sheets";
 import { generateId } from "../id";
 import { planItemSave } from "../orderEdit";
@@ -102,6 +103,8 @@ export interface NewOrderItemInput {
 
 export interface NewOrderInput {
   managerEmail: string;
+  /** Заявка сразу согласована с клиентом — подтверждение ставится при записи. */
+  confirmed?: boolean;
   /** Как клиент будет платить — ставит менеджер; пусто — не знает. */
   paymentMethod?: string;
   /**
@@ -156,6 +159,9 @@ async function readClientTerms(): Promise<Map<string, string>> {
 }
 
 export async function listOrdersWithItems(): Promise<OrderWithItems[]> {
+  // Три вкладки — одним запросом к Google: лимит чтений у всех сотрудников
+  // общий (один доступ на всю компанию), а заявки читает почти каждая страница.
+  await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS]);
   const [ordersTable, itemsTable, termsByClient] = await Promise.all([
     readTable(SHEET_TABS.ORDERS),
     readTable(SHEET_TABS.ORDER_ITEMS),
@@ -165,9 +171,18 @@ export async function listOrdersWithItems(): Promise<OrderWithItems[]> {
   const orders = ordersTable.rows.map((row) => toOrder(rowToRecord(SHEET_TABS.ORDERS, row)));
   const items = itemsTable.rows.map((row) => toOrderItem(rowToRecord(SHEET_TABS.ORDER_ITEMS, row)));
 
+  // Позиции раскладываются по заявкам через словарь, а не поиском для каждой
+  // заявки: на тысячах заявок перебор «каждая с каждой» стоил бы секунд.
+  const itemsByOrder = new Map<string, OrderItem[]>();
+  for (const i of items) {
+    const list = itemsByOrder.get(i.orderId);
+    if (list) list.push(i);
+    else itemsByOrder.set(i.orderId, [i]);
+  }
+
   return orders
     .map((order) => {
-      const orderItems = items.filter((i) => i.orderId === order.orderId);
+      const orderItems = itemsByOrder.get(order.orderId) ?? [];
       const totalAmount = orderItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
       // Заявки, оплаченные ДО появления частичной оплаты, несут только галочку —
       // колонка PaidAmount у них пустая. Считаем их оплаченными целиком, иначе
@@ -194,7 +209,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
   const orderId = generateId("ORD");
   const createdAt = new Date().toISOString();
 
-  await appendRow(SHEET_TABS.ORDERS, {
+  const orderRecord = {
     OrderID: orderId,
     CreatedAt: createdAt,
     ManagerEmail: input.managerEmail,
@@ -203,8 +218,12 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     DeliveryDate: input.deliveryDate,
     Status: ORDER_STATUSES.NEW,
     Notes: input.notes ?? "",
-    ManagerConfirmed: "FALSE",
-    ManagerConfirmedAt: "",
+    // Подтверждение можно поставить сразу при оформлении: по живой базе
+    // медиана между оформлением и отдельной галочкой — ноль часов, то есть
+    // менеджер всегда жал её следом. Шаг остаётся для заявок, которые ещё
+    // не согласованы с клиентом.
+    ManagerConfirmed: input.confirmed ? "TRUE" : "FALSE",
+    ManagerConfirmedAt: input.confirmed ? createdAt : "",
     Paid: "FALSE",
     PaidAt: "",
     PaymentMethod: input.paymentMethod || "",
@@ -220,7 +239,7 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     Kind: input.kind || "",
     InvoiceSentAt: "",
     InvoiceNote: "",
-  });
+  };
 
   const itemRecords = input.items.map((item, idx) => ({
     OrderID: orderId,
@@ -232,7 +251,12 @@ export async function createOrder(input: NewOrderInput): Promise<string> {
     UnitPrice: item.unitPrice,
     ShippedQuantity: 0,
   }));
-  await appendRows(SHEET_TABS.ORDER_ITEMS, itemRecords);
+  // Шапка и позиции — одной атомарной записью: раньше это были два запроса, и
+  // при отказе Google на втором в базе оставалась заявка без единой позиции.
+  await commitAtomic([
+    { kind: "append", tab: SHEET_TABS.ORDERS, records: [orderRecord] },
+    { kind: "append", tab: SHEET_TABS.ORDER_ITEMS, records: itemRecords },
+  ]);
 
   // ЗАЯВКА В ПРАЙС НЕ ПИШЕТ. Раньше писала: каждая цена из заявки уезжала во
   // вкладку PriceHistory «для аналитики динамики цен». На деле PriceHistory —
@@ -522,7 +546,9 @@ export async function saveOrderItems(
   orderId: string,
   items: SaveOrderItemInput[]
 ): Promise<{ updated: number; created: number; deleted: number }> {
-  const table = await readTable(SHEET_TABS.ORDER_ITEMS);
+  // Свежее чтение: раньше бралось запомненное (до трёх секунд старины), и если
+  // склад в эти секунды отгружал, правка возвращала «отгружено» назад.
+  const table = await readTable(SHEET_TABS.ORDER_ITEMS, { fresh: true });
   const existing = table.rows
     .map((row, idx) => ({ record: rowToRecord(SHEET_TABS.ORDER_ITEMS, row), rowNumber: table.rowNumbers[idx] }))
     .filter((r) => r.record.OrderID === orderId);
@@ -539,7 +565,7 @@ export async function saveOrderItems(
   );
   const keep = new Set(plan.keep);
 
-  const updates: { rowNumber: number; record: Record<string, unknown> }[] = [];
+  const updates: { rowNumber: number; changes: Record<string, unknown> }[] = [];
   const creates: Record<string, unknown>[] = [];
   const newIds = plan.newIds;
   let newIdx = 0;
@@ -555,11 +581,10 @@ export async function saveOrderItems(
       UnitPrice: Math.max(0, Math.round(item.unitPrice * 100) / 100),
     };
     if (row) {
-      updates.push({
-        rowNumber: row.rowNumber,
-        // Отгруженное переносим как есть: заявку правят, склад — нет.
-        record: { ...base, ItemID: item.itemId, ShippedQuantity: Number(row.record.ShippedQuantity) || 0 },
-      });
+      // Пишем только изменившиеся ячейки. «Отгружено» не пишем вовсе: заявку
+      // правят, склад — нет.
+      const changes = changedCells(row.record, base);
+      if (Object.keys(changes).length > 0) updates.push({ rowNumber: row.rowNumber, changes });
     } else {
       creates.push({ ...base, ItemID: newIds[newIdx++], ShippedQuantity: 0 });
     }
@@ -567,8 +592,10 @@ export async function saveOrderItems(
 
   // Порядок важен: сначала правки и дописывание, и только потом удаление.
   // Удаление сдвигает строки, и номера, собранные до него, стали бы чужими.
-  await updateRows(SHEET_TABS.ORDER_ITEMS, updates);
-  await appendRows(SHEET_TABS.ORDER_ITEMS, creates);
+  await commitAtomic([
+    ...updates.map((u): WriteOp => ({ kind: "update", tab: SHEET_TABS.ORDER_ITEMS, rowNumber: u.rowNumber, changes: u.changes })),
+    { kind: "append", tab: SHEET_TABS.ORDER_ITEMS, records: creates },
+  ]);
 
   const deleted =
     plan.deleted.length > 0

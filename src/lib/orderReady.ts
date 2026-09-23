@@ -31,6 +31,8 @@ import { hasNoClientInvoice, isConsignment, isRegionOrder } from "./orderKind";
  */
 
 export interface ShipGateOrder {
+  /** Статус заявки: отменённую и отгруженную целиком собирать нельзя. */
+  status?: string;
   managerConfirmed: boolean;
   paid: boolean;
   paidAmount: number;
@@ -88,6 +90,9 @@ function waitsForMoney(order: ShipGateOrder): boolean {
 
 /** Заявку можно отгружать. */
 export function isReadyToShip(order: ShipGateOrder): boolean {
+  // Отменённую не собирают, даже если галочки остались: вкладка склада,
+  // открытая до отмены, иначе отгрузила бы её (аудит сентября).
+  if (order.status === "cancelled" || order.status === "shipped") return false;
   if (!order.managerConfirmed) return false;
   if (!waitsForMoney(order)) return true;
   return order.paid || isCreditTerms(order.clientPaymentTerms);
@@ -129,6 +134,8 @@ export function missingForShip(order: ShipGateOrder): string[] {
  * Для готовой заявки возвращает пустую строку.
  */
 export function notReadyReason(order: ShipGateOrder): string {
+  if (order.status === "cancelled") return "Заявка отменена";
+  if (order.status === "shipped") return "Заявка уже отгружена";
   const missing = missingForShip(order);
   if (missing.length === 0) return "";
   return `Ждёт ${missing.join(" и ")}`;

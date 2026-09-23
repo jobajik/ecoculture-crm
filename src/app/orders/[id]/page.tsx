@@ -15,7 +15,10 @@ import {
   formatGrade,
   getFarmFor,
 } from "@/lib/constants";
-import OrderStatusBadge from "@/components/OrderStatusBadge";
+import OrderStageBadge from "@/components/OrderStageBadge";
+import { orderStage } from "@/lib/orderStage";
+import { localDayKey } from "@/lib/timezone";
+import { nameIndex, personName } from "@/lib/personName";
 import ReadyChecks from "@/components/ReadyChecks";
 import RegionIncomePanel from "@/components/RegionIncomePanel";
 import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKind";
@@ -159,6 +162,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const ready = isReadyToShip(order);
   const canShip = isWarehouse && openOrder && ready;
   const shipBlockedReason = isWarehouse && openOrder && !ready ? notReadyReason(order) : "";
+  // Этап и «чей ход» — та же функция, что в списках (`orderStage`).
+  const stage = orderStage(order, localDayKey());
+  const managerNames = nameIndex(users);
   // Кнопку отмены показываем только тому, кто действительно может отменить, —
   // правила те же, что проверит сервер (src/lib/orderRules.ts).
   const canCancel = cancelRefusal(order, role, session?.user?.email) === "";
@@ -220,7 +226,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               Изменить
             </Link>
           )}
-          <OrderStatusBadge status={order.status} />
+          <OrderStageBadge stage={stage} />
         </div>
       </div>
       {canEdit && !order.deliveryDate && (
@@ -238,7 +244,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             {" · "}
           </>
         )}
-        Создана {formatMoment(order.createdAt)} · менеджер {order.managerEmail}
+        Создана {formatMoment(order.createdAt)} · менеджер {personName(order.managerEmail, managerNames)}
         {farm && (
           <>
             {" · "}
@@ -248,6 +254,32 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           </>
         )}
       </p>
+
+      {/* Где заявка и чей ход — одной строкой над всем остальным. Раньше
+          статус «Новая» стоял у каждой заявки, а что мешает её собрать и от
+          кого это зависит, приходилось собирать из трёх блоков ниже. */}
+      {stage.actor && (
+        <div
+          className={
+            "card !py-3 mb-4 flex flex-wrap items-center justify-between gap-3 " +
+            (stage.lateDays > 0 ? "border-status-critical/40" : "")
+          }
+        >
+          <div className="text-sm">
+            <div className="font-medium">{stage.next}</div>
+            {stage.lateDays > 0 && (
+              <div className="text-status-critical mt-0.5">
+                Доставка была {formatDay(order.deliveryDate)} — {stage.lateDays} дн. назад, а заявка не отгружена
+              </div>
+            )}
+          </div>
+          {canShip && (
+            <Link href={`/warehouse/ship/${order.orderId}`} className="btn-primary">
+              Отгрузить
+            </Link>
+          )}
+        </div>
+      )}
 
       <ReadyChecks
         orderId={order.orderId}
@@ -272,21 +304,114 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         }
       />
 
-      {region && (
-        <RegionIncomePanel
-          orderId={order.orderId}
-          direction={order.direction || "—"}
-          stems={order.items.reduce((s, i) => s + i.quantity, 0)}
-          income={order.paidAmount}
-          canEdit={role === ROLES.ACCOUNTANT || role === ROLES.ADMIN}
-        />
+      {shipBlockedReason && (
+        <div className="card mb-6 text-sm text-ink-secondary">
+          <span className="font-medium text-ink-primary">Отгрузка закрыта:</span>{" "}
+          {shipBlockedReason}
+        </div>
       )}
 
-      {/* У городской заявки клиента нет, значит и рекламации от него не бывает:
-          пересчитывать нечего — счёта тоже нет. */}
-      {!region && (
-        <OrderClaims orderId={order.orderId} claims={claims} canCreate={canCreateClaim} />
-      )}
+      <div className="card grid sm:grid-cols-2 gap-4 mb-6">
+        {/* У городской заявки контрагента нет по замыслу: показывать «Клиент —
+            Астана» значило бы выдумать клиента, которого не существует. */}
+        {region ? (
+          <div>
+            <div className="label">Регион</div>
+            <div className="font-medium">{order.direction || "—"}</div>
+          </div>
+        ) : (
+          <>
+            <div>
+              <div className="label">Клиент</div>
+              <div>
+                {order.clientId ? (
+                  <Link href={`/clients/${order.clientId}`} className="hover:underline">
+                    {order.clientName}
+                  </Link>
+                ) : (
+                  order.clientName
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="label">Телефон</div>
+              <div>{order.clientPhone || "—"}</div>
+            </div>
+          </>
+        )}
+        <div>
+          <div className="label">Дата доставки</div>
+          <div>{formatDay(order.deliveryDate)}</div>
+        </div>
+        {!region && (order.direction || canSetOrderDirection) && (
+          <OrderDirection
+            orderId={order.orderId}
+            direction={order.direction}
+            editable={canSetOrderDirection}
+            suggested={suggestedDirection}
+            hint={directionHint}
+          />
+        )}
+        {!region && (
+          <div>
+            <div className="label">Комментарий</div>
+            <div>{order.notes || "—"}</div>
+          </div>
+        )}
+      </div>
+
+      <div className="card !p-0 table-scroll table-cards mb-6">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+              <th className="px-4 py-3 font-medium">Позиция</th>
+              <th className="px-4 py-3 font-medium">Заказано</th>
+              <th className="px-4 py-3 font-medium">Отгружено</th>
+              {/* У городской заявки цены нет по замыслу — две колонки нулей
+                  только заставляли бы гадать, не забыли ли их заполнить. */}
+              {!region && <th className="px-4 py-3 font-medium">Цена</th>}
+              {!region && <th className="px-4 py-3 font-medium">Сумма</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {order.items.map((item) => (
+              <tr key={item.itemId} className="border-b border-line-hairline last:border-0">
+                <td className="px-4 py-3 font-medium">
+                  {FLOWER_TYPE_LABELS[item.flowerType]} {item.variety} · {formatGrade(item.grade)}
+                </td>
+                <td className="px-4 py-3 tabular-nums" data-label="Заказано">{item.quantity.toLocaleString("ru-RU")}</td>
+                <td className="px-4 py-3 tabular-nums" data-label="Отгружено">
+                  {item.shippedQuantity.toLocaleString("ru-RU")} / {item.quantity.toLocaleString("ru-RU")}
+                </td>
+                {!region && (
+                  <td className="px-4 py-3 tabular-nums" data-label="Цена">{item.unitPrice.toLocaleString("ru-RU")} ₸</td>
+                )}
+                {!region && (
+                  <td className="px-4 py-3 font-medium tabular-nums" data-label="Сумма">
+                    {(item.quantity * item.unitPrice).toLocaleString("ru-RU")} ₸
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={region ? 1 : 4} className="px-4 py-3 text-right text-ink-secondary">
+                Итого
+              </td>
+              {region ? (
+                <td colSpan={2} className="px-4 py-3 font-semibold">
+                  {order.items.reduce((s, i) => s + i.quantity, 0).toLocaleString("ru-RU")} шт.
+                </td>
+              ) : (
+                <td className="px-4 py-3 font-semibold">
+                  {order.totalAmount.toLocaleString("ru-RU")} ₸
+                </td>
+              )}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
 
       {!region && invoice.length > 0 && (
         <div className="card mb-6">
@@ -385,128 +510,20 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </div>
       )}
 
-      <div className="card grid sm:grid-cols-2 gap-4 mb-6">
-        {/* У городской заявки контрагента нет по замыслу: показывать «Клиент —
-            Астана» значило бы выдумать клиента, которого не существует. */}
-        {region ? (
-          <div>
-            <div className="label">Регион</div>
-            <div className="font-medium">{order.direction || "—"}</div>
-          </div>
-        ) : (
-          <>
-            <div>
-              <div className="label">Клиент</div>
-              <div>
-                {order.clientId ? (
-                  <Link href={`/clients/${order.clientId}`} className="hover:underline">
-                    {order.clientName}
-                  </Link>
-                ) : (
-                  order.clientName
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="label">Телефон</div>
-              <div>{order.clientPhone || "—"}</div>
-            </div>
-          </>
-        )}
-        <div>
-          <div className="label">Дата доставки</div>
-          <div>{formatDay(order.deliveryDate)}</div>
-        </div>
-        {!region && (order.direction || canSetOrderDirection) && (
-          <OrderDirection
-            orderId={order.orderId}
-            direction={order.direction}
-            editable={canSetOrderDirection}
-            suggested={suggestedDirection}
-            hint={directionHint}
-          />
-        )}
-        {!region && (
-          <div>
-            <div className="label">Комментарий</div>
-            <div>{order.notes || "—"}</div>
-          </div>
-        )}
-      </div>
-
-      <div className="card !p-0 table-scroll mb-6">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Тип</th>
-              <th className="px-4 py-3 font-medium">Сорт</th>
-              <th className="px-4 py-3 font-medium">Длина / категория</th>
-              <th className="px-4 py-3 font-medium">Заказано</th>
-              <th className="px-4 py-3 font-medium">Отгружено</th>
-              {/* У городской заявки цены нет по замыслу — две колонки нулей
-                  только заставляли бы гадать, не забыли ли их заполнить. */}
-              {!region && <th className="px-4 py-3 font-medium">Цена</th>}
-              {!region && <th className="px-4 py-3 font-medium">Сумма</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {order.items.map((item) => (
-              <tr key={item.itemId} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-3">{FLOWER_TYPE_LABELS[item.flowerType]}</td>
-                <td className="px-4 py-3">{item.variety}</td>
-                <td className="px-4 py-3">{formatGrade(item.grade)}</td>
-                <td className="px-4 py-3">{item.quantity}</td>
-                <td className="px-4 py-3">
-                  {item.shippedQuantity} / {item.quantity}
-                </td>
-                {!region && (
-                  <td className="px-4 py-3">{item.unitPrice.toLocaleString("ru-RU")} ₸</td>
-                )}
-                {!region && (
-                  <td className="px-4 py-3 font-medium">
-                    {(item.quantity * item.unitPrice).toLocaleString("ru-RU")} ₸
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={region ? 3 : 6} className="px-4 py-3 text-right text-ink-secondary">
-                Итого
-              </td>
-              {region ? (
-                <td colSpan={2} className="px-4 py-3 font-semibold">
-                  {order.items.reduce((s, i) => s + i.quantity, 0).toLocaleString("ru-RU")} шт.
-                </td>
-              ) : (
-                <td className="px-4 py-3 font-semibold">
-                  {order.totalAmount.toLocaleString("ru-RU")} ₸
-                </td>
-              )}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      {canShip && (
-        <Link href={`/warehouse/ship/${order.orderId}`} className="btn-primary mb-6 inline-flex">
-          Отгрузить
-        </Link>
+      {region && (
+        <RegionIncomePanel
+          orderId={order.orderId}
+          direction={order.direction || "—"}
+          stems={order.items.reduce((s, i) => s + i.quantity, 0)}
+          income={order.paidAmount}
+          canEdit={role === ROLES.ACCOUNTANT || role === ROLES.ADMIN}
+        />
       )}
 
-      {shipBlockedReason && (
-        <div className="card mb-6 text-sm text-ink-secondary">
-          <span className="font-medium text-ink-primary">Отгрузка закрыта:</span>{" "}
-          {shipBlockedReason}
-        </div>
-      )}
-
-      {(canCancel || canDelete) && (
-        <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
-          {canCancel && <CancelOrder orderId={order.orderId} />}
-          {canDelete && <DeleteOrder orderId={order.orderId} />}
-        </div>
+      {/* У городской заявки клиента нет, значит и рекламации от него не бывает:
+          пересчитывать нечего — счёта тоже нет. */}
+      {!region && (
+        <OrderClaims orderId={order.orderId} claims={claims} canCreate={canCreateClaim} />
       )}
 
       {/* Зав. складом правит СВОИ позиции: заказали шестидесятку, а в
@@ -542,7 +559,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 <td className="px-4 py-3">{formatMoment(s.createdAt)}</td>
                 <td className="px-4 py-3">{s.batchId}</td>
                 <td className="px-4 py-3">{s.quantity}</td>
-                <td className="px-4 py-3 text-ink-secondary">{s.warehouseEmail}</td>
+                <td className="px-4 py-3 text-ink-secondary">{s.warehouseEmail ? personName(s.warehouseEmail, managerNames) : (s.notes ? "восстановлено" : "—")}</td>
               </tr>
             ))}
             {shipments.length === 0 && (
@@ -555,6 +572,13 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           </tbody>
         </table>
       </div>
+      {(canCancel || canDelete) && (
+        <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
+          {canCancel && <CancelOrder orderId={order.orderId} />}
+          {canDelete && <DeleteOrder orderId={order.orderId} />}
+        </div>
+      )}
+
     </div>
   );
 }

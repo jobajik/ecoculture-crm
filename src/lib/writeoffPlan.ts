@@ -184,3 +184,40 @@ export function planWriteoffs(input: {
   }
   return { parts, errors, byLine, total: parts.reduce((s, p) => s + p.quantity, 0) };
 }
+
+// ---------------------------------------------------------------------------
+// Пересчёт: «сколько лежит на самом деле» вместо «сколько списать»
+//
+// Аудит сентября: 52 тыс. стеблей (20 % склада) числились дольше срока
+// хранения, а списывалось 21 % принятого. Склад в программе разошёлся с
+// холодильником, и сверить их было нечем — только высчитывать разницу в уме и
+// списывать её. Теперь зав. складом вписывает, сколько ФАКТИЧЕСКИ лежит по
+// позиции, а разницу программа снимает сама, тем же путём, что и обычное
+// списание (от старых партий к свежим, всё или ничего). Позиции, где вписано
+// больше, чем в программе, не списываются: это непринятая срезка, её надо
+// оформить приёмкой — и человек видит это прямо.
+// ---------------------------------------------------------------------------
+
+export const RECOUNT_REASON = "Пересчёт: расхождение с фактом";
+
+export function recountLines(
+  positions: StockPosition[],
+  actual: Record<string, number | undefined>,
+  reason: string = RECOUNT_REASON
+): { lines: WriteoffLine[]; surplus: { label: string; extra: number }[]; counted: number } {
+  const lines: WriteoffLine[] = [];
+  const surplus: { label: string; extra: number }[] = [];
+  let counted = 0;
+  for (const p of positions) {
+    const v = actual[positionKey(p)];
+    if (v === undefined || v === null || !Number.isFinite(v) || v < 0) continue;
+    counted++;
+    const diff = p.stock - Math.round(v);
+    if (diff > 0) {
+      lines.push({ flowerType: p.flowerType, variety: p.variety, grade: p.grade, quantity: diff, reason });
+    } else if (diff < 0) {
+      surplus.push({ label: positionLabel(p), extra: -diff });
+    }
+  }
+  return { lines, surplus, counted };
+}

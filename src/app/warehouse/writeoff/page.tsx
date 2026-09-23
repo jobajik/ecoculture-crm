@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * Раскладку по партиям (от старых к свежим) делает сервер — `writeoffPlan.ts`.
  * Списание одной конкретной партии осталось там же, где было, — в «Партиях».
  */
-export default async function WriteoffPage() {
+export default async function WriteoffPage({ searchParams }: { searchParams?: { mode?: string } }) {
   const session = await getServerSession(authOptions);
   const farm = session?.user?.role === "warehouse" ? session.user.farm ?? null : null;
   const positions = stockPositions(await listBatches(), farm);
@@ -26,7 +26,7 @@ export default async function WriteoffPage() {
       <div className="mb-4">
         <SectionTabs tabs={WAREHOUSE_TABS} />
       </div>
-      <WriteoffBulkForm positions={positions} />
+      <WriteoffBulkForm positions={positions} initialMode={searchParams?.mode === "recount" ? "recount" : "writeoff"} />
     </div>
   );
 }

@@ -1,9 +1,9 @@
-import { appendRow, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
+import { commitAtomic, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import type { FlowerType } from "../constants";
 import type { StaffTakeout } from "../types";
-import { deductBatchQuantity, getBatchById } from "./batches";
+import { batchDeduction } from "./batches";
 
 /**
  * Выдачи цветка сотрудникам в счёт зарплаты.
@@ -61,44 +61,41 @@ export interface NewStaffTakeoutInput {
 }
 
 /**
- * Записывает выдачу и снимает стебли с партии.
+ * Записывает выдачу и снимает стебли с партии — одной атомарной записью.
  *
- * Порядок важен: сначала списываем остаток, потом пишем строку. Если запись
- * упадёт, на складе окажется недостача — неприятно, но видно. В обратном
- * порядке строка осталась бы без списания, и склад показывал бы цветок,
- * которого уже нет, — а это обнаруживается только на погрузке.
+ * Раньше это были два запроса (сначала остаток, потом строка), и при отказе
+ * Google на втором стебли уходили со склада без строки выдачи. Теперь Google
+ * применяет оба изменения целиком или никак (`commitAtomic`).
  */
 export async function createStaffTakeout(input: NewStaffTakeoutInput): Promise<string> {
-  const batch = await getBatchById(input.batchId);
-  if (!batch) throw new Error("Партия не найдена");
-  if (batch.quantityRemaining < input.quantity) {
-    throw new Error(
-      `В партии ${input.batchId} осталось ${batch.quantityRemaining} шт., ` +
-        `к выдаче запрошено ${input.quantity}`
-    );
-  }
-
-  await deductBatchQuantity(input.batchId, input.quantity);
-
+  const { batch, op } = await batchDeduction(input.batchId, input.quantity);
   const takeoutId = generateId("TK");
-  await appendRow(SHEET_TABS.STAFF_TAKEOUTS, {
-    TakeoutID: takeoutId,
-    CreatedAt: new Date().toISOString(),
-    Date: input.date,
-    StaffName: input.staffName,
-    BatchID: input.batchId,
-    // Снимок: партию сотрут при очистке склада, а строка обязана читаться
-    // сама по себе и через полгода.
-    FlowerType: batch.flowerType,
-    Variety: batch.variety,
-    Grade: batch.grade,
-    Quantity: input.quantity,
-    UnitPrice: input.unitPrice,
-    WarehouseEmail: input.warehouseEmail,
-    Note: input.note ?? "",
-    Kind: input.kind ?? "",
-  });
-
+  await commitAtomic([
+    op,
+    {
+      kind: "append",
+      tab: SHEET_TABS.STAFF_TAKEOUTS,
+      records: [
+        {
+          TakeoutID: takeoutId,
+          CreatedAt: new Date().toISOString(),
+          Date: input.date,
+          StaffName: input.staffName,
+          BatchID: input.batchId,
+          // Снимок: партию сотрут при очистке склада, а строка обязана читаться
+          // сама по себе и через полгода.
+          FlowerType: batch.flowerType,
+          Variety: batch.variety,
+          Grade: batch.grade,
+          Quantity: input.quantity,
+          UnitPrice: input.unitPrice,
+          WarehouseEmail: input.warehouseEmail,
+          Note: input.note ?? "",
+          Kind: input.kind ?? "",
+        },
+      ],
+    },
+  ]);
   return takeoutId;
 }
 

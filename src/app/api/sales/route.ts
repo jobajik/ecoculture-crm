@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { canOpen } from "@/lib/access";
 import { getSalesSnapshot } from "@/lib/salesAnalytics";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,8 @@ export async function GET(request: Request) {
   if (!session?.user?.email) {
     return Response.json({ error: "Не авторизован" }, { status: 401 });
   }
-  if (session.user.role !== "manager" && session.user.role !== "admin") {
+  // Те же роли, что пускает в раздел middleware, — одна таблица на оба места.
+  if (!canOpen(session.user.role, "/sales")) {
     return Response.json({ error: "Недостаточно прав" }, { status: 403 });
   }
 

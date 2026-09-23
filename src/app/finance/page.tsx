@@ -46,7 +46,7 @@ export default async function FinancePage({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Оплаты</h1>
-          <p className="text-sm text-ink-secondary">Две галочки — заявку можно собирать.</p>
+          <p className="text-sm text-ink-secondary">Две галочки — заявку можно отгружать.</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1">

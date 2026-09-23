@@ -6,11 +6,13 @@ import { authOptions } from "@/lib/auth";
 import { createBatch, createBatches, type NewBatchInput } from "@/lib/repo/batches";
 import { parseBatchesWorkbook, type ParsedBatchRow, type ParseResult } from "@/lib/excel";
 import { listVarietiesByType } from "@/lib/repo/varieties";
-import { getBatchById } from "@/lib/repo/batches";
+import { getBatchById, listBatches } from "@/lib/repo/batches";
 import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getOrderById } from "@/lib/repo/orders";
 import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
-import { createShipments, type ShipmentPart } from "@/lib/repo/shipments";
+import { createOrderShipments, createShipments, type ShipmentPart } from "@/lib/repo/shipments";
+import { planWholeOrderShipment } from "@/lib/shipRules";
+import { forgetReads } from "@/lib/sheets";
 import {
   createWriteoff,
   createWriteoffsByPlan,
@@ -320,6 +322,46 @@ function todayKey(): string {
 
 export async function createBatchAction(...args: Parameters<typeof createBatchActionInner>) {
   return guard(() => createBatchActionInner(...args));
+}
+
+/**
+ * Отгрузить всю заявку (свой цветок) одним нажатием — по раскладке FIFO.
+ *
+ * Раскладку человек видел на странице; сервер считает её ЗАНОВО по свежему
+ * складу и отгружает, только если она совпала по количеству с увиденным: иначе
+ * между «посмотрел» и «нажал» склад изменился (кто-то отгрузил или списал), и
+ * отгружать не то, что человек подтвердил, нельзя. Запись — одним атомарным
+ * запросом (`createOrderShipments`).
+ */
+async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal: number }) {
+  const { email, farm } = await requireWarehouse();
+  forgetReads();
+  const order = await getOrderById(input.orderId);
+  if (!order) throw new Error("Заявка не найдена");
+  if (!isReadyToShip(order)) {
+    throw new Error(`Отгружать пока нельзя: ${notReadyReason(order).toLowerCase()}.`);
+  }
+  const own = order.items.filter((i) => !farm || getFarmFor(i.flowerType) === farm);
+  const plan = planWholeOrderShipment(own, await listBatches());
+  if (plan.total === 0) throw new Error("На складе нет ни одной партии под эту заявку — сначала приёмка");
+  if (plan.total !== Math.round(Number(input.expectedTotal))) {
+    throw new Error(
+      `Склад изменился, пока страница была открыта: сейчас можно отгрузить ${plan.total} шт., ` +
+        `а не ${input.expectedTotal}. Обновите страницу и проверьте раскладку.`
+    );
+  }
+  await createOrderShipments({ orderId: order.orderId, warehouseEmail: email, lines: plan.lines });
+  revalidatePath("/warehouse");
+  revalidatePath("/warehouse/batches");
+  revalidatePath("/warehouse/picklist");
+  revalidatePath(`/orders/${order.orderId}`);
+  revalidatePath("/orders");
+  revalidatePath("/");
+  return { total: plan.total, shortages: plan.shortages.length };
+}
+
+export async function shipWholeOrderAction(...args: Parameters<typeof shipWholeOrderActionInner>) {
+  return guard(() => shipWholeOrderActionInner(...args));
 }
 
 export async function parseBatchesFileAction(...args: Parameters<typeof parseBatchesFileActionInner>) {
