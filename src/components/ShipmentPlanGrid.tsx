@@ -45,6 +45,12 @@ export interface ShipmentPlanCell {
   amount: number;
 }
 
+/** Факт клетки: сколько заказано на эту неделю, направление и цветок и сколько уже отгружено. */
+export interface ShipmentFactCell {
+  ordered: number;
+  shipped: number;
+}
+
 const fmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
 
 function shortMoney(n: number): string {
@@ -61,6 +67,7 @@ export default function ShipmentPlanGrid({
   initial,
   prices,
   forecast,
+  fact = {},
 }: {
   month: string;
   weeks: PlanWeek[];
@@ -71,6 +78,8 @@ export default function ShipmentPlanGrid({
   prices: Record<string, number>;
   /** Прогноз срезки агронома: [цветок][код недели] — стебли. */
   forecast: Record<string, Record<string, number>>;
+  /** Факт по клеткам, ключ как у плана. Пусто — заказов нет. */
+  fact?: Record<string, ShipmentFactCell>;
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -94,6 +103,19 @@ export default function ShipmentPlanGrid({
   }
 
   const price = priceByFlower[activeFlower] ?? 0;
+
+  const factOf = (week: string, direction: string): ShipmentFactCell =>
+    fact[planCellKey(week, direction, activeFlower)] ?? { ordered: 0, shipped: 0 };
+  const factWeek = (week: string) =>
+    SHIPMENT_DIRECTIONS.reduce(
+      (acc, d) => {
+        const f = factOf(week, d);
+        return { ordered: acc.ordered + f.ordered, shipped: acc.shipped + f.shipped };
+      },
+      { ordered: 0, shipped: 0 }
+    );
+  const factDirection = (direction: string) =>
+    weeks.reduce((sum, w) => sum + factOf(w.code, direction).ordered, 0);
 
   const get = (week: string, direction: string, flowerType = activeFlower): number =>
     values[planCellKey(week, direction, flowerType)]?.stems ?? 0;
@@ -406,18 +428,28 @@ export default function ShipmentPlanGrid({
                 {group.directions.map((direction) => (
                   <tr key={direction} className="border-b border-line-hairline">
                     <td className="px-4 py-1.5 sticky left-0 bg-surface z-10">{direction}</td>
-                    {weeks.map((week) => (
-                      <td key={week.code} className="px-1 py-1.5">
-                        <NumberCell
-                          value={get(week.code, direction)}
-                          onChange={(v) => setCell(week.code, direction, v)}
-                          className="!w-full text-right"
-                          ariaLabel={`${direction}, неделя ${week.index}`}
-                        />
-                      </td>
-                    ))}
-                    <td className="px-4 py-1.5 text-right tabular-nums font-medium">
-                      {totals.byDirection[direction] > 0 ? fmt(totals.byDirection[direction]) : "—"}
+                    {weeks.map((week) => {
+                      const plan = get(week.code, direction);
+                      const done = factOf(week.code, direction);
+                      return (
+                        <td key={week.code} className="px-1 py-1.5 align-top">
+                          <NumberCell
+                            value={plan}
+                            onChange={(v) => setCell(week.code, direction, v)}
+                            className="!w-full text-right"
+                            ariaLabel={`${direction}, неделя ${week.index}`}
+                          />
+                          {done.ordered > 0 && <FactLine plan={plan} ordered={done.ordered} shipped={done.shipped} />}
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-1.5 text-right tabular-nums align-top">
+                      <div className="font-medium">
+                        {totals.byDirection[direction] > 0 ? fmt(totals.byDirection[direction]) : "—"}
+                      </div>
+                      {factDirection(direction) > 0 && (
+                        <FactLine plan={totals.byDirection[direction] ?? 0} ordered={factDirection(direction)} />
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -443,6 +475,44 @@ export default function ShipmentPlanGrid({
                 <span className="block text-[11px] font-normal text-ink-muted">
                   {shortMoney(totals.month * price)}
                 </span>
+              </td>
+            </tr>
+
+            {/* Факт недели: заказано и отгружено по всем направлениям — рядом с
+                планом, а не на отдельной вкладке. */}
+            <tr className="text-ink-secondary">
+              <td className="px-4 py-1.5 sticky left-0 bg-surface">Заказано</td>
+              {weeks.map((week) => {
+                const f = factWeek(week.code);
+                const plan = totals.byWeek[week.code] ?? 0;
+                return (
+                  <td
+                    key={week.code}
+                    className={clsx(
+                      "px-2 py-1.5 text-center tabular-nums",
+                      f.ordered > 0 && plan > 0 && f.ordered >= plan && "text-status-good font-medium"
+                    )}
+                  >
+                    {f.ordered > 0 ? fmt(f.ordered) : "—"}
+                  </td>
+                );
+              })}
+              <td className="px-4 py-1.5 text-right tabular-nums">
+                {fmt(weeks.reduce((sum, w) => sum + factWeek(w.code).ordered, 0))}
+              </td>
+            </tr>
+            <tr className="text-ink-secondary">
+              <td className="px-4 py-1.5 sticky left-0 bg-surface">Отгружено</td>
+              {weeks.map((week) => {
+                const f = factWeek(week.code);
+                return (
+                  <td key={week.code} className="px-2 py-1.5 text-center tabular-nums">
+                    {f.shipped > 0 ? fmt(f.shipped) : "—"}
+                  </td>
+                );
+              })}
+              <td className="px-4 py-1.5 text-right tabular-nums">
+                {fmt(weeks.reduce((sum, w) => sum + factWeek(w.code).shipped, 0))}
               </td>
             </tr>
 
@@ -510,6 +580,25 @@ export default function ShipmentPlanGrid({
           {changed.length === 0 ? "Изменений нет" : `Изменено ячеек: ${changed.length}`}
         </span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Строка факта под клеткой плана: «заказ 800». Зелёная — план закрыт заказами;
+ * жёлтая — везут без плана; серая — заказано меньше плана. Если что-то уже
+ * отгружено, после косой черты — сколько.
+ */
+function FactLine({ plan, ordered, shipped }: { plan: number; ordered: number; shipped?: number }) {
+  const tone = plan <= 0 ? "text-[#8a5a00]" : ordered >= plan ? "text-status-good" : "text-ink-muted";
+  return (
+    <div
+      className={clsx("mt-0.5 pr-1 text-right text-[11px] leading-tight tabular-nums", tone)}
+      title={`Заказано ${fmt(ordered)}${shipped ? `, отгружено ${fmt(shipped)}` : ""}${plan <= 0 ? " — без плана" : ""}`}
+    >
+      {plan <= 0 ? "без плана " : "заказ "}
+      {fmt(ordered)}
+      {shipped ? <span className="opacity-70"> / {fmt(shipped)}</span> : null}
     </div>
   );
 }

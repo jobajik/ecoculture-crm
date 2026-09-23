@@ -10,9 +10,6 @@ import {
   FLOWER_TYPES,
   FLOWER_TYPE_LABELS_PLURAL,
   ORDER_STATUSES,
-  isValidPeriod,
-  periodLabel,
-  periodOf,
   weeksOfMonth,
 } from "@/lib/constants";
 import { formatDay } from "@/lib/formatDate";
@@ -26,6 +23,8 @@ import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import { plansTabsFor } from "../tabs";
+import ShipmentsViewSwitch from "../ShipmentsViewSwitch";
+import { monthFrom, prefetchPlanTabs } from "../data";
 import DirectionFixRow from "@/components/DirectionFixRow";
 import { buildRegionIncome, isRegionOrder } from "@/lib/orderKind";
 
@@ -33,7 +32,11 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 /**
- * Оптовые отгрузки по регионам — рабочее место РОПа.
+ * «Планы → Отгрузки → Факт и заявки»: оптовые отгрузки по регионам.
+ *
+ * Раньше это была отдельная вкладка «Регионы»; теперь — второй вид вкладки
+ * «Отгрузки» (переключатель `ShipmentsViewSwitch`), потому что это факт того же
+ * самого плана.
  *
  * Одна страница отвечает на три его вопроса подряд, в том порядке, в каком он
  * их задаёт:
@@ -60,10 +63,7 @@ export default async function RegionSalesPage({
   const role = session?.user?.role ?? "";
   if (!canSeeRegionSales(role)) redirect("/?error=forbidden");
 
-  const month =
-    searchParams?.period && isValidPeriod(searchParams.period)
-      ? searchParams.period
-      : periodOf(new Date());
+  const month = monthFrom(searchParams?.period);
   const weeks = weeksOfMonth(month);
   const week = weeks.find((w) => w.code === searchParams?.week) ?? null;
 
@@ -89,6 +89,7 @@ export default async function RegionSalesPage({
     return `/plans/regions?${params.toString()}`;
   };
 
+  await prefetchPlanTabs();
   const [orders, plans, clients] = await Promise.all([
     listOrdersWithItems(),
     listShipmentPlans(),
@@ -174,22 +175,26 @@ export default async function RegionSalesPage({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h1 className="text-xl font-semibold">Оптовые отгрузки по регионам</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h1 className="text-xl font-semibold">Планы</h1>
         <Link href="/orders/new?region=1" className="btn-primary">
           + Объём в регион
         </Link>
       </div>
-      <p className="text-ink-secondary mb-3">
-        План отгрузок против факта.
-        <Hint>
-          Считаются заявки с доставкой {formatDay(from)} — {formatDay(to)}. Отменённые и заявки в
-          наши магазины не в счёт. Алматы в плане нет.
-        </Hint>
-      </p>
 
       <div className="mb-4">
-        <SectionTabs tabs={plansTabsFor(role)} />
+        <SectionTabs tabs={plansTabsFor(role, month)} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <ShipmentsViewSwitch view="fact" month={month} />
+        <span className="text-sm text-ink-secondary">
+          Доставка {formatDay(from)} — {formatDay(to)}
+          <Hint>
+            Факт считается по дню доставки. Отменённые и заявки в наши магазины не в счёт. Алматы в
+            плане нет, поэтому сумма по направлениям меньше общих продаж.
+          </Hint>
+        </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-3">

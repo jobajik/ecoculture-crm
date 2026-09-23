@@ -2,21 +2,23 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getShipmentPlansForMonth, shipmentPlanKey } from "@/lib/repo/shipmentPlans";
-import { getForecastForMonth } from "@/lib/repo/harvestForecast";
+import { listOrdersWithItems } from "@/lib/repo/orders";
+import { buildDirectionFact } from "@/lib/direction";
 import { getCurrentPrices } from "@/lib/repo/prices";
 import { BASE_VARIETY, priceKey } from "@/lib/priceList";
 import {
   FLOWER_TYPES,
+  ORDER_STATUSES,
   ROLES,
   SHIPMENT_DIRECTIONS,
   getGradesFor,
-  isValidPeriod,
-  periodOf,
   weeksOfMonth,
 } from "@/lib/constants";
 import SectionTabs from "@/components/SectionTabs";
 import PeriodPicker from "@/components/PeriodPicker";
-import ShipmentPlanGrid, { type ShipmentPlanCell } from "@/components/ShipmentPlanGrid";
+import ShipmentPlanGrid, { type ShipmentFactCell, type ShipmentPlanCell } from "@/components/ShipmentPlanGrid";
+import ShipmentsViewSwitch from "../ShipmentsViewSwitch";
+import { forecastByWeek, monthFrom, prefetchPlanTabs } from "../data";
 import { planCellKey } from "@/lib/planCell";
 import { plansTabsFor } from "../tabs";
 
@@ -35,17 +37,42 @@ export default async function ShipmentPlansPage({
   const role = session?.user?.role;
   if (role !== ROLES.SALES_HEAD && role !== ROLES.ADMIN) redirect("/");
 
-  const month =
-    searchParams.period && isValidPeriod(searchParams.period)
-      ? searchParams.period
-      : periodOf(new Date());
+  const month = monthFrom(searchParams.period);
 
   const weeks = weeksOfMonth(month);
-  const [saved, forecastRows, prices] = await Promise.all([
+  await prefetchPlanTabs();
+  const [saved, forecast, prices, orders] = await Promise.all([
     getShipmentPlansForMonth(month),
-    getForecastForMonth(month),
+    forecastByWeek(month),
     getCurrentPrices(),
+    listOrdersWithItems(),
   ]);
+
+  // Факт в каждой клетке сетки: заказано и отгружено на эту неделю, это
+  // направление и этот цветок — по дате доставки, как и весь план отгрузок
+  // (`buildDirectionFact`). Раньше сетка была полями без единой цифры факта.
+  const fact: Record<string, ShipmentFactCell> = {};
+  for (const flowerType of FLOWER_ORDER) {
+    for (const week of weeks) {
+      const f = buildDirectionFact({
+        orders,
+        plans: [],
+        from: week.from,
+        to: week.to,
+        planPeriods: [],
+        cancelledStatus: ORDER_STATUSES.CANCELLED,
+        flowerType,
+      });
+      for (const row of f.groups.flatMap((g) => g.rows)) {
+        if (row.orderedStems > 0) {
+          fact[planCellKey(week.code, row.direction, flowerType)] = {
+            ordered: row.orderedStems,
+            shipped: row.shippedStems,
+          };
+        }
+      }
+    }
+  }
 
   const initial: Record<string, ShipmentPlanCell> = {};
   for (const week of weeks) {
@@ -62,19 +89,6 @@ export default async function ShipmentPlansPage({
 
   // Прогноз срезки по неделям — чтобы РОП видел, из чего он раздаёт план, не
   // уходя на вкладку «Баланс».
-  const forecast: Record<string, Record<string, number>> = {};
-  for (const flowerType of FLOWER_ORDER) forecast[flowerType] = {};
-  for (const row of forecastRows.values()) {
-    if (!forecast[row.flowerType]) continue;
-    forecast[row.flowerType][row.period] =
-      (forecast[row.flowerType][row.period] ?? 0) + row.targetStems;
-  }
-
-  /**
-   * Средняя цена стебля по прайсу: среднее по заполненным строкам «Все сорта».
-   * Это оценка для суммы плана, а не точная выручка — состав ростовки заранее
-   * неизвестен. Поэтому цену видно на странице и её можно поправить руками.
-   */
   const averagePrice: Record<string, number> = {};
   for (const flowerType of FLOWER_ORDER) {
     const values = getGradesFor(flowerType)
@@ -90,23 +104,18 @@ export default async function ShipmentPlansPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Планы</h1>
-        <p className="text-sm text-ink-secondary">
-          План отгрузок по направлениям и неделям. Сумма считается по прайсу.
-        </p>
-      </div>
+      <h1 className="text-xl font-semibold">Планы</h1>
 
-      <SectionTabs tabs={plansTabsFor(role)} />
+      <SectionTabs tabs={plansTabsFor(role, month)} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PeriodPicker period={month} />
-        <p className="text-sm text-ink-muted">
-          {filledWeeks > 0
-            ? `Заполнено недель: ${filledWeeks} из ${weeks.length}`
-            : "Месяц ещё не заполнен"}
-        </p>
+        <ShipmentsViewSwitch view="plan" month={month} />
       </div>
+      <p className="text-sm text-ink-muted -mt-2">
+        {filledWeeks > 0 ? `Заполнено недель: ${filledWeeks} из ${weeks.length}` : "Месяц ещё не заполнен"} · в
+        клетке — план, под ним сколько заказано на эту неделю
+      </p>
 
       <ShipmentPlanGrid
         key={month}
@@ -116,6 +125,7 @@ export default async function ShipmentPlansPage({
         initial={initial}
         prices={averagePrice}
         forecast={forecast}
+        fact={fact}
       />
     </div>
   );

@@ -13,7 +13,8 @@ import clsx from "clsx";
 export default function SectionTabs({
   tabs,
 }: {
-  tabs: { href: string; label: string }[];
+  /** `match` — адреса, на которых вкладка горит (без него — ровно `href`). */
+  tabs: { href: string; label: string; match?: string[] }[];
 }) {
   const pathname = usePathname();
   const stripRef = useRef<HTMLDivElement>(null);
@@ -52,7 +53,7 @@ export default function SectionTabs({
         className="flex gap-1 border-b border-line-hairline overflow-x-auto scroll-x-hidden sm:flex-wrap sm:overflow-visible"
       >
         {tabs.map((t) => {
-          const active = pathname === t.href;
+          const active = t.match ? t.match.includes(pathname) : pathname === t.href;
           return (
             <Link
               key={t.href}

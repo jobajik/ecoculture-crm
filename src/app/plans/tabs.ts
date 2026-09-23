@@ -8,18 +8,23 @@ import { ROLES } from "@/lib/constants";
  * Администратор видит все три — за счёт этого прогноз не занимает отдельный
  * пункт в верхнем меню, которое и так на пределе.
  */
-export function plansTabsFor(role: string | null | undefined) {
-  const tabs = [
-    { href: "/plans", label: "Планы менеджеров" },
-    { href: "/plans/shipments", label: "План отгрузок" },
-    // Факт стоит сразу за планом: РОП ставит план, потом смотрит, сделали ли
-    // его. Разнеси их по разным разделам — и сверять пришлось бы по памяти.
-    { href: "/plans/regions", label: "Регионы" },
-    { href: "/plans/balance", label: "Баланс" },
+export function plansTabsFor(role: string | null | undefined, period?: string) {
+  // Месяц переносится между вкладками: РОП смотрит октябрь в обзоре, жмёт
+  // «Отгрузки» — и попадает в октябрь, а не обратно в текущий месяц.
+  const q = period ? `?period=${period}` : "";
+  // Раздел переосмыслен после слов владельца «мне не нравится вкладка Планы»:
+  // первым идёт ОБЗОР месяца (план против факта и темпа), а на каждой вкладке
+  // план стоит рядом со своим фактом. «Регионы» стали видом «Отгрузок» — это
+  // факт того же плана, и отдельная вкладка разносила их по разным местам.
+  const tabs: { href: string; label: string; match?: string[] }[] = [
+    { href: `/plans${q}`, label: "Обзор", match: ["/plans"] },
+    { href: `/plans/sales${q}`, label: "Продажи", match: ["/plans/sales"] },
+    { href: `/plans/shipments${q}`, label: "Отгрузки", match: ["/plans/shipments", "/plans/regions"] },
+    { href: `/plans/balance${q}`, label: "Срезка", match: ["/plans/balance"] },
     // Прайс-лист живёт здесь, а не в «Продажах»: цену задаёт РОП, а менеджеры
     // по ней продают. Так решил владелец.
-    { href: "/prices", label: "Прайс-лист" },
+    { href: "/prices", label: "Прайс", match: ["/prices"] },
   ];
-  if (role === ROLES.ADMIN) tabs.push({ href: "/forecast", label: "Прогноз срезки" });
+  if (role === ROLES.ADMIN) tabs.push({ href: "/forecast", label: "Прогноз срезки", match: ["/forecast"] });
   return tabs;
 }

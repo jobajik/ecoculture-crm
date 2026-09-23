@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { saveManagerPlansAction } from "@/app/plans/actions";
 import { PLAN_FLOWERS, planCellKey, planFlowerLabel } from "@/lib/managerPlans";
 import NumberCell from "./NumberCell";
+import PlanProgress, { paceTone, TONE_TEXT } from "./PlanProgress";
 import { unwrap } from "@/lib/actionResult";
 
 export interface ManagerPlanEntry {
@@ -42,9 +43,15 @@ interface Cell {
 export default function ManagerPlansForm({
   period,
   initial,
+  fact = {},
+  pace = 0,
 }: {
   period: string;
   initial: ManagerPlanEntry[];
+  /** Продано за месяц: почта → цветок → сумма и стебли. План стоит рядом со своим фактом. */
+  fact?: Record<string, Record<string, { amount: number; stems: number }>>;
+  /** Какая доля месяца прошла, % — отметка темпа на полосках. */
+  pace?: number;
 }) {
   const router = useRouter();
 
@@ -65,6 +72,11 @@ export default function ManagerPlansForm({
     setSaved(null);
     setError(null);
   }
+
+  const factOf = (email: string, flowerType: string) => fact[email.toLowerCase()]?.[flowerType] ?? { amount: 0, stems: 0 };
+  const factTotal = (email: string) =>
+    PLAN_FLOWERS.reduce((sum, f) => sum + factOf(email, f).amount, 0);
+  const pctOf = (done: number, plan: number): number | null => (plan > 0 ? (done / plan) * 100 : null);
 
   const cell = (email: string, flowerType: string): Cell =>
     cells[planCellKey(email, flowerType)] ?? { amount: 0, stems: 0 };
@@ -221,9 +233,15 @@ export default function ManagerPlansForm({
               <th className="px-4 py-3 font-medium w-40">
                 План стеблей
               </th>
-              {/* На телефоне четвёртая колонка не влезает: поля ввода сжимаются
-                  так, что числа в них обрезаются. Там итог показан строкой под
-                  фамилией. */}
+              <th className="px-4 py-3 font-medium hidden sm:table-cell min-w-[190px]">
+                Продано
+                <div className="text-xs font-normal text-ink-muted">
+                  {planFlowerLabel(flower).toLowerCase()}, за месяц
+                </div>
+              </th>
+              {/* На телефоне последние колонки не влезают: поля ввода сжимаются
+                  так, что числа в них обрезаются. Там факт и итог показаны
+                  строками под фамилией. */}
               <th className="px-4 py-3 font-medium text-right hidden sm:table-cell">
                 Всего за месяц
                 <div className="text-xs font-normal text-ink-muted">все цветки</div>
@@ -239,8 +257,18 @@ export default function ManagerPlansForm({
                   <td className="px-4 py-2">
                     <div className="font-medium">{row.name || row.email}</div>
                     <div className="text-xs text-ink-muted hidden sm:block">{row.email}</div>
-                    <div className="text-xs text-ink-secondary sm:hidden tabular-nums">
-                      всего за месяц: {nf(total.amount)} ₸
+                    <div className="sm:hidden mt-1 space-y-1">
+                      <div className="text-xs text-ink-secondary tabular-nums">
+                        продано {nf(factOf(row.email, flower).amount)} ₸
+                        {current.amount > 0 && (
+                          <span className={clsx("ml-1", TONE_TEXT[paceTone(pctOf(factOf(row.email, flower).amount, current.amount), pace)])}>
+                            · {Math.round(pctOf(factOf(row.email, flower).amount, current.amount) ?? 0)} %
+                          </span>
+                        )}
+                      </div>
+                      {current.amount > 0 && (
+                        <PlanProgress percent={pctOf(factOf(row.email, flower).amount, current.amount)} pace={pace} size="sm" />
+                      )}
                     </div>
                     {total.legacy && (
                       <div className="text-xs text-status-warning mt-0.5">
@@ -266,12 +294,30 @@ export default function ManagerPlansForm({
                       ariaLabel={`План стеблей, ${planFlowerLabel(flower)}, ${row.name || row.email}`}
                     />
                   </td>
+                  <td className="px-4 py-2 hidden sm:table-cell">
+                    {(() => {
+                      const done = factOf(row.email, flower);
+                      const p = pctOf(done.amount, current.amount);
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex items-baseline justify-between gap-2 tabular-nums">
+                            <span>{nf(done.amount)} ₸</span>
+                            <span className={clsx("text-xs font-medium", TONE_TEXT[paceTone(p, pace)])}>
+                              {p === null ? "плана нет" : `${Math.round(p)} %`}
+                            </span>
+                          </div>
+                          <PlanProgress percent={p} pace={pace} size="sm" />
+                          <div className="text-[11px] text-ink-muted tabular-nums">{nf(done.stems)} шт</div>
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 py-2 text-right tabular-nums hidden sm:table-cell">
                     <div className={clsx("font-medium", total.legacy && "text-status-warning")}>
                       {nf(total.amount)} ₸
                     </div>
                     <div className="text-xs text-ink-muted">
-                      {total.legacy ? "старым числом" : `${nf(total.stems)} шт`}
+                      {total.legacy ? "старым числом" : `продано ${nf(factTotal(row.email))} ₸`}
                     </div>
                   </td>
                 </tr>
@@ -291,6 +337,23 @@ export default function ManagerPlansForm({
               </td>
               <td className="px-4 py-3 text-right font-semibold tabular-nums">
                 {nf(flowerTotals[flower].stems)} шт
+              </td>
+              <td className="px-4 py-3 hidden sm:table-cell">
+                {(() => {
+                  const done = initial.reduce((sum, r) => sum + factOf(r.email, flower).amount, 0);
+                  const p = pctOf(done, flowerTotals[flower].amount);
+                  return (
+                    <div className="space-y-1">
+                      <div className="flex items-baseline justify-between gap-2 tabular-nums font-semibold">
+                        <span>{nf(done)} ₸</span>
+                        <span className={clsx("text-xs", TONE_TEXT[paceTone(p, pace)])}>
+                          {p === null ? "" : `${Math.round(p)} %`}
+                        </span>
+                      </div>
+                      <PlanProgress percent={p} pace={pace} size="sm" />
+                    </div>
+                  );
+                })()}
               </td>
               <td className="px-4 py-3 text-right font-semibold tabular-nums hidden sm:table-cell">
                 <div>{nf(grandTotal.amount)} ₸</div>

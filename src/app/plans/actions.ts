@@ -78,6 +78,7 @@ async function saveManagerPlansActionInner(period: string, rows: PlanRow[]) {
   const result = await savePlans(cleaned);
 
   revalidatePath("/plans");
+  revalidatePath("/plans/sales");
   revalidatePath("/sales");
   revalidatePath("/sales/plan");
   return result;
@@ -110,6 +111,7 @@ async function saveShipmentPlansActionInner(period: string, rows: ShipmentPlanIn
   const result = await saveShipmentPlans(cleaned, email);
 
   revalidatePath("/plans/shipments");
+  revalidatePath("/plans");
   revalidatePath("/plans/balance");
   return result;
 }
@@ -152,6 +154,7 @@ async function saveShipmentPlansMonthActionInner(month: string, rows: ShipmentPl
   const result = await saveShipmentPlans(cleaned, email);
 
   revalidatePath("/plans/shipments");
+  revalidatePath("/plans");
   revalidatePath("/plans/balance");
   return result;
 }

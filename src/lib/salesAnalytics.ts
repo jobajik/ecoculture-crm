@@ -32,6 +32,8 @@ export interface ManagerSalesRow {
   avgOrderAmount: number;
   /** Сколько менеджер продал цветка каждого производства за месяц. */
   byFarm: Record<string, number>;
+  /** По цветку — ради плана, который ставится по цветкам (вкладка «Планы → Продажи»). */
+  byFlower: Record<string, { amount: number; stems: number }>;
 }
 
 /** Итог месяца по производству: Rose Farm (розы, эустома) и Есентай Агро Хим (хризантема). */
@@ -175,6 +177,7 @@ export async function getSalesSnapshot(
         progressPercent: 0,
         avgOrderAmount: 0,
         byFarm: {},
+        byFlower: {},
       };
       rowsByEmail.set(key, row);
     }
@@ -208,6 +211,9 @@ export async function getSalesSnapshot(
       const itemAmount = item.quantity * item.unitPrice;
       const farm = getFarmFor(item.flowerType) ?? "";
       row.byFarm[farm] = (row.byFarm[farm] ?? 0) + itemAmount;
+      const mine = (row.byFlower[item.flowerType] ??= { amount: 0, stems: 0 });
+      mine.amount += itemAmount;
+      mine.stems += item.quantity;
       const farmRow = farmMap.get(farm) ?? { amount: 0, stems: 0 };
       farmRow.amount += itemAmount;
       farmRow.stems += item.quantity;
