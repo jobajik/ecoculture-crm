@@ -78,39 +78,47 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
   const rows = result?.rows ?? [];
   const shown = expanded ? rows : rows.slice(0, VISIBLE_ROWS);
 
+  // Без файла это две кнопки в строке инструментов, а не отдельная карточка с
+  // полем выбора файла: карточка занимала полэкрана, а нужна раз в месяц.
+  // Предпросмотр, когда он есть, встаёт на всю ширину следующей строкой.
   return (
-    <div className="card space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-medium">Загрузка из Excel</h2>
-          <p className="text-sm text-ink-secondary mt-0.5">
-            Пустая ячейка — не менять, 0 — цены нет.
-            <Hint>
-              Файл выгружается уже с действующими ценами: правьте только то, что меняется. Лист на
-              цветок, строки — сорта, колонки — длина или категория.
-            </Hint>
-          </p>
-        </div>
+    <>
+      <div className="flex flex-wrap items-center gap-2 ml-auto">
         <a
           href={kind ? `/api/prices/template?kind=${kind}` : "/api/prices/template"}
           className="btn-secondary !py-1.5"
+          title="Файл уже с действующими ценами: правьте только то, что меняется"
         >
-          ↓ Скачать текущий прайс
+          ↓ Excel
         </a>
+        <button
+          type="button"
+          className="btn-secondary !py-1.5 disabled:opacity-50"
+          disabled={parsing || importing}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {parsing ? "Читаю файл…" : "Загрузить из Excel"}
+        </button>
+        <Hint>
+          Скачайте файл — в нём уже действующие цены, — поправьте нужное и загрузите обратно. Лист на
+          цветок, строки — сорта, колонки — длина или категория. Пустая ячейка — не менять, 0 — цены нет.
+          Перед записью покажу «было → стало».
+        </Hint>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFile(file);
+          }}
+        />
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx"
-        className="block w-full text-sm text-ink-secondary file:mr-3 file:rounded-lg file:border file:border-line-hairline file:bg-surface-plane file:px-4 file:py-2 file:text-sm file:font-medium file:text-ink-primary hover:file:bg-line-hairline"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
-        }}
-      />
-      {fileName && !parsing && <p className="text-xs text-ink-muted">Файл: {fileName}</p>}
-      {parsing && <p className="text-sm text-ink-secondary">Читаю файл…</p>}
+      {(error || done || result) && (
+      <div className="basis-full card space-y-4">
+      {fileName && <p className="text-xs text-ink-muted">Файл: {fileName}</p>}
 
       {error && (
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
@@ -233,5 +241,7 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
         </div>
       )}
     </div>
+      )}
+    </>
   );
 }

@@ -27,6 +27,8 @@ import ShipmentsViewSwitch from "../ShipmentsViewSwitch";
 import { monthFrom, prefetchPlanTabs } from "../data";
 import DirectionFixRow from "@/components/DirectionFixRow";
 import { buildRegionIncome, isRegionOrder } from "@/lib/orderKind";
+import PlanProgress, { TONE_TEXT, paceTone } from "@/components/PlanProgress";
+import { localDayKey } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -53,6 +55,11 @@ export const revalidate = 0;
  * Алматы в списке направлений нет — так решил владелец. Поэтому сумма по
  * направлениям меньше общих продаж, и на странице об этом сказано прямо: иначе
  * первая же сверка с аналитикой выглядит как расхождение в данных.
+ *
+ * Вид (сентябрь, «слишком много загажено»): шесть плиток и таблица «По цветку»
+ * сведены в одну карточку с полоской темпа, проценты цветков стоят прямо на
+ * переключателе цветка, а список заявок свёрнут — он нужен, когда ищут
+ * конкретную заявку, а не каждый раз.
  */
 export default async function RegionSalesPage({
   searchParams,
@@ -173,111 +180,110 @@ export default async function RegionSalesPage({
   const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
   const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v)} %`);
 
+  // Темп — какая доля выбранного отрезка уже прошла (для недели — по дням недели).
+  const today = localDayKey();
+  const dayNo = (iso: string) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86_400_000;
+  const pace =
+    today < from ? 0 : today > to ? 100 : ((dayNo(today) - dayNo(from) + 1) / (dayNo(to) - dayNo(from) + 1)) * 100;
+  const tone = paceTone(fact.donePercent, pace);
+  const notShipped = fact.orderedStems - fact.shippedStems;
+  const cityOrders = income.reduce((s, r) => s + r.orders, 0);
+  const flowerHref = (f: string) => {
+    const params = new URLSearchParams({ period: month });
+    if (f) params.set("flower", f);
+    if (week) params.set("week", week.code);
+    return `/plans/regions?${params.toString()}`;
+  };
+
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Планы</h1>
         <Link href="/orders/new?region=1" className="btn-primary">
           + Объём в регион
         </Link>
       </div>
 
-      <div className="mb-4">
-        <SectionTabs tabs={plansTabsFor(role, month)} />
+      <SectionTabs tabs={plansTabsFor(role, month)} />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PeriodPicker period={month} />
+        <ShipmentsViewSwitch view="fact" month={month} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <ShipmentsViewSwitch view="fact" month={month} />
-        <span className="text-sm text-ink-secondary">
-          Доставка {formatDay(from)} — {formatDay(to)}
+      {/* --- Отбор: неделя и цветок, проценты цветков прямо на кнопках -------- */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Segmented
+          items={[
+            { href: keep({}), active: !week, label: "Месяц" },
+            ...weeks.map((w) => ({ href: keep({ week: w.code }), active: week?.code === w.code, label: w.shortLabel })),
+          ]}
+        />
+        <Segmented
+          items={[
+            { href: flowerHref(""), active: !flower, label: "Все", note: pct(allFlowers.donePercent) },
+            ...FLOWER_ORDER.map((f) => {
+              const row = allFlowers.byFlower.find((r) => r.flowerType === f);
+              return {
+                href: flowerHref(f),
+                active: flower === f,
+                label: FLOWER_TYPE_LABELS_PLURAL[f] ?? f,
+                note: row && row.planStems + row.orderedStems > 0 ? pct(row.donePercent) : "",
+              };
+            }),
+          ]}
+        />
+        <span className="text-xs text-ink-muted">
+          доставка {formatDay(from)} — {formatDay(to)}
           <Hint>
             Факт считается по дню доставки. Отменённые и заявки в наши магазины не в счёт. Алматы в
-            плане нет, поэтому сумма по направлениям меньше общих продаж.
+            плане нет, поэтому сумма по направлениям меньше общих продаж. Процент у цветка — сколько
+            заказано от его плана. Риска на полоске — сколько периода уже прошло.
           </Hint>
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-3">
-        <PeriodPicker period={month} />
-        <div className="flex flex-wrap gap-2">
-          <WeekPill href={keep({})} active={!week} label="Весь месяц" />
-          {weeks.map((w) => (
-            <WeekPill
-              key={w.code}
-              href={keep({ week: w.code })}
-              active={week?.code === w.code}
-              label={w.shortLabel}
-            />
-          ))}
+      {/* --- Сводка одной карточкой ------------------------------------------ */}
+      <section className="card space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <span className="text-2xl font-semibold tabular-nums">{nf(fact.orderedStems)}</span>
+            <span className="ml-2 text-ink-secondary">
+              {fact.planStems > 0 ? `из ${nf(fact.planStems)} по плану заказано` : "заказано · плана на период нет"}
+            </span>
+          </div>
+          {fact.planStems > 0 && (
+            <span className={`text-xl font-semibold tabular-nums ${TONE_TEXT[tone]}`}>{pct(fact.donePercent)}</span>
+          )}
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <span className="text-sm text-ink-secondary">Цветок:</span>
-        <WeekPill
-          href={`/plans/regions?period=${month}${week ? `&week=${week.code}` : ""}`}
-          active={!flower}
-          label="Все"
-        />
-        {FLOWER_ORDER.map((f) => {
-          const params = new URLSearchParams({ period: month, flower: f });
-          if (week) params.set("week", week.code);
-          return (
-            <WeekPill
-              key={f}
-              href={`/plans/regions?${params.toString()}`}
-              active={flower === f}
-              label={FLOWER_TYPE_LABELS_PLURAL[f] ?? f}
-            />
-          );
-        })}
-      </div>
-
-      <div className="grid sm:grid-cols-4 gap-3 mb-5">
-        <Tile title="План" value={nf(fact.planStems)} hint="стеблей за период" />
-        <Tile title="Заказано" value={nf(fact.orderedStems)} hint={`заявок: ${fact.orders}`} />
-        <Tile
-          title="Отгружено"
-          value={nf(fact.shippedStems)}
-          hint={
-            fact.orderedStems > fact.shippedStems
-              ? `ещё не уехало ${nf(fact.orderedStems - fact.shippedStems)}`
-              : "всё уехало"
-          }
-          warn={fact.orderedStems > fact.shippedStems}
-        />
-        <Tile
-          title="Выполнение"
-          value={pct(fact.donePercent)}
-          hint={fact.planStems > 0 ? "заказано от плана" : "план на период не поставлен"}
-          warn={fact.donePercent !== null && fact.donePercent < 80}
-        />
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-3 mb-5">
-        <Tile
-          title="Поступило"
-          value={`${nf(incomeTotal)} ₸`}
-          hint={
-            waitingIncome > 0
-              ? `${waitingIncome} заявок ждут суммы от бухгалтера`
-              : "суммы подтверждены"
-          }
-          warn={waitingIncome > 0}
-        />
-        <Tile
-          title="Заявок по регионам"
-          value={String(income.reduce((s, r) => s + r.orders, 0))}
-          hint="объём на города за период"
-        />
-      </div>
+        {fact.planStems > 0 && <PlanProgress percent={fact.donePercent} pace={pace} />}
+        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-line-hairline text-sm">
+          <Stat
+            title="Отгружено"
+            value={nf(fact.shippedStems)}
+            note={notShipped > 0 ? `ещё не уехало ${nf(notShipped)}` : fact.orderedStems > 0 ? "всё уехало" : null}
+            warn={notShipped > 0}
+          />
+          <Stat
+            title="Поступило"
+            value={`${nf(incomeTotal)} ₸`}
+            note={waitingIncome > 0 ? `ждут суммы от бухгалтера: ${waitingIncome}` : null}
+            warn={waitingIncome > 0}
+          />
+          <Stat
+            title="Заявок"
+            value={String(fact.orders)}
+            note={cityOrders > 0 ? `из них объём на города: ${cityOrders}` : null}
+          />
+        </dl>
+      </section>
 
       {missing.length > 0 && (
-        <div className="card mb-5 border-[#d9b25c]">
-          <h2 className="font-medium mb-1">Похоже на регион, но направление не стоит</h2>
-          <p className="text-sm text-ink-secondary mb-3">
-            Без направления заявка не попадёт в план.
-          </p>
+        <section className="card border-[#d9b25c] space-y-2">
+          <h2 className="font-medium">
+            Похоже на регион, но без направления · {missing.length}
+            <Hint>Без направления заявка не попадёт в план. Поставьте его здесь одним нажатием.</Hint>
+          </h2>
           <div className="space-y-2">
             {missing.map((m) => (
               <DirectionFixRow
@@ -289,263 +295,196 @@ export default async function RegionSalesPage({
               />
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      <h2 className="font-medium mb-2">По цветку</h2>
-      <div className="card !p-0 table-scroll table-cards mb-6">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-2.5 font-medium">Цветок</th>
-              <th className="px-3 py-2.5 font-medium text-right">План, шт</th>
-              <th className="px-3 py-2.5 font-medium text-right">Заказано</th>
-              <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
-              <th className="px-3 py-2.5 font-medium text-right">Выполнение</th>
-            </tr>
-          </thead>
-          <tbody>
-            {allFlowers.byFlower.map((f) => (
-              <tr
-                key={f.flowerType}
-                className={
-                  "border-b border-line-hairline last:border-0 " +
-                  (flower && flower !== f.flowerType ? "opacity-45" : "")
-                }
-              >
-                <td data-label="Цветок" className="px-4 py-2.5 font-medium whitespace-nowrap">
-                  {FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}
-                </td>
-                <td data-label="План, шт" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
-                  {f.planStems > 0 ? nf(f.planStems) : "—"}
-                </td>
-                <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
-                  {f.orderedStems > 0 ? nf(f.orderedStems) : "—"}
-                </td>
-                <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums">
-                  {f.shippedStems > 0 ? nf(f.shippedStems) : "—"}
-                </td>
-                <td data-label="Выполнение"
-                  className={
-                    "px-3 py-2.5 text-right tabular-nums " +
-                    (f.donePercent === null
-                      ? "text-ink-muted"
-                      : f.donePercent >= 100
-                        ? "text-status-good"
-                        : f.donePercent >= 80
-                          ? ""
-                          : "text-[#8a5a00]")
-                  }
-                >
-                  {pct(f.donePercent)}
-                </td>
+      {/* --- По направлениям ------------------------------------------------- */}
+      <section>
+        <h2 className="font-medium mb-2">
+          По направлениям
+          {flower ? <span className="text-ink-secondary font-normal"> · {FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower}</span> : null}
+        </h2>
+        <div className="card !p-0 table-scroll table-cards">
+          <table className="w-full text-sm min-w-[680px]">
+            <thead>
+              <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                <th className="px-4 py-2.5 font-medium">Направление</th>
+                <th className="px-3 py-2.5 font-medium text-right">План</th>
+                <th className="px-3 py-2.5 font-medium text-right">Заказано</th>
+                <th className="px-3 py-2.5 font-medium w-40">Выполнение</th>
+                <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
+                <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <h2 className="font-medium mb-2">
-        По направлениям
-        {flower ? ` · ${FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower}` : ""}
-      </h2>
-      <div className="card !p-0 table-scroll table-cards mb-6">
-        <table className="w-full text-sm min-w-[720px]">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-2.5 font-medium">Направление</th>
-              <th className="px-3 py-2.5 font-medium text-right">План, шт</th>
-              <th className="px-3 py-2.5 font-medium text-right">Заказано</th>
-              <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
-              <th className="px-3 py-2.5 font-medium text-right">Выполнение</th>
-              <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
-              <th className="px-3 py-2.5 font-medium text-right">Заявок</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fact.groups.map((group) => {
-              // Пустые блоки не показываем совсем: у хозяйства их четыре, и
-              // три строки прочерков вместо «Экспорта» только мешают читать.
-              const useful = group.rows.filter(
-                (r) => r.planStems > 0 || r.orderedStems > 0 || r.orders > 0
-              );
-              if (useful.length === 0) return null;
-              // Заголовок блока и его строки идут в ОДИН И ТОТ ЖЕ tbody.
-              // Сначала каждый блок был вложенной таблицей внутри ячейки — и
-              // колонки «Экспорта» встали по своим ширинам, не совпав с
-              // колонками «Регионов». Числа в соседних строках оказались в
-              // разных местах; на скриншоте это видно сразу, в вёрстке — нет.
-              return (
-                <Fragment key={group.key}>
-                  <tr className="bg-surface-plane/60 border-b border-line-hairline">
-                    <td colSpan={7} className="px-4 py-1.5 text-xs text-ink-secondary">
-                      {group.label}
-                    </td>
-                  </tr>
-                  {useful.map((r) => (
-                    <tr key={r.direction} className="border-b border-line-hairline">
-                      <td data-label="Направление" className="px-4 py-2.5 font-medium whitespace-nowrap">{r.direction}</td>
-                      <td data-label="План, шт" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
-                        {r.planStems > 0 ? nf(r.planStems) : "—"}
-                      </td>
-                      <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
-                        {r.orderedStems > 0 ? nf(r.orderedStems) : "—"}
-                      </td>
-                      <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums">
-                        {r.shippedStems > 0 ? nf(r.shippedStems) : "—"}
-                      </td>
-                      <td data-label="Выполнение"
-                        className={
-                          "px-3 py-2.5 text-right tabular-nums " +
-                          (r.donePercent === null
-                            ? "text-ink-muted"
-                            : r.donePercent >= 100
-                              ? "text-status-good"
-                              : r.donePercent >= 80
-                                ? ""
-                                : "text-[#8a5a00]")
-                        }
-                      >
-                        {pct(r.donePercent)}
-                      </td>
-                      <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">
-                        {(incomeByDirection.get(r.direction)?.income ?? 0) > 0
-                          ? `${nf(incomeByDirection.get(r.direction)!.income)} ₸`
-                          : "—"}
-                        {(incomeByDirection.get(r.direction)?.waitingIncome ?? 0) > 0 && (
-                          <span className="block text-[11px] text-[#8a5a00]">
-                            ждёт суммы: {incomeByDirection.get(r.direction)!.waitingIncome}
-                          </span>
-                        )}
-                      </td>
-                      <td data-label="Заявок" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
-                        {r.orders || "—"}
+            </thead>
+            <tbody>
+              {fact.groups.map((group) => {
+                // Пустые блоки не показываем совсем: прочерки вместо «Экспорта» только мешают читать.
+                const useful = group.rows.filter((r) => r.planStems > 0 || r.orderedStems > 0 || r.orders > 0);
+                if (useful.length === 0) return null;
+                // Заголовок блока и его строки — в ОДНОМ tbody: вложенная таблица
+                // на блок ставила колонки по своим ширинам, и числа съезжали.
+                return (
+                  <Fragment key={group.key}>
+                    <tr>
+                      <td colSpan={6} className="px-4 pt-3 pb-1 text-xs text-ink-muted">
+                        {group.label}
                       </td>
                     </tr>
-                  ))}
-                </Fragment>
-              );
-            })}
-            {fact.planStems === 0 && fact.orderedStems === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
-                  За этот период ни плана, ни отгрузок по регионам нет.{" "}
-                  <Link href={`/plans/shipments?period=${month}`} className="text-accent hover:underline">
-                    Поставить план
-                  </Link>
-                </td>
-              </tr>
-            )}
-          </tbody>
-          <tfoot>
-            <tr className="bg-surface-plane/60">
-              <td data-label="Направление" className="px-4 py-2.5 font-medium">Всего</td>
-              <td data-label="План, шт" className="px-3 py-2.5 text-right tabular-nums font-medium">
-                {nf(fact.planStems)}
-              </td>
-              <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
-                {nf(fact.orderedStems)}
-              </td>
-              <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums font-medium">
-                {nf(fact.shippedStems)}
-              </td>
-              <td data-label="Выполнение" className="px-3 py-2.5 text-right tabular-nums font-medium">
-                {pct(fact.donePercent)}
-              </td>
-              <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums font-medium">
-                {nf(incomeTotal)} ₸
-              </td>
-              <td data-label="Заявок" className="px-3 py-2.5 text-right tabular-nums font-medium">{fact.orders}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+                    {useful.map((r) => {
+                      const inc = incomeByDirection.get(r.direction);
+                      const rowTone = paceTone(r.donePercent, pace);
+                      return (
+                        <tr key={r.direction} className="border-t border-line-hairline/70">
+                          <td data-label="Направление" className="px-4 py-2.5 font-medium whitespace-nowrap">
+                            {r.direction}
+                            {r.orders > 0 && (
+                              <span className="ml-1.5 text-xs font-normal text-ink-muted">· {r.orders} заяв.</span>
+                            )}
+                          </td>
+                          <td data-label="План" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                            {r.planStems > 0 ? nf(r.planStems) : null}
+                          </td>
+                          <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
+                            {r.orderedStems > 0 ? nf(r.orderedStems) : null}
+                          </td>
+                          <td data-label="Выполнение" className="px-3 py-2.5">
+                            {r.donePercent === null ? (
+                              r.orderedStems > 0 ? <span className="text-xs text-[#8a5a00]">без плана</span> : null
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 min-w-[60px]">
+                                  <PlanProgress percent={r.donePercent} pace={pace} size="sm" />
+                                </div>
+                                <span className={`w-10 text-right text-xs tabular-nums ${TONE_TEXT[rowTone]}`}>
+                                  {pct(r.donePercent)}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums">
+                            {r.shippedStems > 0 ? nf(r.shippedStems) : null}
+                          </td>
+                          <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">
+                            {(inc?.income ?? 0) > 0 ? `${nf(inc!.income)} ₸` : null}
+                            {(inc?.waitingIncome ?? 0) > 0 && (
+                              <span className="block text-[11px] text-[#8a5a00]">ждёт суммы: {inc!.waitingIncome}</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+              {fact.planStems === 0 && fact.orderedStems === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
+                    За этот период ни плана, ни отгрузок по регионам нет.{" "}
+                    <Link href={`/plans/shipments?period=${month}`} className="text-accent hover:underline">
+                      Поставить план
+                    </Link>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <h2 className="font-medium mb-2">
-        Заявки периода
-        {flower ? ` · только ${(FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower).toLowerCase()}` : ""}
-      </h2>
-      <div className="card !p-0 table-scroll table-cards">
-        <table className="w-full text-sm min-w-[680px]">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-2.5 font-medium">Доставка</th>
-              <th className="px-3 py-2.5 font-medium">Направление</th>
-              <th className="px-3 py-2.5 font-medium">Клиент</th>
-              <th className="px-3 py-2.5 font-medium">Заявка</th>
-              <th className="px-3 py-2.5 font-medium text-right">Стеблей</th>
-              <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
-              <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
-            </tr>
-          </thead>
-          <tbody>
-            {regionOrders.map((o) => (
-              <tr key={o.orderId} className="border-b border-line-hairline last:border-0">
-                <td data-label="Доставка" className="px-4 py-2.5 whitespace-nowrap text-ink-secondary">
-                  {formatDay(o.deliveryDate)}
-                </td>
-                <td data-label="Направление" className="px-3 py-2.5 whitespace-nowrap font-medium">{o.direction}</td>
-                <td data-label="Клиент" className="px-3 py-2.5">{o.clientName}</td>
-                <td data-label="Заявка" className="px-3 py-2.5 whitespace-nowrap">
-                  <Link href={`/orders/${o.orderId}`} className="hover:underline">
-                    {o.orderId}
-                  </Link>
-                </td>
-                <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(o.stems)}</td>
-                <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
-                  {o.shipped > 0 ? nf(o.shipped) : "—"}
-                </td>
-                <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">{nf(o.amount)} ₸</td>
+      {/* --- Заявки периода — свёрнуты --------------------------------------- */}
+      <details className="card !p-0 group">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 font-medium [&::-webkit-details-marker]:hidden">
+          <span>
+            Заявки периода · {regionOrders.length}
+            {flower ? (
+              <span className="text-ink-secondary font-normal">
+                {" "}
+                · только {(FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower).toLowerCase()}
+              </span>
+            ) : null}
+          </span>
+          <span className="text-sm text-accent group-open:hidden">показать</span>
+          <span className="text-sm text-accent hidden group-open:inline">скрыть</span>
+        </summary>
+        <div className="table-scroll table-cards border-t border-line-hairline">
+          <table className="w-full text-sm min-w-[680px]">
+            <thead>
+              <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                <th className="px-4 py-2.5 font-medium">Доставка</th>
+                <th className="px-3 py-2.5 font-medium">Направление</th>
+                <th className="px-3 py-2.5 font-medium">Клиент</th>
+                <th className="px-3 py-2.5 font-medium">Заявка</th>
+                <th className="px-3 py-2.5 font-medium text-right">Стеблей</th>
+                <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
+                <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
               </tr>
-            ))}
-            {regionOrders.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
-                  {flower
-                    ? `Заявок в регионы по этому цветку за период нет.`
-                    : "Заявок в регионы за этот период нет."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {regionOrders.map((o) => (
+                <tr key={o.orderId} className="border-b border-line-hairline last:border-0">
+                  <td data-label="Доставка" className="px-4 py-2.5 whitespace-nowrap text-ink-secondary">
+                    {formatDay(o.deliveryDate)}
+                  </td>
+                  <td data-label="Направление" className="px-3 py-2.5 whitespace-nowrap font-medium">{o.direction}</td>
+                  <td data-label="Клиент" className="px-3 py-2.5">{o.clientName}</td>
+                  <td data-label="Заявка" className="px-3 py-2.5 whitespace-nowrap">
+                    <Link href={`/orders/${o.orderId}`} className="hover:underline">
+                      {o.orderId}
+                    </Link>
+                  </td>
+                  <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(o.stems)}</td>
+                  <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                    {o.shipped > 0 ? nf(o.shipped) : "—"}
+                  </td>
+                  <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">{nf(o.amount)} ₸</td>
+                </tr>
+              ))}
+              {regionOrders.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
+                    {flower ? "Заявок в регионы по этому цветку за период нет." : "Заявок в регионы за этот период нет."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </div>
   );
 }
 
-function WeekPill({ href, active, label }: { href: string; active: boolean; label: string }) {
+function Segmented({
+  items,
+}: {
+  items: { href: string; active: boolean; label: string; note?: string }[];
+}) {
   return (
-    <Link
-      href={href}
-      className={
-        "px-3 py-1.5 rounded-lg text-sm border transition-colors " +
-        (active
-          ? "border-accent bg-accent-soft text-ink-primary font-medium"
-          : "border-line-hairline text-ink-secondary hover:text-ink-primary")
-      }
-    >
-      {label}
-    </Link>
+    <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-line-hairline bg-surface-plane p-1">
+      {items.map((i) => (
+        <Link
+          key={i.href}
+          href={i.href}
+          aria-current={i.active ? "page" : undefined}
+          className={
+            "rounded-md px-3 py-1.5 text-sm whitespace-nowrap " +
+            (i.active ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary")
+          }
+        >
+          {i.label}
+          {i.note ? <span className="ml-1.5 text-xs font-normal text-ink-muted tabular-nums">{i.note}</span> : null}
+        </Link>
+      ))}
+    </div>
   );
 }
 
-function Tile({
-  title,
-  value,
-  hint,
-  warn,
-}: {
-  title: string;
-  value: string;
-  hint: string;
-  warn?: boolean;
-}) {
+function Stat({ title, value, note, warn }: { title: string; value: string; note: string | null; warn?: boolean }) {
   return (
-    <div className="card">
-      <div className="text-sm text-ink-secondary">{title}</div>
-      <div className="text-2xl font-semibold mt-1">{value}</div>
-      <div className={`text-xs mt-1 ${warn ? "text-[#8a5a00]" : "text-ink-muted"}`}>{hint}</div>
+    <div>
+      <dt className="text-ink-secondary">{title}</dt>
+      <dd className="text-lg font-semibold tabular-nums">{value}</dd>
+      {note && <dd className={`text-xs ${warn ? "text-[#8a5a00]" : "text-ink-muted"}`}>{note}</dd>}
     </div>
   );
 }

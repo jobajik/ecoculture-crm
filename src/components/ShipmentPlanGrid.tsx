@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import {
@@ -18,7 +18,9 @@ import {
   type PlanWeek,
 } from "@/lib/constants";
 import { planCellKey } from "@/lib/planCell";
-import NumberCell, { parseNumber } from "./NumberCell";
+import { formatNumber, parseNumber } from "./NumberCell";
+import Hint from "./Hint";
+import SaveBar from "./SaveBar";
 import { unwrapValue } from "@/lib/actionResult";
 
 /**
@@ -38,6 +40,11 @@ import { unwrapValue } from "@/lib/actionResult";
  *
  * Цветок остаётся переключателем: направлений девять, и три цветка сразу дали бы
  * двадцать семь строк по пять колонок — это снова полотно.
+ *
+ * Вид (сентябрь, «слишком много загажено»): одна строка управления вместо
+ * карточки с тремя кнопками, клетки без рамок и без прочерков — как лист
+ * таблицы, правленая клетка подсвечена, «Сохранить» появляется полоской внизу
+ * только когда есть что сохранить.
  */
 
 export interface ShipmentPlanCell {
@@ -292,45 +299,54 @@ export default function ShipmentPlanGrid({
   const forecastByWeek = forecast[activeFlower] ?? {};
   const forecastMonth = weeks.reduce((sum, w) => sum + (forecastByWeek[w.code] ?? 0), 0);
   const hasForecast = forecastMonth > 0;
+  const listPrice = prices[activeFlower] ?? 0;
+  const orderedMonth = weeks.reduce((sum, w) => sum + factWeek(w.code).ordered, 0);
+  const shippedMonth = weeks.reduce((sum, w) => sum + factWeek(w.code).shipped, 0);
+  const cols = weeks.length + 2;
+
+  function resetAll() {
+    setValues(initial);
+    setPriceByFlower(prices);
+    setNote(null);
+    setError(null);
+  }
 
   return (
-    <div className="space-y-4">
-      {/* --- Цветок ---------------------------------------------------------- */}
-      <div className="flex flex-wrap gap-2">
-        {flowerTypes.map((flowerType) => {
-          const active = flowerType === activeFlower;
-          const sum = filledByFlower[flowerType] ?? 0;
-          return (
-            <button
-              key={flowerType}
-              type="button"
-              onClick={() => setActiveFlower(flowerType)}
-              className={clsx(
-                "rounded-xl border px-3 py-2 text-left transition-colors",
-                active
-                  ? "border-accent bg-accent-soft text-accent"
-                  : "border-line-hairline hover:bg-surface-plane"
-              )}
-            >
-              <span className="block text-sm font-medium">
+    <div className="space-y-3">
+      {/* --- Одна строка управления: цветок · цена · действия ----------------- */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
+          {flowerTypes.map((flowerType) => {
+            const active = flowerType === activeFlower;
+            const sum = filledByFlower[flowerType] ?? 0;
+            return (
+              <button
+                key={flowerType}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveFlower(flowerType)}
+                className={clsx(
+                  "rounded-md px-3 py-1.5 text-sm whitespace-nowrap",
+                  active ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary"
+                )}
+              >
                 {FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType}
-              </span>
-              <span className="block text-[11px] text-ink-muted">
-                {sum > 0 ? `${fmt(sum)} шт за месяц` : "не заполнено"}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <span className={clsx("ml-1.5 text-xs tabular-nums", active ? "text-ink-secondary" : "text-ink-muted")}>
+                  {sum > 0 ? fmt(sum) : "0"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
-      {/* --- Цена и кнопки --------------------------------------------------- */}
-      <div className="card flex flex-wrap items-end gap-x-6 gap-y-3">
-        <div>
-          <label className="label">Цена стебля</label>
-          <div className="flex items-baseline gap-2">
+        <label className="flex items-center gap-2 text-sm text-ink-secondary">
+          Цена стебля
+          <span className="relative">
             <input
-              className="input !w-28 text-right tabular-nums"
+              className="w-24 rounded-md border border-line-hairline bg-surface pl-2 pr-6 py-1.5 text-right text-base sm:text-sm tabular-nums text-ink-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
               inputMode="decimal"
+              aria-label="Цена стебля"
               value={price ? price.toLocaleString("ru-RU") : ""}
               placeholder="0"
               onFocus={(e) => e.target.select()}
@@ -341,37 +357,30 @@ export default function ShipmentPlanGrid({
                 }))
               }
             />
-            <span className="text-sm text-ink-secondary">₸</span>
-          </div>
-          <p className="text-xs text-ink-muted mt-1 max-w-sm">
-            {prices[activeFlower] > 0
-              ? `По прайсу — ${fmt(prices[activeFlower])} ₸.`
-              : "В прайсе цены нет — без неё план только в стеблях."}
-            {price !== (prices[activeFlower] ?? 0) &&
-              " Суммы цветка пересчитаются при сохранении."}
-          </p>
-        </div>
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-muted">₸</span>
+          </span>
+          {price !== listPrice ? (
+            <span className="text-xs text-[#8a5a00]">
+              {listPrice > 0 ? `в прайсе ${fmt(listPrice)} — ` : ""}суммы пересчитаются
+            </span>
+          ) : (
+            listPrice === 0 && <span className="text-xs text-[#8a5a00]">нет в прайсе</span>
+          )}
+        </label>
 
-        <div className="flex flex-wrap items-center gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={handleCopyPrevious}
-            disabled={busy !== null}
-            className="btn-secondary disabled:opacity-50"
-          >
-            {busy === "copy" ? "Беру…" : "Взять из прошлого месяца"}
-          </button>
-          <a className="btn-secondary" href={`/api/plans/template?period=${month}`}>
-            ↓ Скачать шаблон
-          </a>
-          <button
-            type="button"
-            onClick={() => fileInput.current?.click()}
-            disabled={busy !== null}
-            className="btn-secondary disabled:opacity-50"
-          >
-            {busy === "file" ? "Читаю…" : "Загрузить файл"}
-          </button>
+        <div className="ml-auto flex items-center gap-1">
+          <Hint>
+            В клетке — план в стеблях. Под ним мелко — сколько уже заказано на эту неделю (и сколько
+            отгружено). Зелёным — заказов не меньше плана, жёлтым — везут без плана. Сумма не вводится:
+            стебли × цена стебля (из прайса, можно поправить на месяц). Внизу — прогноз срезки агронома
+            и сколько стеблей ещё никому не обещано.
+          </Hint>
+          <ActionsMenu
+            busy={busy}
+            month={month}
+            onCopy={handleCopyPrevious}
+            onUpload={() => fileInput.current?.click()}
+          />
           <input
             ref={fileInput}
             type="file"
@@ -385,181 +394,153 @@ export default function ShipmentPlanGrid({
         </div>
       </div>
 
-      {note && (
-        <div className="text-sm text-ink-secondary bg-accent-soft/60 rounded-lg px-3 py-2">{note}</div>
-      )}
+      {note && <div className="text-sm text-ink-secondary bg-accent-soft/60 rounded-lg px-3 py-2">{note}</div>}
       {error && (
-        <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
-          {error}
-        </div>
+        <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>
       )}
 
-      {/* --- Сетка ----------------------------------------------------------- */}
+      {/* --- Сетка: как лист таблицы, без рамки у каждого поля ---------------- */}
       <div className="card !p-0 overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
+        <table className="w-full text-sm min-w-[680px] border-collapse">
           <thead>
-            <tr className="border-b border-line-hairline text-ink-secondary">
-              <th className="text-left px-4 py-2 font-medium sticky left-0 bg-surface z-10 min-w-[200px]">
+            <tr className="border-b border-line-hairline">
+              <th className="text-left px-4 py-2.5 font-medium text-ink-secondary sticky left-0 bg-surface z-10 min-w-[170px]">
                 Направление
               </th>
               {weeks.map((week) => (
-                <th key={week.code} className="px-2 py-2 font-medium text-center whitespace-nowrap">
+                <th key={week.code} className="px-3 py-2.5 text-right font-medium whitespace-nowrap">
                   Неделя {week.index}
-                  <span className="block text-[11px] font-normal text-ink-muted">
-                    {week.label} · {week.days} дн.
-                  </span>
+                  <span className="block text-[11px] font-normal text-ink-muted">{week.label}</span>
                 </th>
               ))}
-              <th className="px-4 py-2 font-medium text-right whitespace-nowrap">За месяц</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap bg-surface-plane/50">Месяц</th>
             </tr>
           </thead>
 
           <tbody>
             {DIRECTION_GROUPS.map((group) => (
               <Fragment key={group.key}>
-                <tr className="bg-surface-plane/70">
+                <tr>
                   <th
-                    colSpan={weeks.length + 2}
-                    className="text-left px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-secondary sticky left-0"
+                    colSpan={cols}
+                    className="text-left px-4 pt-3 pb-1 text-xs font-medium text-ink-muted sticky left-0"
                   >
                     {group.label}
                   </th>
                 </tr>
-                {group.directions.map((direction) => (
-                  <tr key={direction} className="border-b border-line-hairline">
-                    <td className="px-4 py-1.5 sticky left-0 bg-surface z-10">{direction}</td>
-                    {weeks.map((week) => {
-                      const plan = get(week.code, direction);
-                      const done = factOf(week.code, direction);
-                      return (
-                        <td key={week.code} className="px-1 py-1.5 align-top">
-                          <NumberCell
-                            value={plan}
-                            onChange={(v) => setCell(week.code, direction, v)}
-                            className="!w-full text-right"
-                            ariaLabel={`${direction}, неделя ${week.index}`}
-                          />
-                          {done.ordered > 0 && <FactLine plan={plan} ordered={done.ordered} shipped={done.shipped} />}
-                        </td>
-                      );
-                    })}
-                    <td className="px-4 py-1.5 text-right tabular-nums align-top">
-                      <div className="font-medium">
-                        {totals.byDirection[direction] > 0 ? fmt(totals.byDirection[direction]) : "—"}
-                      </div>
-                      {factDirection(direction) > 0 && (
-                        <FactLine plan={totals.byDirection[direction] ?? 0} ordered={factDirection(direction)} />
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {group.directions.map((direction) => {
+                  const rowTotal = totals.byDirection[direction] ?? 0;
+                  const rowFact = factDirection(direction);
+                  return (
+                    <tr key={direction} className="border-t border-line-hairline/70 hover:bg-surface-plane/40">
+                      <td className="px-4 py-1 sticky left-0 bg-surface z-10 whitespace-nowrap">{direction}</td>
+                      {weeks.map((week) => {
+                        const plan = get(week.code, direction);
+                        const done = factOf(week.code, direction);
+                        const edited = plan !== (initial[planCellKey(week.code, direction, activeFlower)]?.stems ?? 0);
+                        return (
+                          <td key={week.code} className="px-1 py-1 align-top border-l border-line-hairline/70">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              aria-label={`${direction}, неделя ${week.index}`}
+                              value={formatNumber(plan)}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => setCell(week.code, direction, parseNumber(e.target.value))}
+                              className={clsx(
+                                "w-full rounded-md bg-transparent px-2 py-1.5 text-right tabular-nums text-base sm:text-sm",
+                                "hover:bg-surface-plane focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/40",
+                                edited && "bg-accent-soft/60 font-medium"
+                              )}
+                            />
+                            {done.ordered > 0 && <FactLine plan={plan} ordered={done.ordered} shipped={done.shipped} />}
+                          </td>
+                        );
+                      })}
+                      <td className="px-4 py-1 align-top text-right tabular-nums bg-surface-plane/50">
+                        <div className="py-1.5 font-medium">{rowTotal > 0 ? fmt(rowTotal) : ""}</div>
+                        {rowFact > 0 && <FactLine plan={rowTotal} ordered={rowFact} />}
+                      </td>
+                    </tr>
+                  );
+                })}
               </Fragment>
             ))}
           </tbody>
 
-          <tfoot>
-            <tr className="border-t border-line-hairline bg-surface-plane/40">
-              <td className="px-4 py-2 font-medium sticky left-0 bg-surface-plane/40">
-                Итого · {FLOWER_TYPE_LABELS_PLURAL[activeFlower] ?? activeFlower}
+          <tfoot className="tabular-nums">
+            <tr className="border-t-2 border-line-hairline">
+              <td className="px-4 py-2.5 font-semibold sticky left-0 bg-surface z-10">
+                Итого
                 <span className="block text-[11px] font-normal text-ink-muted">
                   {farmLabel(getFarmFor(activeFlower))}
                 </span>
               </td>
               {weeks.map((week) => (
-                <td key={week.code} className="px-2 py-2 text-center tabular-nums font-semibold">
-                  {totals.byWeek[week.code] > 0 ? fmt(totals.byWeek[week.code]) : "—"}
+                <td key={week.code} className="px-3 py-2.5 text-right font-semibold">
+                  {totals.byWeek[week.code] > 0 ? fmt(totals.byWeek[week.code]) : ""}
                 </td>
               ))}
-              <td className="px-4 py-2 text-right tabular-nums font-semibold">
+              <td className="px-4 py-2.5 text-right font-semibold bg-surface-plane/50 whitespace-nowrap">
                 {fmt(totals.month)}
-                <span className="block text-[11px] font-normal text-ink-muted">
-                  {shortMoney(totals.month * price)}
-                </span>
+                {totals.month > 0 && price > 0 && (
+                  <span className="block text-[11px] font-normal text-ink-muted">{shortMoney(totals.month * price)}</span>
+                )}
               </td>
             </tr>
 
-            {/* Факт недели: заказано и отгружено по всем направлениям — рядом с
-                планом, а не на отдельной вкладке. */}
-            <tr className="text-ink-secondary">
-              <td className="px-4 py-1.5 sticky left-0 bg-surface">Заказано</td>
-              {weeks.map((week) => {
-                const f = factWeek(week.code);
-                const plan = totals.byWeek[week.code] ?? 0;
-                return (
-                  <td
-                    key={week.code}
-                    className={clsx(
-                      "px-2 py-1.5 text-center tabular-nums",
-                      f.ordered > 0 && plan > 0 && f.ordered >= plan && "text-status-good font-medium"
-                    )}
-                  >
-                    {f.ordered > 0 ? fmt(f.ordered) : "—"}
-                  </td>
-                );
-              })}
-              <td className="px-4 py-1.5 text-right tabular-nums">
-                {fmt(weeks.reduce((sum, w) => sum + factWeek(w.code).ordered, 0))}
-              </td>
-            </tr>
-            <tr className="text-ink-secondary">
-              <td className="px-4 py-1.5 sticky left-0 bg-surface">Отгружено</td>
-              {weeks.map((week) => {
-                const f = factWeek(week.code);
-                return (
-                  <td key={week.code} className="px-2 py-1.5 text-center tabular-nums">
-                    {f.shipped > 0 ? fmt(f.shipped) : "—"}
-                  </td>
-                );
-              })}
-              <td className="px-4 py-1.5 text-right tabular-nums">
-                {fmt(weeks.reduce((sum, w) => sum + factWeek(w.code).shipped, 0))}
-              </td>
-            </tr>
+            {/* Факт недели по всем направлениям — рядом с планом. */}
+            {orderedMonth > 0 && (
+              <tr className="text-ink-secondary">
+                <td className="px-4 py-1.5 sticky left-0 bg-surface z-10">Заказано / отгружено</td>
+                {weeks.map((week) => {
+                  const f = factWeek(week.code);
+                  const plan = totals.byWeek[week.code] ?? 0;
+                  return (
+                    <td key={week.code} className="px-3 py-1.5 text-right whitespace-nowrap">
+                      {f.ordered > 0 && (
+                        <>
+                          <span className={clsx(plan > 0 && f.ordered >= plan && "text-status-good font-medium")}>
+                            {fmt(f.ordered)}
+                          </span>
+                          <span className="text-ink-muted"> / {f.shipped > 0 ? fmt(f.shipped) : "0"}</span>
+                        </>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="px-4 py-1.5 text-right whitespace-nowrap bg-surface-plane/50">
+                  {fmt(orderedMonth)}
+                  <span className="text-ink-muted"> / {fmt(shippedMonth)}</span>
+                </td>
+              </tr>
+            )}
 
-            {/* Прогноз агронома прямо здесь: раньше ради этой строки надо было
-                уходить на вкладку «Баланс». */}
+            {/* Прогноз агронома прямо здесь: без ухода на вкладку «Срезка». */}
             {hasForecast && (
               <>
                 <tr className="text-ink-secondary">
-                  <td className="px-4 py-1.5 sticky left-0 bg-surface">Срезка по прогнозу</td>
+                  <td className="px-4 py-1.5 sticky left-0 bg-surface z-10">Срезка по прогнозу</td>
                   {weeks.map((week) => (
-                    <td key={week.code} className="px-2 py-1.5 text-center tabular-nums">
-                      {forecastByWeek[week.code] ? fmt(forecastByWeek[week.code]) : "—"}
+                    <td key={week.code} className="px-3 py-1.5 text-right">
+                      {forecastByWeek[week.code] ? fmt(forecastByWeek[week.code]) : ""}
                     </td>
                   ))}
-                  <td className="px-4 py-1.5 text-right tabular-nums">{fmt(forecastMonth)}</td>
+                  <td className="px-4 py-1.5 text-right bg-surface-plane/50">{fmt(forecastMonth)}</td>
                 </tr>
-                <tr className="border-t border-line-hairline">
-                  <td className="px-4 py-1.5 sticky left-0 bg-surface font-medium">
+                <tr>
+                  <td className="px-4 py-1.5 sticky left-0 bg-surface z-10 font-medium">
                     Остаток без плана
                   </td>
-                  {weeks.map((week) => {
-                    const rest = (forecastByWeek[week.code] ?? 0) - (totals.byWeek[week.code] ?? 0);
-                    return (
-                      <td
-                        key={week.code}
-                        className={clsx(
-                          "px-2 py-1.5 text-center tabular-nums font-medium",
-                          rest < 0 ? "text-status-critical" : rest > 0 ? "text-[#8a5a00]" : "text-status-good"
-                        )}
-                      >
-                        {rest === 0 ? "0" : `${rest > 0 ? "+" : "−"}${fmt(Math.abs(rest))}`}
-                      </td>
-                    );
-                  })}
-                  {(() => {
-                    const rest = forecastMonth - totals.month;
-                    return (
-                      <td
-                        className={clsx(
-                          "px-4 py-1.5 text-right tabular-nums font-semibold",
-                          rest < 0 ? "text-status-critical" : rest > 0 ? "text-[#8a5a00]" : "text-status-good"
-                        )}
-                      >
-                        {rest === 0 ? "0" : `${rest > 0 ? "+" : "−"}${fmt(Math.abs(rest))}`}
-                      </td>
-                    );
-                  })()}
+                  {weeks.map((week) => (
+                    <td key={week.code} className="px-3 py-1.5 text-right">
+                      <Rest value={(forecastByWeek[week.code] ?? 0) - (totals.byWeek[week.code] ?? 0)} />
+                    </td>
+                  ))}
+                  <td className="px-4 py-1.5 text-right bg-surface-plane/50">
+                    <Rest value={forecastMonth - totals.month} strong />
+                  </td>
                 </tr>
               </>
             )}
@@ -567,19 +548,104 @@ export default function ShipmentPlanGrid({
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || changed.length === 0}
-          className="btn-primary disabled:opacity-50"
+      <SaveBar count={changed.length} what="ячеек" saving={saving} onSave={handleSave} onReset={resetAll} />
+    </div>
+  );
+}
+
+/** «+300» — срезки больше плана (жёлтый), «−300» — плана больше срезки (красный), 0 — сходится. */
+function Rest({ value, strong }: { value: number; strong?: boolean }) {
+  return (
+    <span
+      className={clsx(
+        strong ? "font-semibold" : "font-medium",
+        value < 0 ? "text-status-critical" : value > 0 ? "text-[#8a5a00]" : "text-status-good"
+      )}
+    >
+      {value === 0 ? "0" : `${value > 0 ? "+" : "−"}${fmt(Math.abs(value))}`}
+    </span>
+  );
+}
+
+/**
+ * «Ещё ▾»: взять прошлый месяц, шаблон, загрузка файла. Три кнопки в ряд
+ * занимали целую карточку над сеткой, а нужны раз в месяц.
+ */
+function ActionsMenu({
+  busy,
+  month,
+  onCopy,
+  onUpload,
+}: {
+  busy: string | null;
+  month: string;
+  onCopy: () => void;
+  onUpload: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function close(e: MouseEvent) {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    }
+    function esc(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  const item = "block w-full text-left px-3 py-2 text-sm hover:bg-surface-plane disabled:opacity-50";
+  return (
+    <div className="relative" ref={box}>
+      <button
+        type="button"
+        className="btn-secondary !py-1.5 disabled:opacity-50"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        disabled={busy !== null}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {busy === "copy" ? "Беру…" : busy === "file" ? "Читаю…" : "Заполнить ▾"}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-30 mt-1 w-64 rounded-lg border border-line-hairline bg-surface py-1 shadow-card-hover"
         >
-          {saving ? "Сохраняю…" : "Сохранить"}
-        </button>
-        <span className="text-sm text-ink-muted">
-          {changed.length === 0 ? "Изменений нет" : `Изменено ячеек: ${changed.length}`}
-        </span>
-      </div>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            onClick={() => {
+              setOpen(false);
+              onCopy();
+            }}
+          >
+            Взять из прошлого месяца
+          </button>
+          <a role="menuitem" className={item} href={`/api/plans/template?period=${month}`} onClick={() => setOpen(false)}>
+            Скачать шаблон Excel
+          </a>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            onClick={() => {
+              setOpen(false);
+              onUpload();
+            }}
+          >
+            Загрузить из Excel…
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -593,7 +659,7 @@ function FactLine({ plan, ordered, shipped }: { plan: number; ordered: number; s
   const tone = plan <= 0 ? "text-[#8a5a00]" : ordered >= plan ? "text-status-good" : "text-ink-muted";
   return (
     <div
-      className={clsx("mt-0.5 pr-1 text-right text-[11px] leading-tight tabular-nums", tone)}
+      className={clsx("pb-1 pr-2 text-right text-[11px] leading-tight tabular-nums whitespace-nowrap", tone)}
       title={`Заказано ${fmt(ordered)}${shipped ? `, отгружено ${fmt(shipped)}` : ""}${plan <= 0 ? " — без плана" : ""}`}
     >
       {plan <= 0 ? "без плана " : "заказ "}

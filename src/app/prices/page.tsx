@@ -6,12 +6,13 @@ import { authOptions } from "@/lib/auth";
 import { getCurrentPrices, listPrices } from "@/lib/repo/prices";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { FLOWER_TYPES, ROLES } from "@/lib/constants";
-import { PRICE_KINDS, PRICE_KIND_LABELS, cleanPriceKind, priceMapForClient } from "@/lib/priceList";
+import { PRICE_KINDS, cleanPriceKind, priceMapForClient } from "@/lib/priceList";
 import { priceChangeDays, daysSinceLastChange } from "@/lib/priceChanges";
 import PriceBoard from "@/components/PriceBoard";
 import PriceImportForm from "@/components/PriceImportForm";
 import PriceChangesView from "@/components/PriceChangesView";
 import SectionTabs from "@/components/SectionTabs";
+import Hint from "@/components/Hint";
 import { plansTabsFor } from "../plans/tabs";
 import { salesTabsFor } from "../sales/tabs";
 
@@ -55,57 +56,62 @@ export default async function PricesPage({
   const sinceChange = daysSinceLastChange(changeDays, today);
   const filled = Array.from(prices.values()).filter((r) => r.price > 0).length;
 
+  const stale = sinceChange !== null && sinceChange > STALE_DAYS;
+  const lastChange =
+    changeDays.length > 0
+      ? new Date(`${changeDays[0].date}T00:00:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
+      : "";
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">{PRICE_KIND_LABELS[kind] ?? "Прайс-лист"}</h1>
-        <p className="text-sm text-ink-secondary">
-          {kind === PRICE_KINDS.RETAIL
-            ? "Цена передачи в наши магазины, не продажа."
-            : canEdit
-              ? "Цена за стебель для менеджеров."
-              : "В заявке цена подставляется сама."}
-        </p>
-      </div>
+      {/* У РОПа прайс — вкладка раздела «Планы», и заголовок тот же, что у
+          соседних вкладок; у менеджера — справка в «Продажах». */}
+      <h1 className="text-xl font-semibold">{canEdit ? "Планы" : "Прайс"}</h1>
 
-      {/* Прайс живёт в разделе «Планы» у РОПа и в «Продажах» у менеджера:
-          у одного это инструмент планирования, у другого — справка. */}
       <SectionTabs tabs={canEdit ? plansTabsFor(role) : salesTabsFor(role)} />
 
-      <p className="text-sm text-ink-muted">
-        {filled > 0 ? `Заполнено цен: ${filled}` : "Прайс пока пуст"}
-        {changeDays.length > 0 &&
-          ` · последнее изменение ${new Date(
-            `${changeDays[0].date}T00:00:00`
-          ).toLocaleDateString("ru-RU")}`}
-        {sinceChange !== null &&
-          (sinceChange === 0
-            ? " (сегодня)"
-            : sinceChange > STALE_DAYS
-            ? ` — ${sinceChange} дн. назад, пора пересмотреть`
-            : ` — ${sinceChange} дн. назад`)}
-        {!canEdit && " · только просмотр"}
-      </p>
+      {/* Одна строка инструментов вместо трёх блоков: какой прайс, когда
+          меняли и файл. Всё остальное на странице — сами цены. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
+          {[PRICE_KINDS.CLIENT, PRICE_KINDS.RETAIL].map((k) => (
+            <Link
+              key={k || "client"}
+              href={k ? `/prices?kind=${k}` : "/prices"}
+              role="tab"
+              aria-selected={k === kind}
+              className={
+                k === kind
+                  ? "rounded-md px-3 py-1.5 text-sm bg-surface shadow-sm font-medium"
+                  : "rounded-md px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary"
+              }
+            >
+              {k === PRICE_KINDS.RETAIL ? "Наши магазины" : "Для клиентов"}
+            </Link>
+          ))}
+        </div>
 
-      <div className="flex flex-wrap gap-2">
-        {[PRICE_KINDS.CLIENT, PRICE_KINDS.RETAIL].map((k) => (
-          <Link
-            key={k || "client"}
-            href={k ? `/prices?kind=${k}` : "/prices"}
-            className={
-              k === kind
-                ? "px-3 py-1.5 rounded-lg text-sm border border-accent bg-accent-soft font-medium"
-                : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline text-ink-secondary hover:text-ink-primary"
-            }
-          >
-            {PRICE_KIND_LABELS[k]}
-          </Link>
-        ))}
+        <span className={stale ? "text-sm text-[#8a5a00]" : "text-sm text-ink-muted"}>
+          {filled === 0
+            ? "Прайс пока пуст"
+            : lastChange
+              ? `Обновлён ${lastChange}${
+                  sinceChange === 0 ? " (сегодня)" : sinceChange !== null ? ` · ${sinceChange} дн. назад` : ""
+                }${stale ? " — пора пересмотреть" : ""}`
+              : `Цен: ${filled}`}
+          {!canEdit && " · только просмотр"}
+          <Hint>
+            {kind === PRICE_KINDS.RETAIL
+              ? "Внутренний прайс — цена передачи цветка в наши магазины. Это не продажа."
+              : "Цена за стебель. В заявке она подставляется сама; менеджер может поменять её в заявке, отклонение видно в аналитике."}
+          </Hint>
+        </span>
+
+        {canEdit && <PriceImportForm kind={kind} />}
       </div>
 
-      {canEdit && <PriceImportForm kind={kind} />}
-
       <PriceBoard
+        key={kind || "client"}
         flowerTypes={FLOWER_ORDER as unknown as string[]}
         varieties={varieties}
         initial={priceMapForClient(prices)}

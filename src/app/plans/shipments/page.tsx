@@ -98,10 +98,6 @@ export default async function ShipmentPlansPage({
       values.length > 0 ? Math.round(values.reduce((s, p) => s + p, 0) / values.length) : 0;
   }
 
-  const filledWeeks = weeks.filter((w) =>
-    Array.from(saved.values()).some((r) => r.period === w.code && r.targetStems > 0)
-  ).length;
-
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-semibold">Планы</h1>
@@ -112,10 +108,6 @@ export default async function ShipmentPlansPage({
         <PeriodPicker period={month} />
         <ShipmentsViewSwitch view="plan" month={month} />
       </div>
-      <p className="text-sm text-ink-muted -mt-2">
-        {filledWeeks > 0 ? `Заполнено недель: ${filledWeeks} из ${weeks.length}` : "Месяц ещё не заполнен"} · в
-        клетке — план, под ним сколько заказано на эту неделю
-      </p>
 
       <ShipmentPlanGrid
         key={month}
