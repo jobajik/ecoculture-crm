@@ -2,7 +2,7 @@
  * Проверка аналитики клиентов за месяц (`src/lib/clientAnalytics.ts`).
  * Запуск: npx tsx scripts/check-client-analytics.ts
  */
-import { buildClientAnalytics } from "../src/lib/clientAnalytics";
+import { buildClientAnalytics, cityOf } from "../src/lib/clientAnalytics";
 import type { Client, OrderWithItems } from "../src/lib/types";
 
 let failed = 0;
@@ -75,9 +75,14 @@ check("оплата смешанной заявки делится по доля
 
 check("ABC: A-группа есть и доли 100 %", a.abc[0].clients >= 1 && Math.abs(a.abc.reduce((s, b) => s + b.share, 0) - 100) < 0.01);
 check("топ: первый — A", a.top[0].clientId === "A");
-// B взял один раз 14 дней назад — это уже повод позвонить; A и C заказывают в своём ритме.
-check("молчат D (54 дня, ценный — первым) и B (14 дней)", a.quiet.map((q) => q.clientId).join() === "D,B" && a.quiet[0].daysSinceLast === 54, JSON.stringify(a.quiet.map((q) => [q.clientId, q.daysSinceLast])));
+// Неделя тишины — уже повод: B (14 дн.) и C (12 дн.) взяли по разу; D молчит 54 дня при обычных 31.
+// A заказывает в своём ритме. Сверху — самые ценные за всё время.
+check("молчат D, C, B — по ценности", a.quiet.map((q) => q.clientId).join() === "D,C,B" && a.quiet[0].daysSinceLast === 54, JSON.stringify(a.quiet.map((q) => [q.clientId, q.daysSinceLast])));
 check("обычный перерыв D — 31 день", a.quiet[0].usualGap === 31);
+
+check("опечатки города склеиваются в Алматы", cityOf("Алмтаы").label === "Алматы" && cityOf(" алмата ").key === cityOf("Алматы").key);
+check("Оскемен — это Усть-Каменогорск", cityOf("Оскемен").label === "Усть-Каменогорск");
+check("незнакомый город не угадывается", cityOf("Алмалы").label === "Алмалы");
 
 const empty = buildClientAnalytics({ clients: [], orders: [], nameByEmail: new Map(), period: "2026-09", today: "2026-09-24" });
 check("пустая база не падает", empty.current.revenue === 0 && empty.byManager.length === 0 && empty.abc[0].clients === 0);

@@ -24,8 +24,54 @@ import { hasNoClientInvoice, isConsignment } from "./orderKind";
  * Функция чистая, проверка — `scripts/check-client-analytics.ts`.
  */
 
-/** С какого перерыва клиента показываем в «давно не заказывали». */
-export const ATTENTION_DAYS = 14;
+/**
+ * С какого перерыва клиента показываем в «давно не заказывали». По живой базе
+ * (сентябрь, `diag-clients`) медиана между заказами одного клиента — 4 дня:
+ * цветочные точки берут часто, и неделя тишины — уже повод позвонить.
+ */
+export const ATTENTION_DAYS = 7;
+/** …и только если молчит в полтора раза дольше своего обычного перерыва. */
+export const ATTENTION_GAP_FACTOR = 1.5;
+
+/**
+ * Город из карточки пишется руками, и в живой базе рядом с «Алматы» (70
+ * карточек) стоят «Алмата», «Алмтаы» и «Алмматы». В разрезе это четыре города
+ * вместо одного. Склеиваем ЯВНЫМ списком опечаток и синонимов — угадывать по
+ * похожести нельзя («Алмалы» — это не Алматы).
+ */
+const CITY_CANON: Record<string, string> = {
+  "алматы": "Алматы",
+  "алмата": "Алматы",
+  "алмтаы": "Алматы",
+  "алмматы": "Алматы",
+  "алмааты": "Алматы",
+  "алма ата": "Алматы",
+  "алма-ата": "Алматы",
+  "астана": "Астана",
+  "нур султан": "Астана",
+  "нур-султан": "Астана",
+  "оскемен": "Усть-Каменогорск",
+  "өскемен": "Усть-Каменогорск",
+  "усть каменогорск": "Усть-Каменогорск",
+  "усть-каменогорск": "Усть-Каменогорск",
+  "семипалатинск": "Семей",
+  "семей": "Семей",
+  "шымкент": "Шымкент",
+  "чимкент": "Шымкент",
+  "кызыл орда": "Кызылорда",
+  "кызыл-орда": "Кызылорда",
+  "кызылорда": "Кызылорда",
+};
+
+/** Город для разреза: ключ без регистра, пробелов по краям и «ё», подпись — каноническая. */
+export function cityOf(raw: string): { key: string; label: string } {
+  const trimmed = raw.trim().replace(/\s+/g, " ");
+  const key = trimmed.toLowerCase().replace(/ё/g, "е");
+  if (!key) return { key: "—", label: "Город не указан" };
+  const canon = CITY_CANON[key];
+  if (canon) return { key: canon.toLowerCase(), label: canon };
+  return { key, label: trimmed };
+}
 
 export interface PeriodTotals {
   /** Сколько разных клиентов покупало. */
@@ -277,8 +323,6 @@ export function buildClientAnalytics(input: {
     const revenue = amountOf(o);
     return { revenue, stems: stemsOf(o), paid: Math.min(o.paidAmount, revenue) };
   };
-  const cityKey = (city: string) => city.trim().toLowerCase().replace(/ё/g, "е");
-  const cityLabel = (c: Client | undefined) => (c?.city.trim() ? c.city.trim() : c ? "Город не указан" : "Без карточки");
 
   const byManager = breakdown(
     (o) => [{ key: o.managerEmail.toLowerCase(), label: nameOf(o.managerEmail) }],
@@ -288,9 +332,9 @@ export function buildClientAnalytics(input: {
   const byCity = breakdown(
     (o) => {
       const c = byId.get(o.clientId);
-      return [{ key: c ? cityKey(c.city) || "—" : "без карточки", label: cityLabel(c) }];
+      return [c ? cityOf(c.city) : { key: "без карточки", label: "Без карточки" }];
     },
-    (c) => ({ key: cityKey(c.city) || "—", label: cityLabel(c) }),
+    (c) => cityOf(c.city),
     whole
   );
   const byType = breakdown(
@@ -333,7 +377,7 @@ export function buildClientAnalytics(input: {
   const line = (c: Client): ClientLine => ({
     clientId: c.clientId,
     name: c.name,
-    city: c.city.trim(),
+    city: cityOf(c.city).label === "Город не указан" ? "" : cityOf(c.city).label,
     managerName: nameOf(c.managerEmail),
     revenue: curBy.get(c.clientId)?.revenue ?? 0,
     prevRevenue: prevBy.get(c.clientId) ?? 0,
@@ -367,7 +411,7 @@ export function buildClientAnalytics(input: {
   const quiet = clients
     .filter((c) => c.active && lastDay.has(c.clientId))
     .map(line)
-    .filter((l) => l.daysSinceLast >= ATTENTION_DAYS && (l.usualGap === null || l.daysSinceLast > l.usualGap * 1.5))
+    .filter((l) => l.daysSinceLast >= ATTENTION_DAYS && (l.usualGap === null || l.daysSinceLast > l.usualGap * ATTENTION_GAP_FACTOR))
     .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue || b.daysSinceLast - a.daysSinceLast);
 
   return {
