@@ -9,6 +9,8 @@ import { FLOWER_TYPE_LABELS, ROLES, formatGrade } from "@/lib/constants";
 import ClientsBoard from "@/components/ClientsBoard";
 import { isRetailRole } from "@/lib/retail";
 import { clients as clientsWord, orders as ordersWord } from "@/lib/plural";
+import SectionTabs from "@/components/SectionTabs";
+import { clientsTabsFor } from "./tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +46,10 @@ export default async function ClientsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-1">Клиенты</h1>
+      <h1 className="text-xl font-semibold mb-3">Клиенты</h1>
+      <div className="mb-4">
+        <SectionTabs tabs={clientsTabsFor()} />
+      </div>
       <p className="text-sm text-ink-secondary mb-4">
         {t.clients === 0
           ? "Клиентов пока нет."
