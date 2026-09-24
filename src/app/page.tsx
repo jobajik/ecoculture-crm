@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import Image from "next/image";
 import { authOptions } from "@/lib/auth";
-import { getStockSnapshot } from "@/lib/stock";
+import { getStockSnapshot, loadStockExtras } from "@/lib/stock";
 import { CLAIM_STATUSES, farmLabel, flowerTypesForFarm, getFarmFor, isFarmBoundRole, ROLES } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
 import HomeFocusBoard, { HomeFocusStrip } from "@/components/HomeFocus";
@@ -46,6 +46,9 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
   // Зав. складом и агроном привязаны к производству — им и остатки показываем
   // только по своему цветку. Остальные роли видят всё.
   const farm = isFarmBoundRole(role) ? session.user?.farm ?? null : null;
+  // Бухгалтеру склад на главной не показывается (homeFocus.showStock) — прайс и
+  // отгрузки ради него не читаем.
+  const showStockExtras = role !== ROLES.ACCOUNTANT;
   const withClaims = role === ROLES.ADMIN || role === ROLES.ACCOUNTANT || role === ROLES.SALES_HEAD;
 
   // Всё, что нужно главной, — одним запросом к Google (лимит у компании общий).
@@ -55,11 +58,14 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
     SHEET_TABS.CLIENTS,
     SHEET_TABS.BATCHES,
     SHEET_TABS.SETTINGS,
+    ...(showStockExtras ? [SHEET_TABS.PRICE_HISTORY, SHEET_TABS.SHIPMENTS] : []),
     ...(withClaims ? [SHEET_TABS.CLAIMS] : []),
   ]);
   const now = new Date();
   const [snapshot, orders, batches, settings, claims] = await Promise.all([
-    getStockSnapshot(now, undefined, farm),
+    (showStockExtras ? loadStockExtras() : Promise.resolve(undefined)).then((extras) =>
+      getStockSnapshot(now, undefined, farm, extras)
+    ),
     listOrdersWithItems(),
     listBatches(),
     getSettings(),

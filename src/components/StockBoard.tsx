@@ -5,8 +5,6 @@ import clsx from "clsx";
 import {
   FLOWER_TYPE_LABELS,
   FLOWER_TYPE_LABELS_PLURAL,
-  FLOWER_TYPES_BY_FARM,
-  FARM_ORDER,
   farmLabel,
   formatGrade,
   getFarmFor,
@@ -14,6 +12,8 @@ import {
 import MoreToggle, { COLLAPSED_LIST_SIZE } from "./MoreToggle";
 import StockDetail from "./StockDetail";
 import Hint from "./Hint";
+import { StockCompanies, StockPulse } from "./StockCompanies";
+import { decimal } from "@/lib/formatNumber";
 import type {
   AgeBucketFlower as AgeBucketFlowerBlock,
   AgeBucketRow,
@@ -87,9 +87,9 @@ const varietyWord = (n: number) => plural(n, "сорт", "сорта", "сорт
 const batchWord = (n: number) => plural(n, "партия", "партии", "партий");
 const positionWord = (n: number) => plural(n, "позиция", "позиции", "позиций");
 
-/** 1.0 -> «1», 1.4 -> «1.4» — лишний ноль в тексте мешает читать. */
+/** 1.0 -> «1», 1.4 -> «1,4» — через общий `decimal` (запятая, как везде). */
 function neatNumber(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return decimal(value);
 }
 
 function relativeTime(iso: string, now: number) {
@@ -216,7 +216,7 @@ export default function StockBoard({
         <span className="text-ink-secondary">
           средний возраст{" "}
           <b className="text-ink-primary tabular-nums">{neatNumber(snapshot.avgAgeDays)}</b>{" "}
-          {dayWord(Math.round(snapshot.avgAgeDays))}
+          {neatNumber(snapshot.avgAgeDays).includes(",") ? "дня" : dayWord(Math.round(snapshot.avgAgeDays))}
         </span>
         {snapshot.warningStems > 0 && (
           <span
@@ -244,6 +244,12 @@ export default function StockBoard({
           <span className={STATUS_TEXT.ok}>весь цветок в сроке</span>
         )}
       </div>
+
+      {/* Деньги, ходовое, запас и темп недели — по всему видимому складу. Старый
+          снимок из /api/stock (до обновления сайта) этих полей не несёт. */}
+      {snapshot.overall && <StockPulse row={snapshot.overall} />}
+
+      {snapshot.companies && <StockCompanies companies={snapshot.companies} total={snapshot.totalStems} />}
 
       {/* Три колонки: роза · хризантема · эустома */}
       <div
@@ -303,26 +309,6 @@ export default function StockBoard({
         }
       />
 
-      {snapshot.byFarm.length > 1 && (
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-secondary">
-          {FARM_ORDER.filter((f) => snapshot.byFarm.some((x) => x.farm === f)).map((f) => {
-            const row = snapshot.byFarm.find((x) => x.farm === f)!;
-            return (
-              <span key={f}>
-                {farmLabel(f)}{" "}
-                <b className="text-ink-primary tabular-nums">
-                  {row.quantity.toLocaleString("ru-RU")}
-                </b>{" "}
-                шт.
-                <span className="text-ink-muted">
-                  {" "}
-                  ({FLOWER_TYPES_BY_FARM[f]?.map((t) => FLOWER_TYPE_LABELS_PLURAL[t]).join(", ")})
-                </span>
-              </span>
-            );
-          })}
-        </div>
-      )}
     </section>
   );
 }

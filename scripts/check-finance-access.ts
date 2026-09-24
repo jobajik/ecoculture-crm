@@ -66,11 +66,11 @@ check("удержания и журнал — не для РОПа", canSeeFinan
 check("бухгалтеру — да", canSeeFinanceInternals(ROLES.ACCOUNTANT), true);
 
 const ropTabs = financeTabsFor(ROLES.SALES_HEAD).map((t) => t.href);
-check("вкладки РОПа", ropTabs, ["/finance", "/finance/debts", "/finance/claims", "/finance/report"]);
+check("вкладки РОПа", ropTabs, ["/finance", "/finance/debts", "/finance/claims", "/finance/analytics", "/finance/report"]);
 check("у РОПа нет «Цветы в счёт зп»", ropTabs.includes("/finance/takeouts"), false);
 check("и нет «Журнала»", ropTabs.includes("/finance/log"), false);
-check("у бухгалтера все шесть", financeTabsFor(ROLES.ACCOUNTANT).length, 6);
-check("у администратора тоже", financeTabsFor(ROLES.ADMIN).length, 6);
+check("у бухгалтера все семь", financeTabsFor(ROLES.ACCOUNTANT).length, 7);
+check("у администратора тоже", financeTabsFor(ROLES.ADMIN).length, 7);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

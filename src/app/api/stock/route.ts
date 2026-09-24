@@ -1,7 +1,8 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { MISSING_FARM_MESSAGE, missingFarm } from "@/lib/access";
-import { getStockSnapshot } from "@/lib/stock";
+import { getStockSnapshot, loadStockExtras } from "@/lib/stock";
+import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
 import { isFarmBoundRole } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,9 @@ export async function GET() {
     // Зав. складом и агроном видят остатки только своего производства — как на
     // самой главной (раньше агроном после обновления видел оба производства).
     const farm = isFarmBoundRole(session.user.role) ? session.user.farm ?? null : null;
-    const snapshot = await getStockSnapshot(new Date(), undefined, farm);
+    // Склад, настройки, прайс и отгрузки — одним запросом (лимит Google общий, грабли 1.17).
+    await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.SETTINGS, SHEET_TABS.PRICE_HISTORY, SHEET_TABS.SHIPMENTS]);
+    const snapshot = await getStockSnapshot(new Date(), undefined, farm, await loadStockExtras());
     return Response.json(snapshot, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Не удалось получить остатки";

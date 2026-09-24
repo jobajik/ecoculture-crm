@@ -11,6 +11,8 @@
 import { getStockSnapshot, ageBucketKeyOf, AGE_BUCKETS } from "../src/lib/stock";
 import { groupByGrade } from "../src/lib/stockByGrade";
 import { GRADES_BY_FLOWER_TYPE, gradeOrder } from "../src/lib/constants";
+import { BASE_VARIETY, currentPrices, type PriceRow } from "../src/lib/priceList";
+import type { Shipment } from "../src/lib/types";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -248,6 +250,59 @@ async function main() {
       ),
     true
   );
+
+  // --- По компаниям: деньги, ходовое, темп недели (главная) -----------------
+  // Rose Farm: роза 60 × 600 (по 300), 70 × 50 (по 400, просрочена), 50 × 10
+  // (по 250), эустома 20 без цены. Есентай: Высшая 400 (по 200), Первая 70 без
+  // цены и просрочена.
+  const priceRows: PriceRow[] = [
+    { date: "2026-09-01", flowerType: "rose", variety: BASE_VARIETY, grade: "60", price: 300 },
+    { date: "2026-09-01", flowerType: "rose", variety: BASE_VARIETY, grade: "70", price: 400 },
+    { date: "2026-09-01", flowerType: "rose", variety: BASE_VARIETY, grade: "50", price: 250 },
+    { date: "2026-09-01", flowerType: "chrysanthemum", variety: BASE_VARIETY, grade: "Высшая", price: 200 },
+  ];
+  const prices = currentPrices(priceRows, "2026-09-20");
+  const ship = (id: string, batchId: string, day: string, quantity: number): Shipment => ({
+    shipmentId: id, createdAt: `${day}T10:00:00`, orderId: "O", itemId: "I", batchId, quantity, warehouseEmail: "", notes: "",
+  });
+  const shipments = [
+    ship("S1", "B1", "2026-09-19", 60),
+    ship("S2", "B1", "2026-09-19", -20), // возврат
+    ship("S3", "B5", "2026-09-14", 140), // ровно седьмой день — в счёт
+    ship("S4", "B2", "2026-09-13", 1000), // восьмой день — уже нет
+  ];
+  const withReceived = batches.map((b) => (b.batchId === "B1" ? { ...b, receivedAt: "2026-09-20" } : b));
+  const full = await getStockSnapshot(NOW, { batches: withReceived, settings }, null, { prices, shipments });
+  const co = (farm: string) => full.companies.find((c) => c.farm === farm)!;
+  check("компании в порядке FARM_ORDER", full.companies.map((c) => c.farm), ["rose_farm", "esentai"]);
+  check("Rose Farm: стеблей", co("rose_farm").stems, 680);
+  check("Есентай: стеблей", co("esentai").stems, 470);
+  check("компании в сумме = склад", full.companies.reduce((s, c) => s + c.stems, 0), full.totalStems);
+  check("итог = склад", full.overall.stems, full.totalStems);
+  check("Rose Farm: просрочено", co("rose_farm").criticalStems, 50);
+  check("Есентай: просрочено", co("esentai").criticalStems, 70);
+  check("Rose Farm: стоимость по прайсу", co("rose_farm").value, 600 * 300 + 50 * 400 + 10 * 250);
+  check("Rose Farm: из неё просрочено", co("rose_farm").criticalValue, 50 * 400);
+  check("Rose Farm: без цены — эустома", co("rose_farm").unpricedStems, 20);
+  check("Есентай: стоимость", co("esentai").value, 400 * 200);
+  check("Есентай: без цены", co("esentai").unpricedStems, 70);
+  check("итог: стоимость = сумма компаний", full.overall.value, 202_500 + 80_000);
+  check("ходовое: всё ликвидное", co("rose_farm").liquidPercent, 100);
+  check("отгружено за 7 дней с возвратом", co("rose_farm").shipped7, 40);
+  check("седьмой день в счёт, восьмой нет", co("esentai").shipped7, 140);
+  check("пришло за 7 дней", co("rose_farm").received7, 200);
+  check("хватит на: без просроченного", co("esentai").coverDays, (470 - 70) / (140 / 7));
+  check("средний возраст взвешен по стеблям", Math.round(co("esentai").avgAgeDays * 100) / 100, Math.round(((400 * 9 + 70 * 20) / 470) * 100) / 100);
+
+  const esOnly = await getStockSnapshot(NOW, { batches: withReceived, settings }, "esentai", { prices, shipments });
+  check("зав. складом Есентая: одна компания", esOnly.companies.map((c) => c.farm), ["esentai"]);
+  check("зав. складом Есентая: чужие отгрузки не в счёт", esOnly.overall.shipped7, 140);
+  check("зав. складом Есентая: чужой приход не в счёт", esOnly.overall.received7, 0);
+  check("зав. складом Есентая: чужие деньги не в счёт", esOnly.overall.value, 80_000);
+
+  check("без прайса и отгрузок — денег и темпа нет", [snap.overall.value, snap.overall.shipped7, snap.overall.coverDays], [null, null, null]);
+  check("пустой склад: компаний нет", empty.companies.length, 0);
+  check("пустой склад: ходовое не делится на ноль", empty.overall.liquidPercent, null);
 
   console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

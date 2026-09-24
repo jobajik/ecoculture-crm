@@ -1,8 +1,12 @@
 import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
 import { computeBatchStorageInfo, type StorageStatus } from "./shelfLife";
-import { compareGrades, getFarmFor } from "./constants";
-import type { Batch, Settings } from "./types";
+import { FARM_ORDER, compareGrades, getFarmFor, isLiquidGrade } from "./constants";
+import type { Batch, Settings, Shipment } from "./types";
+import { priceFor, type PriceRow } from "./priceList";
+import { getCurrentPrices } from "./repo/prices";
+import { listShipments } from "./repo/shipments";
+import { localDayKey } from "./timezone";
 
 // ---------------------------------------------------------------------------
 // Сводка остатков «как сейчас»: сколько чего лежит на складе и сколько дней
@@ -116,6 +120,34 @@ export interface AgeBucketRow {
   flowers: AgeBucketFlower[];
 }
 
+/**
+ * Остаток по компании (производству) — «что лежит у Rose Farm и у Есентая».
+ * Деньги и темп считаются, только если странице передали прайс и отгрузки
+ * (`loadStockExtras`); форма заявки их не просит и лишних чтений не делает.
+ */
+export interface StockCompanyRow {
+  farm: string;
+  stems: number;
+  batches: number;
+  varieties: number;
+  avgAgeDays: number;
+  warningStems: number;
+  criticalStems: number;
+  /** Стоимость остатка по клиентскому прайсу; null — прайс не передан. */
+  value: number | null;
+  /** Из неё — просроченное. */
+  criticalValue: number | null;
+  /** Стеблей без цены в прайсе (в стоимость не вошли). */
+  unpricedStems: number;
+  /** Доля ликвидных длин и категорий, 0–100 (`isLiquidGrade`). */
+  liquidPercent: number | null;
+  /** Отгружено за последние 7 дней; null — отгрузки не переданы. */
+  shipped7: number | null;
+  received7: number;
+  /** На сколько дней хватит НЕпросроченного при темпе последней недели; null — отгрузок не было. */
+  coverDays: number | null;
+}
+
 export interface StockSnapshot {
   generatedAt: string;
   totalStems: number;
@@ -130,6 +162,16 @@ export interface StockSnapshot {
   urgent: UrgentBatchRow[];
   /** Разбивка по времени хранения: 1–3, 4–7, 8–13, 14+ дней. */
   ageBuckets: AgeBucketRow[];
+  /** По компаниям — в порядке FARM_ORDER. */
+  companies: StockCompanyRow[];
+  /** Итог по всему, что видит человек, — те же поля, что у компании. */
+  overall: StockCompanyRow;
+}
+
+/** Прайс и отгрузки для денег и темпа. Читать вместе со складом одним `prefetchTables`. */
+export async function loadStockExtras(): Promise<{ prices: Map<string, PriceRow>; shipments: Shipment[] }> {
+  const [prices, shipments] = await Promise.all([getCurrentPrices(), listShipments()]);
+  return { prices, shipments };
 }
 
 /** Самый «тревожный» из двух статусов — им и красим карточку целиком. */
@@ -143,7 +185,8 @@ export async function getStockSnapshot(
   /** Для тестов: можно подставить данные вместо чтения из Google-таблицы. */
   injected?: { batches: Batch[]; settings: Settings },
   /** Ограничение по производству — зав. складом видит только свой цветок. */
-  farmFilter?: string | null
+  farmFilter?: string | null,
+  extras?: { prices?: Map<string, PriceRow>; shipments?: Shipment[] }
 ): Promise<StockSnapshot> {
   const [batches, settings] = injected
     ? [injected.batches, injected.settings]
@@ -317,7 +360,67 @@ export async function getStockSnapshot(
       location: i.batch.location,
     }));
 
+  // --- По компаниям -----------------------------------------------------------
+  const weekAgo = localDayKey(new Date(now.getTime() - 6 * 86_400_000));
+  const batchById = new Map(batches.map((b) => [b.batchId, b]));
+  const inScope = (b: Batch) => !farmFilter || getFarmFor(b.flowerType) === farmFilter;
+  function companyRow(farm: string, match: (b: Batch) => boolean): StockCompanyRow {
+    const rows = active.filter((i) => match(i.batch));
+    const stems = rows.reduce((s, i) => s + i.batch.quantityRemaining, 0);
+    const priced = extras?.prices;
+    let value = 0;
+    let criticalValue = 0;
+    let unpricedStems = 0;
+    let liquid = 0;
+    for (const i of rows) {
+      const q = i.batch.quantityRemaining;
+      if (isLiquidGrade(i.batch.flowerType, i.batch.grade)) liquid += q;
+      if (!priced) continue;
+      const price = priceFor(priced, i.batch.flowerType, i.batch.variety, i.batch.grade);
+      if (price > 0) {
+        value += price * q;
+        if (i.status === "critical") criticalValue += price * q;
+      } else unpricedStems += q;
+    }
+    const shipped7 = extras?.shipments
+      ? extras.shipments
+          .filter((sh) => (sh.createdAt || "").slice(0, 10) >= weekAgo)
+          .filter((sh) => {
+            const b = batchById.get(sh.batchId);
+            return !!b && inScope(b) && match(b);
+          })
+          .reduce((s, sh) => s + sh.quantity, 0)
+      : null;
+    const received7 = batches
+      .filter((b) => inScope(b) && match(b) && (b.receivedAt || "").slice(0, 10) >= weekAgo)
+      .reduce((s, b) => s + b.quantityIn, 0);
+    const critical = rows.filter((i) => i.status === "critical").reduce((s, i) => s + i.batch.quantityRemaining, 0);
+    return {
+      farm,
+      stems,
+      batches: rows.length,
+      varieties: new Set(rows.map((i) => `${i.batch.flowerType}:${i.batch.variety.trim().toLowerCase()}`)).size,
+      avgAgeDays: stems > 0 ? rows.reduce((s, i) => s + i.daysInStorage * i.batch.quantityRemaining, 0) / stems : 0,
+      warningStems: rows.filter((i) => i.status === "warning").reduce((s, i) => s + i.batch.quantityRemaining, 0),
+      criticalStems: critical,
+      value: priced ? value : null,
+      criticalValue: priced ? criticalValue : null,
+      unpricedStems,
+      liquidPercent: stems > 0 ? (liquid / stems) * 100 : null,
+      shipped7,
+      received7,
+      // Просроченное уже не продаётся — считаем запас без него.
+      coverDays: shipped7 !== null && shipped7 > 0 ? Math.max(0, stems - critical) / (shipped7 / 7) : null,
+    };
+  }
+  const companies = FARM_ORDER.filter((f) => !farmFilter || f === farmFilter)
+    .map((f) => companyRow(f, (b) => getFarmFor(b.flowerType) === f))
+    .filter((c) => c.stems > 0 || c.received7 > 0 || (c.shipped7 ?? 0) > 0);
+  const overall = companyRow("", () => true);
+
   return {
+    companies,
+    overall,
     generatedAt: now.toISOString(),
     totalStems,
     totalBatches: active.length,
