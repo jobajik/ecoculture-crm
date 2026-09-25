@@ -163,9 +163,12 @@ export default function KaspiInvoiceBlock({
   const several = data.farms.length > 1;
 
   return (
-    <section className="rounded-xl border border-line-hairline bg-surface p-3 sm:p-4 space-y-4">
+    // Красноватый фон — отсылка к Kaspi, как попросил владелец: блок узнаётся с
+    // первого взгляда. Логотип Kaspi не рисуем — только цвет и название.
+    <section className="rounded-xl border border-kaspi/25 bg-kaspi-soft p-3 sm:p-4 space-y-4">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold">Счёт в Kaspi</span>
+        <span className="rounded-md bg-kaspi px-2 py-0.5 text-xs font-bold text-white tracking-wide">Kaspi</span>
+        <span className="text-sm font-semibold">Счёт на оплату</span>
         <span className="text-xs text-ink-muted">оплата проводится сама</span>
       </div>
 
@@ -390,7 +393,7 @@ function Tracker({
             : kaspiStatusLabel(inv.status);
 
   return (
-    <div className={clsx("rounded-lg p-3 space-y-3", paid ? "bg-status-good/10" : "bg-surface-plane")}>
+    <div className={clsx("rounded-lg p-3 space-y-3 border", paid ? "bg-status-good/10 border-status-good/20" : "bg-surface border-kaspi/15")}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="text-base font-semibold tabular-nums">{money(inv.amount)}</span>
         <span className="text-sm text-ink-secondary tabular-nums">на {prettyKaspiPhone(inv.phone)}</span>

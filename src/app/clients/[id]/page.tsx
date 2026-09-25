@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getClientById, listClients } from "@/lib/repo/clients";
@@ -82,7 +83,14 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
       {/* «Лицо» клиента: имя крупно, главное о нём и четыре цифры. Синий — цвет
           клиента по всему сайту (Section tone="client"). */}
       <header className="relative overflow-hidden rounded-2xl border border-section-client/15 bg-gradient-to-br from-section-client-soft via-surface to-surface shadow-card mb-5">
-        <span className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-section-client/[0.06]" aria-hidden="true" />
+        <Image
+          src="/logo-mark.png"
+          alt=""
+          aria-hidden="true"
+          width={260}
+          height={260}
+          className="absolute -right-14 -top-20 w-64 h-64 object-contain opacity-[0.10] pointer-events-none select-none"
+        />
         <div className="relative p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">

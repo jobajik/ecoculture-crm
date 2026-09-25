@@ -54,6 +54,11 @@ const config: Config = {
           claims: "#d9822b",
           "claims-soft": "#fdf1e6",
         },
+        // Отсылка к Kaspi в блоке Kaspi-счёта: чуть красный фон и метка.
+        kaspi: {
+          DEFAULT: "#e1312b",
+          soft: "#fdf1f0",
+        },
         flower: {
           rose: "#c2557a",
           chrysanthemum: "#2f7d94",

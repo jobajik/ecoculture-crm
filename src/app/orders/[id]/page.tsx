@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getOrderById } from "@/lib/repo/orders";
@@ -275,12 +276,25 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           «визуально выделять… на заказ использовать специальный шрифт и
           оформление, а то сейчас как белый фон всё». */}
       <header className="relative overflow-hidden rounded-2xl border border-accent/15 bg-gradient-to-br from-accent-soft via-surface to-surface shadow-card mb-5">
-        <span className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-accent/[0.06]" aria-hidden="true" />
+        {/* Соцветие Ecoculture — водяным знаком в углу (просьба владельца
+            «сюда было бы здорово лого»), полный логотип — над номером. */}
+        <Image
+          src="/logo-mark.png"
+          alt=""
+          aria-hidden="true"
+          width={260}
+          height={260}
+          className="absolute -right-14 -bottom-16 w-64 h-64 object-contain opacity-[0.13] pointer-events-none select-none"
+        />
         <div className="relative p-5 sm:p-6 grid sm:grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
-              <Icon name="order" className="w-4 h-4" />
-              {region ? "Опт в регион" : retail ? "Заявка магазину" : "Заявка"}
+            <div className="flex items-center gap-3">
+              <Image src="/logo.png" alt="Eco Culture" width={136} height={79} className="h-11 w-auto" />
+              <span className="h-5 w-px bg-line-strong" aria-hidden="true" />
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
+                <Icon name="order" className="w-4 h-4" />
+                {region ? "Опт в регион" : retail ? "Заявка магазину" : "Заявка"}
+              </span>
             </div>
             <div className="font-display text-[34px] leading-tight font-extrabold tracking-tight mt-1">
               № {orderCode(order.orderId)}
