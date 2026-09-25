@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
+import Section from "./Section";
 import { createClaimAction } from "@/app/finance/actions";
 import { CLAIM_REASONS, CLAIM_STATUSES, CLAIM_STATUS_LABELS } from "@/lib/constants";
 import { formatDay } from "@/lib/formatDate";
@@ -64,23 +65,27 @@ export default function OrderClaims({
   if (claims.length === 0 && !canCreate) return null;
 
   return (
-    <div className="card mb-6 space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-medium">Рекламации</h2>
-          {hasOpen && (
-            <p className="text-sm text-ink-secondary mt-0.5">Отправлена бухгалтеру</p>
-          )}
-        </div>
-        {canCreate && !hasOpen && (
-          <button onClick={() => setOpen((v) => !v)} className="btn-secondary !py-1.5">
+    <Section
+      tone={claims.length > 0 ? "claims" : "neutral"}
+      icon="alert"
+      title="Рекламации"
+      aside={
+        canCreate && !hasOpen ? (
+          <button onClick={() => setOpen((v) => !v)} className="btn-secondary !py-1.5 !min-h-0">
             {open ? "Отмена" : "Сообщить о проблеме"}
           </button>
-        )}
-      </div>
+        ) : hasOpen ? (
+          <span className="badge bg-section-claims-soft text-section-claims">отправлена бухгалтеру</span>
+        ) : undefined
+      }
+    >
+    <div className="space-y-3">
+      {claims.length === 0 && !open && (
+        <p className="text-sm text-ink-muted">Жалоб по заявке не было.</p>
+      )}
 
       {open && canCreate && (
-        <div className="space-y-3 border-t border-line-hairline pt-3">
+        <div className="space-y-3">
           <div className="flex flex-wrap gap-3">
             <label className="text-sm">
               <span className="block text-ink-secondary mb-1">Что случилось</span>
@@ -152,5 +157,6 @@ export default function OrderClaims({
         </ul>
       )}
     </div>
+    </Section>
   );
 }

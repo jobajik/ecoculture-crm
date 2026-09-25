@@ -5,6 +5,10 @@ import "@fontsource/arimo/400.css";
 import "@fontsource/arimo/500.css";
 import "@fontsource/arimo/600.css";
 import "@fontsource/arimo/700.css";
+// Manrope — только для «лица» документа (номер заявки, клиент, суммы): tailwind `font-display`.
+import "@fontsource/manrope/600.css";
+import "@fontsource/manrope/700.css";
+import "@fontsource/manrope/800.css";
 import "./globals.css";
 import Providers from "./providers";
 import Nav from "@/components/Nav";

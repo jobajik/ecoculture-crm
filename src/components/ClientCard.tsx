@@ -1,5 +1,6 @@
 "use client";
 
+import Section from "./Section";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -106,15 +107,20 @@ export default function ClientCard({
           ]
         : [];
     return (
-      <div className="card space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="font-medium">Анкета</h2>
-          {canEdit && (
-            <button onClick={() => setEditing(true)} className="btn-secondary !py-1.5 text-sm">
+      <Section
+        tone="client"
+        icon="client"
+        title="Анкета"
+        className="!mb-0"
+        aside={
+          canEdit && (
+            <button onClick={() => setEditing(true)} className="btn-secondary !py-1.5 !min-h-0 text-sm">
               Изменить
             </button>
-          )}
-        </div>
+          )
+        }
+      >
+      <div className="space-y-3">
         <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
           {rows.map(([label, value]) => (
             <div key={label}>
@@ -145,6 +151,7 @@ export default function ClientCard({
           </div>
         )}
       </div>
+      </Section>
     );
   }
 
@@ -178,8 +185,8 @@ export default function ClientCard({
   );
 
   return (
-    <div className="card space-y-3">
-      <h2 className="font-medium">Анкета</h2>
+    <Section tone="client" icon="client" title="Анкета · правка" className="!mb-0">
+    <div className="space-y-3">
       <div className="grid sm:grid-cols-2 gap-3">
         {field("Название клиента", "name")}
         {field("Город", "city")}
@@ -248,5 +255,6 @@ export default function ClientCard({
         </button>
       </div>
     </div>
+    </Section>
   );
 }

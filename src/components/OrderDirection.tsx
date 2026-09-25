@@ -69,15 +69,15 @@ export default function OrderDirection({
   if (!editable) {
     return (
       <div>
-        <div className="label">Направление отгрузки</div>
-        <div>{label}</div>
+        <div className="text-xs text-ink-muted">Направление отгрузки</div>
+        <div className="text-[15px]">{label}</div>
       </div>
     );
   }
 
   return (
     <div>
-      <div className="label">Направление отгрузки</div>
+      <div className="text-xs text-ink-muted">Направление отгрузки</div>
       {open ? (
         <div className="space-y-2">
           <select className="input" value={value} onChange={(e) => setValue(e.target.value)}>
@@ -115,7 +115,7 @@ export default function OrderDirection({
         </div>
       ) : (
         <div className="flex flex-wrap items-baseline gap-2">
-          <span>{label}</span>
+          <span className="text-[15px]">{label}</span>
           <button
             type="button"
             onClick={() => setOpen(true)}

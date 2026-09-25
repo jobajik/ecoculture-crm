@@ -90,7 +90,7 @@ export default function ReadyChecks({
   }
 
   return (
-    <div className={clsx("card mb-6", ready && "border-status-good/40 bg-status-good/5")}>
+    <div className={clsx("card mb-5", ready && "border-status-good/40 bg-status-good/5")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-medium">

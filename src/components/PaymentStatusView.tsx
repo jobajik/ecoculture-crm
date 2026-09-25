@@ -156,11 +156,11 @@ export default function PaymentStatusView({
         const showAll = expanded[l.key] || !!q || lane !== "all";
         const visible = showAll ? l.rows : l.rows.slice(0, LANE_PREVIEW);
         return (
-          <section key={l.key} className="card !p-0 overflow-hidden">
+          <section key={l.key} className="card !p-0 overflow-hidden relative">
+            <span className={clsx("absolute inset-y-0 left-0 w-1", LANE_TONE[l.key].dot)} aria-hidden="true" />
             <header className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-3 border-b border-line-hairline">
-              <span className={clsx("w-2 h-2 rounded-full self-center", LANE_TONE[l.key].dot)} />
-              <h2 className="text-sm font-semibold">{l.label}</h2>
-              <span className="text-sm tabular-nums text-ink-secondary">
+              <h2 className={clsx("text-[13px] font-semibold uppercase tracking-[0.08em]", LANE_TONE[l.key].text)}>{l.label}</h2>
+              <span className="font-display font-bold tabular-nums text-ink-primary">
                 {l.rows.length} · {money(l.rows.reduce((s, r) => s + r.row.debt, 0))}
               </span>
               <span className="text-xs text-ink-muted">{l.hint}</span>
@@ -275,7 +275,7 @@ function Tile({
       )}
     >
       <div className="text-xs text-ink-secondary">{label}</div>
-      <div className={clsx("text-2xl font-semibold tabular-nums mt-0.5", valueTone)}>{value}</div>
+      <div className={clsx("font-display text-2xl font-extrabold tabular-nums mt-0.5", valueTone)}>{value}</div>
       <div className="text-xs text-ink-muted mt-0.5 truncate">{sub}</div>
     </Tag>
   );
