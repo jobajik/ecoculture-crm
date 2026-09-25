@@ -13,7 +13,7 @@ import {
   suggestedKaspiPhone,
   type KaspiSendInput,
 } from "../src/lib/kaspiInvoice";
-import { unwrapInvoice, verifyWebhookSignature } from "../src/lib/apipay";
+import { unwrapInvoice, validationText, verifyWebhookSignature } from "../src/lib/apipay";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -103,6 +103,15 @@ check("счёт в invoice", unwrapInvoice({ event: "x", invoice: { id: 2, statu
 check("счёт в data.invoice", unwrapInvoice({ data: { invoice: { id: 3, status: "paid" } } })?.id, 3);
 check("счёт в data", unwrapInvoice({ data: { id: 4, status: "paid" } })?.id, 4);
 check("без id — нет счёта", unwrapInvoice({ event: "webhook.test" }), null);
+
+// --- Отказ ApiPay 422 — по-русски, с полем ------------------------------------------------
+check(
+  "422 с полем",
+  validationText({ message: "Validation failed", errors: { phone_number: ["The phone number field is required."] } }),
+  "ApiPay не принял счёт: номер — The phone number field is required."
+);
+check("422 без списка полей — пусто", validationText({ message: "Validation failed" }), "");
+check("пустой ответ — пусто", validationText(null), "");
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

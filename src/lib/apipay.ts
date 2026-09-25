@@ -78,6 +78,27 @@ function humanError(status: number, code: string, message: string): string {
   return message || `ApiPay ответил ошибкой ${status}${code ? ` (${code})` : ""}`;
 }
 
+/** Какое поле ApiPay не принял — по-русски. Раньше на экран шло голое «Validation failed». */
+const FIELD_NAMES: Record<string, string> = {
+  phone_number: "номер",
+  client_phone: "номер",
+  amount: "сумма",
+  description: "подпись счёта",
+  external_order_id: "номер заявки",
+  external_order_id_idempotency: "ключ повтора",
+  kaspi_connection_id: "касса",
+};
+
+export function validationText(body: unknown): string {
+  const errors = (body as { errors?: Record<string, unknown> } | null)?.errors;
+  if (!errors || typeof errors !== "object") return "";
+  const parts = Object.entries(errors).map(([field, msgs]) => {
+    const first = Array.isArray(msgs) ? String(msgs[0] ?? "") : String(msgs ?? "");
+    return `${FIELD_NAMES[field] ?? field}${first ? ` — ${first}` : ""}`;
+  });
+  return parts.length ? `ApiPay не принял счёт: ${parts.join("; ")}` : "";
+}
+
 async function call<T>(
   cfg: ApiPayFarmConfig,
   method: "GET" | "POST",
@@ -104,7 +125,8 @@ async function call<T>(
   if (!res.ok) {
     const d = (data ?? {}) as { error?: string; code?: string; message?: string; error_code?: string };
     const code = String(d.code || d.error_code || d.error || "");
-    throw new ApiPayError(humanError(res.status, code, String(d.message || "")), res.status, code, data);
+    const text422 = res.status === 422 ? validationText(data) : "";
+    throw new ApiPayError(text422 || humanError(res.status, code, String(d.message || "")), res.status, code, data);
   }
   return data as T;
 }
@@ -137,7 +159,9 @@ export async function createInvoice(
   input: { phone: string; amount: number; description: string; externalOrderId: string; idempotencyKey: string }
 ): Promise<ApiPayInvoice> {
   const raw = await call<unknown>(cfg, "POST", "/invoices", {
-    client_phone: input.phone,
+    // Поле номера у ApiPay — phone_number (так в их документации и примерах). Первая версия
+    // слала client_phone, и ApiPay отвечал «Validation failed».
+    phone_number: input.phone,
     amount: input.amount,
     description: input.description,
     external_order_id: input.externalOrderId,
