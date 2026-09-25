@@ -1752,3 +1752,77 @@ export async function parseWriteoffWorkbook(buffer: ArrayBuffer): Promise<Writeo
   }
   return { rows };
 }
+
+// ---------------------------------------------------------------------------
+// Лиды: база потенциальных клиентов из файла владельца. Устройство файла
+// заранее неизвестно, поэтому здесь только «лист → таблица строк», а какая
+// колонка чем является, решает `parseLeadMatrix()` в `leads.ts` по заголовкам.
+// ---------------------------------------------------------------------------
+
+/** Первый лист .xlsx или .csv — таблицей строк. null — файл не прочитался. */
+export async function readFirstSheetMatrix(buffer: ArrayBuffer, fileName: string): Promise<string[][] | null> {
+  if (/\.csv$/i.test(fileName)) {
+    const text = new TextDecoder("utf-8").decode(buffer).replace(/^﻿/, "");
+    const lines = text.split(/\r?\n/);
+    const sep = (lines[0] ?? "").split(";").length > (lines[0] ?? "").split(",").length ? ";" : ",";
+    return lines.map((line) => splitCsvLine(line, sep));
+  }
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    return null;
+  }
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return [];
+  const matrix: string[][] = [];
+  sheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+    const cells: string[] = [];
+    for (let c = 1; c <= Math.max(row.cellCount, sheet.columnCount); c++) cells.push(cellText(row.getCell(c)));
+    matrix[rowNumber - 1] = cells;
+  });
+  return Array.from(matrix, (r) => r ?? []);
+}
+
+function splitCsvLine(line: string, sep: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cur += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === sep) {
+      out.push(cur.trim());
+      cur = "";
+    } else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+/** Шаблон для загрузки лидов: заголовки, которые узнаёт `parseLeadMatrix`. */
+export async function buildLeadTemplate(): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Лиды");
+  sheet.columns = [
+    { header: "Название", width: 32 },
+    { header: "Город", width: 16 },
+    { header: "Телефон", width: 18 },
+    { header: "Контактное лицо", width: 22 },
+    { header: "Тип точки", width: 20 },
+    { header: "Источник", width: 18 },
+    { header: "Адрес", width: 28 },
+    { header: "Комментарий", width: 36 },
+    { header: "Менеджер", width: 18 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.addRow(["Цветочный салон «Пример»", "Алматы", "+7 701 000 00 00", "Айгуль", "Флористический салон", "Instagram", "ул. Абая, 1", "Берут розу к праздникам", ""]);
+  sheet.getColumn(3).numFmt = "@";
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}

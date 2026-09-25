@@ -270,3 +270,65 @@ export interface Settings {
   shelfLifeDays: Record<string, number>;
   warningThreshold: number;
 }
+
+/** Потенциальный клиент — вкладка Leads. */
+export interface Lead {
+  leadId: string;
+  createdAt: string;
+  createdByEmail: string;
+  name: string;
+  city: string;
+  contactPerson: string;
+  phone: string;
+  clientType: string;
+  source: string;
+  address: string;
+  note: string;
+  /** Пусто — лид ещё никому не отдан. */
+  managerEmail: string;
+  /** Код стадии из `LEAD_STAGES`. */
+  stage: string;
+  stageChangedAt: string;
+  /** Когда следующий разговор, «ГГГГ-ММ-ДД». Пусто — не назначено. */
+  nextTouchAt: string;
+  lostReason: string;
+  /** Карточка клиента, заведённая из лида. */
+  clientId: string;
+}
+
+/** Одно касание лида — вкладка LeadTouches. */
+export interface LeadTouch {
+  touchId: string;
+  leadId: string;
+  createdAt: string;
+  managerEmail: string;
+  channel: string;
+  comment: string;
+  stageFrom: string;
+  stageTo: string;
+  nextTouchAt: string;
+}
+
+/** Счёт Kaspi Pay, выставленный через ApiPay, — вкладка KaspiInvoices. */
+export interface KaspiInvoice {
+  /** Номер счёта в ApiPay. */
+  invoiceId: string;
+  createdAt: string;
+  orderId: string;
+  /** Компания, от которой выставлен счёт (касса). */
+  farm: string;
+  amount: number;
+  /** Номер клиента в виде 8XXXXXXXXXX. */
+  phone: string;
+  /** processing / pending / paid / cancelling / cancelled / expired / error / partially_refunded. */
+  status: string;
+  kaspiInvoiceId: string;
+  errorCode: string;
+  errorMessage: string;
+  paidAt: string;
+  /** Платёж в Payments, созданный по оплате. Пусто — ещё не проведён. */
+  paymentId: string;
+  createdByEmail: string;
+  sandbox: boolean;
+  updatedAt: string;
+}

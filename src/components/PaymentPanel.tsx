@@ -18,6 +18,7 @@ import type { FarmPayment } from "@/lib/orderMoney";
 import { MIXED_PAYMENT_METHOD, PAYMENT_METHODS } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
 import { unwrap } from "@/lib/actionResult";
+import KaspiInvoiceBlock from "./KaspiInvoiceBlock";
 
 export function money(value: number): string {
   return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
@@ -73,6 +74,7 @@ export default function PaymentPanel({
   return (
     <div className="space-y-4">
       <InvoiceRow orderId={orderId} invoiceSentAt={invoiceSentAt} />
+      <KaspiInvoiceBlock orderId={orderId} />
       <RealizationRow orderId={orderId} realizations={realizations} />
       {consignment && (
         <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">

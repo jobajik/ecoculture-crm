@@ -21,6 +21,15 @@ export const SHEET_TABS = {
   SETTINGS: "Settings",
   STAFF_TAKEOUTS: "StaffTakeouts",
   PAYMENTS: "Payments",
+  // Лиды — те, кто ещё НЕ покупал: база потенциальных клиентов и работа с ней
+  // по стадиям. Касания — отдельной вкладкой, по строке на каждое: история
+  // разговоров копится, и держать её в одной ячейке лида нельзя.
+  LEADS: "Leads",
+  LEAD_TOUCHES: "LeadTouches",
+  // Счета Kaspi Pay, выставленные через ApiPay на телефон клиента: строка на
+  // счёт, статус обновляет вебхук. Платёж по оплаченному счёту ложится в
+  // Payments как обычный, а здесь остаётся ссылка на него (PaymentID).
+  KASPI_INVOICES: "KaspiInvoices",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -309,6 +318,59 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Method",
     "AccountantEmail",
     "Note",
+  ],
+  // Потенциальный клиент. Stage — код стадии (`LEAD_STAGES`), NextTouchAt —
+  // когда следующий разговор (ставится вместе с касанием), ClientID — карточка
+  // клиента, заведённая из лида. Сколько было касаний и когда последнее, НЕ
+  // хранится: это считается из LeadTouches, и два числа об одном разъехались бы.
+  [SHEET_TABS.LEADS]: [
+    "LeadID",
+    "CreatedAt",
+    "CreatedByEmail",
+    "Name",
+    "City",
+    "ContactPerson",
+    "Phone",
+    "ClientType",
+    "Source",
+    "Address",
+    "Note",
+    "ManagerEmail",
+    "Stage",
+    "StageChangedAt",
+    "NextTouchAt",
+    "LostReason",
+    "ClientID",
+  ],
+  // Касание — один разговор с лидом: канал, комментарий менеджера и, если
+  // стадия сдвинулась, откуда и куда. Только дописывается.
+  [SHEET_TABS.LEAD_TOUCHES]: [
+    "TouchID",
+    "LeadID",
+    "CreatedAt",
+    "ManagerEmail",
+    "Channel",
+    "Comment",
+    "StageFrom",
+    "StageTo",
+    "NextTouchAt",
+  ],
+  [SHEET_TABS.KASPI_INVOICES]: [
+    "InvoiceID",
+    "CreatedAt",
+    "OrderID",
+    "Farm",
+    "Amount",
+    "Phone",
+    "Status",
+    "KaspiInvoiceID",
+    "ErrorCode",
+    "ErrorMessage",
+    "PaidAt",
+    "PaymentID",
+    "CreatedByEmail",
+    "Sandbox",
+    "UpdatedAt",
   ],
 };
 

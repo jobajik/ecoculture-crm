@@ -11,7 +11,6 @@ import {
   setOrderPromise,
   setOrderInvoiceSent,
   setOrderInvoiceNote,
-  setOrderPaidTotals,
   setOrderRealization,
   updateOrderItemAmounts,
   recomputeOrderStatusFromItems,
@@ -19,18 +18,16 @@ import {
 import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { confirmRefusal, moneyRefusal } from "@/lib/orderRules";
-import { farmPayments, invoiceByFarm } from "@/lib/orderMoney";
+import { invoiceByFarm } from "@/lib/orderMoney";
 import { appendPayments, deletePayment, listPayments } from "@/lib/repo/payments";
 import {
   addPaymentRefusal,
   duplicatePaymentRefusal,
   joinRealizations,
-  methodOfPayments,
   parseRealizations,
   realizationFlowers,
   splitPaymentLines,
   removePaymentRefusal,
-  totalsAfter,
 } from "@/lib/payments";
 import { isRetailOrder, isRetailRole } from "@/lib/retail";
 import { isRegionOrder } from "@/lib/orderKind";
@@ -42,12 +39,12 @@ import {
   MONEY_LOG_ACTIONS,
   ORDER_STATUSES,
   PAYMENT_METHODS,
-  PAID_FIELD_BY_FARM,
   FARM_LABELS,
   ROLES,
 } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
 import { forgetReads } from "@/lib/sheets";
+import { writeTotalsAfter } from "@/lib/paymentWrite";
 
 /**
  * Заявка в наш магазин деньгами не сопровождается вовсе: счёта нет, платить
@@ -594,48 +591,6 @@ function todayKey(): string {
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₸`;
 
-/**
- * Пересчитать итог заявки по журналу и записать его.
- *
- * Итог = прежний итог ± этот платёж, а не «сумма журнала»: у заявок, оплаченных
- * до журнала, деньги лежат в итоге одним числом, и пересчёт «по журналу»
- * стёр бы их. День первого поступления берётся из журнала — платёж вносят и
- * задним числом.
- */
-async function writeTotalsAfter(
-  order: NonNullable<Awaited<ReturnType<typeof getOrderById>>>,
-  farm: string,
-  delta: number,
-  email: string,
-  method: string
-) {
-  const current = Object.fromEntries(farmPayments(order).map((f) => [f.farm, f.paidAmount]));
-  const next = totalsAfter(order.paidAmount, current, farm, delta);
-  const byField: Record<string, number> = {};
-  for (const [f, value] of Object.entries(next.byFarm)) {
-    const field = PAID_FIELD_BY_FARM[f];
-    if (field) byField[field] = value;
-  }
-  const ledger = (await listPayments({ fresh: true })).filter((p) => p.orderId === order.orderId);
-  const firstDay = ledger.map((p) => p.date).filter(Boolean).sort()[0] ?? "";
-  // Вид оплаты заявки — из её платежей: один способ — он и есть, разные —
-  // «Смешанная». Платежей нет — пусто, и тогда остаётся то, что указал менеджер.
-  const ledgerMethod = methodOfPayments(ledger.map((p) => p.method));
-  await setOrderPaidTotals(order.orderId, {
-    amount: next.paidAmount,
-    totalAmount: order.totalAmount,
-    accountantEmail: email,
-    paymentMethod: ledgerMethod || method,
-    byField,
-    // Были деньги ДО журнала (итог больше суммы платежей) — их день мы знаем
-    // только из прежней отметки и её не трогаем. Иначе первый день — из журнала.
-    paidAt:
-      next.paidAmount - ledger.reduce((sum, p) => sum + p.amount, 0) > 1 && order.paidAt
-        ? order.paidAt
-        : firstDay || order.paidAt || new Date().toISOString(),
-  });
-  return next.paidAmount;
-}
 
 async function addPaymentActionInner(input: {
   orderId: string;
