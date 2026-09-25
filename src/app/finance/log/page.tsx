@@ -6,7 +6,7 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { ROLES } from "@/lib/constants";
 import Hint from "@/components/Hint";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import MoneyLogView, { type MoneyLogRow } from "@/components/MoneyLogView";
 import { financeTabsFor } from "../tabs";
 
@@ -45,17 +45,22 @@ export default async function MoneyLogPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">
-          Журнал действий по деньгам
-          <Hint>
-            Записи только добавляются, править нельзя. Последняя колонка: у оплаты — полученная
-            сумма, у пересчёта — сумма заявки.
-          </Hint>
-        </h1>
-      </div>
-
-      <SectionTabs tabs={financeTabsFor(role)} />
+      <PageHeader
+        area="money"
+        icon="note"
+        tabs={financeTabsFor(role)}
+        title={
+          <>
+            Журнал действий по деньгам
+            <span className="font-sans">
+              <Hint>
+                Записи только добавляются, править нельзя. Последняя колонка: у оплаты — полученная
+                сумма, у пересчёта — сумма заявки.
+              </Hint>
+            </span>
+          </>
+        }
+      />
 
       <MoneyLogView rows={rows} />
     </div>

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot, type FinancePeriod } from "@/lib/finance";
 import FinanceBoard from "@/components/FinanceBoard";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { financeTabsFor } from "./tabs";
 import { canEditFinance } from "@/lib/financeAccess";
 
@@ -43,12 +43,12 @@ export default async function FinancePage({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Оплаты</h1>
-          <p className="text-sm text-ink-secondary">Две галочки — заявку можно отгружать.</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        area="money"
+        title="Оплаты"
+        subtitle="Две галочки — заявку можно отгружать."
+        tabs={financeTabsFor(role)}
+        actions={
           <div className="flex gap-1">
             {PERIODS.map((p) => (
               <Link
@@ -57,17 +57,15 @@ export default async function FinancePage({
                 className={
                   period === p.key
                     ? "px-3 py-1.5 rounded-lg text-sm bg-accent text-white"
-                    : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline text-ink-secondary hover:bg-surface-plane"
+                    : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane"
                 }
               >
                 {p.label}
               </Link>
             ))}
           </div>
-        </div>
-      </div>
-
-      <SectionTabs tabs={financeTabsFor(role)} />
+        }
+      />
 
       <p className="text-sm text-ink-muted">{snapshot.periodLabel}</p>
 

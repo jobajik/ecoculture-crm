@@ -11,7 +11,8 @@ import { FLOWER_TYPE_LABELS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import { WAREHOUSE_TABS } from "./tabs";
 import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip } from "@/lib/orderReady";
@@ -64,29 +65,26 @@ export default async function WarehousePage() {
 
   return (
     <div>
-      <div className="mb-3">
-        <h1 className="text-xl font-semibold">Склад</h1>
-        {farm && <p className="text-sm text-ink-secondary">Производство: {farmLabel(farm)}</p>}
-      </div>
-
-      <div className="mb-4">
-        <SectionTabs tabs={WAREHOUSE_TABS} />
-      </div>
-
-      <div className="flex items-center justify-end mb-4 flex-wrap gap-2">
-        <div className="flex gap-2">
-          <Link href="/orders/new?region=1" className="btn-secondary">
-            + Опт в регион
-          </Link>
-          <Link href="/warehouse/receive" className="btn-primary">
-            + Приёмка
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        area="stock"
+        title="Очередь на отгрузку"
+        subtitle={farm ? `Производство: ${farmLabel(farm)}` : undefined}
+        icon="truck"
+        tabs={WAREHOUSE_TABS}
+        actions={
+          <div className="flex gap-2">
+            <Link href="/orders/new?region=1" className="btn-secondary">
+              + Опт в регион
+            </Link>
+            <Link href="/warehouse/receive" className="btn-primary">
+              + Приёмка
+            </Link>
+          </div>
+        }
+      />
 
       {alerts.length > 0 && (
-        <div className="card mb-6 border-status-warning/40">
-          <h2 className="font-medium mb-2">⚠ Срок хранения</h2>
+        <Section tone="warn" icon="alert" title="Срок хранения">
           <ul className="text-sm space-y-1">
             {alerts.map((a) => (
               <li key={a.batch.batchId} className="flex justify-between gap-3 text-ink-secondary">
@@ -112,75 +110,80 @@ export default async function WarehousePage() {
               Сверить остаток →
             </Link>
           </div>
-        </div>
+        </Section>
       )}
 
-      <h2 className="font-medium mb-2">
-        Можно отгружать
-        {lateCount > 0 && (
-          <span className="ml-2 badge bg-status-critical/10 text-status-critical align-middle">
-            опаздывают: {lateCount}
-          </span>
-        )}
-      </h2>
-      <div className="card !p-0 table-scroll table-cards mb-6">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Заявка</th>
-              <th className="px-4 py-3 font-medium">Клиент</th>
-              <th className="px-4 py-3 font-medium">Доставка</th>
-              <th className="px-4 py-3 font-medium">Позиции</th>
-              <th className="px-4 py-3 font-medium">Этап</th>
-              <th className="px-4 py-3 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {readyToShip.map((o) => (
-              <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top">
-                <td className="px-4 py-3 font-medium">{o.orderId}</td>
-                <td className="px-4 py-3" data-label="Клиент">
-                  <div className="truncate max-w-[200px]" title={o.clientName}>
-                    {o.clientName}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">
-                  {formatDay(o.deliveryDate)}
-                </td>
-                <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
-                  <ItemsCell
-                    lines={o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)}
-                    width="max-w-[260px]"
-                  />
-                </td>
-                <td className="px-4 py-3" data-label="Этап">
-                  <OrderStageBadge stage={stageOf(o)} compact />
-                  {creditNote(o) && (
-                    <div className="text-xs text-[#8a5a00] mt-1 whitespace-nowrap">{creditNote(o)}</div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
-                    Отгрузить
-                  </Link>
-                </td>
+      <Section
+        tone="stock"
+        icon="truck"
+        title="Можно отгружать"
+        aside={
+          lateCount > 0 && (
+            <span className="badge bg-status-critical/10 text-status-critical align-middle">
+              опаздывают: {lateCount}
+            </span>
+          )
+        }
+        flush
+      >
+        <div className="table-scroll table-cards border-t border-line-hairline">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                <th className="px-4 py-3 font-medium">Заявка</th>
+                <th className="px-4 py-3 font-medium">Клиент</th>
+                <th className="px-4 py-3 font-medium">Доставка</th>
+                <th className="px-4 py-3 font-medium">Позиции</th>
+                <th className="px-4 py-3 font-medium">Этап</th>
+                <th className="px-4 py-3 font-medium"></th>
               </tr>
-            ))}
-            {readyToShip.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
-                  {waiting.length > 0 ? "Готовых заявок нет" : "Отгружать нечего"}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {readyToShip.map((o) => (
+                <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top">
+                  <td className="px-4 py-3 font-medium">{o.orderId}</td>
+                  <td className="px-4 py-3" data-label="Клиент">
+                    <div className="truncate max-w-[200px]" title={o.clientName}>
+                      {o.clientName}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">
+                    {formatDay(o.deliveryDate)}
+                  </td>
+                  <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
+                    <ItemsCell
+                      lines={o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)}
+                      width="max-w-[260px]"
+                    />
+                  </td>
+                  <td className="px-4 py-3" data-label="Этап">
+                    <OrderStageBadge stage={stageOf(o)} compact />
+                    {creditNote(o) && (
+                      <div className="text-xs text-[#8a5a00] mt-1 whitespace-nowrap">{creditNote(o)}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
+                      Отгрузить
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {readyToShip.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
+                    {waiting.length > 0 ? "Готовых заявок нет" : "Отгружать нечего"}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Section>
 
       {waiting.length > 0 && (
-        <>
-          <h2 className="font-medium mb-2">Ждут подтверждения или оплаты</h2>
-          <div className="card !p-0 table-scroll table-cards">
+        <Section tone="neutral" icon="clock" title="Ждут подтверждения или оплаты" flush>
+          <div className="table-scroll table-cards border-t border-line-hairline">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -222,7 +225,7 @@ export default async function WarehousePage() {
               </tbody>
             </table>
           </div>
-        </>
+        </Section>
       )}
     </div>
   );

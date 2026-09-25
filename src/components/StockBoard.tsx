@@ -266,7 +266,7 @@ export default function StockBoard({
                 <div className="text-[11px] text-ink-muted truncate">{farmLabel(col.farm)}</div>
               </div>
               <div className="text-right shrink-0">
-                <div className="text-xl font-semibold tabular-nums leading-none">
+                <div className="font-display text-xl font-extrabold tabular-nums leading-none">
                   {col.total.toLocaleString("ru-RU")}
                 </div>
                 <div className="text-[11px] text-ink-muted">шт.</div>
@@ -344,7 +344,7 @@ function AgeBucketCard({ bucket, total }: { bucket: AgeBucketRow; total: number 
       </div>
 
       <div className="mt-1.5 flex items-baseline gap-1.5">
-        <span className="text-2xl font-semibold tabular-nums leading-none">
+        <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
           {bucket.quantity.toLocaleString("ru-RU")}
         </span>
         <span className="text-sm text-ink-secondary">шт.</span>

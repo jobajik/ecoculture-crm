@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { listBatches } from "@/lib/repo/batches";
 import { farmLabel } from "@/lib/constants";
 import { stockPositions } from "@/lib/writeoffPlan";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import WriteoffBulkForm from "@/components/WriteoffBulkForm";
 import { WAREHOUSE_TABS } from "../tabs";
 
@@ -21,11 +21,13 @@ export default async function WriteoffPage({ searchParams }: { searchParams?: { 
 
   return (
     <div className="max-w-4xl">
-      <h1 className="text-xl font-semibold mb-1">Списание{farm ? ` · ${farmLabel(farm)}` : ""}</h1>
-      <p className="text-ink-secondary mb-3">Снимается с самых старых партий позиции.</p>
-      <div className="mb-4">
-        <SectionTabs tabs={WAREHOUSE_TABS} />
-      </div>
+      <PageHeader
+        area="stock"
+        title={`Списание${farm ? ` · ${farmLabel(farm)}` : ""}`}
+        subtitle="Снимается с самых старых партий позиции."
+        icon="alert"
+        tabs={WAREHOUSE_TABS}
+      />
       <WriteoffBulkForm positions={positions} initialMode={searchParams?.mode === "recount" ? "recount" : "writeoff"} />
     </div>
   );

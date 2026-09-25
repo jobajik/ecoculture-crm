@@ -9,7 +9,7 @@ import { SHEET_TABS } from "@/lib/constants";
 import { canEditFinance, canSeeFinance } from "@/lib/financeAccess";
 import { buildPaymentStatus } from "@/lib/paymentStatus";
 import { localDayKey } from "@/lib/timezone";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import PaymentStatusView from "@/components/PaymentStatusView";
 import { financeTabsFor } from "../tabs";
 
@@ -40,8 +40,7 @@ export default async function PaymentStatusPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Оплаты</h1>
-      <SectionTabs tabs={financeTabsFor(role)} />
+      <PageHeader area="money" title="Статус оплат" icon="card" tabs={financeTabsFor(role)} />
       <PaymentStatusView
         board={board}
         canEdit={canEditFinance(role)}

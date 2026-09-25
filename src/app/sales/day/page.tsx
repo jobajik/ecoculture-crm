@@ -1,7 +1,7 @@
 import { getDailySalesSnapshot } from "@/lib/dailySales";
 import DailySalesDashboard from "@/components/DailySalesDashboard";
 
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { salesTabsFor } from "../tabs";
@@ -20,11 +20,7 @@ export default async function DailySalesPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Продажи за день</h1>
-      </div>
-
-      <SectionTabs tabs={salesTabsFor(role)} />
+      <PageHeader area="sales" title="Продажи за день" icon="calendar" tabs={salesTabsFor(role)} />
 
       <DailySalesDashboard initial={snapshot} />
     </div>

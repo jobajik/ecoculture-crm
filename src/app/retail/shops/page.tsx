@@ -7,7 +7,7 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { ORDER_STATUSES, RETAIL_ORDER, ROLES } from "@/lib/constants";
 import { isRetailOrder, isRetailRole, retailShortLabel, territoriesFor } from "@/lib/retail";
 import { formatDay } from "@/lib/formatDate";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { retailTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -57,14 +57,14 @@ export default async function RetailShopsPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h1 className="text-xl font-semibold">
-          Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
-        </h1>
-      </div>
-      <SectionTabs tabs={retailTabsFor(role)} />
+      <PageHeader
+        area="retail"
+        title={`Магазины${territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}`}
+        icon="store"
+        tabs={retailTabsFor(role)}
+      />
 
-      <p className="text-sm text-ink-secondary mt-4 mb-4">
+      <p className="text-sm text-ink-secondary mb-4">
         {shops.length === 0
           ? "Магазинов пока нет."
           : `${shops.length} ${shops.length === 1 ? "магазин" : "магазинов"}`}

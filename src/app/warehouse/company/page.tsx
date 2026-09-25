@@ -21,7 +21,7 @@ import {
   isCompanyUse,
   takeoutFarmScope,
 } from "@/lib/staffTakeout";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { WAREHOUSE_TABS } from "../tabs";
 import StaffTakeoutForm, { type TakeoutBatchOption } from "@/components/StaffTakeoutForm";
 import CompanyUseReport from "@/components/CompanyUseReport";
@@ -98,14 +98,13 @@ export default async function CompanyUsePage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-1">
-        Нужды компании{farm ? ` · ${farmLabel(farm)}` : ""}
-      </h1>
-      <p className="text-ink-secondary mb-3">Подарки, офис, мероприятия, образцы.</p>
-
-      <div className="mb-4">
-        <SectionTabs tabs={WAREHOUSE_TABS} />
-      </div>
+      <PageHeader
+        area="stock"
+        title={`Нужды компании${farm ? ` · ${farmLabel(farm)}` : ""}`}
+        subtitle="Подарки, офис, мероприятия, образцы."
+        icon="tag"
+        tabs={WAREHOUSE_TABS}
+      />
 
       <div className="mb-6">
         <h2 className="font-medium mb-2">Записать расход</h2>

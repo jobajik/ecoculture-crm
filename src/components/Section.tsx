@@ -14,13 +14,45 @@ import Icon, { type IconName } from "./Icon";
  *
  * Без "use client": рисуют и серверные страницы, и клиентские компоненты.
  */
-export type SectionTone = "order" | "client" | "stock" | "claims" | "good" | "warn" | "bad" | "neutral";
+export type SectionTone =
+  | "order"
+  | "client"
+  | "stock"
+  | "claims"
+  | "money"
+  | "sales"
+  | "plans"
+  | "retail"
+  | "leads"
+  | "analytics"
+  | "admin"
+  | "forecast"
+  | "good"
+  | "warn"
+  | "bad"
+  | "neutral";
 
 export const SECTION_TONE: Record<SectionTone, { stripe: string; chip: string; title: string }> = {
   order: { stripe: "bg-accent", chip: "bg-accent-soft text-accent", title: "text-accent" },
   client: { stripe: "bg-section-client", chip: "bg-section-client-soft text-section-client", title: "text-section-client" },
   stock: { stripe: "bg-section-stock", chip: "bg-section-stock-soft text-section-stock", title: "text-section-stock" },
   claims: { stripe: "bg-section-claims", chip: "bg-section-claims-soft text-section-claims", title: "text-section-claims" },
+  money: { stripe: "bg-section-money", chip: "bg-section-money-soft text-section-money", title: "text-section-money" },
+  sales: { stripe: "bg-section-sales", chip: "bg-section-sales-soft text-section-sales", title: "text-section-sales" },
+  plans: { stripe: "bg-section-plans", chip: "bg-section-plans-soft text-section-plans", title: "text-section-plans" },
+  retail: { stripe: "bg-section-retail", chip: "bg-section-retail-soft text-section-retail", title: "text-section-retail" },
+  leads: { stripe: "bg-section-leads", chip: "bg-section-leads-soft text-section-leads", title: "text-section-leads" },
+  analytics: {
+    stripe: "bg-section-analytics",
+    chip: "bg-section-analytics-soft text-section-analytics",
+    title: "text-section-analytics",
+  },
+  admin: { stripe: "bg-section-admin", chip: "bg-section-admin-soft text-section-admin", title: "text-section-admin" },
+  forecast: {
+    stripe: "bg-section-forecast",
+    chip: "bg-section-forecast-soft text-section-forecast",
+    title: "text-section-forecast",
+  },
   good: { stripe: "bg-status-good", chip: "bg-status-good/10 text-status-good", title: "text-status-good" },
   warn: { stripe: "bg-status-warning", chip: "bg-status-warning/15 text-[#8a5a00]", title: "text-[#8a5a00]" },
   bad: { stripe: "bg-status-critical", chip: "bg-status-critical/10 text-status-critical", title: "text-status-critical" },

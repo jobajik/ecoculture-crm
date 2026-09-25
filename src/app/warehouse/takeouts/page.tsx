@@ -24,7 +24,8 @@ import {
   unpricedTakeouts,
 } from "@/lib/staffTakeout";
 import TakeoutPriceCell from "@/components/TakeoutPriceCell";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import { WAREHOUSE_TABS } from "../tabs";
 import DayNav from "@/components/DayNav";
 import StaffTakeoutForm, { type TakeoutBatchOption } from "@/components/StaffTakeoutForm";
@@ -106,14 +107,13 @@ export default async function StaffTakeoutsPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-1">
-        Выдачи сотрудникам{farm ? ` · ${farmLabel(farm)}` : ""}
-      </h1>
-      <p className="text-ink-secondary mb-3">В счёт зарплаты.</p>
-
-      <div className="mb-4">
-        <SectionTabs tabs={WAREHOUSE_TABS} />
-      </div>
+      <PageHeader
+        area="stock"
+        title={`Выдачи сотрудникам${farm ? ` · ${farmLabel(farm)}` : ""}`}
+        subtitle="В счёт зарплаты."
+        icon="client"
+        tabs={WAREHOUSE_TABS}
+      />
 
       {canFill && (
         <div className="mb-6">
@@ -199,10 +199,14 @@ export default async function StaffTakeoutsPage({
       </div>
 
       {canFill && unpriced.length > 0 && (
-        <div className="mb-6">
-          <h2 className="font-medium mb-1">Без цены за {periodLabel(monthKey)} — {unpriced.length}</h2>
-          <p className="text-sm text-ink-secondary mb-2">Без цены не попадут в удержание.</p>
-          <div className="card !p-0 table-scroll table-cards">
+        <Section
+          tone="warn"
+          icon="alert"
+          title={`Без цены за ${periodLabel(monthKey)} — ${unpriced.length}`}
+          flush
+        >
+          <p className="text-sm text-ink-secondary pl-5 pr-4 sm:pr-5 pb-3">Без цены не попадут в удержание.</p>
+          <div className="table-scroll table-cards border-t border-line-hairline">
             <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -232,7 +236,7 @@ export default async function StaffTakeoutsPage({
               </tbody>
             </table>
           </div>
-        </div>
+        </Section>
       )}
 
       <StaffTakeoutMonth
@@ -258,7 +262,7 @@ function Tile({
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
-      <div className="text-2xl font-semibold mt-1">{value}</div>
+      <div className="text-2xl font-display font-extrabold tabular-nums mt-1">{value}</div>
       {hint && (
         <div className={`text-xs mt-1 ${warn ? "text-[#8a5a00]" : "text-ink-muted"}`}>{hint}</div>
       )}

@@ -5,7 +5,7 @@ import { getPicklist } from "@/lib/picklist";
 import PicklistView from "@/components/PicklistView";
 import { FARM_ORDER } from "@/lib/constants";
 
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { WAREHOUSE_TABS } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -40,9 +40,8 @@ export default async function PicklistPage({
 
   return (
     <div>
-      <div className="mb-4">
-        <SectionTabs tabs={WAREHOUSE_TABS} />
-      </div>
+      {/* Шапка сама `no-print`: печатный лист остаётся прежним. */}
+      <PageHeader area="stock" title="Заявка на день" icon="order" tabs={WAREHOUSE_TABS} />
       {picklist.overdue.orders > 0 && (
         <Link
           href="/warehouse"

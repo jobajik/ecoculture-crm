@@ -97,7 +97,7 @@ export default function PicklistView({
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Заявка на сборку</h1>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-ink-secondary">Лист на печать</h2>
           {scale < 1 && (
             <p className="text-ink-muted text-sm">Масштаб печати {Math.round(scale * 100)}%</p>
           )}

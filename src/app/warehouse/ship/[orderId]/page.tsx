@@ -7,6 +7,8 @@ import { getOrderById } from "@/lib/repo/orders";
 import { availableBatchesFor, listBatches } from "@/lib/repo/batches";
 import ShipmentForm from "@/components/ShipmentForm";
 import Hint from "@/components/Hint";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import OrderStageBadge from "@/components/OrderStageBadge";
 import WholeOrderShip from "@/components/WholeOrderShip";
 import { orderStage } from "@/lib/orderStage";
@@ -46,15 +48,19 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
 
   return (
     <div className="max-w-2xl">
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-xl font-semibold">Отгрузка {order.orderId}</h1>
-        <OrderStageBadge stage={orderStage(order, localDayKey())} />
-      </div>
-      <p className="text-ink-secondary mb-6">
-        {farm && <>{farmLabel(farm)} · </>}
-        {order.clientName}
-        {order.deliveryDate && ` · доставка ${formatDay(order.deliveryDate)}`}
-      </p>
+      <PageHeader
+        area="stock"
+        title={`Отгрузка ${order.orderId}`}
+        icon="truck"
+        subtitle={
+          <>
+            {farm && <>{farmLabel(farm)} · </>}
+            {order.clientName}
+            {order.deliveryDate && ` · доставка ${formatDay(order.deliveryDate)}`}
+          </>
+        }
+        actions={<OrderStageBadge stage={orderStage(order, localDayKey())} />}
+      />
       {isReadyToShip(order) && creditNote(order) && (
         <p className="text-sm text-[#8a5a00] bg-[#8a5a00]/10 rounded-lg px-3 py-2 mb-4">
           Отгрузка в долг: у клиента «{order.clientPaymentTerms}».
@@ -82,19 +88,28 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
           <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} />
         </>
       ) : (
-        <div className="card space-y-2">
-          <h2 className="font-medium">
-            Отгружать рано
-            <Hint>
-              Нужны галочка менеджера и оплата. Без оплаты — только клиенту с условиями «По
-              факту» или «Отсрочка».
-            </Hint>
-          </h2>
-          <p className="text-sm text-ink-secondary">{notReadyReason(order)}</p>
-          <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
-            Открыть заявку
-          </Link>
-        </div>
+        <Section
+          tone="warn"
+          icon="clock"
+          title={
+            <>
+              Отгружать рано
+              <span className="normal-case tracking-normal">
+                <Hint>
+                  Нужны галочка менеджера и оплата. Без оплаты — только клиенту с условиями «По
+                  факту» или «Отсрочка».
+                </Hint>
+              </span>
+            </>
+          }
+        >
+          <div className="space-y-2">
+            <p className="text-sm text-ink-secondary">{notReadyReason(order)}</p>
+            <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
+              Открыть заявку
+            </Link>
+          </div>
+        </Section>
       )}
     </div>
   );

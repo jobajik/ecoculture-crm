@@ -4,6 +4,8 @@ import { listUsers } from "@/lib/repo/users";
 import { getSettings } from "@/lib/repo/settings";
 import StaffForm from "@/components/StaffForm";
 import ShelfLifeForm from "@/components/ShelfLifeForm";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import { saveShelfLifeAction, saveStaffAction } from "./actions";
 import {
   FARM_ORDER,
@@ -72,10 +74,9 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <h1 className="text-xl font-semibold">Настройки</h1>
+      <PageHeader area="admin" title="Настройки" icon="gear" />
 
-      <div className="card">
-        <h2 className="font-medium mb-1">Сотрудники и роли</h2>
+      <Section tone="admin" icon="client" title="Сотрудники и роли" className="!mb-0">
         <p className="text-sm text-ink-secondary mb-3">Права меняются в течение минуты.</p>
 
         <StaffForm
@@ -118,10 +119,9 @@ export default async function AdminPage() {
         </div>
           </div>
         </details>
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2 className="font-medium mb-1">Производства</h2>
+      <Section tone="admin" icon="leaf" title="Производства" className="!mb-0">
         <p className="text-sm text-ink-secondary mb-3">Зав. складом видит только свой цветок.</p>
         <div className="grid sm:grid-cols-2 gap-3">
           {FARM_ORDER.map((f) => (
@@ -150,17 +150,16 @@ export default async function AdminPage() {
             </div>
           ))}
         </div>
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2 className="font-medium mb-1">Сроки хранения</h2>
+      <Section tone="stock" icon="clock" title="Сроки хранения" className="!mb-0">
         <p className="text-sm text-ink-secondary mb-4">Сколько дней цветок считается годным.</p>
         <ShelfLifeForm
           days={settings.shelfLifeDays}
           warningPercent={Math.round(settings.warningThreshold * 100)}
           save={saveShelfLifeAction}
         />
-      </div>
+      </Section>
     </div>
   );
 }

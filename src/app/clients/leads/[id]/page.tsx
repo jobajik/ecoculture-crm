@@ -20,7 +20,8 @@ import {
 } from "@/lib/leads";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay, formatMoment } from "@/lib/formatDate";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import LeadStageBadge from "@/components/LeadStageBadge";
 import LeadInfoForm from "@/components/LeadInfoForm";
 import LeadTouchForm from "@/components/LeadTouchForm";
@@ -60,26 +61,32 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Клиенты</h1>
-      <SectionTabs tabs={clientsTabsFor()} />
-
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <Link href="/clients/leads" className="text-sm text-accent hover:underline">
-          ← Лиды
-        </Link>
-        <h2 className="text-lg font-semibold">{lead.name}</h2>
-        <LeadStageBadge stage={stage} />
-        {!isClosedStage(stage) && (
-          <span className={`text-sm ${overdue ? "text-status-critical font-medium" : "text-ink-secondary"}`}>
-            {lead.nextTouchAt
-              ? lead.nextTouchAt === today
-                ? "касание сегодня"
-                : `следующее касание ${formatDay(lead.nextTouchAt)}${overdue ? " — просрочено" : ""}`
-              : "следующее касание не назначено"}
+      <PageHeader
+        area="leads"
+        eyebrow="Лид"
+        title={lead.name}
+        tabs={clientsTabsFor()}
+        subtitle={
+          <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-1">
+            <LeadStageBadge stage={stage} />
+            {!isClosedStage(stage) && (
+              <span className={`text-sm ${overdue ? "text-status-critical font-medium" : "text-ink-secondary"}`}>
+                {lead.nextTouchAt
+                  ? lead.nextTouchAt === today
+                    ? "касание сегодня"
+                    : `следующее касание ${formatDay(lead.nextTouchAt)}${overdue ? " — просрочено" : ""}`
+                  : "следующее касание не назначено"}
+              </span>
+            )}
+            {stage === "lost" && lead.lostReason && <span className="text-sm text-ink-muted">причина: {lead.lostReason}</span>}
           </span>
-        )}
-        {stage === "lost" && lead.lostReason && <span className="text-sm text-ink-muted">причина: {lead.lostReason}</span>}
-      </div>
+        }
+        actions={
+          <Link href="/clients/leads" className="text-sm text-accent hover:underline">
+            ← Лиды
+          </Link>
+        }
+      />
 
       {/* Путь по стадиям: где лид сейчас. Отказ — отдельно, не шаг пути. */}
       <ol className="flex gap-1 overflow-x-auto text-xs" aria-label="Стадии">
@@ -122,8 +129,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
             </p>
           )}
 
-          <section className="card !p-0">
-            <h2 className="font-semibold px-4 pt-4 pb-2">Касания · {history.length}</h2>
+          <Section tone="leads" icon="phone" title={`Касания · ${history.length}`} flush className="!mb-0">
             {history.length === 0 ? (
               <p className="px-4 pb-4 text-sm text-ink-muted">Ещё не связывались.</p>
             ) : (
@@ -146,7 +152,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
                 ))}
               </ol>
             )}
-          </section>
+          </Section>
           <p className="text-xs text-ink-muted">
             Заведён {formatDay(lead.createdAt)}
             {lead.createdByEmail && ` · ${nameByEmail.get(lead.createdByEmail) ?? lead.createdByEmail}`}

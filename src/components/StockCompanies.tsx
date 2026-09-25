@@ -127,7 +127,7 @@ function CompanyCard({ row, total }: { row: StockCompanyRow; total: number }) {
           </div>
         </div>
         <div className="text-right shrink-0">
-          <div className="text-xl font-semibold tabular-nums leading-none">{n(row.stems)}</div>
+          <div className="font-display text-xl font-extrabold tabular-nums leading-none">{n(row.stems)}</div>
           <div className="text-[11px] text-ink-muted">шт. · {percent(share, 0)} склада</div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  content: ["./src/app/**/*.{ts,tsx}", "./src/components/**/*.{ts,tsx}"],
+  content: ["./src/app/**/*.{ts,tsx}", "./src/components/**/*.{ts,tsx}", "./src/lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
@@ -53,6 +53,24 @@ const config: Config = {
           "stock-soft": "#f1edfc",
           claims: "#d9822b",
           "claims-soft": "#fdf1e6",
+          // Цвета РАЗДЕЛОВ сайта (шапка страницы, активный пункт меню, вкладки):
+          // src/lib/areas.ts. Приглушённые, чтобы не спорить со статусными.
+          money: "#b7791f",
+          "money-soft": "#fbf3e3",
+          sales: "#0e8a8a",
+          "sales-soft": "#e3f4f4",
+          plans: "#4f5bd5",
+          "plans-soft": "#eceefc",
+          retail: "#c2557a",
+          "retail-soft": "#fbecf1",
+          leads: "#0b8bc9",
+          "leads-soft": "#e5f4fb",
+          analytics: "#546478",
+          "analytics-soft": "#eef1f5",
+          admin: "#5a6159",
+          "admin-soft": "#f0f1ef",
+          forecast: "#5d9a2a",
+          "forecast-soft": "#eef6e6",
         },
         // Отсылка к Kaspi в блоке Kaspi-счёта: чуть красный фон и метка.
         kaspi: {

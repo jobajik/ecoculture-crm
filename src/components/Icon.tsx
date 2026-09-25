@@ -18,7 +18,16 @@ export type IconName =
   | "arrow"
   | "clock"
   | "chart"
-  | "card";
+  | "card"
+  | "home"
+  | "leaf"
+  | "store"
+  | "gear"
+  | "tag"
+  | "trophy"
+  | "list"
+  | "upload"
+  | "check";
 
 const PATHS: Record<IconName, string> = {
   order: "M7 3h7l5 5v13H7z M14 3v5h5 M10 12h6 M10 16h6",
@@ -35,6 +44,15 @@ const PATHS: Record<IconName, string> = {
   clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 7v5l3 2",
   chart: "M4 20V10 M10 20V4 M16 20v-7 M22 20H2",
   card: "M3 6h18v12H3z M3 10h18 M7 15h4",
+  home: "M3 11l9-7 9 7 M5 10v10h14V10 M10 20v-6h4v6",
+  leaf: "M5 19c0-8 5-14 15-15-1 10-7 15-15 15z M5 19l8-8",
+  store: "M4 9l2-5h12l2 5 M4 9h16v2a3 3 0 0 1-6 0 3 3 0 0 1-4 0 3 3 0 0 1-6 0z M5 13v7h14v-7 M10 20v-4h4v4",
+  gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1L7 17 M17 7l2.1-2.1",
+  tag: "M3 12V4h8l10 10-8 8z M7.5 8.5h.01",
+  trophy: "M8 4h8v5a4 4 0 0 1-8 0z M8 6H4a3 3 0 0 0 4 4 M16 6h4a3 3 0 0 1-4 4 M12 13v4 M8 21h8 M9 17h6v4H9",
+  list: "M9 6h11 M9 12h11 M9 18h11 M4 6h.01 M4 12h.01 M4 18h.01",
+  upload: "M12 16V4 M7 9l5-5 5 5 M4 16v4h16v-4",
+  check: "M5 12l5 5 9-10",
 };
 
 export default function Icon({ name, className = "w-4 h-4" }: { name: IconName; className?: string }) {

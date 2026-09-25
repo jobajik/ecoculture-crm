@@ -3,8 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot, type FinancePeriod } from "@/lib/finance";
 import { farmLabel } from "@/lib/constants";
 import FinanceReport from "@/components/FinanceReport";
-
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { financeTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -29,11 +28,7 @@ export default async function FinanceReportPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Отчёт по продажам и оплатам</h1>
-      </div>
-
-      <SectionTabs tabs={financeTabsFor(role)} />
+      <PageHeader area="money" title="Отчёт по продажам и оплатам" icon="chart" tabs={financeTabsFor(role)} />
 
       <FinanceReport snapshot={snapshot} farms={farms} />
     </div>

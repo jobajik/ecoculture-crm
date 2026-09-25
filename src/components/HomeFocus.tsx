@@ -69,7 +69,7 @@ export default function HomeFocusBoard({ focus }: { focus: Focus }) {
           const body = (
             <>
               <div className="text-xs text-ink-secondary mb-1">{s.label}</div>
-              <div className={clsx("text-2xl font-semibold tabular-nums", TONE[s.tone ?? "default"])}>
+              <div className={clsx("font-display text-2xl font-extrabold tabular-nums", TONE[s.tone ?? "default"])}>
                 {s.value}
               </div>
               {s.hint && <div className="text-xs text-ink-muted mt-1">{s.hint}</div>}

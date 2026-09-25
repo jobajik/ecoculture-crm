@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getCalendarMonth } from "@/lib/calendar";
 import { ROLES, isValidPeriod, periodOf } from "@/lib/constants";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import PeriodPicker from "@/components/PeriodPicker";
 import CalendarBoard from "@/components/CalendarBoard";
 import Hint from "@/components/Hint";
@@ -38,15 +39,18 @@ export default async function CalendarPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Календарь</h1>
-        <p className="text-sm text-ink-secondary">
-          Нажмите на день — откроются подробности.
-          <Hint>Продажи — по дню оформления заявки, деньги — по дню оплаты.</Hint>
-        </p>
-      </div>
-
-      <SectionTabs tabs={analyticsTabsFor(role)} />
+      <PageHeader
+        area="analytics"
+        title="Календарь"
+        icon="calendar"
+        tabs={analyticsTabsFor(role)}
+        subtitle={
+          <>
+            Нажмите на день — откроются подробности.
+            <Hint>Продажи — по дню оформления заявки, деньги — по дню оплаты.</Hint>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PeriodPicker period={month} />
@@ -58,14 +62,13 @@ export default async function CalendarPage({
       </div>
 
       {data.headline.length > 0 && (
-        <div className="card border-l-4 border-l-accent">
-          <h2 className="font-medium mb-1.5">Коротко о месяце</h2>
+        <Section tone="analytics" icon="note" title="Коротко о месяце" className="!mb-0">
           <ul className="space-y-1 text-sm text-ink-secondary">
             {data.headline.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
           </ul>
-        </div>
+        </Section>
       )}
 
       <CalendarBoard data={data} />

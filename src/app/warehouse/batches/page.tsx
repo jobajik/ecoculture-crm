@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { farmLabel, getFarmFor } from "@/lib/constants";
 
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { WAREHOUSE_TABS } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -22,13 +22,12 @@ export default async function BatchesPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-3">
-        Партии на складе{farm ? ` · ${farmLabel(farm)}` : ""}
-      </h1>
-
-      <div className="mb-4">
-        <SectionTabs tabs={WAREHOUSE_TABS} />
-      </div>
+      <PageHeader
+        area="stock"
+        title={`Партии на складе${farm ? ` · ${farmLabel(farm)}` : ""}`}
+        icon="list"
+        tabs={WAREHOUSE_TABS}
+      />
       <BatchesList infos={infos} />
     </div>
   );

@@ -267,7 +267,7 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
   return (
     <div className="card !p-4">
       <div className="text-xs text-ink-secondary mb-1">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="font-display text-2xl font-extrabold tabular-nums">{value}</div>
       {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
     </div>
   );

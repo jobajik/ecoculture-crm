@@ -518,7 +518,7 @@ function Tile({
   return (
     <div className="card !p-4">
       <div className="text-xs text-ink-secondary mb-1">{label}</div>
-      <div className={clsx("text-2xl font-semibold tabular-nums", toneClass)}>{value}</div>
+      <div className={clsx("font-display text-2xl font-extrabold tabular-nums", toneClass)}>{value}</div>
       {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
     </div>
   );

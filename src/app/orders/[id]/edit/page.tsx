@@ -12,6 +12,7 @@ import { isRegionOrder } from "@/lib/orderKind";
 import { isOwnClientOrder, isRetailOrder, retailLabel, retailTerritoryFor } from "@/lib/retail";
 import { ROLES } from "@/lib/constants";
 import OrderEditForm from "@/components/OrderEditForm";
+import PageHeader from "@/components/PageHeader";
 import type { DraftItem } from "@/components/OrderItemsEditor";
 import type { FlowerType } from "@/lib/constants";
 
@@ -100,17 +101,16 @@ export default async function EditOrderPage({ params }: { params: { id: string }
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h1 className="text-xl font-semibold">Изменить заявку {order.orderId}</h1>
-        <Link href={`/orders/${order.orderId}`} className="text-sm text-ink-secondary hover:underline">
-          ← к заявке
-        </Link>
-      </div>
-      {itemsLockReason ? (
-        <p className="text-sm text-ink-secondary mb-4">{lockedSubtitle}</p>
-      ) : (
-        <div className="mb-4" />
-      )}
+      <PageHeader
+        area="orders"
+        title={`Изменить заявку ${order.orderId}`}
+        subtitle={itemsLockReason ? lockedSubtitle : undefined}
+        actions={
+          <Link href={`/orders/${order.orderId}`} className="text-sm text-ink-secondary hover:underline">
+            ← к заявке
+          </Link>
+        }
+      />
 
       <OrderEditForm
         orderId={order.orderId}

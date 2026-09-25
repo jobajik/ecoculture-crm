@@ -11,7 +11,8 @@ import { ATTENTION_DAYS, buildClientAnalytics, isLongSilent, type ClientLine } f
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
 import { isRetailRole } from "@/lib/retail";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import Change from "@/components/Change";
@@ -50,8 +51,7 @@ export default async function ClientAnalyticsPage({ searchParams }: { searchPara
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Клиенты</h1>
-      <SectionTabs tabs={clientsTabsFor(period)} />
+      <PageHeader area="clients" title="Аналитика клиентов" icon="chart" tabs={clientsTabsFor(period)} />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <PeriodPicker period={period} />
@@ -116,59 +116,76 @@ export default async function ClientAnalyticsPage({ searchParams }: { searchPara
 
       <div className="grid lg:grid-cols-2 gap-5 items-start">
         {/* --- На ком держится выручка (ABC) --------------------------------- */}
-        <section className="card space-y-3 min-w-0">
-          <h2 className="font-semibold">
-            На ком держится выручка
-            <Hint>
-              Клиенты месяца по убыванию выручки. «Основные» дают первые 80 % выручки, «средние» —
-              следующие 15 %, «мелкие» — остальное. Если основных два-три, потеря одного — это заметная
-              дыра в месяце.
-            </Hint>
-          </h2>
-          {a.abc[0].clients > 0 ? (
+        <Section
+          tone="client"
+          icon="chart"
+          className="min-w-0 !mb-0"
+          title={
             <>
-              <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Доли выручки по группам клиентов">
-                {a.abc.map((b, i) =>
-                  b.share > 0 ? (
-                    <div
-                      key={b.key}
-                      className={["bg-accent", "bg-accent/55", "bg-accent/25"][i]}
-                      style={{ width: `${b.share}%` }}
-                      title={`${ABC_NAMES[i]}: ${Math.round(b.share)} %`}
-                    />
-                  ) : null
-                )}
-              </div>
-              <ul className="space-y-1.5 text-sm">
-                {a.abc.map((b, i) => (
-                  <li key={b.key} className="flex items-baseline gap-2">
-                    <span className={`inline-block w-2.5 h-2.5 rounded-sm ${["bg-accent", "bg-accent/55", "bg-accent/25"][i]}`} />
-                    <span className="flex-1 min-w-0">
-                      {ABC_NAMES[i]} — <b>{nf(b.clients)}</b> {clientWord(b.clients)}
-                    </span>
-                    <span className="tabular-nums text-ink-secondary">{Math.round(b.share)} %</span>
-                    <span className="shrink-0 text-right tabular-nums sm:w-32">{money(b.revenue)}</span>
-                  </li>
-                ))}
-              </ul>
+              На ком держится выручка
+              <span className="normal-case tracking-normal">
+                <Hint>
+                  Клиенты месяца по убыванию выручки. «Основные» дают первые 80 % выручки, «средние» —
+                  следующие 15 %, «мелкие» — остальное. Если основных два-три, потеря одного — это заметная
+                  дыра в месяце.
+                </Hint>
+              </span>
             </>
-          ) : (
-            <p className="text-sm text-ink-muted">За месяц продаж нет.</p>
-          )}
-        </section>
+          }
+        >
+          <div className="space-y-3">
+            {a.abc[0].clients > 0 ? (
+              <>
+                <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Доли выручки по группам клиентов">
+                  {a.abc.map((b, i) =>
+                    b.share > 0 ? (
+                      <div
+                        key={b.key}
+                        className={["bg-accent", "bg-accent/55", "bg-accent/25"][i]}
+                        style={{ width: `${b.share}%` }}
+                        title={`${ABC_NAMES[i]}: ${Math.round(b.share)} %`}
+                      />
+                    ) : null
+                  )}
+                </div>
+                <ul className="space-y-1.5 text-sm">
+                  {a.abc.map((b, i) => (
+                    <li key={b.key} className="flex items-baseline gap-2">
+                      <span className={`inline-block w-2.5 h-2.5 rounded-sm ${["bg-accent", "bg-accent/55", "bg-accent/25"][i]}`} />
+                      <span className="flex-1 min-w-0">
+                        {ABC_NAMES[i]} — <b>{nf(b.clients)}</b> {clientWord(b.clients)}
+                      </span>
+                      <span className="tabular-nums text-ink-secondary">{Math.round(b.share)} %</span>
+                      <span className="shrink-0 text-right tabular-nums sm:w-32">{money(b.revenue)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="text-sm text-ink-muted">За месяц продаж нет.</p>
+            )}
+          </div>
+        </Section>
 
         {/* --- Кому позвонить ------------------------------------------------ */}
-        <section className="card !p-0 min-w-0">
-          <div className="px-4 pt-4 pb-2">
-            <h2 className="font-semibold">
+        <Section
+          tone="warn"
+          icon="clock"
+          flush
+          className="min-w-0 !mb-0"
+          title={
+            <>
               Давно не заказывали · {a.quiet.length}
-              <Hint>
-                Покупали раньше, но молчат {ATTENTION_DAYS} дней и дольше — и в полтора раза дольше, чем
-                обычно у этого клиента между заказами. Сверху — самые ценные за всё время. Красным — больше
-                месяца.
-              </Hint>
-            </h2>
-          </div>
+              <span className="normal-case tracking-normal">
+                <Hint>
+                  Покупали раньше, но молчат {ATTENTION_DAYS} дней и дольше — и в полтора раза дольше, чем
+                  обычно у этого клиента между заказами. Сверху — самые ценные за всё время. Красным — больше
+                  месяца.
+                </Hint>
+              </span>
+            </>
+          }
+        >
           {a.quiet.length === 0 ? (
             <p className="px-4 pb-4 text-sm text-ink-muted">Таких нет — все, кто покупал, заказывают в своём ритме.</p>
           ) : (
@@ -186,13 +203,12 @@ export default async function ClientAnalyticsPage({ searchParams }: { searchPara
               )}
             </ul>
           )}
-        </section>
+        </Section>
       </div>
 
       {/* --- Крупнейшие клиенты месяца ---------------------------------------- */}
       {a.top.length > 0 && (
-        <section className="card !p-0">
-          <h2 className="font-semibold px-4 pt-4 pb-2">Крупнейшие клиенты месяца</h2>
+        <Section tone="client" icon="trophy" title="Крупнейшие клиенты месяца" flush className="!mb-0">
           <div className="table-scroll table-cards border-t border-line-hairline">
             <table className="w-full text-sm">
               <thead>
@@ -232,7 +248,7 @@ export default async function ClientAnalyticsPage({ searchParams }: { searchPara
               </tbody>
             </table>
           </div>
-        </section>
+        </Section>
       )}
     </div>
   );
@@ -268,7 +284,7 @@ function Stat({
   return (
     <div className="min-w-0">
       <dt className="text-sm text-ink-secondary">{title}</dt>
-      <dd className={`text-xl font-semibold tabular-nums ${warn ? "text-[#8a5a00]" : ""}`}>{value}</dd>
+      <dd className={`font-display text-xl font-extrabold tabular-nums ${warn ? "text-[#8a5a00]" : ""}`}>{value}</dd>
       <dd className="text-xs text-ink-muted">
         {hasPrev && now !== undefined && before !== undefined && (
           <>

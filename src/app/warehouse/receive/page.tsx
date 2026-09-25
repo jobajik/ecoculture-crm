@@ -5,7 +5,7 @@ import { listVarietiesByType } from "@/lib/repo/varieties";
 import { authOptions } from "@/lib/auth";
 import { farmLabel, flowerTypesForFarm } from "@/lib/constants";
 
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { WAREHOUSE_TABS } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -20,13 +20,12 @@ export default async function ReceivePage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">
-          Приёмка с производства{farm ? ` · ${farmLabel(farm)}` : ""}
-        </h1>
-      </div>
-
-      <SectionTabs tabs={WAREHOUSE_TABS} />
+      <PageHeader
+        area="stock"
+        title={`Приёмка с производства${farm ? ` · ${farmLabel(farm)}` : ""}`}
+        icon="upload"
+        tabs={WAREHOUSE_TABS}
+      />
 
       <BatchImportForm />
 

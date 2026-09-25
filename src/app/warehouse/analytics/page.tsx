@@ -22,7 +22,8 @@ import { buildStockAnalytics, type StockFlow } from "@/lib/stockAnalytics";
 import { missingFarm } from "@/lib/access";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import Change from "@/components/Change";
@@ -53,10 +54,18 @@ export default async function StockAnalyticsPage({
     role === ROLES.WAREHOUSE ? (session?.user?.farm ?? null) : null;
   if (role === ROLES.WAREHOUSE && missingFarm(role, ownFarm)) {
     return (
-      <p className="card text-sm">
-        В вашей карточке не указано производство — аналитика склада не
-        откроется.
-      </p>
+      <div>
+        <PageHeader
+          area="stock"
+          title="Аналитика склада"
+          icon="chart"
+          tabs={WAREHOUSE_TABS}
+        />
+        <p className="card text-sm">
+          В вашей карточке не указано производство — аналитика склада не
+          откроется.
+        </p>
+      </div>
     );
   }
   const chosen = FARM_ORDER.includes(searchParams?.farm ?? "")
@@ -128,10 +137,12 @@ export default async function StockAnalyticsPage({
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">
-        Склад{ownFarm ? ` · ${farmLabel(ownFarm)}` : ""}
-      </h1>
-      <SectionTabs tabs={WAREHOUSE_TABS} />
+      <PageHeader
+        area="stock"
+        title={`Аналитика склада${ownFarm ? ` · ${farmLabel(ownFarm)}` : ""}`}
+        icon="chart"
+        tabs={WAREHOUSE_TABS}
+      />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <PeriodPicker period={period} />
@@ -226,89 +237,101 @@ export default async function StockAnalyticsPage({
 
       <div className="grid lg:grid-cols-2 gap-5 items-start">
         {/* --- Движение за месяц ---------------------------------------------- */}
-        <section className="card space-y-3 min-w-0">
-          <h2 className="font-semibold">Движение за месяц</h2>
-          <dl className="text-sm divide-y divide-line-hairline/70">
-            <Line
-              label={`Остаток на начало (${formatDay(`${period}-01`)})`}
-              value={c.opening}
-            />
-            <Line label="+ Приход" value={c.received} strong />
-            <Line label="− Клиентам" value={c.toClients} sub />
-            <Line label="− В наши магазины" value={c.toShops} sub />
-            <Line label="− Опт на город" value={c.toRegions} sub />
-            <Line
-              label="− Списано"
-              value={c.writtenOff}
-              sub
-              danger={c.writtenOff > 0}
-            />
-            <Line
-              label="− Сотрудникам и на нужды"
-              value={c.toStaff + c.toCompany}
-              sub
-            />
-            <Line
-              label={`= Остаток на конец (${formatDay(c.days > 0 ? endLabel(period, c.days) : `${period}-01`)})`}
-              value={c.closing}
-              strong
-            />
-          </dl>
-          {a.unexplained !== 0 && (
-            <p className="text-xs text-[#8a5a00]">
-              В партиях сейчас {nf(a.stockNow)} — на{" "}
-              {nf(Math.abs(a.unexplained))}{" "}
-              {a.unexplained < 0 ? "меньше" : "больше"}, чем по записям
-              движений. Значит, часть стеблей ушла или пришла без записи — стоит
-              сделать пересчёт склада.
-            </p>
-          )}
-        </section>
+        <Section
+          tone="stock"
+          icon="arrow"
+          title="Движение за месяц"
+          className="min-w-0 !mb-0"
+        >
+          <div className="space-y-3">
+            <dl className="text-sm divide-y divide-line-hairline/70">
+              <Line
+                label={`Остаток на начало (${formatDay(`${period}-01`)})`}
+                value={c.opening}
+              />
+              <Line label="+ Приход" value={c.received} strong />
+              <Line label="− Клиентам" value={c.toClients} sub />
+              <Line label="− В наши магазины" value={c.toShops} sub />
+              <Line label="− Опт на город" value={c.toRegions} sub />
+              <Line
+                label="− Списано"
+                value={c.writtenOff}
+                sub
+                danger={c.writtenOff > 0}
+              />
+              <Line
+                label="− Сотрудникам и на нужды"
+                value={c.toStaff + c.toCompany}
+                sub
+              />
+              <Line
+                label={`= Остаток на конец (${formatDay(c.days > 0 ? endLabel(period, c.days) : `${period}-01`)})`}
+                value={c.closing}
+                strong
+              />
+            </dl>
+            {a.unexplained !== 0 && (
+              <p className="text-xs text-[#8a5a00]">
+                В партиях сейчас {nf(a.stockNow)} — на{" "}
+                {nf(Math.abs(a.unexplained))}{" "}
+                {a.unexplained < 0 ? "меньше" : "больше"}, чем по записям
+                движений. Значит, часть стеблей ушла или пришла без записи — стоит
+                сделать пересчёт склада.
+              </p>
+            )}
+          </div>
+        </Section>
 
         {/* --- Куда ушёл цветок ----------------------------------------------- */}
-        <section className="card space-y-3 min-w-0">
-          <h2 className="font-semibold">Куда ушёл цветок</h2>
-          {outTotal > 0 ? (
-            <>
-              <div
-                className="flex h-3 gap-0.5 overflow-hidden rounded-full"
-                role="img"
-                aria-label="Доли расхода"
-              >
-                {outs.map((o) =>
-                  o.value > 0 ? (
-                    <div
-                      key={o.label}
-                      className={o.cls}
-                      style={{ width: `${(o.value / outTotal) * 100}%` }}
-                      title={o.label}
-                    />
-                  ) : null,
-                )}
-              </div>
-              <ul className="space-y-1.5 text-sm">
-                {outs.map((o) => (
-                  <li key={o.label} className="flex items-baseline gap-2">
-                    <span
-                      className={`inline-block w-2.5 h-2.5 rounded-sm ${o.cls}`}
-                    />
-                    <span className="flex-1 min-w-0">{o.label}</span>
-                    <span className="tabular-nums text-ink-secondary">
-                      {Math.round((Math.max(0, o.value) / outTotal) * 100)} %
-                    </span>
-                    <span className="shrink-0 w-24 text-right tabular-nums">
-                      {nf(o.value)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-sm text-ink-muted">
-              За месяц со склада ничего не уходило.
-            </p>
-          )}
-        </section>
+        <Section
+          tone="stock"
+          icon="truck"
+          title="Куда ушёл цветок"
+          className="min-w-0 !mb-0"
+        >
+          <div className="space-y-3">
+            {outTotal > 0 ? (
+              <>
+                <div
+                  className="flex h-3 gap-0.5 overflow-hidden rounded-full"
+                  role="img"
+                  aria-label="Доли расхода"
+                >
+                  {outs.map((o) =>
+                    o.value > 0 ? (
+                      <div
+                        key={o.label}
+                        className={o.cls}
+                        style={{ width: `${(o.value / outTotal) * 100}%` }}
+                        title={o.label}
+                      />
+                    ) : null,
+                  )}
+                </div>
+                <ul className="space-y-1.5 text-sm">
+                  {outs.map((o) => (
+                    <li key={o.label} className="flex items-baseline gap-2">
+                      <span
+                        className={`inline-block w-2.5 h-2.5 rounded-sm ${o.cls}`}
+                      />
+                      <span className="flex-1 min-w-0">{o.label}</span>
+                      <span className="tabular-nums text-ink-secondary">
+                        {Math.round((Math.max(0, o.value) / outTotal) * 100)} %
+                      </span>
+                      <span className="shrink-0 w-24 text-right tabular-nums">
+                        {nf(o.value)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="text-sm text-ink-muted">
+                За месяц со склада ничего не уходило.
+              </p>
+            )}
+          </div>
+        </Section>
       </div>
 
       <StockBreakdown
@@ -318,14 +341,23 @@ export default async function StockAnalyticsPage({
 
       <div className="grid lg:grid-cols-2 gap-5 items-start">
         {/* --- По неделям ----------------------------------------------------- */}
-        <section className="card !p-0 min-w-0">
-          <h2 className="font-semibold px-4 pt-4 pb-2">
-            По неделям
-            <Hint>
-              Верхняя полоска — приход, нижняя — отгружено и списано (красным) в
-              одном масштабе.
-            </Hint>
-          </h2>
+        <Section
+          tone="stock"
+          icon="calendar"
+          title={
+            <>
+              По неделям
+              <span className="normal-case tracking-normal">
+                <Hint>
+                  Верхняя полоска — приход, нижняя — отгружено и списано (красным) в
+                  одном масштабе.
+                </Hint>
+              </span>
+            </>
+          }
+          className="min-w-0 !mb-0"
+          flush
+        >
           <ul className="divide-y divide-line-hairline/70 border-t border-line-hairline">
             {a.weeks.map((w) => (
               <li key={w.label} className="px-4 py-2.5 text-sm">
@@ -381,19 +413,28 @@ export default async function StockAnalyticsPage({
               </li>
             ))}
           </ul>
-        </section>
+        </Section>
 
         {/* --- Где теряем ----------------------------------------------------- */}
-        <section className="card !p-0 min-w-0">
-          <h2 className="font-semibold px-4 pt-4 pb-2">
-            Где больше всего списали
-            <Hint>
-              Сорт и ростовка за месяц. Процент — от прихода этой же позиции за
-              месяц.
-            </Hint>
-          </h2>
+        <Section
+          tone="bad"
+          icon="alert"
+          title={
+            <>
+              Где больше всего списали
+              <span className="normal-case tracking-normal">
+                <Hint>
+                  Сорт и ростовка за месяц. Процент — от прихода этой же позиции за
+                  месяц.
+                </Hint>
+              </span>
+            </>
+          }
+          className="min-w-0 !mb-0"
+          flush
+        >
           {a.losses.length === 0 ? (
-            <p className="px-4 pb-4 text-sm text-ink-muted">
+            <p className="pl-5 pr-4 sm:pr-5 pb-4 text-sm text-ink-muted">
               За месяц ничего не списывали.
             </p>
           ) : (
@@ -416,7 +457,7 @@ export default async function StockAnalyticsPage({
               ))}
             </ul>
           )}
-        </section>
+        </Section>
       </div>
     </div>
   );
@@ -483,7 +524,7 @@ function Stat({
     <div className="min-w-0">
       <dt className="text-sm text-ink-secondary">{title}</dt>
       <dd
-        className={`text-xl font-semibold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}
+        className={`text-xl font-display font-extrabold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}
       >
         {value}
       </dd>

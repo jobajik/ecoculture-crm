@@ -6,7 +6,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { ORDER_STATUSES, formatGrade } from "@/lib/constants";
 import { buildShopDay, isRetailRole, retailShortLabel, territoriesFor } from "@/lib/retail";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { retailTabsFor } from "./tabs";
 import DayNav from "@/components/DayNav";
 import { ROLES } from "@/lib/constants";
@@ -86,26 +86,25 @@ export default async function RetailDayPage({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h1 className="text-xl font-semibold">
-          Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
-        </h1>
-        {canOrder && (
-          <div className="flex flex-wrap gap-2">
-            {isRetailRole(role) && (
-              <Link href="/orders/new?sale=1" className="btn-secondary">
-                + Заявка клиенту
+      <PageHeader
+        area="retail"
+        title={`Розница${territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}`}
+        tabs={retailTabsFor(role)}
+        actions={
+          canOrder && (
+            <div className="flex flex-wrap gap-2">
+              {isRetailRole(role) && (
+                <Link href="/orders/new?sale=1" className="btn-secondary">
+                  + Заявка клиенту
+                </Link>
+              )}
+              <Link href={`/orders/new?retail=1&date=${date}`} className="btn-primary">
+                + Заявка магазину
               </Link>
-            )}
-            <Link href={`/orders/new?retail=1&date=${date}`} className="btn-primary">
-              + Заявка магазину
-            </Link>
-          </div>
-        )}
-      </div>
-      <SectionTabs tabs={retailTabsFor(role)} />
-
-      <div className="mt-4" />
+            </div>
+          )
+        }
+      />
 
       <DayNav date={date} today={todayKey()} />
 
@@ -229,7 +228,9 @@ function Tile({
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
-      <div className={`text-2xl font-semibold mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>{value}</div>
+      <div className={`font-display text-2xl font-extrabold tabular-nums mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>
+        {value}
+      </div>
       {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );

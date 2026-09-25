@@ -5,7 +5,8 @@ import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { FLOWER_TYPE_LABELS, ORDER_STATUSES, formatGrade } from "@/lib/constants";
 import { buildRetailSummary, retailShortLabel, territoriesFor } from "@/lib/retail";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import { retailTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -67,12 +68,14 @@ export default async function RetailSummaryPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-1">
-        Розница{territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}
-      </h1>
-      <SectionTabs tabs={retailTabsFor(role)} />
+      <PageHeader
+        area="retail"
+        title={`Сводка${territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}`}
+        icon="chart"
+        tabs={retailTabsFor(role)}
+      />
 
-      <p className="text-sm text-ink-secondary mt-4 mb-4">
+      <p className="text-sm text-ink-secondary mb-4">
         За последние {DAYS} дней, по дате оформления.
       </p>
 
@@ -116,73 +119,75 @@ export default async function RetailSummaryPage() {
             </div>
           )}
 
-          <h2 className="font-medium mb-2">По магазинам</h2>
-          <div className="card !p-0 table-scroll table-cards mb-6">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                  <th className="px-4 py-3 font-medium">Магазин</th>
-                  <th className="px-4 py-3 font-medium">Город</th>
-                  <th className="px-4 py-3 font-medium text-right">Заявок</th>
-                  <th className="px-4 py-3 font-medium text-right">Стеблей</th>
-                  <th className="px-4 py-3 font-medium text-right">Сумма</th>
-                  <th className="px-4 py-3 font-medium text-right">Доля</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.byShop.map((row) => (
-                  <tr
-                    key={row.clientId || row.name}
-                    className="border-b border-line-hairline last:border-0"
-                  >
-                    <td data-label="Магазин" className="px-4 py-2.5">{row.name}</td>
-                    <td data-label="Город" className="px-4 py-2.5 text-ink-secondary">{row.city || "—"}</td>
-                    <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
-                    <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
-                      {row.stems.toLocaleString("ru-RU")}
-                    </td>
-                    <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
-                    <td data-label="Доля" className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">
-                      {t.stems > 0 ? `${Math.round((row.stems / t.stems) * 100)} %` : "—"}
-                    </td>
+          <Section tone="retail" icon="store" title="По магазинам" flush className="!mb-6">
+            <div className="table-scroll table-cards border-t border-line-hairline">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                    <th className="px-4 py-3 font-medium">Магазин</th>
+                    <th className="px-4 py-3 font-medium">Город</th>
+                    <th className="px-4 py-3 font-medium text-right">Заявок</th>
+                    <th className="px-4 py-3 font-medium text-right">Стеблей</th>
+                    <th className="px-4 py-3 font-medium text-right">Сумма</th>
+                    <th className="px-4 py-3 font-medium text-right">Доля</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {summary.byShop.map((row) => (
+                    <tr
+                      key={row.clientId || row.name}
+                      className="border-b border-line-hairline last:border-0"
+                    >
+                      <td data-label="Магазин" className="px-4 py-2.5">{row.name}</td>
+                      <td data-label="Город" className="px-4 py-2.5 text-ink-secondary">{row.city || "—"}</td>
+                      <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
+                      <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
+                        {row.stems.toLocaleString("ru-RU")}
+                      </td>
+                      <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
+                      <td data-label="Доля" className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">
+                        {t.stems > 0 ? `${Math.round((row.stems / t.stems) * 100)} %` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
 
-          <h2 className="font-medium mb-2">Что возим</h2>
-          <div className="card !p-0 table-scroll table-cards">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                  <th className="px-4 py-3 font-medium">Цветок</th>
-                  <th className="px-4 py-3 font-medium">Сорт</th>
-                  <th className="px-4 py-3 font-medium">Длина / категория</th>
-                  <th className="px-4 py-3 font-medium text-right">Стеблей</th>
-                  <th className="px-4 py-3 font-medium text-right">Сумма</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.byVariety.map((row) => (
-                  <tr
-                    key={`${row.flowerType}|${row.variety}|${row.grade}`}
-                    className="border-b border-line-hairline last:border-0"
-                  >
-                    <td data-label="Цветок" className="px-4 py-2.5">
-                      {FLOWER_TYPE_LABELS[row.flowerType] ?? row.flowerType}
-                    </td>
-                    <td data-label="Сорт" className="px-4 py-2.5">{row.variety}</td>
-                    <td data-label="Длина / категория" className="px-4 py-2.5 text-ink-secondary">{formatGrade(row.grade)}</td>
-                    <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
-                      {row.stems.toLocaleString("ru-RU")}
-                    </td>
-                    <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
+          <Section tone="retail" icon="leaf" title="Что возим" flush className="!mb-0">
+            <div className="table-scroll table-cards border-t border-line-hairline">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                    <th className="px-4 py-3 font-medium">Цветок</th>
+                    <th className="px-4 py-3 font-medium">Сорт</th>
+                    <th className="px-4 py-3 font-medium">Длина / категория</th>
+                    <th className="px-4 py-3 font-medium text-right">Стеблей</th>
+                    <th className="px-4 py-3 font-medium text-right">Сумма</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {summary.byVariety.map((row) => (
+                    <tr
+                      key={`${row.flowerType}|${row.variety}|${row.grade}`}
+                      className="border-b border-line-hairline last:border-0"
+                    >
+                      <td data-label="Цветок" className="px-4 py-2.5">
+                        {FLOWER_TYPE_LABELS[row.flowerType] ?? row.flowerType}
+                      </td>
+                      <td data-label="Сорт" className="px-4 py-2.5">{row.variety}</td>
+                      <td data-label="Длина / категория" className="px-4 py-2.5 text-ink-secondary">{formatGrade(row.grade)}</td>
+                      <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
+                        {row.stems.toLocaleString("ru-RU")}
+                      </td>
+                      <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
         </>
       )}
     </div>
@@ -193,7 +198,7 @@ function Tile({ title, value, hint }: { title: string; value: string; hint?: str
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
-      <div className="text-2xl font-semibold mt-1">{value}</div>
+      <div className="font-display text-2xl font-extrabold tabular-nums mt-1">{value}</div>
       {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );

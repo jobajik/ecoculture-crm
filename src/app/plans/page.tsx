@@ -12,7 +12,9 @@ import { ORDER_STATUSES, ROLES, weeksOfMonth } from "@/lib/constants";
 import { buildPlanOverview, type PlanOverview } from "@/lib/planOverview";
 import { shortMoney } from "@/lib/formatNumber";
 import { localDayKey } from "@/lib/timezone";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
+import type { IconName } from "@/components/Icon";
 import PeriodPicker from "@/components/PeriodPicker";
 import PlanProgress, { paceTone, TONE_TEXT } from "@/components/PlanProgress";
 import { plansTabsFor } from "./tabs";
@@ -64,12 +66,7 @@ export default async function PlansOverviewPage({ searchParams }: { searchParams
   const q = `?period=${month}`;
   return (
     <div className="space-y-5 max-w-6xl">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-xl font-semibold">Планы</h1>
-        <MonthPace ov={ov} />
-      </div>
-
-      <SectionTabs tabs={plansTabsFor(role, month)} />
+      <PageHeader area="plans" title="Планы" tabs={plansTabsFor(role, month)} actions={<MonthPace ov={ov} />} />
 
       <PeriodPicker period={month} />
 
@@ -137,25 +134,31 @@ function Checklist({ ov }: { ov: PlanOverview }) {
 
 function CardShell({
   title,
+  icon,
   href,
   action,
   children,
 }: {
   title: string;
+  icon: IconName;
   href: string;
   action: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="card flex flex-col gap-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-secondary">{title}</h2>
+    <Section
+      tone="plans"
+      icon={icon}
+      title={title}
+      className="!mb-0"
+      aside={
         <Link href={href} className="text-sm text-series-1 whitespace-nowrap hover:underline">
           {action} →
         </Link>
-      </div>
-      {children}
-    </section>
+      }
+    >
+      <div className="flex flex-col gap-4">{children}</div>
+    </Section>
   );
 }
 
@@ -164,7 +167,7 @@ function Headline({ percent, pace, caption }: { percent: number | null; pace: nu
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-3">
-        <span className={clsx("text-3xl font-semibold tabular-nums", TONE_TEXT[tone])}>{pctText(percent)}</span>
+        <span className={clsx("font-display text-3xl font-extrabold tabular-nums", TONE_TEXT[tone])}>{pctText(percent)}</span>
         <span className="text-sm text-ink-secondary">{caption}</span>
       </div>
       <PlanProgress percent={percent} pace={pace} />
@@ -197,7 +200,7 @@ function SalesCard({ ov, href }: { ov: PlanOverview; href: string }) {
   const s = ov.sales;
   const pace = ov.pace.pacePercent;
   return (
-    <CardShell title="Продажи менеджеров" href={href} action="План продаж">
+    <CardShell title="Продажи менеджеров" icon="chart" href={href} action="План продаж">
       <Headline
         percent={s.percent}
         pace={pace}
@@ -253,7 +256,7 @@ function ShipmentsCard({ ov, href }: { ov: PlanOverview; href: string }) {
   const s = ov.shipments;
   const pace = ov.pace.pacePercent;
   return (
-    <CardShell title="Отгрузки по направлениям" href={href} action="План отгрузок">
+    <CardShell title="Отгрузки по направлениям" icon="truck" href={href} action="План отгрузок">
       <Headline
         percent={s.orderedPercent}
         pace={pace}
@@ -310,7 +313,7 @@ function ShipmentsCard({ ov, href }: { ov: PlanOverview; href: string }) {
 function HarvestCard({ ov, href }: { ov: PlanOverview; href: string }) {
   const h = ov.harvest;
   return (
-    <CardShell title="Срезка против плана отгрузок" href={href} action="По неделям">
+    <CardShell title="Срезка против плана отгрузок" icon="leaf" href={href} action="По неделям">
       {!h.hasForecast && !h.hasPlan ? (
         <p className="text-sm text-ink-secondary">Нет ни прогноза срезки, ни плана отгрузок на этот месяц.</p>
       ) : (

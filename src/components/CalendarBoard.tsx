@@ -423,7 +423,7 @@ function Tile({
       <div className="text-xs text-ink-secondary mb-1">{label}</div>
       <div
         className={clsx(
-          "text-xl font-semibold tabular-nums",
+          "font-display text-xl font-extrabold tabular-nums",
           tone === "good" ? "text-status-good" : "text-ink-primary"
         )}
       >

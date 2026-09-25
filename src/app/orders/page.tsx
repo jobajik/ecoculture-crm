@@ -13,6 +13,7 @@ import {
 import { isRegionOrder } from "@/lib/orderKind";
 import { newOrderLinkFor } from "@/lib/newOrder";
 import OrdersTable from "@/components/OrdersTable";
+import PageHeader from "@/components/PageHeader";
 import { listUsers } from "@/lib/repo/users";
 import { nameIndex } from "@/lib/personName";
 import { localDayKey } from "@/lib/timezone";
@@ -73,32 +74,30 @@ export default async function OrdersPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-xl font-semibold">
-          {territory ? `Заявки — ${retailLabel(territory)}` : "Заявки"}
-        </h1>
-        {/* Кому кнопка положена и куда ведёт — одной функцией (newOrder.ts).
-            У РОПа её здесь не было вовсе, и он решил, что заявку на регион
-            завести нельзя: возможность, о которой нельзя догадаться, ничем не
-            отличается от отсутствующей. */}
-        <div className="flex flex-wrap gap-2">
-          {/* Менеджер розницы продаёт и клиентам — мелкие заказы. */}
-          {isRetailRole(role) && (
-            <Link href="/orders/new?sale=1" className="btn-secondary">
-              + Заявка клиенту
-            </Link>
-          )}
-          {newOrderLink && (
-            <Link href={newOrderLink.href} className="btn-primary">
-              {isRetailRole(role) ? "+ Заявка магазину" : newOrderLink.label}
-            </Link>
-          )}
-        </div>
-      </div>
-      {farm && (
-        <p className="text-sm text-ink-secondary mb-4">Только {farmLabel(farm)}</p>
-      )}
-      {!farm && <div className="mb-4" />}
+      <PageHeader
+        area="orders"
+        title={territory ? `Заявки — ${retailLabel(territory)}` : "Заявки"}
+        subtitle={farm ? `Только ${farmLabel(farm)}` : undefined}
+        actions={
+          /* Кому кнопка положена и куда ведёт — одной функцией (newOrder.ts).
+             У РОПа её здесь не было вовсе, и он решил, что заявку на регион
+             завести нельзя: возможность, о которой нельзя догадаться, ничем не
+             отличается от отсутствующей. */
+          <div className="flex flex-wrap gap-2">
+            {/* Менеджер розницы продаёт и клиентам — мелкие заказы. */}
+            {isRetailRole(role) && (
+              <Link href="/orders/new?sale=1" className="btn-secondary">
+                + Заявка клиенту
+              </Link>
+            )}
+            {newOrderLink && (
+              <Link href={newOrderLink.href} className="btn-primary">
+                {isRetailRole(role) ? "+ Заявка магазину" : newOrderLink.label}
+              </Link>
+            )}
+          </div>
+        }
+      />
       <OrdersTable
         orders={orders}
         managerNames={managerNames}

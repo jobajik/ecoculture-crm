@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
+import { areaForPath } from "@/lib/areas";
 import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
 import { navLinksFor, isActive } from "./navLinks";
 
@@ -142,11 +143,14 @@ export default function Nav() {
   const hidden = links.slice(visible);
   const hiddenActive = hidden.some((l) => isActive(l, pathname));
 
+  // Активный пункт — цветом своего раздела (src/lib/areas.ts): тот же цвет,
+  // что у шапки страницы, и человек сразу видит, где он.
+  const here = areaForPath(pathname);
   const itemClass = (active: boolean) =>
     clsx(
       "px-2.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
       active
-        ? "bg-accent-soft text-accent"
+        ? clsx(here.soft, here.text)
         : "text-ink-secondary hover:text-ink-primary hover:bg-surface-plane"
     );
 

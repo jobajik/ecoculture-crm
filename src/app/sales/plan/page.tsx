@@ -1,6 +1,6 @@
 import { getSalesSnapshot } from "@/lib/salesAnalytics";
 import SalesDashboard from "@/components/SalesDashboard";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { salesTabsFor } from "../tabs";
@@ -19,14 +19,12 @@ export default async function SalesPlanPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">План и факт</h1>
-        <p className="text-sm text-ink-secondary">
-          Продажа засчитывается по дате оформления заявки.
-        </p>
-      </div>
-
-      <SectionTabs tabs={salesTabsFor(role)} />
+      <PageHeader
+        area="sales"
+        title="План и факт"
+        subtitle="Продажа засчитывается по дате оформления заявки."
+        tabs={salesTabsFor(role)}
+      />
 
       <SalesDashboard initial={snapshot} />
     </div>

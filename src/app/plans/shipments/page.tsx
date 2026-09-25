@@ -14,7 +14,7 @@ import {
   getGradesFor,
   weeksOfMonth,
 } from "@/lib/constants";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import PeriodPicker from "@/components/PeriodPicker";
 import ShipmentPlanGrid, { type ShipmentFactCell, type ShipmentPlanCell } from "@/components/ShipmentPlanGrid";
 import ShipmentsViewSwitch from "../ShipmentsViewSwitch";
@@ -100,9 +100,7 @@ export default async function ShipmentPlansPage({
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Планы</h1>
-
-      <SectionTabs tabs={plansTabsFor(role, month)} />
+      <PageHeader area="plans" title="План отгрузок" icon="truck" tabs={plansTabsFor(role, month)} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PeriodPicker period={month} />

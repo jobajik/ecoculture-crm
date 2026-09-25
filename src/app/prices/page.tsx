@@ -11,7 +11,7 @@ import { priceChangeDays, daysSinceLastChange } from "@/lib/priceChanges";
 import PriceBoard from "@/components/PriceBoard";
 import PriceImportForm from "@/components/PriceImportForm";
 import PriceChangesView from "@/components/PriceChangesView";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import Hint from "@/components/Hint";
 import { plansTabsFor } from "../plans/tabs";
 import { salesTabsFor } from "../sales/tabs";
@@ -64,11 +64,14 @@ export default async function PricesPage({
 
   return (
     <div className="space-y-5">
-      {/* У РОПа прайс — вкладка раздела «Планы», и заголовок тот же, что у
+      {/* У РОПа прайс — вкладка раздела «Планы», и шапка того же цвета, что у
           соседних вкладок; у менеджера — справка в «Продажах». */}
-      <h1 className="text-xl font-semibold">{canEdit ? "Планы" : "Прайс"}</h1>
-
-      <SectionTabs tabs={canEdit ? plansTabsFor(role) : salesTabsFor(role)} />
+      <PageHeader
+        area={canEdit ? "plans" : "sales"}
+        title="Прайс-лист"
+        icon="tag"
+        tabs={canEdit ? plansTabsFor(role) : salesTabsFor(role)}
+      />
 
       {/* Одна строка инструментов вместо трёх блоков: какой прайс, когда
           меняли и файл. Всё остальное на странице — сами цены. */}

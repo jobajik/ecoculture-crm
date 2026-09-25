@@ -8,7 +8,7 @@ import { getSalesSnapshot } from "@/lib/salesAnalytics";
 import { ROLES } from "@/lib/constants";
 import { paceOf } from "@/lib/planOverview";
 import { localDayKey } from "@/lib/timezone";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import PeriodPicker from "@/components/PeriodPicker";
 import ManagerPlansForm, { type ManagerPlanEntry } from "@/components/ManagerPlansForm";
 import { plansTabsFor } from "../tabs";
@@ -60,9 +60,7 @@ export default async function PlansSalesPage({ searchParams }: { searchParams: {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Планы</h1>
-
-      <SectionTabs tabs={plansTabsFor(role, period)} />
+      <PageHeader area="plans" title="Планы продаж" icon="chart" tabs={plansTabsFor(role, period)} />
 
       <PeriodPicker period={period} />
 

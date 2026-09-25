@@ -6,7 +6,7 @@ import { listStaffTakeouts } from "@/lib/repo/staffTakeouts";
 import { periodLabel, periodOf, periodShift } from "@/lib/constants";
 import { buildCompanyUse, buildStaffMonth, canSeeTakeouts, takeoutFarmScope } from "@/lib/staffTakeout";
 import CompanyUseReport from "@/components/CompanyUseReport";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { financeTabsFor } from "../tabs";
 import StaffTakeoutMonth from "@/components/StaffTakeoutMonth";
 
@@ -52,11 +52,7 @@ export default async function FinanceTakeoutsPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-3">Цветы в счёт зарплаты</h1>
-
-      <div className="mb-4">
-        <SectionTabs tabs={financeTabsFor(role)} />
-      </div>
+      <PageHeader area="money" title="Цветы в счёт зарплаты" icon="leaf" tabs={financeTabsFor(role)} />
 
       <div className="flex flex-wrap gap-2 mb-4">
         {months.map((m) => (

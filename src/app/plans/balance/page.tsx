@@ -15,7 +15,7 @@ import {
 } from "@/lib/constants";
 import { buildFlowerBalance, type DirectionPlan } from "@/lib/planBalance";
 import { FLOWER_ORDER } from "@/lib/planOverview";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import HarvestWeeks, { type HarvestFlowerRow } from "@/components/HarvestWeeks";
@@ -115,19 +115,24 @@ export default async function BalancePage({
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Планы</h1>
-
-      <SectionTabs tabs={plansTabsFor(role, month)} />
+      <PageHeader
+        area="plans"
+        title="Срезка против плана"
+        icon="leaf"
+        tabs={plansTabsFor(role, month)}
+        subtitle={
+          <>
+            Хватит ли срезки на план отгрузок
+            <Hint>
+              Срезка — прогноз агронома по сортам (если сорта не заполнены — по ростовке). План — сумма
+              плана отгрузок по всем направлениям. Неделя «сходится», если разница не больше 3 %.
+            </Hint>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <PeriodPicker period={month} />
-        <span className="text-sm text-ink-secondary">
-          Хватит ли срезки на план отгрузок
-          <Hint>
-            Срезка — прогноз агронома по сортам (если сорта не заполнены — по ростовке). План — сумма
-            плана отгрузок по всем направлениям. Неделя «сходится», если разница не больше 3 %.
-          </Hint>
-        </span>
       </div>
 
       {!hasForecast && (

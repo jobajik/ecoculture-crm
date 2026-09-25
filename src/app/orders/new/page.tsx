@@ -13,6 +13,7 @@ import { authOptions } from "@/lib/auth";
 import { canSetDirection, cleanDirection } from "@/lib/direction";
 import { REGION_ORDER_DIRECTIONS, canFillRegionOrders } from "@/lib/orderKind";
 import RegionOrderForm from "@/components/RegionOrderForm";
+import PageHeader from "@/components/PageHeader";
 import {
   FLOWER_TYPE_LABELS,
   ORDER_STATUSES,
@@ -84,7 +85,7 @@ export default async function NewOrderPage({
     const preset = cleanDirection(searchParams?.direction);
     return (
       <div>
-        <h1 className="text-xl font-semibold mb-4">Объём в регион</h1>
+        <PageHeader area="orders" title="Объём в регион" icon="route" />
         <RegionOrderForm
           directions={REGION_ORDER_DIRECTIONS}
           varieties={varietiesForRegion}
@@ -154,9 +155,11 @@ export default async function NewOrderPage({
 
     return (
       <div>
-        <h1 className="text-xl font-semibold mb-4">
-          Заявка в магазин{territory ? ` — ${retailLabel(territory)}` : ""}
-        </h1>
+        <PageHeader
+          area="orders"
+          title={`Заявка в магазин${territory ? ` — ${retailLabel(territory)}` : ""}`}
+          icon="store"
+        />
         <RetailOrderForm
           shops={shops}
           varieties={varieties}
@@ -226,10 +229,8 @@ export default async function NewOrderPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-1">
-        {presetDirection ? `Новая заявка — ${presetDirection}` : "Новая заявка"}
-      </h1>
-      <div className="mt-4">
+      <PageHeader area="orders" title={presetDirection ? `Новая заявка — ${presetDirection}` : "Новая заявка"} />
+      <div>
         <OrderForm
           varieties={varieties}
           prices={priceMapForClient(prices)}

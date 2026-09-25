@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { getStockSnapshot, loadStockExtras } from "@/lib/stock";
 import { CLAIM_STATUSES, farmLabel, flowerTypesForFarm, getFarmFor, isFarmBoundRole, ROLES } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
+import PageHeader from "@/components/PageHeader";
 import HomeFocusBoard, { HomeFocusStrip } from "@/components/HomeFocus";
 import { homeFocus } from "@/lib/homeFocus";
 import { listOrdersWithItems } from "@/lib/repo/orders";
@@ -95,21 +96,22 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">Здравствуйте, {session.user?.name?.split(" ")[0]}</h1>
-          {farm && <p className="text-ink-secondary">Производство {farmLabel(farm)}</p>}
-        </div>
-        {/* Логотип компании — только на широком экране, чтобы не съедать место на телефоне. */}
-        <Image
-          src="/logo.png"
-          alt="Eco Culture"
-          width={1020}
-          height={593}
-          priority
-          className="hidden sm:block w-32 h-auto shrink-0"
-        />
-      </div>
+      <PageHeader
+        area="home"
+        title={`Здравствуйте, ${session.user?.name?.split(" ")[0] ?? ""}`}
+        subtitle={farm ? `Производство ${farmLabel(farm)}` : undefined}
+        actions={
+          /* Логотип компании — только на широком экране, чтобы не съедать место на телефоне. */
+          <Image
+            src="/logo.png"
+            alt="Eco Culture"
+            width={1020}
+            height={593}
+            priority
+            className="hidden sm:block w-32 h-auto shrink-0"
+          />
+        }
+      />
 
       {searchParams?.error === "nofarm" && <div className="card text-sm">{MISSING_FARM_MESSAGE}</div>}
 

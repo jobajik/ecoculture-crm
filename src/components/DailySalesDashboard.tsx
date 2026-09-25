@@ -98,7 +98,7 @@ export default function DailySalesDashboard({ initial }: { initial: DailySalesSn
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="card !p-4">
           <div className="text-xs text-ink-secondary mb-1">Продано за день</div>
-          <div className="text-2xl font-semibold tabular-nums">{money(t.amount)}</div>
+          <div className="font-display text-2xl font-extrabold tabular-nums">{money(t.amount)}</div>
           {t.prevAmount > 0 && (
             <div
               className={clsx(
@@ -260,7 +260,7 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
   return (
     <div className="card !p-4">
       <div className="text-xs text-ink-secondary mb-1">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="font-display text-2xl font-extrabold tabular-nums">{value}</div>
       {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
     </div>
   );

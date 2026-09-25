@@ -4,7 +4,8 @@ import { getAnalyticsByFarm } from "@/lib/analytics";
 import Hint from "@/components/Hint";
 import AnalyticsReport from "@/components/AnalyticsReport";
 import FlowerSummary from "@/components/FlowerSummary";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import { analyticsTabsFor } from "./tabs";
 
 export const dynamic = "force-dynamic";
@@ -32,28 +33,28 @@ export default async function AnalyticsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">Аналитика</h1>
-          <p className="text-sm text-ink-secondary">
+      {/* У администратора рядом с отчётом живёт календарь: остальным ролям
+          вкладок не показываем, одна вкладка в ряду выглядит как недоделка. */}
+      <PageHeader
+        area="analytics"
+        title="Аналитика"
+        tabs={analyticsTabsFor(session?.user?.role)}
+        subtitle={
+          <>
             Последние {all.days} дней · {all.periodLabel}
             <Hint>
               Стрелка под цифрой — сравнение с предыдущими {all.days} днями ({all.prevLabel}).
               Заявки и клиенты по производствам не складываются в итог: смешанная заявка
               считается у обоих.
             </Hint>
-          </p>
-        </div>
-        <span className="text-xs text-ink-muted">
-          Обновлено {new Date(all.generatedAt).toLocaleString("ru-RU")}
-        </span>
-      </div>
-
-      {/* У администратора рядом с отчётом живёт календарь: остальным ролям
-          вкладок не показываем, одна вкладка в ряду выглядит как недоделка. */}
-      {analyticsTabsFor(session?.user?.role).length > 0 && (
-        <SectionTabs tabs={analyticsTabsFor(session?.user?.role)} />
-      )}
+          </>
+        }
+        actions={
+          <span className="text-xs text-ink-muted">
+            Обновлено {new Date(all.generatedAt).toLocaleString("ru-RU")}
+          </span>
+        }
+      />
 
       {/* «По цветку» стоит ПЕРВОЙ — так решил владелец: это самая понятная
           таблица во всей аналитике, и прятать её под кнопкой «подробности»
@@ -61,14 +62,13 @@ export default async function AnalyticsPage() {
       <FlowerSummary rows={all.byFlower} days={all.days} />
 
       {all.headline.length > 0 && (
-        <div className="card border-l-4 border-l-accent">
-          <h2 className="font-medium mb-1.5">Коротко</h2>
+        <Section tone="analytics" icon="note" title="Коротко" className="!mb-0">
           <ul className="space-y-1 text-sm text-ink-secondary">
             {all.headline.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
           </ul>
-        </div>
+        </Section>
       )}
 
       {all.attention.length > 0 && (

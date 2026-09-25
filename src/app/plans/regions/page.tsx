@@ -19,7 +19,8 @@ import {
   countsAsWholesale,
   ordersMissingDirection,
 } from "@/lib/direction";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import { plansTabsFor } from "../tabs";
@@ -197,14 +198,17 @@ export default async function RegionSalesPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Планы</h1>
-        <Link href="/orders/new?region=1" className="btn-primary">
-          + Объём в регион
-        </Link>
-      </div>
-
-      <SectionTabs tabs={plansTabsFor(role, month)} />
+      <PageHeader
+        area="plans"
+        title="Отгрузки по регионам"
+        icon="route"
+        tabs={plansTabsFor(role, month)}
+        actions={
+          <Link href="/orders/new?region=1" className="btn-primary">
+            + Объём в регион
+          </Link>
+        }
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PeriodPicker period={month} />
@@ -247,13 +251,13 @@ export default async function RegionSalesPage({
       <section className="card space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
-            <span className="text-2xl font-semibold tabular-nums">{nf(fact.orderedStems)}</span>
+            <span className="font-display text-2xl font-extrabold tabular-nums">{nf(fact.orderedStems)}</span>
             <span className="ml-2 text-ink-secondary">
               {fact.planStems > 0 ? `из ${nf(fact.planStems)} по плану заказано` : "заказано · плана на период нет"}
             </span>
           </div>
           {fact.planStems > 0 && (
-            <span className={`text-xl font-semibold tabular-nums ${TONE_TEXT[tone]}`}>{pct(fact.donePercent)}</span>
+            <span className={`font-display text-xl font-extrabold tabular-nums ${TONE_TEXT[tone]}`}>{pct(fact.donePercent)}</span>
           )}
         </div>
         {fact.planStems > 0 && <PlanProgress percent={fact.donePercent} pace={pace} />}
@@ -279,11 +283,16 @@ export default async function RegionSalesPage({
       </section>
 
       {missing.length > 0 && (
-        <section className="card border-[#d9b25c] space-y-2">
-          <h2 className="font-medium">
-            Похоже на регион, но без направления · {missing.length}
-            <Hint>Без направления заявка не попадёт в план. Поставьте его здесь одним нажатием.</Hint>
-          </h2>
+        <Section
+          tone="warn"
+          icon="alert"
+          title={
+            <>
+              Похоже на регион, но без направления · {missing.length}
+              <Hint>Без направления заявка не попадёт в план. Поставьте его здесь одним нажатием.</Hint>
+            </>
+          }
+        >
           <div className="space-y-2">
             {missing.map((m) => (
               <DirectionFixRow
@@ -295,16 +304,22 @@ export default async function RegionSalesPage({
               />
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
       {/* --- По направлениям ------------------------------------------------- */}
-      <section>
-        <h2 className="font-medium mb-2">
-          По направлениям
-          {flower ? <span className="text-ink-secondary font-normal"> · {FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower}</span> : null}
-        </h2>
-        <div className="card !p-0 table-scroll table-cards">
+      <Section
+        tone="plans"
+        icon="route"
+        flush
+        title={
+          <>
+            По направлениям
+            {flower ? <span className="text-ink-secondary font-normal"> · {FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower}</span> : null}
+          </>
+        }
+      >
+        <div className="table-scroll table-cards">
           <table className="w-full text-sm min-w-[680px]">
             <thead>
               <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -389,7 +404,7 @@ export default async function RegionSalesPage({
             </tbody>
           </table>
         </div>
-      </section>
+      </Section>
 
       {/* --- Заявки периода — свёрнуты --------------------------------------- */}
       <details className="card !p-0 group">

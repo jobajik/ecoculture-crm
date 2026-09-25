@@ -11,7 +11,8 @@ import { canSeeFinance } from "@/lib/financeAccess";
 import { buildFinanceAnalytics, type DebtorRow } from "@/lib/financeAnalytics";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import Change from "@/components/Change";
@@ -65,8 +66,7 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Оплаты</h1>
-      <SectionTabs tabs={financeTabsFor(role)} />
+      <PageHeader area="money" title="Аналитика" icon="chart" tabs={financeTabsFor(role)} />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <PeriodPicker period={period} />
@@ -138,63 +138,83 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
 
       <div className="grid lg:grid-cols-2 gap-5 items-start">
         {/* --- По неделям ------------------------------------------------------ */}
-        <section className="card space-y-3 min-w-0">
-          <h2 className="font-semibold">
-            По неделям
-            <Hint>Слева — счета заявок, оформленных за неделю, справа — деньги, пришедшие за неделю.</Hint>
-          </h2>
-          <div className="flex gap-4 text-xs text-ink-secondary">
-            <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent/35" />выставлено</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />поступило</span>
+        <Section
+          tone="money"
+          icon="chart"
+          className="!mb-0 min-w-0"
+          title={
+            <>
+              По неделям
+              <span className="normal-case tracking-normal font-normal">
+                <Hint>Слева — счета заявок, оформленных за неделю, справа — деньги, пришедшие за неделю.</Hint>
+              </span>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div className="flex gap-4 text-xs text-ink-secondary">
+              <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent/35" />выставлено</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />поступило</span>
+            </div>
+            <ul className="space-y-2.5">
+              {a.weeks.map((w) => (
+                <li key={w.label} className="text-sm">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className={w.future ? "text-ink-muted" : ""}>{w.label}</span>
+                    <span className="tabular-nums text-xs text-ink-secondary whitespace-nowrap">
+                      {w.future && w.billed === 0 && w.cashIn === 0 ? "ещё впереди" : `${money(w.billed)} / ${money(w.cashIn)}`}
+                    </span>
+                  </div>
+                  <div className="mt-1 space-y-0.5">
+                    <div className="h-1.5 rounded-full bg-accent/35" style={{ width: `${(w.billed / maxWeek) * 100}%` }} />
+                    <div className="h-1.5 rounded-full bg-accent" style={{ width: `${(w.cashIn / maxWeek) * 100}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
-          <ul className="space-y-2.5">
-            {a.weeks.map((w) => (
-              <li key={w.label} className="text-sm">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className={w.future ? "text-ink-muted" : ""}>{w.label}</span>
-                  <span className="tabular-nums text-xs text-ink-secondary whitespace-nowrap">
-                    {w.future && w.billed === 0 && w.cashIn === 0 ? "ещё впереди" : `${money(w.billed)} / ${money(w.cashIn)}`}
-                  </span>
-                </div>
-                <div className="mt-1 space-y-0.5">
-                  <div className="h-1.5 rounded-full bg-accent/35" style={{ width: `${(w.billed / maxWeek) * 100}%` }} />
-                  <div className="h-1.5 rounded-full bg-accent" style={{ width: `${(w.cashIn / maxWeek) * 100}%` }} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        </Section>
 
         {/* --- Возраст долга --------------------------------------------------- */}
-        <section className="card space-y-3 min-w-0">
-          <h2 className="font-semibold">
-            Возраст долга
-            <Hint>Сколько дней прошло с доставки (нет даты доставки — с оформления) по каждой неоплаченной заявке. Реализация (пожарка) долгом не считается.</Hint>
-          </h2>
-          {debtAging.length === 0 ? (
-            <p className="text-sm text-ink-muted">Долгов нет.</p>
-          ) : (
+        <Section
+          tone="warn"
+          icon="clock"
+          className="!mb-0 min-w-0"
+          title={
             <>
-              <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Долг по возрасту">
-                {debtAging.map((b) => (
-                  <div key={b.key} className={AGING_TONE[b.key]} style={{ width: `${(b.amount / a.debt.total) * 100}%` }} title={`${b.label}: ${money(b.amount)}`} />
-                ))}
-              </div>
-              <ul className="space-y-1.5 text-sm">
-                {debtAging.map((b) => (
-                  <li key={b.key} className="flex items-baseline gap-2">
-                    <span className={`inline-block w-2.5 h-2.5 rounded-sm ${AGING_TONE[b.key]}`} />
-                    <span className="flex-1 min-w-0">
-                      {b.label} <span className="text-ink-muted">· {nf(b.orders)} {orderWord(b.orders)}</span>
-                    </span>
-                    <span className="tabular-nums text-ink-secondary">{Math.round((b.amount / a.debt.total) * 100)} %</span>
-                    <span className="shrink-0 text-right tabular-nums sm:w-32">{money(b.amount)}</span>
-                  </li>
-                ))}
-              </ul>
+              Возраст долга
+              <span className="normal-case tracking-normal font-normal">
+                <Hint>Сколько дней прошло с доставки (нет даты доставки — с оформления) по каждой неоплаченной заявке. Реализация (пожарка) долгом не считается.</Hint>
+              </span>
             </>
-          )}
-        </section>
+          }
+        >
+          <div className="space-y-3">
+            {debtAging.length === 0 ? (
+              <p className="text-sm text-ink-muted">Долгов нет.</p>
+            ) : (
+              <>
+                <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Долг по возрасту">
+                  {debtAging.map((b) => (
+                    <div key={b.key} className={AGING_TONE[b.key]} style={{ width: `${(b.amount / a.debt.total) * 100}%` }} title={`${b.label}: ${money(b.amount)}`} />
+                  ))}
+                </div>
+                <ul className="space-y-1.5 text-sm">
+                  {debtAging.map((b) => (
+                    <li key={b.key} className="flex items-baseline gap-2">
+                      <span className={`inline-block w-2.5 h-2.5 rounded-sm ${AGING_TONE[b.key]}`} />
+                      <span className="flex-1 min-w-0">
+                        {b.label} <span className="text-ink-muted">· {nf(b.orders)} {orderWord(b.orders)}</span>
+                      </span>
+                      <span className="tabular-nums text-ink-secondary">{Math.round((b.amount / a.debt.total) * 100)} %</span>
+                      <span className="shrink-0 text-right tabular-nums sm:w-32">{money(b.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </Section>
       </div>
 
       <FinanceBreakdown
@@ -203,16 +223,25 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
       />
 
       {/* --- Кто должен больше всех ------------------------------------------- */}
-      <section className="card !p-0 min-w-0">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4 pb-2">
-          <h2 className="font-semibold">
+      <Section
+        tone="money"
+        icon="client"
+        flush
+        className="!mb-0 min-w-0"
+        title={
+          <>
             Кто должен · {a.debtors.length}
-            <Hint>Сверху — у кого больше просрочено, дальше — по сумме долга. Сорванное обещание — красная метка.</Hint>
-          </h2>
+            <span className="normal-case tracking-normal font-normal">
+              <Hint>Сверху — у кого больше просрочено, дальше — по сумме долга. Сорванное обещание — красная метка.</Hint>
+            </span>
+          </>
+        }
+        aside={
           <Link href="/finance/debts" className="text-sm text-accent hover:underline">
             Долги и звонки →
           </Link>
-        </div>
+        }
+      >
         {a.debtors.length === 0 ? (
           <p className="px-4 pb-4 text-sm text-ink-muted">Никто не должен.</p>
         ) : (
@@ -230,7 +259,7 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
             )}
           </ul>
         )}
-      </section>
+      </Section>
     </div>
   );
 }
@@ -270,7 +299,7 @@ function Stat({
   return (
     <div className="min-w-0">
       <dt className="text-sm text-ink-secondary">{title}</dt>
-      <dd className={`text-xl font-semibold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}>{value}</dd>
+      <dd className={`font-display text-xl font-extrabold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}>{value}</dd>
       <dd className="text-xs text-ink-muted">
         {hasPrev && now !== undefined && before !== undefined && (
           <>

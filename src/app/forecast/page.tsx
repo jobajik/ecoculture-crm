@@ -12,7 +12,7 @@ import {
   periodOf,
   weeksOfMonth,
 } from "@/lib/constants";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import PeriodPicker from "@/components/PeriodPicker";
 import ForecastView from "@/components/ForecastView";
 import ForecastImportForm from "@/components/ForecastImportForm";
@@ -73,18 +73,15 @@ export default async function ForecastPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">
-          Прогноз срезки{farm ? ` · ${farmLabel(farm)}` : ""}
-        </h1>
-        <p className="text-sm text-ink-secondary">
-          Скачайте шаблон, заполните в Excel и загрузите обратно.
-        </p>
-      </div>
-
       {/* Администратору показываем вкладки раздела «Планы»: у него прогноз
           срезки не отдельный пункт меню, а вкладка внутри планирования. */}
-      {role === ROLES.ADMIN && <SectionTabs tabs={plansTabsFor(role)} />}
+      <PageHeader
+        area="forecast"
+        title={`Прогноз срезки${farm ? ` · ${farmLabel(farm)}` : ""}`}
+        subtitle="Скачайте шаблон, заполните в Excel и загрузите обратно."
+        icon="leaf"
+        tabs={role === ROLES.ADMIN ? plansTabsFor(role) : undefined}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PeriodPicker period={month} />

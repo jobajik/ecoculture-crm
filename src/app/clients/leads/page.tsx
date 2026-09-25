@@ -8,7 +8,8 @@ import { listUsers } from "@/lib/repo/users";
 import { buildLeadRows, canManageLeads, canSeeLead, canUseLeads, compareLeadRows, summarizeLeads } from "@/lib/leads";
 import { localDayKey } from "@/lib/timezone";
 import { isRetailRole } from "@/lib/retail";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import LeadsBoard from "@/components/LeadsBoard";
 import NewLeadForm from "@/components/NewLeadForm";
 import LeadImportForm from "@/components/LeadImportForm";
@@ -47,8 +48,7 @@ export default async function LeadsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Клиенты</h1>
-      <SectionTabs tabs={clientsTabsFor()} />
+      <PageHeader area="leads" title="Лиды" tabs={clientsTabsFor()} />
 
       <p className="text-sm text-ink-secondary">
         В работе {summary.open}
@@ -69,11 +69,20 @@ export default async function LeadsPage() {
       </div>
 
       {manage && summary.byManager.length > 0 && (
-        <section className="card !p-0">
-          <h2 className="font-semibold px-4 pt-4 pb-2">
-            По менеджерам
-            <Hint>«Дошли до заказа» и «отказ» — за 30 дней по дню смены стадии.</Hint>
-          </h2>
+        <Section
+          tone="leads"
+          icon="client"
+          flush
+          className="!mb-0"
+          title={
+            <>
+              По менеджерам
+              <span className="normal-case tracking-normal">
+                <Hint>«Дошли до заказа» и «отказ» — за 30 дней по дню смены стадии.</Hint>
+              </span>
+            </>
+          }
+        >
           <div className="table-cards border-t border-line-hairline">
             <table className="w-full text-sm">
               <thead>
@@ -102,7 +111,7 @@ export default async function LeadsPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </Section>
       )}
 
       <LeadsBoard rows={rows} myEmail={email} canManage={manage} managers={managers} />

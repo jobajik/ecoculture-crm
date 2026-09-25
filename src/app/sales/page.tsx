@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { getLeaderboard } from "@/lib/leaderboard";
 import type { FinancePeriod } from "@/lib/finance";
 import Leaderboard from "@/components/Leaderboard";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { salesTabsFor } from "./tabs";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +24,7 @@ export default async function SalesPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Рейтинг менеджеров</h1>
-      </div>
-
-      <SectionTabs tabs={salesTabsFor(role)} />
+      <PageHeader area="sales" title="Рейтинг менеджеров" icon="trophy" tabs={salesTabsFor(role)} />
 
       <Leaderboard snapshot={snapshot} currentEmail={session?.user?.email?.toLowerCase() ?? ""} />
     </div>

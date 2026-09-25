@@ -9,7 +9,7 @@ import { FLOWER_TYPE_LABELS, ROLES, formatGrade } from "@/lib/constants";
 import ClientsBoard from "@/components/ClientsBoard";
 import { isRetailRole } from "@/lib/retail";
 import { clients as clientsWord, orders as ordersWord } from "@/lib/plural";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import { clientsTabsFor } from "./tabs";
 
 export const dynamic = "force-dynamic";
@@ -46,10 +46,7 @@ export default async function ClientsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-3">Клиенты</h1>
-      <div className="mb-4">
-        <SectionTabs tabs={clientsTabsFor()} />
-      </div>
+      <PageHeader area="clients" title="Клиенты" tabs={clientsTabsFor()} />
       <p className="text-sm text-ink-secondary mb-4">
         {t.clients === 0
           ? "Клиентов пока нет."
@@ -124,7 +121,9 @@ function Tile({
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
-      <div className={`text-2xl font-semibold mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>{value}</div>
+      <div className={`font-display text-2xl font-extrabold tabular-nums mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>
+        {value}
+      </div>
       {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );

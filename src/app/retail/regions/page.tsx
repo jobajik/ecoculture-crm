@@ -14,7 +14,8 @@ import {
   isRegionShop,
 } from "@/lib/retail";
 import { formatDay } from "@/lib/formatDate";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
+import Section from "@/components/Section";
 import { retailTabsFor } from "../tabs";
 import DayNav from "@/components/DayNav";
 import CityTabs from "@/components/CityTabs";
@@ -106,27 +107,30 @@ export default async function RetailRegionsPage({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h1 className="text-xl font-semibold">Розница — регионы</h1>
-        <div className="flex flex-wrap gap-2">
-          {/* Опт на город — отдельная заявка без клиента: объём оптовикам региона.
-              Рядом с розницей, потому что заполняет их один и тот же человек. */}
-          {canFillRegionOrders(role) && (
-            <Link href={`/orders/new?region=1&date=${date}`} className="btn-secondary">
-              + Опт в регион
-            </Link>
-          )}
-          {canOrder && card && (
-            <Link
-              href={`/orders/new?retail=1&client=${card.clientId}&date=${date}`}
-              className="btn-primary"
-            >
-              + Заявка в {city}
-            </Link>
-          )}
-        </div>
-      </div>
-      <SectionTabs tabs={retailTabsFor(role)} />
+      <PageHeader
+        area="retail"
+        title="Регионы"
+        tabs={retailTabsFor(role)}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {/* Опт на город — отдельная заявка без клиента: объём оптовикам региона.
+                Рядом с розницей, потому что заполняет их один и тот же человек. */}
+            {canFillRegionOrders(role) && (
+              <Link href={`/orders/new?region=1&date=${date}`} className="btn-secondary">
+                + Опт в регион
+              </Link>
+            )}
+            {canOrder && card && (
+              <Link
+                href={`/orders/new?retail=1&client=${card.clientId}&date=${date}`}
+                className="btn-primary"
+              >
+                + Заявка в {city}
+              </Link>
+            )}
+          </div>
+        }
+      />
 
       <div className="mt-4">
         <CityTabs cities={[...RETAIL_REGION_CITIES]} current={city} date={date} />
@@ -213,9 +217,14 @@ export default async function RetailRegionsPage({
           </div>
 
           {history.length > 0 && (
-            <>
-              <h2 className="font-medium mt-6 mb-2">Последние отправки в {city}</h2>
-              <div className="card !p-0 table-scroll table-cards">
+            <Section
+              tone="retail"
+              icon="truck"
+              title={`Последние отправки в ${city}`}
+              flush
+              className="mt-6 !mb-0"
+            >
+              <div className="table-scroll table-cards border-t border-line-hairline">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -249,7 +258,7 @@ export default async function RetailRegionsPage({
                   </tbody>
                 </table>
               </div>
-            </>
+            </Section>
           )}
         </>
       )}
@@ -271,7 +280,9 @@ function Tile({
   return (
     <div className="card">
       <div className="text-sm text-ink-secondary">{title}</div>
-      <div className={`text-2xl font-semibold mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>{value}</div>
+      <div className={`font-display text-2xl font-extrabold tabular-nums mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>
+        {value}
+      </div>
       {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );

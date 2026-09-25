@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
+import { areaForPath } from "@/lib/areas";
 
 /**
  * Вкладки внутри раздела. Верхнее меню держим коротким — по одному пункту на
@@ -12,9 +13,12 @@ import clsx from "clsx";
  */
 export default function SectionTabs({
   tabs,
+  inHeader = false,
 }: {
   /** `match` — адреса, на которых вкладка горит (без него — ровно `href`). */
   tabs: { href: string; label: string; match?: string[] }[];
+  /** Вкладки — нижний край шапки страницы (`PageHeader`): без своей линии. */
+  inHeader?: boolean;
 }) {
   const pathname = usePathname();
   const stripRef = useRef<HTMLDivElement>(null);
@@ -43,14 +47,19 @@ export default function SectionTabs({
   }, [measure, tabs.length]);
 
   if (tabs.length < 2) return null;
+  // Подчёркивание активной вкладки — цветом раздела (src/lib/areas.ts).
+  const area = areaForPath(pathname);
 
   return (
-    <div className="no-print relative -mt-1 mb-1">
+    <div className={clsx("no-print relative", inHeader ? "" : "-mt-1 mb-1")}>
       {/* На телефоне вкладки не переносим, а прокручиваем: перенос в две строки
           съедает пол-экрана, а горизонтальная лента листается пальцем. */}
       <div
         ref={stripRef}
-        className="flex gap-1 border-b border-line-hairline overflow-x-auto scroll-x-hidden sm:flex-wrap sm:overflow-visible"
+        className={clsx(
+          "flex gap-1 overflow-x-auto scroll-x-hidden sm:flex-wrap sm:overflow-visible",
+          !inHeader && "border-b border-line-hairline"
+        )}
       >
         {tabs.map((t) => {
           const active = t.match ? t.match.includes(pathname) : pathname === t.href;
@@ -59,9 +68,10 @@ export default function SectionTabs({
               key={t.href}
               href={t.href}
               className={clsx(
-                "px-3 py-3 sm:py-2 text-sm -mb-px border-b-2 transition-colors whitespace-nowrap",
+                "px-3 py-3 sm:py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap",
+                !inHeader && "-mb-px",
                 active
-                  ? "border-accent text-ink-primary font-medium"
+                  ? clsx(area.tabBorder, "text-ink-primary font-semibold")
                   : "border-transparent text-ink-secondary hover:text-ink-primary"
               )}
             >
@@ -76,7 +86,10 @@ export default function SectionTabs({
       {moreRight && (
         <div
           aria-hidden
-          className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-px w-10 bg-gradient-to-l from-surface to-transparent"
+          className={clsx(
+            "sm:hidden pointer-events-none absolute right-0 top-0 w-10 bg-gradient-to-l from-surface to-transparent",
+            inHeader ? "bottom-0" : "bottom-px"
+          )}
         />
       )}
     </div>

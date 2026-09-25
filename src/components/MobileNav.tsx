@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
 import { navLinksFor, isActive as linkIsActive, type NavLink } from "./navLinks";
+import { areaForPath } from "@/lib/areas";
 
 /**
  * Нижнее меню для телефона.
@@ -51,6 +52,8 @@ export default function MobileNav() {
 
   const isActive = (l: NavLink) => linkIsActive(l, pathname);
   const restActive = rest.some(isActive);
+  // Цвет активного пункта — цвет раздела, где человек сейчас (src/lib/areas.ts).
+  const here = areaForPath(pathname);
 
   return (
     <>
@@ -84,7 +87,7 @@ export default function MobileNav() {
                   className={clsx(
                     "block rounded-lg px-3 py-3 text-base",
                     isActive(l)
-                      ? "bg-accent-soft text-accent font-medium"
+                      ? clsx(here.soft, here.text, "font-medium")
                       : "text-ink-primary active:bg-surface-plane"
                   )}
                 >
@@ -115,13 +118,13 @@ export default function MobileNav() {
                 className={clsx(
                   "flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-14 px-1",
                   "text-[11px] font-medium leading-tight text-center transition-colors",
-                  active ? "text-accent" : "text-ink-secondary active:bg-surface-plane"
+                  active ? here.text : "text-ink-secondary active:bg-surface-plane"
                 )}
               >
                 <span
                   className={clsx(
                     "h-0.5 w-6 rounded-full",
-                    active ? "bg-accent" : "bg-transparent"
+                    active ? here.solid : "bg-transparent"
                   )}
                 />
                 <span className="truncate w-full">{l.short ?? l.label}</span>
@@ -138,11 +141,11 @@ export default function MobileNav() {
             className={clsx(
               "flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-14 px-1",
               "text-[11px] font-medium leading-tight transition-colors",
-              sheetOpen || restActive ? "text-accent" : "text-ink-secondary active:bg-surface-plane"
+              sheetOpen || restActive ? here.text : "text-ink-secondary active:bg-surface-plane"
             )}
           >
             <span
-              className={clsx("h-0.5 w-6 rounded-full", restActive ? "bg-accent" : "bg-transparent")}
+              className={clsx("h-0.5 w-6 rounded-full", restActive ? here.solid : "bg-transparent")}
             />
             <span>Ещё</span>
           </button>

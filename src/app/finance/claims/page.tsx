@@ -6,7 +6,7 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { ROLES, formatGrade } from "@/lib/constants";
 import Hint from "@/components/Hint";
-import SectionTabs from "@/components/SectionTabs";
+import PageHeader from "@/components/PageHeader";
 import ClaimsBoard, { type ClaimView } from "@/components/ClaimsBoard";
 import { financeTabsFor } from "../tabs";
 import { canEditFinance } from "@/lib/financeAccess";
@@ -65,17 +65,22 @@ export default async function ClaimsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">
-          Рекламации
-          <Hint>
-            Менеджер заводит рекламацию, решает бухгалтер. Провести — значит пересчитать заявку:
-            сумма, долг и бонус менеджера меняются. Отгруженное количество не меняется.
-          </Hint>
-        </h1>
-      </div>
-
-      <SectionTabs tabs={financeTabsFor(role)} />
+      <PageHeader
+        area="money"
+        icon="alert"
+        tabs={financeTabsFor(role)}
+        title={
+          <>
+            Рекламации
+            <span className="font-sans">
+              <Hint>
+                Менеджер заводит рекламацию, решает бухгалтер. Провести — значит пересчитать заявку:
+                сумма, долг и бонус менеджера меняются. Отгруженное количество не меняется.
+              </Hint>
+            </span>
+          </>
+        }
+      />
 
       <ClaimsBoard claims={views} canDecide={canDecide} />
     </div>
