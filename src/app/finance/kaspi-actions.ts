@@ -20,8 +20,9 @@ import {
   kaspiDescription,
   kaspiDueAmount,
   kaspiPhone,
+  kaspiPhoneOptions,
   kaspiSendRefusal,
-  suggestedKaspiPhone,
+  type KaspiPhoneOption,
 } from "@/lib/kaspiInvoice";
 import type { KaspiInvoice } from "@/lib/types";
 
@@ -46,9 +47,11 @@ function refresh(orderId: string) {
 export interface KaspiPanelData {
   farms: { farm: string; label: string; amount: number; paidAmount: number; due: number; configured: boolean }[];
   invoices: KaspiInvoice[];
-  phone: string;
-  /** Откуда взят номер — чтобы бухгалтер видела, что проверять. */
-  phoneSource: string;
+  /**
+   * Все номера клиента, на которые можно выставить счёт: Kaspi №1, №2, телефон
+   * заявки, телефон клиента — без повторов и без городских. Первый — по умолчанию.
+   */
+  phones: KaspiPhoneOption[];
   orderCode: string;
 }
 
@@ -57,13 +60,12 @@ async function loadKaspiActionInner(orderId: string): Promise<KaspiPanelData> {
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
   const client = order.clientId ? await getClientById(order.clientId) : null;
-  const candidates: [string, string][] = [
-    [client?.kaspiPay1 ?? "", "Каспи Pay №1 клиента"],
-    [client?.kaspiPay2 ?? "", "Каспи Pay №2 клиента"],
+  const phones = kaspiPhoneOptions([
+    [client?.kaspiPay1, "Kaspi №1"],
+    [client?.kaspiPay2, "Kaspi №2"],
     [order.clientPhone, "телефон заявки"],
-    [client?.phone ?? "", "телефон клиента"],
-  ];
-  const found = candidates.find(([p]) => kaspiPhone(p));
+    [client?.phone, "телефон клиента"],
+  ]);
   const invoices = (await listKaspiInvoices())
     .filter((i) => i.orderId === orderId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
@@ -79,8 +81,7 @@ async function loadKaspiActionInner(orderId: string): Promise<KaspiPanelData> {
           configured: !!apiPayConfig(f.farm),
         })),
     invoices,
-    phone: found ? suggestedKaspiPhone([found[0]]) : "",
-    phoneSource: found ? found[1] : "",
+    phones,
     orderCode: orderCode(orderId),
   };
 }

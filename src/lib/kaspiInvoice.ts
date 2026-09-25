@@ -140,3 +140,66 @@ export function kaspiStatusPlan(
   const recordPayment = isPaidKaspiStatus(next.status) && !row.paymentId;
   return { changed, recordPayment };
 }
+
+// ---------------------------------------------------------------------------
+// Выбор номера и «где сейчас счёт» — для блока в панели оплаты и для страницы
+// «Статус оплат». Владелец: «нужно понимать, что можно выбрать номер из списка,
+// если несколько каспи; тупо нажать кнопку, чтобы отправился счёт, и трекерить
+// оплату».
+// ---------------------------------------------------------------------------
+
+export interface KaspiPhoneOption {
+  /** 8XXXXXXXXXX */
+  phone: string;
+  /** Откуда номер: «Kaspi №1», «телефон заявки»… Несколько источников — через запятую. */
+  label: string;
+}
+
+/**
+ * Номера, на которые можно выставить счёт, в порядке предпочтения. Городские и
+ * битые отбрасываются, одинаковые склеиваются: «+7 701…» в карточке и «8701…» в
+ * заявке — один номер, и два одинаковых варианта выглядели бы как два разных.
+ */
+export function kaspiPhoneOptions(candidates: [string | null | undefined, string][]): KaspiPhoneOption[] {
+  const out: KaspiPhoneOption[] = [];
+  for (const [raw, label] of candidates) {
+    const phone = kaspiPhone(raw);
+    if (!phone) continue;
+    const same = out.find((o) => o.phone === phone);
+    if (same) {
+      if (!same.label.split(", ").includes(label)) same.label = `${same.label}, ${label}`;
+    } else {
+      out.push({ phone, label });
+    }
+  }
+  return out;
+}
+
+/** «87015552030» → «8 701 555 20 30». */
+export function prettyKaspiPhone(p: string): string {
+  return /^\d{11}$/.test(p) ? `${p[0]} ${p.slice(1, 4)} ${p.slice(4, 7)} ${p.slice(7, 9)} ${p.slice(9)}` : p;
+}
+
+/**
+ * Шаг счёта для полоски «отправлен → у клиента → оплачен». 1 — уходит в Kaspi,
+ * 2 — клиенту пришёл счёт, ждём, 3 — оплачен. 0 — счёт не дошёл (ошибка,
+ * истёк, отменён): полоска красится серым или красным, а не зелёным.
+ */
+export function kaspiTrackerStep(status: string): 0 | 1 | 2 | 3 {
+  if (isPaidKaspiStatus(status)) return 3;
+  if (status === "pending" || status === "cancelling") return 2;
+  if (status === "processing") return 1;
+  return 0;
+}
+
+/** «ждёт 12 мин», «ждёт 3 ч», «ждёт 2 дн.» — сколько счёт висит без оплаты. */
+export function waitingWords(fromIso: string, now: Date = new Date()): string {
+  const t = Date.parse(fromIso);
+  if (!Number.isFinite(t)) return "";
+  const min = Math.max(0, Math.floor((now.getTime() - t) / 60_000));
+  if (min < 1) return "только что";
+  if (min < 60) return `${min} мин`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} ч`;
+  return `${Math.floor(h / 24)} дн.`;
+}

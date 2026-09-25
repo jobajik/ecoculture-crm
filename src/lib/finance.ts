@@ -212,6 +212,13 @@ export interface FinanceSnapshot {
    * в нём ошибку. Правила — в `src/lib/cashByFlower.ts`.
    */
   cash: CashByFlower;
+  /**
+   * Все заявки, по которым ждём денег, — по всей базе, как долги. Для страницы
+   * «Статус оплат»: там вопрос «что сейчас с каждым счётом», а не «что за месяц».
+   */
+  openRows: FinanceOrderRow[];
+  /** Заявки с платежом за последние 7 дней — для «оплачено сегодня / за неделю». */
+  recentPaidRows: FinanceOrderRow[];
 }
 
 function dayKey(date: Date): string {
@@ -570,6 +577,13 @@ export async function getFinanceSnapshot(
     debtOverdueTotal: debts.reduce((s, d) => s + d.overdueAmount, 0),
     calls,
     overpaidTotal: allRows.reduce((s, r) => s + r.overpaid, 0),
+    openRows: allRows.filter((r) => r.debt > 0),
+    recentPaidRows: (() => {
+      const since = new Date(today);
+      since.setDate(since.getDate() - 6);
+      const sinceKey = dayKey(since);
+      return allRows.filter((r) => r.payments.some((p) => p.date >= sinceKey && p.date <= todayKey));
+    })(),
     // Касса считается по СВОЕЙ выборке и по своему дню, и оба отличия
     // осознанные:
     //

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import {
@@ -71,16 +71,27 @@ export default function PaymentPanel({
   consignment?: boolean;
   onDone?: () => void;
 }) {
+  // Владелец: «с подвязкой Kaspi Pay переосмысли форму — тупо нажать кнопку,
+  // чтобы отправился счёт, и трекерить оплату; ненужное скрой». Поэтому сверху
+  // итог и Kaspi-счёт, ниже платежи, а ручной ввод, номер 1С и исправление итога
+  // свёрнуты. Если Kaspi здесь делать нечего (касса не подключена, всё оплачено),
+  // ручной ввод раскрывается сам — иначе главное действие оказалось бы спрятано.
+  const [kaspi, setKaspi] = useState<"loading" | "action" | "none">("loading");
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const onKaspiState = useCallback((s: "action" | "none") => setKaspi(s), []);
+  const left = totalAmount - paidAmount;
+  const manualIsOpen = manualOpen ?? (kaspi === "none" && left > 1);
+
   return (
     <div className="space-y-4">
-      <InvoiceRow orderId={orderId} invoiceSentAt={invoiceSentAt} />
-      <KaspiInvoiceBlock orderId={orderId} />
-      <RealizationRow orderId={orderId} realizations={realizations} />
-      {consignment && (
-        <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">
-          Реализация: остаток — непроданный цветок, а не долг.
-        </p>
-      )}
+      <PaymentSummary
+        orderId={orderId}
+        totalAmount={totalAmount}
+        paidAmount={paidAmount}
+        invoiceSentAt={invoiceSentAt}
+        consignment={consignment}
+      />
+      <KaspiInvoiceBlock orderId={orderId} onState={onKaspiState} />
       <PaymentsList
         orderId={orderId}
         totalAmount={totalAmount}
@@ -89,21 +100,39 @@ export default function PaymentPanel({
         farms={farms}
         status={status}
       />
-      <AddPayment
-        orderId={orderId}
-        totalAmount={totalAmount}
-        paidAmount={paidAmount}
-        farms={farms}
-        defaultMethod={defaultMethod}
-      />
+      <details
+        className="group rounded-xl border border-line-hairline"
+        open={manualIsOpen}
+        onToggle={(e) => {
+          const open = (e.currentTarget as HTMLDetailsElement).open;
+          if (open !== manualIsOpen) setManualOpen(open);
+        }}
+      >
+        <summary className="px-3 py-2.5 text-sm cursor-pointer select-none flex items-center gap-2 list-none [&::-webkit-details-marker]:hidden">
+          <span className="font-medium">Внести платёж вручную</span>
+          <span className="hidden sm:inline text-xs text-ink-muted">наличные, перевод, Kaspi не через счёт</span>
+          <span className="ml-auto text-ink-muted transition-transform group-open:rotate-90">›</span>
+        </summary>
+        <div className="px-3 pb-3">
+          <AddPayment
+            orderId={orderId}
+            totalAmount={totalAmount}
+            paidAmount={paidAmount}
+            farms={farms}
+            defaultMethod={defaultMethod}
+          />
+        </div>
+      </details>
+      <RealizationRow orderId={orderId} realizations={realizations} />
       {/* Прежний способ — «получено всего» одним числом — остался для
           исправлений: вернули переплату, сняли ошибочную оплату, старая заявка
           без журнала. Он свёрнут: в обычной работе вносят платёж, а не итог. */}
-      <details className="rounded-xl border border-line-hairline px-3 py-2">
-        <summary className="text-sm text-ink-secondary cursor-pointer select-none">
+      <details className="group rounded-xl border border-line-hairline">
+        <summary className="px-3 py-2.5 text-sm cursor-pointer select-none flex items-center gap-2 list-none [&::-webkit-details-marker]:hidden text-ink-secondary">
           Исправить итог вручную
+          <span className="ml-auto text-ink-muted transition-transform group-open:rotate-90">›</span>
         </summary>
-        <div className="pt-3">
+        <div className="px-3 pb-3">
           <p className="text-xs text-ink-muted mb-3">
             Итог одним числом, а не очередной платёж. Только для исправлений.
           </p>
@@ -119,6 +148,63 @@ export default function PaymentPanel({
           )}
         </div>
       </details>
+    </div>
+  );
+}
+
+/**
+ * Итог оплаты одной строкой с полоской — первое, что видит бухгалтер, — и
+ * отметка «счёт отправлен» маленькой ссылкой рядом. Kaspi-счёт ставит эту
+ * отметку сам; руками её ставят для счетов, отправленных мимо программы.
+ */
+function PaymentSummary({
+  orderId,
+  totalAmount,
+  paidAmount,
+  invoiceSentAt,
+  consignment,
+}: {
+  orderId: string;
+  totalAmount: number;
+  paidAmount: number;
+  invoiceSentAt: string;
+  consignment: boolean;
+}) {
+  const left = totalAmount - paidAmount;
+  const paid = left <= 1 && paidAmount > 0;
+  const percent = totalAmount > 0 ? Math.min(100, Math.max(0, (paidAmount / totalAmount) * 100)) : 0;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="text-lg font-semibold tabular-nums">
+          {paid ? (
+            <span className="text-status-good">Оплачено {money(paidAmount)}</span>
+          ) : left > 1 ? (
+            <>
+              {consignment ? "Не оплачено" : "К оплате"} {money(left)}
+            </>
+          ) : (
+            money(totalAmount)
+          )}
+        </span>
+        <span className="text-sm text-ink-secondary tabular-nums">
+          счёт {money(totalAmount)}
+          {paidAmount > 0 && !paid && ` · получено ${money(paidAmount)}`}
+          {left < -1 && ` · переплата ${money(-left)}`}
+        </span>
+        <InvoiceMark orderId={orderId} invoiceSentAt={invoiceSentAt} hide={paid} />
+      </div>
+      {totalAmount > 0 && (
+        <div className="h-1.5 rounded-full bg-surface-sunk overflow-hidden">
+          <div
+            className={clsx("h-full rounded-full", paid ? "bg-status-good" : "bg-[#8a5a00]")}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      )}
+      {consignment && (
+        <p className="text-xs text-ink-secondary">Реализация: остаток — непроданный цветок, а не долг.</p>
+      )}
     </div>
   );
 }
@@ -165,14 +251,21 @@ function RealizationRow({ orderId, realizations }: { orderId: string; realizatio
   }
 
   if (realizations.length === 0) return null;
+  const filled = realizations.filter((r) => r.number.trim());
 
   return (
-    <div className="pb-3 border-b border-line-hairline space-y-2">
-      {several && (
-        <div className="text-sm text-ink-secondary">
-          Реализаций в 1С: {realizations.length}
-        </div>
-      )}
+    <details className="group rounded-xl border border-line-hairline">
+      <summary className="px-3 py-2.5 text-sm cursor-pointer select-none flex items-center gap-2 list-none [&::-webkit-details-marker]:hidden">
+        <span className="font-medium">Номер 1С</span>
+        <span className={clsx("text-xs", filled.length ? "text-ink-secondary" : "text-ink-muted")}>
+          {filled.length === 0
+            ? "не вписан"
+            : filled.map((r) => (several ? `${r.label}: ${r.number}` : r.number)).join(" · ")}
+          {filled.length > 0 && filled.length < realizations.length && ` · ещё ${realizations.length - filled.length} не вписан`}
+        </span>
+        <span className="ml-auto text-ink-muted transition-transform group-open:rotate-90">›</span>
+      </summary>
+    <div className="px-3 pb-3 space-y-2">
       <div className="flex flex-wrap items-end gap-3">
         {realizations.map((r) => (
           <label key={r.flowerType} className="text-sm">
@@ -209,6 +302,7 @@ function RealizationRow({ orderId, realizations }: { orderId: string; realizatio
       </div>
       {error && <div className="text-sm text-status-critical">{error}</div>}
     </div>
+    </details>
   );
 }
 
@@ -251,11 +345,8 @@ function PaymentsList({
     });
   }
 
-  if (history.rows.length === 0 && history.unrecorded === 0) {
-    return <p className="text-sm text-ink-muted">Платежей пока нет.</p>;
-  }
+  if (history.rows.length === 0 && history.unrecorded === 0) return null;
 
-  const left = totalAmount - paidAmount;
   return (
     <div className="space-y-1.5">
       <div className="text-sm font-medium">Платежи</div>
@@ -294,11 +385,6 @@ function PaymentsList({
           );
         })}
       </ul>
-      <p className="text-xs text-ink-muted">
-        Всего получено {money(paidAmount)} из {money(totalAmount)}
-        {left > 1 && ` · остаток ${money(left)}`}
-        {left < -1 && ` · переплата ${money(-left)}`}.
-      </p>
       {error && (
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">
           {error}
@@ -389,7 +475,6 @@ function AddPayment({
 
   return (
     <div className="space-y-2">
-      <div className="text-sm font-medium">Поступил платёж</div>
       <div className="flex flex-wrap items-end gap-3">
         {split && (
           <label className="text-sm">
@@ -504,22 +589,16 @@ function AddPayment({
 }
 
 /**
- * Отметка «счёт отправлен клиенту» — первая ступень оплаты.
- *
- * Раньше у заявки было два состояния, «не оплачено» и «оплачено», и первое
- * отвечало сразу на два разных вопроса: счёт ещё не выставили или клиент тянет
- * с деньгами. Напоминать в этих случаях надо по-разному, а строка выглядела
- * одинаково.
- *
- * Стоит отметка здесь, в панели оплаты, а не отдельной кнопкой в строке: это
- * то же самое рабочее место и тот же самый разговор о деньгах, а вторая кнопка
- * в узкой строке таблицы означала бы промах пальцем на телефоне.
+ * Отметка «счёт отправлен клиенту» — первая ступень оплаты: «не оплачено»
+ * иначе отвечало сразу на два вопроса — счёт не выставили или клиент тянет.
+ * Kaspi-счёт ставит её сам, поэтому здесь она — маленькая ссылка в строке итога.
  */
-function InvoiceRow({ orderId, invoiceSentAt }: { orderId: string; invoiceSentAt: string }) {
+function InvoiceMark({ orderId, invoiceSentAt, hide }: { orderId: string; invoiceSentAt: string; hide: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const sent = Boolean((invoiceSentAt || "").trim());
+  if (hide && !sent) return null;
 
   function toggle() {
     setError(null);
@@ -534,24 +613,29 @@ function InvoiceRow({ orderId, invoiceSentAt }: { orderId: string; invoiceSentAt
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 pb-3 border-b border-line-hairline">
-      <span className="text-sm">
-        <span className="text-ink-secondary">Счёт клиенту: </span>
-        {sent ? (
-          <span className="text-status-good">отправлен {formatMoment(invoiceSentAt)}</span>
-        ) : (
-          <span className="text-[#8a5a00]">ещё не отправлен</span>
-        )}
-      </span>
-      <button
-        onClick={toggle}
-        disabled={pending}
-        className={clsx("btn-secondary !py-1 !px-2.5 text-xs disabled:opacity-50", sent && "!text-ink-secondary")}
-      >
-        {pending ? "Сохраняю…" : sent ? "Снять отметку" : "Счёт отправлен"}
-      </button>
-      {error && <span className="text-sm text-status-critical">{error}</span>}
-    </div>
+    <span className="text-xs">
+      {sent ? (
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={pending}
+          title="Снять отметку"
+          className="text-status-good hover:line-through disabled:opacity-50"
+        >
+          ✓ счёт отправлен {formatMoment(invoiceSentAt)}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={pending}
+          className="text-ink-muted hover:text-accent underline decoration-dotted disabled:opacity-50"
+        >
+          {pending ? "сохраняю…" : "отметить: счёт отправлен"}
+        </button>
+      )}
+      {error && <span className="text-status-critical ml-2">{error}</span>}
+    </span>
   );
 }
 
