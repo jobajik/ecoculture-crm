@@ -31,6 +31,7 @@
  *   npx tsx scripts/delete-orders.ts ORD-1 ORD-2          — показ, ничего не трогает
  *   npx tsx scripts/delete-orders.ts --yes ORD-1 ORD-2    — копия и удаление «чистых»
  *   npx tsx scripts/delete-orders.ts --yes --paid ORD-1   — плюс оплаченные
+ *   --reason=текст или --reason-file=путь                — причина в журнал денег
  */
 import * as dotenv from "dotenv";
 
@@ -39,7 +40,7 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 import { deleteOrder, listOrdersWithItems } from "../src/lib/repo/orders";
 import { listShipments } from "../src/lib/repo/shipments";
@@ -79,6 +80,13 @@ async function main() {
   const confirmed = argv.includes("--yes");
   const withPaid = argv.includes("--paid");
   const ids = argv.filter((a) => !a.startsWith("--"));
+  // Причина для журнала: --reason=текст или --reason-file=путь (файл в UTF-8 —
+  // .bat из очереди пишется только латиницей, а журнал читают по-русски).
+  const reasonFile = argv.find((a) => a.startsWith("--reason-file="))?.slice("--reason-file=".length).trim();
+  const reasonArg =
+    argv.find((a) => a.startsWith("--reason="))?.slice("--reason=".length).trim() ||
+    (reasonFile ? readFileSync(reasonFile, "utf-8").replace(/^\uFEFF/, "").trim() : "");
+  const journalReason = reasonArg || "учтено при занесении остатков склада";
 
   startLog();
 
@@ -231,7 +239,7 @@ async function main() {
       managerEmail: order.managerEmail,
       totalAmount: order.totalAmount,
       items: order.items,
-      reason: "учтено при занесении остатков склада",
+      reason: journalReason,
     });
 
     const result = await deleteOrder(order.orderId);
