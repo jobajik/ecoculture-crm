@@ -14,6 +14,14 @@ import LeadsBoard from "@/components/LeadsBoard";
 import NewLeadForm from "@/components/NewLeadForm";
 import LeadImportForm from "@/components/LeadImportForm";
 import Hint from "@/components/Hint";
+import WaInbox from "@/components/WaInbox";
+import type { LeadTalkMark } from "@/components/LeadsBoard";
+import { listClients } from "@/lib/repo/clients";
+import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
+import { talkInfoByLead } from "@/lib/talkAnalysis";
+import { buildInbox, minutesSince } from "@/lib/whatsapp";
+import { isClosedStage, phoneKey } from "@/lib/leads";
+import { CLIENT_SOURCES } from "@/lib/constants";
 import { clientsTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +31,11 @@ export const revalidate = 0;
  * «Клиенты → Лиды»: база тех, кто ещё не покупал, и работа с ней по стадиям.
  * Правила — `src/lib/leads.ts`, действия — `./actions.ts`.
  */
-export default async function LeadsPage() {
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams?: { new?: string; phone?: string; name?: string; source?: string };
+}) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
   if (isRetailRole(role)) redirect("/retail");
@@ -31,9 +43,23 @@ export default async function LeadsPage() {
   const email = (session?.user?.email ?? "").toLowerCase();
   const manage = canManageLeads(role);
 
-  // Три вкладки — одним запросом (грабли 1.17).
-  await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.LEAD_TOUCHES, SHEET_TABS.USERS]);
-  const [leads, touches, users] = await Promise.all([listLeads(), listLeadTouches(), listUsers()]);
+  // Все вкладки — одним запросом (грабли 1.17).
+  await prefetchTables([
+    SHEET_TABS.LEADS,
+    SHEET_TABS.LEAD_TOUCHES,
+    SHEET_TABS.USERS,
+    SHEET_TABS.WA_MESSAGES,
+    SHEET_TABS.LEAD_ANALYSES,
+    SHEET_TABS.CLIENTS,
+  ]);
+  const [leads, touches, users, messages, analyses, clients] = await Promise.all([
+    listLeads(),
+    listLeadTouches(),
+    listUsers(),
+    listWaMessages(),
+    listLeadAnalyses(),
+    listClients(),
+  ]);
   const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
   const today = localDayKey();
 
@@ -41,6 +67,29 @@ export default async function LeadsPage() {
   const visible = leads.filter((l) => canSeeLead(role, email, l));
   const rows = buildLeadRows(visible, touches, nameByEmail, today).sort(compareLeadRows);
   const summary = summarizeLeads(rows, touches, nameByEmail, today);
+
+  // Переписка WhatsApp: метки у лидов и «написали сами» с незнакомых номеров.
+  const now = new Date();
+  const talk: Record<string, LeadTalkMark> = {};
+  for (const info of Array.from(talkInfoByLead(visible, messages, analyses).values())) {
+    talk[info.leadId] = {
+      waitingMinutes: !isClosedStage(info.stage) && info.waitingSince ? minutesSince(info.waitingSince, now) : null,
+      temperature: isClosedStage(info.stage) ? "" : info.analysis?.temperature ?? "",
+      score: info.analysis?.score ?? null,
+    };
+  }
+  const known = new Set<string>();
+  for (const l of leads) if (phoneKey(l.phone)) known.add(phoneKey(l.phone));
+  for (const c of clients) for (const p of [c.phone, c.messenger, c.kaspiPay1, c.kaspiPay2]) if (phoneKey(p)) known.add(phoneKey(p));
+  const inbox = buildInbox(messages, known, now);
+  const initial =
+    searchParams?.new === "1"
+      ? {
+          phone: (searchParams.phone || "").slice(0, 40),
+          name: (searchParams.name || "").slice(0, 200),
+          source: (CLIENT_SOURCES as readonly string[]).includes(searchParams.source || "") ? searchParams.source! : "",
+        }
+      : undefined;
   const managers = users
     .filter((u) => u.active && (u.role === ROLES.MANAGER || u.role === ROLES.SALES_HEAD))
     .map((u) => ({ email: u.email.toLowerCase(), name: u.name || u.email }))
@@ -64,7 +113,7 @@ export default async function LeadsPage() {
       </p>
 
       <div className="flex flex-wrap items-start gap-2">
-        <NewLeadForm canManage={manage} managers={managers} />
+        <NewLeadForm key={initial ? `${initial.phone}` : "blank"} canManage={manage} managers={managers} initial={initial} />
         {manage && <LeadImportForm managers={managers} />}
       </div>
 
@@ -114,7 +163,9 @@ export default async function LeadsPage() {
         </Section>
       )}
 
-      <LeadsBoard rows={rows} myEmail={email} canManage={manage} managers={managers} />
+      <WaInbox rows={inbox} />
+
+      <LeadsBoard rows={rows} myEmail={email} canManage={manage} managers={managers} talk={talk} />
     </div>
   );
 }

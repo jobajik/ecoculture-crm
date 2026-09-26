@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { addTouchAction } from "@/app/clients/leads/actions";
 import { CLIENT_STAGES, LEAD_CHANNELS, LEAD_LOST_REASONS, LEAD_STAGES, isClosedStage } from "@/lib/leads";
 import { unwrap } from "@/lib/actionResult";
+import type { TouchPrefill } from "@/lib/talkAnalysis";
+import { TOUCH_PREFILL_EVENT } from "./LeadTalkPanel";
 
 function plusDays(today: string, n: number): string {
   const d = new Date(`${today}T00:00:00`);
@@ -39,6 +41,29 @@ export default function LeadTouchForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  const [fromAi, setFromAi] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // «Перенести в касание» в разборе переписки заполняет эту форму — записывает
+  // её менеджер сам, прочитав и поправив (ИИ только предлагает).
+  useEffect(() => {
+    function onPrefill(e: Event) {
+      const p = (e as CustomEvent<TouchPrefill>).detail;
+      if (!p) return;
+      setChannel(p.channel);
+      setComment(p.comment);
+      setNextStage(p.stage);
+      if (p.nextTouchAt) setNextTouchAt(p.nextTouchAt);
+      setLostReason(p.lostReason);
+      setSaved(false);
+      setError(null);
+      setFromAi(true);
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    window.addEventListener(TOUCH_PREFILL_EVENT, onPrefill);
+    return () => window.removeEventListener(TOUCH_PREFILL_EVENT, onPrefill);
+  }, []);
+
   const closed = isClosedStage(nextStage);
 
   async function save(e: React.FormEvent) {
@@ -49,6 +74,7 @@ export default function LeadTouchForm({
     try {
       unwrap(await addTouchAction(leadId, { channel, comment, stage: nextStage, nextTouchAt, lostReason }));
       setComment("");
+      setFromAi(false);
       setSaved(true);
       router.refresh();
     } catch (err) {
@@ -59,8 +85,11 @@ export default function LeadTouchForm({
   }
 
   return (
-    <form onSubmit={save} className="card space-y-3">
+    <form ref={formRef} onSubmit={save} className={clsx("card space-y-3", fromAi && "ring-2 ring-section-leads/40")}>
       <h2 className="font-semibold">Новое касание</h2>
+      {fromAi && (
+        <p className="text-sm text-section-leads -mt-1">Заполнено из разбора переписки — проверьте и запишите.</p>
+      )}
       <div className="flex flex-wrap gap-1.5">
         {LEAD_CHANNELS.map((c) => (
           <button

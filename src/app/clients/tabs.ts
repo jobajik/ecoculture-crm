@@ -6,6 +6,8 @@ export function clientsTabsFor(period?: string) {
   return [
     { href: "/clients", label: "Список" },
     { href: "/clients/leads", label: "Лиды" },
+    // Разбор переписки WhatsApp с лидами: оценка менеджеров, возражения, кто ждёт ответа.
+    { href: "/clients/leads/talks", label: "Разговоры" },
     { href: period ? `/clients/analytics?period=${period}` : "/clients/analytics", label: "Аналитика" },
   ];
 }

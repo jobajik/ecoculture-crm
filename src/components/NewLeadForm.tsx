@@ -16,13 +16,16 @@ const EMPTY = { name: "", city: "", phone: "", contactPerson: "", clientType: ""
 export default function NewLeadForm({
   canManage,
   managers,
+  initial,
 }: {
   canManage: boolean;
   managers: { email: string; name: string }[];
+  /** Заполненная форма — из «Написали в WhatsApp»: номер и имя уже известны. */
+  initial?: Partial<typeof EMPTY>;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY);
+  const [open, setOpen] = useState(!!initial);
+  const [form, setForm] = useState({ ...EMPTY, ...(initial ?? {}) });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);

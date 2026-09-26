@@ -3,6 +3,10 @@
     {
       "path": "/api/backup",
       "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/leads/talks",
+      "schedule": "0 14 * * *"
     }
   ]
 }

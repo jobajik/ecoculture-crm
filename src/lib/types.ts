@@ -309,6 +309,67 @@ export interface LeadTouch {
   nextTouchAt: string;
 }
 
+/** Сообщение рабочего WhatsApp — вкладка WaMessages. */
+export interface WaMessage {
+  messageId: string;
+  /** Момент сообщения, ISO. */
+  at: string;
+  chatId: string;
+  /** Номер собеседника цифрами (из chatId), без «+». */
+  phone: string;
+  direction: "in" | "out";
+  /** text, voice, image, video, document, sticker, location, contact, other. */
+  type: string;
+  /** Текст, подпись к файлу или расшифровка голосового. */
+  text: string;
+  mediaUrl: string;
+  senderName: string;
+  /** webhook — пришло само; history — подтянуто из истории чата. */
+  source: string;
+}
+
+/** Пункт чек-листа менеджера в разборе: yes / no / na (не к месту). */
+export interface ChecklistMark {
+  key: string;
+  mark: "yes" | "no" | "na";
+  comment: string;
+}
+
+/** Возражение клиента в разборе. */
+export interface TalkObjection {
+  kind: string;
+  quote: string;
+}
+
+/** Разбор переписки с лидом — вкладка LeadAnalyses. */
+export interface LeadAnalysis {
+  analysisId: string;
+  leadId: string;
+  createdAt: string;
+  createdByEmail: string;
+  managerEmail: string;
+  messagesFrom: string;
+  messagesTo: string;
+  messageCount: number;
+  model: string;
+  summary: string;
+  needs: string;
+  agreed: string;
+  nextStep: string;
+  nextTouchDays: number | null;
+  suggestedStage: string;
+  temperature: "hot" | "warm" | "cold" | "";
+  temperatureWhy: string;
+  /** 0–100 по чек-листу; null — оценивать было нечего. */
+  score: number | null;
+  checklist: ChecklistMark[];
+  objections: TalkObjection[];
+  lostReason: string;
+  advice: string;
+  /** Медиана минут до ответа менеджера; null — не на что было отвечать. */
+  replyMinutes: number | null;
+}
+
 /** Счёт Kaspi Pay, выставленный через ApiPay, — вкладка KaspiInvoices. */
 export interface KaspiInvoice {
   /** Номер счёта в ApiPay. */

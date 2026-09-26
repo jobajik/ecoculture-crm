@@ -25,10 +25,20 @@ import Section from "@/components/Section";
 import LeadStageBadge from "@/components/LeadStageBadge";
 import LeadInfoForm from "@/components/LeadInfoForm";
 import LeadTouchForm from "@/components/LeadTouchForm";
+import LeadTalkPanel from "@/components/LeadTalkPanel";
+import WaChat from "@/components/WaChat";
+import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
+import { latestByLead, newSinceAnalysis, touchPrefill } from "@/lib/talkAnalysis";
+import { messagesForPhone, minutesSince, replyStats } from "@/lib/whatsapp";
+import { whatsappLink } from "@/lib/leads";
+import { greenConfig } from "@/lib/greenApi";
+import { openAiConfigured } from "@/lib/openai";
 import { clientsTabsFor } from "../../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// Разбор переписки (серверное действие этой страницы) идёт до полуминуты.
+export const maxDuration = 60;
 
 /** Карточка лида: кто это, где он в воронке и вся история касаний. */
 export default async function LeadPage({ params }: { params: { id: string } }) {
@@ -37,8 +47,20 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
   if (!canUseLeads(role)) redirect("/?error=forbidden");
   const email = (session?.user?.email ?? "").toLowerCase();
 
-  await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.LEAD_TOUCHES, SHEET_TABS.USERS]);
-  const [leads, touches, users] = await Promise.all([listLeads(), listLeadTouches(), listUsers()]);
+  await prefetchTables([
+    SHEET_TABS.LEADS,
+    SHEET_TABS.LEAD_TOUCHES,
+    SHEET_TABS.USERS,
+    SHEET_TABS.WA_MESSAGES,
+    SHEET_TABS.LEAD_ANALYSES,
+  ]);
+  const [leads, touches, users, allMessages, analyses] = await Promise.all([
+    listLeads(),
+    listLeadTouches(),
+    listUsers(),
+    listWaMessages(),
+    listLeadAnalyses(),
+  ]);
   const lead = leads.find((l) => l.leadId === params.id);
   // Чужой лид не открывается и по прямой ссылке (грабли 1.11).
   if (!lead || !canSeeLead(role, email, lead)) notFound();
@@ -58,6 +80,15 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
   const overdue = !isClosedStage(stage) && !!lead.nextTouchAt && lead.nextTouchAt < today;
   const current = stageIndex(stage);
+
+  // Переписка рабочего WhatsApp и её разбор ИИ.
+  const messages = messagesForPhone(allMessages, lead.phone);
+  const talkStats = replyStats(messages);
+  const waitingMinutes = !isClosedStage(stage) && talkStats.waitingSince ? minutesSince(talkStats.waitingSince, new Date()) : null;
+  const analysis = latestByLead(analyses.filter((a) => a.leadId === lead.leadId)).get(lead.leadId) ?? null;
+  const prefill = analysis && work && !isClosedStage(stage) ? touchPrefill(analysis, lead, today) : null;
+  const waConnected = !!greenConfig();
+  const showTalk = messages.length > 0 || !!analysis || waConnected;
 
   return (
     <div className="space-y-4">
@@ -121,12 +152,33 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
         />
 
         <div className="space-y-4 min-w-0">
+          {showTalk && (
+            <LeadTalkPanel
+              leadId={lead.leadId}
+              canRun={work}
+              aiReady={openAiConfigured()}
+              analysis={analysis}
+              prefill={prefill}
+              newMessages={newSinceAnalysis(messages, analysis ?? undefined)}
+              currentStage={stage}
+            />
+          )}
+
           {work ? (
             <LeadTouchForm leadId={lead.leadId} stage={stage} hasClient={!!lead.clientId} today={today} />
           ) : (
             <p className="card text-sm text-ink-secondary">
               {lead.managerEmail ? "Касания записывает менеджер этого лида." : "Возьмите лид себе, чтобы записывать касания."}
             </p>
+          )}
+
+          {showTalk && (
+            <WaChat
+              messages={messages}
+              waLink={whatsappLink(lead.phone)}
+              replyMinutes={talkStats.replyMinutes}
+              waitingMinutes={waitingMinutes}
+            />
           )}
 
           <Section tone="leads" icon="phone" title={`Касания · ${history.length}`} flush className="!mb-0">

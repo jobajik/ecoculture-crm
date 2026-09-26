@@ -30,6 +30,13 @@ export const SHEET_TABS = {
   // счёт, статус обновляет вебхук. Платёж по оплаченному счёту ложится в
   // Payments как обычный, а здесь остаётся ссылка на него (PaymentID).
   KASPI_INVOICES: "KaspiInvoices",
+  // Переписка рабочего WhatsApp (через Green API): строка на сообщение, пишет
+  // вебхук. К лиду привязывается при ЧТЕНИИ, по телефону (`phoneKey`), — так
+  // вебхук не читает таблицу вовсе и не тратит общий лимит Google (грабли 1.17).
+  WA_MESSAGES: "WaMessages",
+  // Разборы переписки ИИ: строка на разбор — кратко, потребность, следующий
+  // шаг, оценка менеджера по чек-листу, возражения, подсказка стадии.
+  LEAD_ANALYSES: "LeadAnalyses",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -371,6 +378,48 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "CreatedByEmail",
     "Sandbox",
     "UpdatedAt",
+  ],
+  // Direction — in (клиент написал) / out (ответили мы). Phone — номер
+  // собеседника из chatId; MessageID — номер WhatsApp, по нему склеиваются
+  // повторы (вебхук повторяется, история подтягивается второй раз). MediaURL —
+  // ссылка Green API на файл; у голосового Text — расшифровка.
+  [SHEET_TABS.WA_MESSAGES]: [
+    "MessageID",
+    "At",
+    "ChatID",
+    "Phone",
+    "Direction",
+    "Type",
+    "Text",
+    "MediaURL",
+    "SenderName",
+    "Source",
+    "CreatedAt",
+  ],
+  [SHEET_TABS.LEAD_ANALYSES]: [
+    "AnalysisID",
+    "LeadID",
+    "CreatedAt",
+    "CreatedByEmail",
+    "ManagerEmail",
+    "MessagesFrom",
+    "MessagesTo",
+    "MessageCount",
+    "Model",
+    "Summary",
+    "Needs",
+    "Agreed",
+    "NextStep",
+    "NextTouchDays",
+    "SuggestedStage",
+    "Temperature",
+    "TemperatureWhy",
+    "Score",
+    "Checklist",
+    "Objections",
+    "LostReason",
+    "Advice",
+    "ReplyMinutes",
   ],
 };
 
@@ -1267,6 +1316,8 @@ export const CLIENT_SOURCES = [
   "Instagram",
   "Холодный звонок",
   "Старый клиент вернулся",
+  // Сам написал на рабочий WhatsApp — такие лиды заводятся из «Написали в WhatsApp».
+  "Написали в WhatsApp",
   "Другое",
 ] as const;
 export type ClientSource = (typeof CLIENT_SOURCES)[number];

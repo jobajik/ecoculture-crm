@@ -7,9 +7,17 @@ import { LEAD_STAGES, isClosedStage, phoneKey, type LeadRow } from "@/lib/leads"
 import { formatDay } from "@/lib/formatDate";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import LeadStageBadge from "./LeadStageBadge";
+import { ScoreChip, TemperatureChip, WaitingChip } from "./TalkChips";
 
 type Who = "mine" | "free" | "all";
-type When = "work" | "today" | "overdue" | "closed" | "any";
+type When = "work" | "today" | "overdue" | "waiting" | "closed" | "any";
+
+/** Что известно о переписке лида: ждёт ли ответа, «температура», оценка менеджера. */
+export interface LeadTalkMark {
+  waitingMinutes: number | null;
+  temperature: string;
+  score: number | null;
+}
 
 /**
  * Список лидов. Открывается на «В работе» и отсортирован так, чтобы менеджер
@@ -21,11 +29,13 @@ export default function LeadsBoard({
   myEmail,
   canManage,
   managers,
+  talk = {},
 }: {
   rows: LeadRow[];
   myEmail: string;
   canManage: boolean;
   managers: { email: string; name: string }[];
+  talk?: Record<string, LeadTalkMark>;
 }) {
   const [stage, setStage] = useState<string>("");
   const [who, setWho] = useState<Who>(canManage ? "all" : "mine");
@@ -53,6 +63,7 @@ export default function LeadsBoard({
       if (when === "work" && isClosedStage(r.stage)) return false;
       if (when === "today" && !(r.dueToday || r.overdue)) return false;
       if (when === "overdue" && !r.overdue) return false;
+      if (when === "waiting" && talk[r.leadId]?.waitingMinutes == null) return false;
       if (when === "closed" && !isClosedStage(r.stage)) return false;
     }
     if (q) {
@@ -69,6 +80,7 @@ export default function LeadsBoard({
   const openCount = byWho.filter((r) => !isClosedStage(r.stage)).length;
   const todayCount = byWho.filter((r) => r.dueToday || r.overdue).length;
   const overdueCount = byWho.filter((r) => r.overdue).length;
+  const waitingCount = byWho.filter((r) => talk[r.leadId]?.waitingMinutes != null).length;
 
   return (
     <section className="space-y-3">
@@ -103,6 +115,9 @@ export default function LeadsBoard({
             { key: "work", label: `В работе · ${openCount}` },
             { key: "today", label: `На сегодня · ${todayCount}` },
             { key: "overdue", label: `Просрочено · ${overdueCount}`, warn: overdueCount > 0 },
+            // «Ждут ответа» — клиент написал в WhatsApp последним. Кнопка есть,
+            // только когда такие лиды есть: пустой фильтр — лишний шум.
+            ...(waitingCount > 0 ? [{ key: "waiting", label: `Ждут ответа · ${waitingCount}`, warn: true }] : []),
             { key: "closed", label: "Закрытые" },
           ]}
         />
@@ -155,6 +170,13 @@ export default function LeadsBoard({
                     <div className="text-xs text-ink-muted">
                       {[r.city, r.contactPerson, r.phone].filter(Boolean).join(" · ")}
                     </div>
+                    {talk[r.leadId] && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <WaitingChip minutes={talk[r.leadId].waitingMinutes} />
+                        <TemperatureChip value={talk[r.leadId].temperature} />
+                        <ScoreChip score={talk[r.leadId].score} />
+                      </div>
+                    )}
                   </td>
                   <td data-label="Стадия" className="px-3 py-2.5 whitespace-nowrap">
                     <LeadStageBadge stage={r.stage} />
