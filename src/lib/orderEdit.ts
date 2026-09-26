@@ -50,10 +50,12 @@ function baseRefusal(
   email: string | null | undefined
 ): string {
   if (order.status === ORDER_STATUSES.CANCELLED) return "Заявка отменена — править её нечего";
+  // Администратор правит и отгруженную (решение владельца, сентябрь 2026): уже
+  // уехавшее количество всё равно не уменьшить — это держит `editedItemsRefusal`.
+  if (role === ROLES.ADMIN) return "";
   if (order.status === ORDER_STATUSES.SHIPPED) {
     return "Заявка отгружена — править её поздно. Если клиент недоволен, оформите рекламацию.";
   }
-  if (role === ROLES.ADMIN) return "";
 
   const mine = order.managerEmail === (email || "").trim().toLowerCase();
   if (!ownerRoleFor(order, role)) return "Править заявку может только тот, кто её составил";
@@ -81,6 +83,9 @@ export function editItemsRefusal(
 ): string {
   const base = baseRefusal(order, role, email);
   if (base) return base;
+  // Администратору состав открыт и после отгрузки, и после оплаты: оплата и
+  // долг пересчитываются от новой суммы, статус — от отгруженного.
+  if (role === ROLES.ADMIN) return "";
 
   const shipped = order.items.reduce((sum, i) => sum + i.shippedQuantity, 0);
   if (shipped > 0) {
@@ -346,5 +351,28 @@ export function newOrderDateRefusal(value: string | null | undefined, today: str
     return `Дата доставки больше чем на ${NEW_ORDER_BACKDATE_DAYS} дней в прошлом — проверьте год и месяц`;
   }
   if (days > NEW_ORDER_AHEAD_DAYS) return "Дата доставки дальше двух месяцев вперёд — проверьте год и месяц";
+  return "";
+}
+
+
+/**
+ * Замена клиента в заявке — только администратор (сентябрь 2026). Остальным
+ * контрагент не меняется: «другой клиент — это другая заявка».
+ * Наш магазин меняется только на наш же магазин, клиент — только на клиента:
+ * иначе заявка тихо перескочила бы из перемещения в продажу или обратно.
+ */
+export function clientEditRefusal(
+  order: { kind?: string; retail?: string; status: string },
+  role: string | null | undefined,
+  next: { retail?: string; active?: boolean } | null
+): string {
+  if (role !== ROLES.ADMIN) return "Клиента в заявке меняет только администратор";
+  if (order.status === ORDER_STATUSES.CANCELLED) return "Заявка отменена — править её нечего";
+  if (isRegionOrder(order)) return "У объёма на город клиента нет — меняется город, то есть это другая заявка";
+  if (!next) return "Такого клиента нет в базе";
+  const wasShop = !!(order.retail || "").trim();
+  const isShop = !!(next.retail || "").trim();
+  if (wasShop && !isShop) return "Заявку нашему магазину можно передать только другому нашему магазину";
+  if (!wasShop && isShop) return "Продажу клиенту нельзя превратить в заявку нашему магазину — заведите новую заявку";
   return "";
 }

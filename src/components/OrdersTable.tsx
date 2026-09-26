@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { OrderWithItems } from "@/lib/types";
@@ -10,6 +10,7 @@ import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import { formatDay } from "@/lib/formatDate";
 import { byUrgency, orderStage, STAGE_LABELS, STAGE_ORDER, type OrderStage } from "@/lib/orderStage";
 import { personName, type NameByEmail } from "@/lib/personName";
+import DeleteOrder from "./DeleteOrder";
 
 /** Фильтр списка: этап заявки, «опаздывают» или все. */
 export const STAGE_FILTERS: { value: string; label: string }[] = [
@@ -44,6 +45,7 @@ export default function OrdersTable({
   managerNames = {},
   today,
   initialFilter = "all",
+  canAdmin = false,
 }: {
   orders: OrderWithItems[];
   /** Почта → имя из вкладки `Users`. Без неё в колонке стоял бы адрес. */
@@ -52,7 +54,10 @@ export default function OrdersTable({
   today: string;
   /** Фильтр из адреса (`?stage=late`) — плитки главной ведут сразу в нужный список. */
   initialFilter?: string;
+  /** Администратор: «изменить» и «удалить» прямо в строке списка. */
+  canAdmin?: boolean;
 }) {
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [status, setStatus] = useState<string>(
     STAGE_FILTERS.some((f) => f.value === initialFilter) ? initialFilter : "all"
   );
@@ -122,24 +127,24 @@ export default function OrdersTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Заявка</th>
-              <th className="px-4 py-3 font-medium">Клиент</th>
-              <th className="px-4 py-3 font-medium">Менеджер</th>
-              <th className="px-4 py-3 font-medium">Позиции</th>
-              <th className="px-4 py-3 font-medium text-right">Сумма</th>
-              <th className="px-4 py-3 font-medium">Доставка</th>
-              <th className="px-4 py-3 font-medium">Этап</th>
+              <th className="px-3 py-3 font-medium">Заявка</th>
+              <th className="px-3 py-3 font-medium">Клиент</th>
+              <th className="px-3 py-3 font-medium">Менеджер</th>
+              <th className="px-3 py-3 font-medium">Позиции</th>
+              <th className="px-3 py-3 font-medium text-right">Сумма</th>
+              <th className="px-3 py-3 font-medium">Доставка</th>
+              <th className="px-3 py-3 font-medium">Этап</th>
             </tr>
           </thead>
           <tbody>
             {shown.map((o) => {
               const stage = stageOf(o);
               return (
+                <Fragment key={o.orderId}>
                 <tr
-                  key={o.orderId}
                   className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     {/* Номер не переносится: «ORD-260914-T85ZC» ломался на три
                         строки и в одиночку задирал высоту всей строки. */}
                     <Link
@@ -149,37 +154,73 @@ export default function OrdersTable({
                       {o.orderId}
                     </Link>
                     <div className="text-xs text-ink-muted">{formatDay(o.createdAt)}</div>
+                    {/* Действия админа — под номером, а не отдельной колонкой:
+                        восьмая колонка вылезала за край (боковой прокрутки в
+                        таблицах нет — см. CLAUDE.md). */}
+                    {canAdmin && (
+                      <div className="mt-1 flex gap-1 text-xs whitespace-nowrap">
+                        <Link
+                          href={`/orders/${o.orderId}/edit`}
+                          className="rounded px-1.5 py-0.5 text-ink-secondary hover:bg-surface-sunk hover:text-accent"
+                          title="Изменить заявку"
+                        >
+                          ✎ изменить
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setDeleting(deleting === o.orderId ? null : o.orderId)}
+                          className="rounded px-1.5 py-0.5 text-ink-muted hover:bg-status-critical/10 hover:text-status-critical"
+                          title="Удалить заявку"
+                        >
+                          ✕ удалить
+                        </button>
+                      </div>
+                    )}
                   </td>
-                  <td className="px-4 py-3" data-label="Клиент">
+                  <td className="px-3 py-3" data-label="Клиент">
                     <div className="truncate max-w-[200px]" title={o.clientName}>
                       {o.clientName}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-secondary" data-label="Менеджер">
+                  <td className="px-3 py-3 text-ink-secondary" data-label="Менеджер">
                     <div className="truncate max-w-[130px]">
                       {personName(o.managerEmail, managerNames)}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
+                  <td className="px-3 py-3 text-ink-secondary" data-label="Позиции">
                     <ItemsCell lines={o.items.map(itemText)} />
                   </td>
-                  <td className="px-4 py-3 font-medium sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
+                  <td className="px-3 py-3 font-medium sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
                     {o.totalAmount.toLocaleString("ru-RU")} ₸
                   </td>
-                  <td className="px-4 py-3 text-ink-secondary whitespace-nowrap" data-label="Доставка">
+                  <td className="px-3 py-3 text-ink-secondary whitespace-nowrap" data-label="Доставка">
                     {formatDay(o.deliveryDate)}
                   </td>
                   {/* Один этап вместо пары «статус + готовность»: раньше у всех
                       строк стояло одинаковое «Новая», а что мешает собрать
                       заявку, было написано мелко под ним и пятью разными
                       словами на разных экранах (`orderStage`). */}
-                  <td className="px-4 py-3" data-label="Этап">
+                  <td className="px-3 py-3" data-label="Этап">
                     <OrderStageBadge stage={stage} compact />
                     {stage.actor && (
                       <div className="text-xs text-ink-muted mt-1 whitespace-nowrap">ход: {stage.actor}</div>
                     )}
                   </td>
                 </tr>
+                {canAdmin && deleting === o.orderId && (
+                  <tr className="border-b border-line-hairline">
+                    <td colSpan={7} className="px-3 py-3 bg-surface-plane">
+                      <DeleteOrder
+                        inline
+                        orderId={o.orderId}
+                        paidAmount={o.paidAmount}
+                        shippedStems={o.items.reduce((sum, i) => sum + (i.shippedQuantity || 0), 0)}
+                        onClose={() => setDeleting(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {filtered.length === 0 && (

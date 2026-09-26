@@ -37,6 +37,7 @@ import {
   editedTotal,
   nextItemIds,
   planItemSave,
+  clientEditRefusal,
   type CurrentItem,
   type EditedItem,
 } from "../src/lib/orderEdit";
@@ -309,6 +310,58 @@ check("мусор отбрасывается", cleanDeliveryDate("завтра")
 check("чужой формат отбрасывается", cleanDeliveryDate("15.09.2026"), "");
 check("несуществующий день отбрасывается", cleanDeliveryDate("2026-02-31"), "");
 check("древняя дата отбрасывается", cleanDeliveryDate("1899-12-30"), "");
+
+// --- Администратор: правит и оплаченную, и отгруженную (сентябрь 2026) --------
+
+console.log("\nАдминистратор правит заявку прямо в списке");
+const paidOrder = order({ paidAmount: 50_000 });
+const shippedOrder = order({ status: ORDER_STATUSES.SHIPPED, items: [{ shippedQuantity: 300 }] });
+checkSome("админ правит состав оплаченной", editItemsRefusal(paidOrder, ROLES.ADMIN, "boss@x.kz"), true);
+checkSome("менеджер оплаченную — нет", editItemsRefusal(paidOrder, ROLES.MANAGER, MINE), false);
+checkSome("админ правит шапку отгруженной", editHeaderRefusal(shippedOrder, ROLES.ADMIN, "boss@x.kz"), true);
+checkSome("админ правит состав отгруженной", editItemsRefusal(shippedOrder, ROLES.ADMIN, "boss@x.kz"), true);
+checkSome("менеджер отгруженную — нет", editHeaderRefusal(shippedOrder, ROLES.MANAGER, MINE), false);
+checkSome(
+  "отменённую не правит и админ",
+  editHeaderRefusal(order({ status: ORDER_STATUSES.CANCELLED }), ROLES.ADMIN, "boss@x.kz"),
+  false
+);
+// Нижняя граница — отгруженное — держится и для админа: проверка состава
+// роли не знает вовсе.
+const adminCurrent: CurrentItem[] = [
+  { itemId: "I-1", flowerType: "rose", variety: "Фридом", grade: "60", quantity: 500, unitPrice: 300, shippedQuantity: 300 },
+];
+checkSome(
+  "ниже отгруженного нельзя и админу",
+  editedItemsRefusal({ current: adminCurrent, next: [{ ...adminCurrent[0], quantity: 200 }], region: false }),
+  false
+);
+checkSome(
+  "до отгруженного — можно",
+  editedItemsRefusal({ current: adminCurrent, next: [{ ...adminCurrent[0], quantity: 300, unitPrice: 250 }], region: false }),
+  true
+);
+
+console.log("\nСмена клиента в заявке");
+const clientOrder = { status: ORDER_STATUSES.NEW, kind: "", retail: "" };
+const shopOrder = { status: ORDER_STATUSES.NEW, kind: "", retail: "almaty" };
+checkSome("админ меняет клиента на клиента", clientEditRefusal(clientOrder, ROLES.ADMIN, { retail: "" }), true);
+checkSome("менеджер — нет", clientEditRefusal(clientOrder, ROLES.MANAGER, { retail: "" }), false);
+checkSome("РОП — нет", clientEditRefusal(clientOrder, ROLES.SALES_HEAD, { retail: "" }), false);
+checkSome("клиента на магазин — нет", clientEditRefusal(clientOrder, ROLES.ADMIN, { retail: "almaty" }), false);
+checkSome("магазин на клиента — нет", clientEditRefusal(shopOrder, ROLES.ADMIN, { retail: "" }), false);
+checkSome("магазин на магазин — можно", clientEditRefusal(shopOrder, ROLES.ADMIN, { retail: "regions" }), true);
+checkSome("несуществующий клиент — нет", clientEditRefusal(clientOrder, ROLES.ADMIN, null), false);
+checkSome(
+  "у объёма на город клиента нет",
+  clientEditRefusal({ status: ORDER_STATUSES.NEW, kind: ORDER_KINDS.REGION, retail: "" }, ROLES.ADMIN, { retail: "" }),
+  false
+);
+checkSome(
+  "отменённой — нет",
+  clientEditRefusal({ ...clientOrder, status: ORDER_STATUSES.CANCELLED }, ROLES.ADMIN, { retail: "" }),
+  false
+);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getOrderById } from "@/lib/repo/orders";
+import { listClients } from "@/lib/repo/clients";
 import { listVarietiesByType } from "@/lib/repo/varieties";
 import { getCurrentPrices } from "@/lib/repo/prices";
 import { getStockSnapshot } from "@/lib/stock";
@@ -52,10 +53,30 @@ export default async function EditOrderPage({ params }: { params: { id: string }
 
   // Прайс нужен, только если цена в заявке есть. У розницы он ВНУТРЕННИЙ:
   // подставить сюда клиентский было бы прямой ошибкой в цифрах.
-  const [varieties, prices] = await Promise.all([
+  const admin = role === ROLES.ADMIN;
+  const [varieties, prices, clients] = await Promise.all([
     listVarietiesByType(),
     getCurrentPrices(undefined, retail ? PRICE_KINDS.RETAIL : PRICE_KINDS.CLIENT),
+    // Клиента меняет только администратор, и не у объёма на город (там клиента нет).
+    admin && !region ? listClients() : Promise.resolve([]),
   ]);
+  const clientOptions =
+    admin && !region
+      ? clients
+          .filter((c) => (c.active || c.clientId === order.clientId) && !!(c.retail || "").trim() === retail)
+          .map((c) => ({ clientId: c.clientId, name: c.name, city: c.city }))
+          .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+      : undefined;
+  const shipped = order.items.reduce((sum, i) => sum + i.shippedQuantity, 0);
+  const adminNote = admin
+    ? [
+        order.paidAmount > 0 ? "Оплата уже внесена — долг и отметка «оплачено» пересчитаются от новой суммы." : "",
+        shipped > 0 ? "Часть уже отгружена — уменьшить позицию ниже отгруженного нельзя." : "",
+        shipped === 0 && order.managerConfirmed ? "Правка позиций снимет подтверждение." : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "";
 
   // Остаток склада — подсказка у количества, и нужна она там же, где при
   // создании заявки в магазин: человек перекладывает цветок, а не продаёт.
@@ -89,7 +110,9 @@ export default async function EditOrderPage({ params }: { params: { id: string }
   // рассказывать человеку про счёт, которого у него нет.
   const clientHint = region
     ? "Регион не меняется. Ошиблись — отмените и заведите новую."
-    : retail
+    : admin
+      ? "Администратор может передать заявку другому клиенту (магазин — только другому нашему магазину)."
+      : retail
       ? "Магазин не меняется. Ошиблись — отмените и заведите новую."
       : "Клиент не меняется. Ошиблись — отмените и заведите новую.";
 
@@ -129,6 +152,9 @@ export default async function EditOrderPage({ params }: { params: { id: string }
         clientHint={clientHint}
         dateLabel={region ? "Дата отгрузки" : "Дата доставки"}
         counterpartyLabel={region ? "Куда" : "Кому"}
+        clientOptions={clientOptions}
+        initialClientId={order.clientId}
+        adminNote={adminNote}
       />
     </div>
   );

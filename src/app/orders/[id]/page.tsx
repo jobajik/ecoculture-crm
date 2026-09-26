@@ -50,7 +50,7 @@ import CancelOrder from "@/components/CancelOrder";
 import DeleteOrder from "@/components/DeleteOrder";
 import OrderDirection from "@/components/OrderDirection";
 import { directionEditRefusal, directionForCity } from "@/lib/direction";
-import { canDeleteOrder } from "@/lib/orderDelete";
+import { adminDeleteSummary } from "@/lib/orderDelete";
 import { listPayments } from "@/lib/repo/payments";
 import PaymentPanel from "@/components/PaymentPanel";
 import Section, { Fact, SECTION_TONE, type SectionTone } from "@/components/Section";
@@ -224,15 +224,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     ),
   };
 
-  // Удалять заявку совсем может только администратор, и только «чистую»:
-  // без отгрузок, без денег, без рекламаций. Правило то же, что проверит
-  // сервер (src/lib/orderDelete.ts), и считается по ПОЛНОЙ заявке.
-  const canDelete = canDeleteOrder({
+  // Удалять заявку совсем может администратор — любую (решение владельца):
+  // вместе с ней уходят платежи и рекламации, а про отгруженное окно спросит,
+  // вернуть ли стебли. Что именно уйдёт — считается здесь и показывается ДО
+  // нажатия; сервер пересчитывает то же самое сам (src/lib/orderDelete.ts).
+  const canDelete = role === ROLES.ADMIN;
+  const deleteInfo = adminDeleteSummary({
     order: loaded,
-    role,
-    shipments: allShipments.filter((s) => s.orderId === loaded.orderId).length,
+    shipments: allShipments.filter((s) => s.orderId === loaded.orderId),
+    payments: allPayments.filter((p) => p.orderId === loaded.orderId).length,
     claims: allClaims.filter((c) => c.orderId === loaded.orderId).length,
-    shippedStatus: ORDER_STATUSES.SHIPPED,
   });
   // Направление отгрузки менеджер ставит и правит сам (решение владельца:
   // «пусть менеджер сам заявку по Киргизии делает, без РОПа»). Правило то же,
@@ -774,7 +775,15 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       {(canCancel || canDelete) && (
         <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
           {canCancel && <CancelOrder orderId={order.orderId} />}
-          {canDelete && <DeleteOrder orderId={order.orderId} />}
+          {canDelete && (
+            <DeleteOrder
+              orderId={order.orderId}
+              paidAmount={deleteInfo.paidAmount}
+              payments={deleteInfo.payments}
+              claims={deleteInfo.claims}
+              shippedStems={deleteInfo.shippedStems}
+            />
+          )}
         </div>
       )}
 

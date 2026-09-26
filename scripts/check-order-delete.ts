@@ -23,6 +23,10 @@
  * Запуск: npx tsx scripts/check-order-delete.ts
  */
 import {
+  adminDeleteRefusal,
+  adminDeleteSummary,
+  describeAdminDeletion,
+  type AdminDeleteInput,
   canDeleteOrder,
   deleteOrderRefusal,
   describeDeletedOrder,
@@ -181,6 +185,69 @@ const empty = describeDeletedOrder({
 });
 check("пустая заявка не роняет запись", empty.includes("клиент: не указан"), true);
 check("и позиций в ней нет", empty.includes("позиции"), false);
+
+// --- Удаление администратором «всего вместе» (сентябрь 2026) -----------------
+// Владелец: «Удалять всё, спрашивать про склад». Платежи и рекламации уходят
+// вместе с заявкой, а если была отгрузка — надо выбрать, вернуть ли стебли.
+
+console.log("\nАдминистратор удаляет заявку со всем, что к ней привязано");
+function adminAsk(over: Partial<AdminDeleteInput> = {}): string {
+  const base: AdminDeleteInput = {
+    role: ROLES.ADMIN,
+    order: { status: ORDER_STATUSES.NEW, paidAmount: 0, items: [{ shippedQuantity: 0 }] },
+    shipments: [],
+    payments: 0,
+    claims: 0,
+    openKaspi: 0,
+  };
+  return adminDeleteRefusal({ ...base, ...over });
+}
+checkSome("чистую — можно", adminAsk(), true);
+checkSome("менеджер — нет", adminAsk({ role: ROLES.MANAGER }), false);
+checkSome("РОП — нет", adminAsk({ role: ROLES.SALES_HEAD }), false);
+checkSome(
+  "оплаченную — можно (платежи уйдут вместе)",
+  adminAsk({ order: { status: ORDER_STATUSES.NEW, paidAmount: 60_000, items: [{ shippedQuantity: 0 }] }, payments: 2 }),
+  true
+);
+checkSome("с рекламацией — можно", adminAsk({ claims: 1 }), true);
+checkSome("с открытым Kaspi-счётом — нет", adminAsk({ openKaspi: 1 }), false);
+const shippedOrder = { status: ORDER_STATUSES.SHIPPED, paidAmount: 0, items: [{ shippedQuantity: 120 }] };
+const journal = [
+  { batchId: "B-1", quantity: 100 },
+  { batchId: "B-2", quantity: 20 },
+];
+checkSome("отгруженную без выбора склада — нет", adminAsk({ order: shippedOrder, shipments: journal }), false);
+checkSome("отгруженную с «вернуть» — можно", adminAsk({ order: shippedOrder, shipments: journal, stock: "return" }), true);
+checkSome("отгруженную с «уехал» — можно", adminAsk({ order: shippedOrder, shipments: journal, stock: "keep" }), true);
+// Отгрузка ловится и по журналу, даже если в позициях ноль.
+checkSome(
+  "отгрузка только в журнале — тоже спрашиваем",
+  adminAsk({ shipments: [{ batchId: "B-1", quantity: 40 }] }),
+  false
+);
+
+const sum = adminDeleteSummary({
+  order: { ...shippedOrder, paidAmount: 60_000 },
+  shipments: [...journal, { batchId: "B-1", quantity: -30 }, { batchId: "B-3", quantity: 10 }, { batchId: "B-3", quantity: -10 }],
+  payments: 1,
+  claims: 0,
+});
+check("отгружено — большее из позиций и журнала", sum.shippedStems, 120);
+check("возврат по партиям — за вычетом возвратов, пустые не берём", sum.stockReturn, [
+  { batchId: "B-1", quantity: 70 },
+  { batchId: "B-2", quantity: 20 },
+]);
+const note = plain(describeAdminDeletion(sum, "return"));
+check("в журнале — деньги", note.includes("60 000 ₸"), true);
+check("в журнале — возврат на склад", note.includes("возвращено на склад"), true);
+check(
+  "вернулось меньше отгруженного — так и пишем",
+  plain(describeAdminDeletion(sum, "return", 90)).includes("90 из 120"),
+  true
+);
+check("«уехал» — склад не трогали", plain(describeAdminDeletion(sum, "keep")).includes("склад не трогали"), true);
+check("чистая заявка — пустое описание", describeAdminDeletion(adminDeleteSummary({ order: { status: "new", paidAmount: 0, items: [] }, shipments: [], payments: 0, claims: 0 }), ""), "");
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

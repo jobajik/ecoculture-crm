@@ -523,7 +523,13 @@ export async function updateOrderItemLine(
  */
 export async function updateOrderHeader(
   orderId: string,
-  fields: { deliveryDate?: string; clientPhone?: string; notes?: string }
+  fields: {
+    deliveryDate?: string;
+    clientPhone?: string;
+    notes?: string;
+    /** Замена клиента — только администратор (`clientEditRefusal`). Имя пишется снимком. */
+    client?: { clientId: string; clientName: string; retail: string };
+  }
 ): Promise<boolean> {
   return updateWhere(
     SHEET_TABS.ORDERS,
@@ -532,6 +538,9 @@ export async function updateOrderHeader(
       ...(fields.deliveryDate !== undefined ? { DeliveryDate: fields.deliveryDate } : {}),
       ...(fields.clientPhone !== undefined ? { ClientPhone: fields.clientPhone } : {}),
       ...(fields.notes !== undefined ? { Notes: fields.notes } : {}),
+      ...(fields.client
+        ? { ClientID: fields.client.clientId, ClientName: fields.client.clientName, Retail: fields.client.retail }
+        : {}),
     })
   );
 }

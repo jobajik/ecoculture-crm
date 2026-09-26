@@ -103,6 +103,7 @@ export default async function OrdersPage({
         managerNames={managerNames}
         today={localDayKey()}
         initialFilter={searchParams?.stage}
+        canAdmin={role === ROLES.ADMIN}
       />
     </div>
   );

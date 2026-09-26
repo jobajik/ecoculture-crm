@@ -5,17 +5,27 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import {
   createOrder,
-  deleteOrder,
   getOrderById,
   saveOrderItems,
   setOrderManagerConfirmed,
+  setOrderPaidTotals,
   updateOrderHeader,
   type NewOrderInput,
   updateOrderStatus,
 } from "@/lib/repo/orders";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { cancelRefusal } from "@/lib/orderRules";
-import { deleteOrderRefusal, describeDeletedOrder } from "@/lib/orderDelete";
+import {
+  adminDeleteRefusal,
+  adminDeleteSummary,
+  describeAdminDeletion,
+  describeDeletedOrder,
+  type StockChoice,
+} from "@/lib/orderDelete";
+import { deleteOrderFully } from "@/lib/repo/orderDelete";
+import { listPayments } from "@/lib/repo/payments";
+import { listKaspiInvoices } from "@/lib/repo/kaspiInvoices";
+import { OPEN_STATUSES as KASPI_OPEN_STATUSES } from "@/lib/kaspiInvoice";
 import { listShipments } from "@/lib/repo/shipments";
 import { listClaims } from "@/lib/repo/claims";
 import {
@@ -23,6 +33,7 @@ import {
   describeItemChanges,
   editHeaderRefusal,
   editItemsRefusal,
+  clientEditRefusal,
   editedItemsRefusal,
   newOrderDateRefusal,
   type EditedItem,
@@ -192,6 +203,8 @@ async function updateOrderActionInner(
     notes?: string;
     /** Не передан — позиции не трогаем вовсе (их могли и не показать). */
     items?: EditedItem[];
+    /** Новый клиент — только администратор. Не передан или тот же — не трогаем. */
+    clientId?: string;
   }
 ) {
   const session = await getServerSession(authOptions);
@@ -217,6 +230,17 @@ async function updateOrderActionInner(
   const before = order.totalAmount;
   let changes: string[] = [];
   let unconfirmed = false;
+  const shippedBefore = order.items.reduce((sum, i) => sum + (i.shippedQuantity || 0), 0);
+
+  // Замена клиента (администратор). Проверяется до любой записи.
+  let newClient: { clientId: string; clientName: string; retail: string } | undefined;
+  const askedClient = (input.clientId ?? "").trim();
+  if (askedClient && askedClient !== order.clientId) {
+    const card = await getClientById(askedClient);
+    const clientRefusal = clientEditRefusal(order, role, card);
+    if (clientRefusal) throw new Error(clientRefusal);
+    newClient = { clientId: card!.clientId, clientName: card!.name, retail: card!.retail || "" };
+  }
 
   if (input.items) {
     const itemsRefusal = editItemsRefusal(order, role, email);
@@ -253,8 +277,9 @@ async function updateOrderActionInner(
 
       // Состав изменился — подтверждение менеджера снимается. Так решил
       // владелец: склад видит «✓» и собирает по нему, а подтверждён был другой
-      // состав. Согласиться с новым менеджер должен осознанно.
-      if (order.managerConfirmed) {
+      // состав. Согласиться с новым менеджер должен осознанно. Если сборка уже
+      // началась (правит администратор), снимать поздно — это заперло бы остаток.
+      if (order.managerConfirmed && shippedBefore === 0) {
         await setOrderManagerConfirmed(orderId, false);
         unconfirmed = true;
       }
@@ -269,14 +294,34 @@ async function updateOrderActionInner(
     deliveryDate,
     ...(!region && input.clientPhone !== undefined ? { clientPhone: input.clientPhone.trim() } : {}),
     ...(!region && input.notes !== undefined ? { notes: input.notes.trim() } : {}),
+    ...(newClient ? { client: newClient } : {}),
   });
+  if (newClient) changes.push(`клиент: ${order.clientName || "—"} → ${newClient.clientName}`);
+
+  // Администратор поправил оплаченную или отгруженную заявку: флаг «оплачено»
+  // и этап считаются от НОВОЙ суммы и нового состава — иначе выросшая заявка
+  // осталась бы «оплаченной», а увеличенная после отгрузки — «отгруженной».
+  if (input.items && changes.length > 0) {
+    const fresh = await getOrderById(orderId);
+    if (fresh && order.paidAmount > MONEY_EPSILON) {
+      await setOrderPaidTotals(orderId, {
+        amount: order.paidAmount,
+        totalAmount: fresh.totalAmount,
+        accountantEmail: order.accountantEmail || email,
+        paymentMethod: "",
+        byField: {},
+        paidAt: order.paidAt,
+      });
+    }
+    if (shippedBefore > 0 || order.status === ORDER_STATUSES.SHIPPED) await recomputeOrderStatusFromItems(orderId);
+  }
 
   // В журнал идёт только то, что меняет ДЕНЬГИ. Дописанная дата доставки —
   // это доведение заявки до ума, а не событие, о котором через месяц спорят;
   // заваливать ими журнал бухгалтера значит сделать его нечитаемым.
   const after = await getOrderById(orderId);
   const total = after?.totalAmount ?? before;
-  if (Math.abs(total - before) > MONEY_EPSILON) {
+  if (Math.abs(total - before) > MONEY_EPSILON || newClient) {
     await logMoney({
       actorEmail: email,
       orderId,
@@ -388,49 +433,83 @@ async function cancelOrderActionInner(orderId: string, reason: string) {
  * в `src/lib/orderDelete.ts`, чистой функцией под тестом, а здесь остаётся
  * порядок действий и запись в журнал.
  */
-async function deleteOrderActionInner(orderId: string, reason: string) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) throw new Error("Не авторизован");
-
+/** Всё, что по заявке случилось, — прочитанное сервером САМ (грабли 1.11). */
+async function readDeleteInput(orderId: string, role: string, stock: StockChoice | "") {
   const order = await getOrderById(orderId);
   if (!order) throw new Error("Заявка не найдена");
-
-  // Отгрузки и рекламации читаем ЗДЕСЬ, а не доверяем присланному: правило
-  // «по заявке ничего не происходило» держится именно на них (грабли 1.11).
-  const [shipments, claims] = await Promise.all([listShipments(), listClaims()]);
-  const refusal = deleteOrderRefusal({
+  const [shipments, claims, payments, kaspi] = await Promise.all([
+    listShipments(),
+    listClaims(),
+    listPayments({ fresh: true }),
+    listKaspiInvoices({ fresh: true }),
+  ]);
+  return {
     order,
-    role: session.user.role,
-    shipments: shipments.filter((s) => s.orderId === orderId).length,
-    claims: claims.filter((c) => c.orderId === orderId).length,
-    shippedStatus: ORDER_STATUSES.SHIPPED,
-  });
+    input: {
+      role,
+      order,
+      shipments: shipments.filter((s) => s.orderId === orderId),
+      payments: payments.filter((p) => p.orderId === orderId).length,
+      claims: claims.filter((c) => c.orderId === orderId).length,
+      openKaspi: kaspi.filter((k) => k.orderId === orderId && KASPI_OPEN_STATUSES.includes(k.status)).length,
+      stock,
+    },
+  };
+}
+
+/**
+ * Что уйдёт вместе с заявкой — для окна удаления в СПИСКЕ заявок: список
+ * отгрузок и платежей не читает, а спросить про склад надо до нажатия.
+ */
+async function orderDeleteInfoActionInner(orderId: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  if (session.user.role !== ROLES.ADMIN) throw new Error("Удалять заявки может только администратор");
+  const { input } = await readDeleteInput(orderId, session.user.role, "");
+  return { ...adminDeleteSummary(input), openKaspi: input.openKaspi };
+}
+
+async function deleteOrderActionInner(orderId: string, reason: string, stock: StockChoice | "" = "") {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  if (session.user.role !== ROLES.ADMIN) {
+    throw new Error("Удалять заявки может только администратор. Обычный путь — отменить заявку.");
+  }
+
+  // Отгрузки, платежи, рекламации и Kaspi-счета читаем ЗДЕСЬ, а не доверяем
+  // присланному (грабли 1.11): от них зависит, что уйдёт вместе с заявкой.
+  const { order, input } = await readDeleteInput(orderId, session.user.role ?? "", stock);
+  const refusal = adminDeleteRefusal(input);
   if (refusal) throw new Error(refusal);
 
   const why = (reason || "").trim();
   if (!why) throw new Error("Напишите, почему удаляете заявку");
+  const summary = adminDeleteSummary(input);
 
   // Запись в журнал идёт ПОСЛЕ удаления: если удалить не получится, в журнале
   // не должно остаться следа о том, чего не было. Журнал только дописывается —
   // он и будет единственным, что останется от этой заявки.
-  await deleteOrder(orderId);
+  const done = await deleteOrderFully(orderId, summary.shippedStems > 0 ? stock : "");
 
+  const extra = describeAdminDeletion(summary, stock, stock === "return" ? done.returned : undefined);
   await logMoney({
     actorEmail: session.user.email,
     orderId,
     action: MONEY_LOG_ACTIONS.ORDER_DELETED,
-    details: describeDeletedOrder({
+    details: `${describeDeletedOrder({
       orderId,
       clientName: order.clientName,
       managerEmail: order.managerEmail,
       totalAmount: order.totalAmount,
       items: order.items,
       reason: why,
-    }),
+    })}${extra ? ` · ${extra}` : ""}`,
     amountBefore: order.totalAmount,
     amountAfter: 0,
   });
 
+  revalidatePath("/warehouse/batches");
+  revalidatePath("/finance/status");
   revalidatePath("/orders");
   revalidatePath("/retail");
   revalidatePath("/warehouse");
@@ -574,6 +653,10 @@ export async function cancelOrderAction(...args: Parameters<typeof cancelOrderAc
 
 export async function deleteOrderAction(...args: Parameters<typeof deleteOrderActionInner>) {
   return guard(() => deleteOrderActionInner(...args));
+}
+
+export async function orderDeleteInfoAction(...args: Parameters<typeof orderDeleteInfoActionInner>) {
+  return guard(() => orderDeleteInfoActionInner(...args));
 }
 
 export async function createRegionOrderAction(...args: Parameters<typeof createRegionOrderActionInner>) {

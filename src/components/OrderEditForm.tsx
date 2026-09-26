@@ -41,6 +41,9 @@ export default function OrderEditForm({
   clientHint,
   dateLabel,
   counterpartyLabel,
+  clientOptions,
+  initialClientId = "",
+  adminNote = "",
 }: {
   orderId: string;
   varieties: Record<string, string[]>;
@@ -66,12 +69,22 @@ export default function OrderEditForm({
   dateLabel: string;
   /** Заголовок поля контрагента: «Кому» / «Куда». */
   counterpartyLabel: string;
+  /** Администратору — из кого выбрать нового клиента. Нет — клиент не меняется. */
+  clientOptions?: { clientId: string; name: string; city: string }[];
+  initialClientId?: string;
+  /** Что пересчитается при правке оплаченной или отгруженной заявки. */
+  adminNote?: string;
 }) {
   const router = useRouter();
   const [deliveryDate, setDeliveryDate] = useState(initialDeliveryDate);
   const [phone, setPhone] = useState(initialPhone);
   const [notes, setNotes] = useState(initialNotes);
   const [items, setItems] = useState<DraftItem[]>(initialItems);
+  const [clientId, setClientId] = useState(initialClientId);
+  const [clientQuery, setClientQuery] = useState("");
+  const shownClients = (clientOptions ?? [])
+    .filter((c) => c.clientId === clientId || `${c.name} ${c.city}`.toLowerCase().includes(clientQuery.trim().toLowerCase()))
+    .slice(0, 300);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,6 +111,7 @@ export default function OrderEditForm({
       unwrap(await updateOrderAction(orderId, {
         deliveryDate,
         ...(showContacts ? { clientPhone: phone, notes } : {}),
+        ...(clientOptions && clientId && clientId !== initialClientId ? { clientId } : {}),
         ...(editableItems
           ? {
               items: items.map((it) => ({
@@ -128,7 +142,29 @@ export default function OrderEditForm({
             {counterpartyLabel}
             <Hint>{clientHint}</Hint>
           </div>
-          <div className="font-medium">{clientLabel}</div>
+          {clientOptions ? (
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                className="input sm:!w-56"
+                placeholder="Найти клиента"
+                value={clientQuery}
+                onChange={(e) => setClientQuery(e.target.value)}
+              />
+              <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+                {shownClients.map((c) => (
+                  <option key={c.clientId} value={c.clientId}>
+                    {c.name}
+                    {c.city ? ` · ${c.city}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="font-medium">{clientLabel}</div>
+          )}
+          {clientOptions && clientId !== initialClientId && (
+            <span className="block text-xs text-[#8a5a00] mt-1">Заявка и её долг перейдут к выбранному клиенту.</span>
+          )}
         </div>
         <div>
           <label className="label">{dateLabel}</label>
@@ -173,10 +209,14 @@ export default function OrderEditForm({
             stock={stock}
             showPrice={showPrice}
           />
-          {wasConfirmed && (
-            <div className="text-sm text-ink-secondary bg-status-warning/10 rounded-lg px-3 py-2">
-              Правка позиций снимет подтверждение — его нужно будет поставить заново.
-            </div>
+          {adminNote ? (
+            <div className="text-sm text-ink-secondary bg-status-warning/10 rounded-lg px-3 py-2">{adminNote}</div>
+          ) : (
+            wasConfirmed && (
+              <div className="text-sm text-ink-secondary bg-status-warning/10 rounded-lg px-3 py-2">
+                Правка позиций снимет подтверждение — его нужно будет поставить заново.
+              </div>
+            )
           )}
         </>
       ) : (
