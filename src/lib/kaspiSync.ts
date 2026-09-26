@@ -5,6 +5,8 @@ import { recordPayment } from "./paymentWrite";
 import { isPaidKaspiStatus, kaspiStatusPlan } from "./kaspiInvoice";
 import { ORDER_STATUSES } from "./constants";
 import { localDayKey } from "./timezone";
+import { isKaspiSessionError } from "./kaspiHealth";
+import { noteKaspiSessionLost } from "./kaspiHealthCheck";
 
 /** Кем подписан платёж, проведённый по оплате счёта Kaspi. */
 export const KASPI_ACTOR = "kaspi-pay@apipay";
@@ -30,6 +32,9 @@ export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" 
   if ((inv.error_code || "") !== row.errorCode) changes.ErrorCode = String(inv.error_code || "");
   if ((inv.error_message || "") !== row.errorMessage) changes.ErrorMessage = String(inv.error_message || "").slice(0, 300);
   if (inv.paid_at && !row.paidAt) changes.PaidAt = String(inv.paid_at);
+  // Счёт не ушёл, потому что Kaspi сбросил вход кассира, — полоса «касса
+  // отключилась» появится сразу, не дожидаясь проверки ApiPay.
+  if (isKaspiSessionError(inv.error_code)) noteKaspiSessionLost(row.farm);
 
   if (!plan.recordPayment) {
     if (Object.keys(changes).length === 0) return "same";

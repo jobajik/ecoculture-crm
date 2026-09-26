@@ -15,6 +15,8 @@ import { hasNoClientInvoice } from "@/lib/orderKind";
 import { orderCode } from "@/lib/paymentStage";
 import { ApiPayError, apiPayConfig, cancelInvoice, createInvoice, getInvoice } from "@/lib/apipay";
 import { applyApiPayInvoice } from "@/lib/kaspiSync";
+import { isKaspiSessionError } from "@/lib/kaspiHealth";
+import { getKaspiHealth, noteKaspiSessionLost } from "@/lib/kaspiHealthCheck";
 import {
   isOpenKaspiStatus,
   kaspiDescription,
@@ -45,7 +47,16 @@ function refresh(orderId: string) {
 }
 
 export interface KaspiPanelData {
-  farms: { farm: string; label: string; amount: number; paidAmount: number; due: number; configured: boolean }[];
+  farms: {
+    farm: string;
+    label: string;
+    amount: number;
+    paidAmount: number;
+    due: number;
+    configured: boolean;
+    /** Касса отключилась (Kaspi сбросил вход кассира) — почему, по-русски. Пусто — работает или не знаем. */
+    sessionLost: string;
+  }[];
   invoices: KaspiInvoice[];
   /**
    * Все номера клиента, на которые можно выставить счёт: Kaspi №1, №2, телефон
@@ -66,7 +77,8 @@ async function loadKaspiActionInner(orderId: string): Promise<KaspiPanelData> {
     [order.clientPhone, "телефон заявки"],
     [client?.phone, "телефон клиента"],
   ]);
-  const invoices = (await listKaspiInvoices())
+  const [allInvoices, health] = await Promise.all([listKaspiInvoices(), getKaspiHealth()]);
+  const invoices = allInvoices
     .filter((i) => i.orderId === orderId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   return {
@@ -79,6 +91,7 @@ async function loadKaspiActionInner(orderId: string): Promise<KaspiPanelData> {
           paidAmount: f.paidAmount,
           due: kaspiDueAmount(f),
           configured: !!apiPayConfig(f.farm),
+          sessionLost: health.find((h) => h.farm === f.farm && h.state === "broken")?.reason ?? "",
         })),
     invoices,
     phones,
@@ -119,10 +132,14 @@ async function sendKaspiInvoiceActionInner(input: { orderId: string; farm: strin
       idempotencyKey: `${order.orderId}:${input.farm}:${existing.filter((i) => i.farm === input.farm).length + 1}`,
     });
   } catch (err) {
-    if (err instanceof ApiPayError) throw new Error(err.message);
+    if (err instanceof ApiPayError) {
+      if (isKaspiSessionError(err.code)) noteKaspiSessionLost(input.farm);
+      throw new Error(err.message);
+    }
     throw new Error("Не удалось связаться с ApiPay — попробуйте ещё раз");
   }
 
+  if (isKaspiSessionError(inv.error_code)) noteKaspiSessionLost(input.farm);
   const now = new Date().toISOString();
   await appendKaspiInvoice({
     invoiceId: String(inv.id),

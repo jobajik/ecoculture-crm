@@ -6,6 +6,8 @@ import { getStockSnapshot, loadStockExtras } from "@/lib/stock";
 import { CLAIM_STATUSES, farmLabel, flowerTypesForFarm, getFarmFor, isFarmBoundRole, ROLES } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
 import PageHeader from "@/components/PageHeader";
+import KaspiAlert from "@/components/KaspiAlert";
+import { Suspense } from "react";
 import HomeFocusBoard, { HomeFocusStrip } from "@/components/HomeFocus";
 import { homeFocus } from "@/lib/homeFocus";
 import { listOrdersWithItems } from "@/lib/repo/orders";
@@ -114,6 +116,12 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
       />
 
       {searchParams?.error === "nofarm" && <div className="card text-sm">{MISSING_FARM_MESSAGE}</div>}
+
+      {(role === ROLES.ADMIN || role === ROLES.ACCOUNTANT) && (
+        <Suspense fallback={null}>
+          <KaspiAlert />
+        </Suspense>
+      )}
 
       {focus && !focus.aboveStock && <HomeFocusStrip focus={focus} />}
 

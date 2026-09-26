@@ -97,7 +97,11 @@ export default function KaspiInvoiceBlock({
   const configured = data?.farms.filter((f) => f.configured) ?? [];
   const hasAction =
     !!data &&
-    configured.some((f) => f.due > 0 || data.invoices.some((i) => i.farm === f.farm && isOpenKaspiStatus(i.status)));
+    // Касса отключилась — выставить счёт нельзя, и ручной ввод должен
+    // раскрыться сам, как у компании без кассы.
+    configured.some(
+      (f) => (f.due > 0 && !f.sessionLost) || data.invoices.some((i) => i.farm === f.farm && isOpenKaspiStatus(i.status))
+    );
 
   useEffect(() => {
     if (hidden) onState?.("none");
@@ -250,6 +254,12 @@ export default function KaspiInvoiceBlock({
             }}
           >
             {head}
+            {f.sessionLost && (
+              <p className="text-sm rounded-lg bg-status-critical/10 text-status-critical px-3 py-2">
+                <b>Касса Kaspi отключилась.</b> {f.sessionLost}. Переподключите кассира в кабинете ApiPay по SMS, а
+                пока внесите оплату вручную ниже.
+              </p>
+            )}
             {failed && (
               <p className="text-xs rounded-lg bg-status-warning/10 text-[#8a5a00] px-3 py-2">
                 Прошлый счёт: {kaspiStatusLabel(failed.status)}

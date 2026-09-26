@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { FARMS } from "./constants";
+import { isKaspiSessionError, KASPI_SESSION_MESSAGE } from "./kaspiHealth";
 
 // ---------------------------------------------------------------------------
 // ApiPay (apipay.kz) — REST API к кассе Kaspi Pay. Только сервер: ключ API
@@ -64,6 +65,7 @@ export class ApiPayError extends Error {
 
 /** Понятный текст для человека по ответу ApiPay. Ключ в текст не попадает никогда. */
 function humanError(status: number, code: string, message: string): string {
+  if (isKaspiSessionError(code)) return KASPI_SESSION_MESSAGE;
   if (status === 401) return "ApiPay не принял ключ — проверьте ключ в настройках";
   if (status === 403 && code === "kyc_required") return "ApiPay ждёт одобрения анкеты бизнеса (KYC)";
   if (status === 403 && code === "organization_archived") return "Организация в ApiPay в архиве";
@@ -103,9 +105,11 @@ async function call<T>(
   cfg: ApiPayFarmConfig,
   method: "GET" | "POST",
   path: string,
-  body?: unknown
+  body?: unknown,
+  timeoutMs?: number
 ): Promise<T> {
   const res = await fetch(`${APIPAY_BASE}${path}`, {
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     method,
     headers: {
       "X-API-Key": cfg.key,
@@ -181,6 +185,14 @@ export async function getInvoice(cfg: ApiPayFarmConfig, id: string): Promise<Api
 
 export async function cancelInvoice(cfg: ApiPayFarmConfig, id: string): Promise<ApiPayInvoice | null> {
   return unwrapInvoice(await call<unknown>(cfg, "POST", `/invoices/${encodeURIComponent(id)}/cancel`, {}));
+}
+
+/**
+ * Состояние кассира и тарифа: `GET /account/health`. Короткий срок ожидания —
+ * этот запрос стоит на страницах, и зависший ApiPay не должен их держать.
+ */
+export async function getAccountHealth(cfg: ApiPayFarmConfig, timeoutMs = 4000): Promise<unknown> {
+  return call<unknown>(cfg, "GET", "/account/health", undefined, timeoutMs);
 }
 
 /** Для диагностики: что видит ключ (без самого ключа). */

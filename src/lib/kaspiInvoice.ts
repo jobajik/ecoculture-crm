@@ -51,6 +51,7 @@ const ERROR_TEXT: Record<string, string> = {
 };
 
 export function kaspiErrorText(code: string, message = ""): string {
+  if (/^kaspi_session_/i.test(code)) return "касса Kaspi отключилась — переподключите кассира в ApiPay";
   return ERROR_TEXT[code] ?? (message || code || "ошибка без описания");
 }
 

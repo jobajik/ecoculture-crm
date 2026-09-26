@@ -40,13 +40,14 @@ async function main() {
     console.log(`${prefix}_WEBHOOK_SECRET: ${secret ? `есть (${secret.length} симв.)` : "нет"}`);
     const cfg = apiPayConfig(farm);
     if (!cfg) continue;
-    for (const path of ["/account", "/connections", "/tariff", "/invoices?per_page=5"]) {
+    for (const path of ["/account/health", "/account", "/connections", "/tariff", "/invoices?per_page=3"]) {
       try {
         const data = await apiPayGet(cfg, path);
         console.log(`GET ${path}: ok\n${JSON.stringify(redact(data), null, 1).slice(0, 2500)}`);
       } catch (e) {
-        const err = e as { status?: number; code?: string; message?: string };
+        const err = e as { status?: number; code?: string; message?: string; body?: unknown };
         console.log(`GET ${path}: ОШИБКА ${err.status ?? ""} ${err.code ?? ""} — ${err.message ?? e}`);
+        if (err.body) console.log(JSON.stringify(redact(err.body), null, 1).slice(0, 1500));
       }
     }
   }

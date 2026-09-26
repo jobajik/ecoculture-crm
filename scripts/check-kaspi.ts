@@ -14,6 +14,7 @@ import {
   type KaspiSendInput,
 } from "../src/lib/kaspiInvoice";
 import { unwrapInvoice, validationText, verifyWebhookSignature } from "../src/lib/apipay";
+import { isKaspiSessionError, parseAccountHealth } from "../src/lib/kaspiHealth";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -112,6 +113,44 @@ check(
 );
 check("422 без списка полей — пусто", validationText({ message: "Validation failed" }), "");
 check("пустой ответ — пусто", validationText(null), "");
+
+// --- Жива ли касса: GET /account/health (ответ снят с живого ключа, сентябрь 2026)
+console.log("\nСостояние кассы Kaspi");
+const liveBroken = {
+  api: { status: "ok" },
+  connection: {
+    kaspi_connected: true,
+    session_status: "expired",
+    session_error_at: "2026-09-26T22:34:07+05:00",
+    needs_reauth: true,
+    last_used_at: "2026-09-26T11:40:42+05:00",
+  },
+  tariff: { status: "active", expires_at: "2026-10-25T15:28:19+05:00", days_remaining: 28 },
+  invoicing: { accumulating: false, held_since: null },
+};
+const hb = parseAccountHealth(liveBroken);
+check("живой ответ «вылетело» — сломано", hb.state, "broken");
+check("и с какого времени", hb.since, "2026-09-26T22:34:07+05:00");
+check("счета не придерживаются", hb.holding, false);
+const healthy = { connection: { kaspi_connected: true, session_status: "active", needs_reauth: false }, tariff: { status: "active" } };
+check("рабочая касса — ok", parseAccountHealth(healthy).state, "ok");
+check("needs_reauth=false без статуса — ok", parseAccountHealth({ connection: { needs_reauth: false } }).state, "ok");
+check("кассир не подключён — сломано", parseAccountHealth({ connection: { kaspi_connected: false } }).state, "broken");
+check("тариф кончился — сломано", parseAccountHealth({ ...healthy, tariff: { status: "expired" } }).state, "broken");
+check("обёртка data — понимаем", parseAccountHealth({ data: liveBroken }).state, "broken");
+check(
+  "придерживает счета — видно",
+  parseAccountHealth({ ...liveBroken, invoicing: { accumulating: true, held_since: "2026-09-26T22:35:00+05:00" } }).holding,
+  true
+);
+// Грабли 1.14: непонятный ответ — не тревога.
+check("пустой ответ — не знаем", parseAccountHealth(null).state, "unknown");
+check("без connection — не знаем", parseAccountHealth({ api: { status: "ok" } }).state, "unknown");
+check("незнакомый статус — не знаем", parseAccountHealth({ connection: { session_status: "warming_up" } }).state, "unknown");
+check("код kaspi_session_expired — вход потерян", isKaspiSessionError("kaspi_session_expired"), true);
+check("код kaspi_session_not_configured — вход потерян", isKaspiSessionError("kaspi_session_not_configured"), true);
+check("client_not_found — не про кассу", isKaspiSessionError("client_not_found"), false);
+check("пусто — не про кассу", isKaspiSessionError(""), false);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);
