@@ -9,7 +9,9 @@ import { prefetchTables } from "@/lib/sheets";
 import { localDayKey } from "@/lib/timezone";
 import { canManageLeads, canUseLeads, canWorkLead } from "@/lib/leads";
 import { listLeads } from "@/lib/repo/leads";
-import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
+import { appendWaMessages, listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
+import { exportToMessages, leadPhoneDigits, MAX_IMPORT_MESSAGES, type ExportLine } from "@/lib/whatsappExport";
+import { openAiConfigured } from "@/lib/openai";
 import { buildTalkReport, talkInfoByLead } from "@/lib/talkAnalysis";
 import { runStaleAnalyses, runTalkAnalysis } from "@/lib/talkRunner";
 
@@ -63,4 +65,57 @@ async function analyzeStaleTalksActionInner(): Promise<{ done: number; failed: s
 
 export async function analyzeStaleTalksAction() {
   return guard(() => analyzeStaleTalksActionInner());
+}
+
+/**
+ * Переписка из «Экспорта чата» WhatsApp — для личных номеров менеджеров и для
+ * проверки разбора до подключения рабочего номера. Файл разбирается в браузере,
+ * сюда приходят уже строки (так не упираемся в предел размера запроса), и сервер
+ * проверяет их заново (грабли 1.11). Повторная загрузка того же чата склеивается
+ * по номеру сообщения. `analyze` — сразу разобрать.
+ */
+async function importChatActionInner(
+  leadId: string,
+  lines: ExportLine[],
+  ours: string[],
+  analyze: boolean
+): Promise<{ added: number; total: number; analyzed: boolean; analysisError: string }> {
+  const { email, role } = await requireLeads();
+  await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.WA_MESSAGES]);
+  const [leads, messages] = await Promise.all([listLeads(), listWaMessages()]);
+  const lead = leads.find((l) => l.leadId === leadId);
+  if (!lead) throw new Error("Лид не найден — возможно, его удалили в таблице");
+  if (!canWorkLead(role, email, lead)) throw new Error("Загружает переписку менеджер этого лида или РОП");
+  const digits = leadPhoneDigits(lead.phone);
+  if (!digits) throw new Error("У лида нет телефона — впишите его в карточку, по нему переписка привязывается к лиду.");
+  if (!Array.isArray(lines) || lines.length === 0) throw new Error("В файле не нашлось сообщений — это точно «Экспорт чата» WhatsApp?");
+  if (!Array.isArray(ours) || ours.length === 0) throw new Error("Отметьте, кто в переписке пишет от нас.");
+
+  const clean: ExportLine[] = lines
+    .slice(-MAX_IMPORT_MESSAGES)
+    .filter((l) => l && typeof l.at === "string" && !Number.isNaN(Date.parse(l.at)) && typeof l.author === "string" && typeof l.text === "string")
+    .map((l) => ({ at: new Date(l.at).toISOString(), author: l.author.slice(0, 120), text: l.text.slice(0, 4000) }));
+  const imported = exportToMessages({ messages: clean, authors: [] }, ours.map((o) => String(o).slice(0, 120)), digits);
+  if (imported.every((m) => m.direction === "out")) throw new Error("Все сообщения отмечены как наши — снимите отметку с клиента.");
+  const stored = new Set(messages.map((m) => m.messageId));
+  const fresh = imported.filter((m) => !stored.has(m.messageId));
+  await appendWaMessages(fresh);
+
+  // Переписка уже записана — сбой разбора не должен выглядеть как «не загрузилось».
+  let analyzed = false;
+  let analysisError = "";
+  if (analyze && openAiConfigured()) {
+    try {
+      await runTalkAnalysis(lead, [...messages, ...fresh], email, localDayKey());
+      analyzed = true;
+    } catch (err) {
+      analysisError = err instanceof Error ? err.message : "Разобрать не удалось";
+    }
+  }
+  refresh(leadId);
+  return { added: fresh.length, total: imported.length, analyzed, analysisError };
+}
+
+export async function importChatAction(leadId: string, lines: ExportLine[], ours: string[], analyze: boolean) {
+  return guard(() => importChatActionInner(leadId, lines, ours, analyze));
 }

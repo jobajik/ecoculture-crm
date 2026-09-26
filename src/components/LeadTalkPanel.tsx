@@ -13,6 +13,7 @@ import type { LeadAnalysis } from "@/lib/types";
 import Section from "./Section";
 import Icon from "./Icon";
 import { ScoreChip, TemperatureChip } from "./TalkChips";
+import ChatImportForm from "./ChatImportForm";
 
 /** Имя события, по которому форма касания заполняется из разбора (`LeadTouchForm`). */
 export const TOUCH_PREFILL_EVENT = "lead-touch-prefill";
@@ -37,6 +38,9 @@ export default function LeadTalkPanel({
   prefill,
   newMessages,
   currentStage,
+  hasMessages,
+  waConnected,
+  managerName,
 }: {
   leadId: string;
   canRun: boolean;
@@ -45,6 +49,9 @@ export default function LeadTalkPanel({
   prefill: TouchPrefill | null;
   newMessages: number;
   currentStage: string;
+  hasMessages: boolean;
+  waConnected: boolean;
+  managerName: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -71,7 +78,8 @@ export default function LeadTalkPanel({
     window.dispatchEvent(new CustomEvent(TOUCH_PREFILL_EVENT, { detail: prefill }));
   }
 
-  const button = canRun && aiReady && (
+  // Разбирать нечего, пока нет ни сохранённой переписки, ни подключённого номера.
+  const button = canRun && aiReady && (hasMessages || waConnected) && (
     <button type="button" className="btn-secondary !py-1 !px-3 !min-h-0 text-sm" onClick={run} disabled={busy}>
       {busy ? "Разбираю…" : analysis ? (newMessages > 0 ? `Разобрать заново · ${newMessages} нов.` : "Разобрать заново") : "Разобрать переписку"}
     </button>
@@ -89,7 +97,9 @@ export default function LeadTalkPanel({
             {!aiReady
               ? "ИИ ещё не подключён — разбор появится, когда владелец введёт ключ."
               : canRun
-                ? "ИИ прочитает переписку в WhatsApp и скажет, что нужно клиенту, о чём договорились, что делать дальше и как прошёл разговор."
+                ? hasMessages || waConnected
+                  ? "ИИ прочитает переписку в WhatsApp и скажет, что нужно клиенту, о чём договорились, что делать дальше и как прошёл разговор."
+                  : "Переписки с этим номером пока нет. Загрузите её из WhatsApp ниже — ИИ сразу разберёт."
                 : "Разбора пока нет."}
           </p>
         )
@@ -181,6 +191,12 @@ export default function LeadTalkPanel({
             Разобрано {formatMoment(analysis.createdAt)} · {analysis.messageCount} сообщ.
             {analysis.createdByEmail === "cron" ? " · автоматически вечером" : ""}. ИИ может ошибаться — решает менеджер.
           </p>
+        </div>
+      )}
+
+      {canRun && (
+        <div className="mt-4">
+          <ChatImportForm leadId={leadId} managerName={managerName} aiReady={aiReady} />
         </div>
       )}
     </Section>

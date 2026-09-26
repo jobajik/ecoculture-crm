@@ -88,7 +88,8 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
   const analysis = latestByLead(analyses.filter((a) => a.leadId === lead.leadId)).get(lead.leadId) ?? null;
   const prefill = analysis && work && !isClosedStage(stage) ? touchPrefill(analysis, lead, today) : null;
   const waConnected = !!greenConfig();
-  const showTalk = messages.length > 0 || !!analysis || waConnected;
+  const aiReady = openAiConfigured();
+  const showTalk = messages.length > 0 || !!analysis || waConnected || (aiReady && work);
 
   return (
     <div className="space-y-4">
@@ -156,11 +157,14 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
             <LeadTalkPanel
               leadId={lead.leadId}
               canRun={work}
-              aiReady={openAiConfigured()}
+              aiReady={aiReady}
               analysis={analysis}
               prefill={prefill}
               newMessages={newSinceAnalysis(messages, analysis ?? undefined)}
               currentStage={stage}
+              hasMessages={messages.length > 0}
+              waConnected={waConnected}
+              managerName={lead.managerEmail ? nameByEmail.get(lead.managerEmail) ?? "" : ""}
             />
           )}
 
@@ -172,7 +176,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
             </p>
           )}
 
-          {showTalk && (
+          {(messages.length > 0 || waConnected) && (
             <WaChat
               messages={messages}
               waLink={whatsappLink(lead.phone)}

@@ -29,6 +29,7 @@ import {
   touchPrefill,
 } from "../src/lib/talkAnalysis";
 import { chatIdForPhone, webhookTokenOk } from "../src/lib/greenApi";
+import { exportToMessages, leadPhoneDigits, parseWhatsAppExport } from "../src/lib/whatsappExport";
 import type { Lead, LeadAnalysis, WaMessage } from "../src/lib/types";
 
 let failed = 0;
@@ -222,6 +223,35 @@ check("ждут ответа больше часа — L1", rep.waiting.map((i) 
 check("горячие — по последнему разбору", rep.hot.map((i) => i.leadId), ["L1"]);
 check("ждут разбора — только где после разбора есть новые сообщения", rep.stale.map((i) => i.leadId), ["L1"]);
 check("разобрано за 30 дней", rep.analysedTotal, 2);
+
+// --- Экспорт чата WhatsApp ---------------------------------------------------------
+const android = [
+  "26.09.2026, 09:00 - Сообщения и звонки защищены сквозным шифрованием. Нажмите, чтобы узнать подробнее.",
+  "26.09.2026, 14:05 - Айгуль: Здравствуйте, есть хризантема?",
+  "26.09.2026, 14:07 - Эмиль Нурланов: Добрый день! Есть Балтика.",
+  "Цена 180 за стебель.",
+  "26.09.2026, 14:10 - Айгуль: <Без медиафайлов>",
+  "26.09.2026, 14:11 - Айгуль: Ок",
+  "26.09.2026, 14:11 - Айгуль: Ок",
+].join("\r\n");
+const pa = parseWhatsAppExport(android);
+check("экспорт Android: служебная строка пропущена", pa.messages.length, 5);
+check("экспорт: время Алматы → UTC", pa.messages[0].at, "2026-09-26T09:05:00.000Z");
+check("экспорт: продолжение строки склеено", pa.messages[1].text, "Добрый день! Есть Балтика.\nЦена 180 за стебель.");
+check("экспорт: вложение подписью", pa.messages[2].text, "[файл]");
+check("экспорт: авторы по числу сообщений", pa.authors.map((a) => [a.name, a.count]), [["Айгуль", 4], ["Эмиль Нурланов", 1]]);
+const ios = parseWhatsAppExport("[26.09.2026, 14:05:33] Айгуль: Привет\n[26.09.2026, 14:06:01] Мы: Здравствуйте");
+check("экспорт iPhone с секундами", [ios.messages.length, ios.messages[0].at], [2, "2026-09-26T09:05:33.000Z"]);
+const en = parseWhatsAppExport("9/26/26, 2:05\u202fPM - Aigul: Hi\n9/26/26, 12:10 AM - Emil: Hello");
+check("экспорт английский: м/д и PM/AM", en.messages.map((x) => x.at), ["2026-09-26T09:05:00.000Z", "2026-09-25T19:10:00.000Z"]);
+check("экспорт дд/мм, когда день больше 12", parseWhatsAppExport("26/09/2026, 14:05 - A: x").messages[0].at, "2026-09-26T09:05:00.000Z");
+check("не экспорт — пусто", parseWhatsAppExport("просто текст\nбез дат").messages.length, 0);
+const em = exportToMessages(pa, ["Эмиль Нурланов"], "77015552030");
+check("экспорт → наши и клиент", em.map((x) => x.direction), ["in", "out", "in", "in", "in"]);
+check("экспорт: два одинаковых «Ок» — разные сообщения", new Set(em.map((x) => x.messageId)).size, 5);
+check("экспорт: повторная загрузка — те же номера", exportToMessages(pa, ["Эмиль Нурланов"], "77015552030").map((x) => x.messageId), em.map((x) => x.messageId));
+check("экспорт: номер лида и источник", [em[0].phone, em[0].source, em[0].senderName], ["77015552030", "import", "Айгуль"]);
+check("телефон лида в цифры", [leadPhoneDigits("8 701 555 20 30"), leadPhoneDigits("+7 701 555 20 30"), leadPhoneDigits("12")], ["77015552030", "77015552030", ""]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);
