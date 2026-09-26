@@ -348,6 +348,16 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "NextTouchAt",
     "LostReason",
     "ClientID",
+    // Обзвон (октябрь 2026): добавлены В КОНЕЦ (грабли 1.1). Campaign — название
+    // обзвона, по нему раздают и считают итоги; Segment — группа из загруженного
+    // файла («Спящий», «Только заявка»…); History — что известно из прошлой CRM
+    // одной строкой; FirstSeenAt — когда человек впервые написал; PastOrders —
+    // сколько раз покупал (бывших покупателей обзванивают первыми).
+    "Campaign",
+    "Segment",
+    "History",
+    "FirstSeenAt",
+    "PastOrders",
   ],
   // Касание — один разговор с лидом: канал, комментарий менеджера и, если
   // стадия сдвинулась, откуда и куда. Только дописывается.
@@ -361,6 +371,9 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "StageFrom",
     "StageTo",
     "NextTouchAt",
+    // Итог звонка с экрана «Обзвон» (`CALL_OUTCOMES` в src/lib/calls.ts). У
+    // касаний, записанных обычной формой, пусто.
+    "Outcome",
   ],
   [SHEET_TABS.KASPI_INVOICES]: [
     "InvoiceID",

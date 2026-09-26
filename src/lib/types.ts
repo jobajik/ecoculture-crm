@@ -294,6 +294,16 @@ export interface Lead {
   lostReason: string;
   /** Карточка клиента, заведённая из лида. */
   clientId: string;
+  /** Название обзвона, в который лид попал при загрузке. */
+  campaign: string;
+  /** Группа из загруженного файла: «Спящий», «Потерян», «Только заявка»… */
+  segment: string;
+  /** Что известно из прошлой CRM — одной строкой для экрана звонка. */
+  history: string;
+  /** Когда впервые написал (из файла), «ГГГГ-ММ-ДД». */
+  firstSeenAt: string;
+  /** Сколько раз покупал раньше (из файла). */
+  pastOrders: number;
 }
 
 /** Одно касание лида — вкладка LeadTouches. */
@@ -307,6 +317,8 @@ export interface LeadTouch {
   stageFrom: string;
   stageTo: string;
   nextTouchAt: string;
+  /** Итог звонка (`CALL_OUTCOMES`); пусто — касание записано обычной формой. */
+  outcome: string;
 }
 
 /** Сообщение рабочего WhatsApp — вкладка WaMessages. */

@@ -201,7 +201,8 @@ check("отказ без причины — «Другое», без даты", 
 const lead = (id: string, phone: string, extra: Partial<Lead> = {}): Lead => ({
   leadId: id, createdAt: "2026-09-01T10:00:00", createdByEmail: "rop@x", name: `Лид ${id}`, city: "", contactPerson: "",
   phone, clientType: "", source: "", address: "", note: "", managerEmail: "m1@x", stage: "contact",
-  stageChangedAt: "2026-09-01T10:00:00", nextTouchAt: "", lostReason: "", clientId: "", ...extra,
+  stageChangedAt: "2026-09-01T10:00:00", nextTouchAt: "", lostReason: "", clientId: "",
+  campaign: "", segment: "", history: "", firstSeenAt: "", pastOrders: 0, ...extra,
 });
 const leads = [lead("L1", "+7 701 555 20 30"), lead("L2", "87770001111", { managerEmail: "m2@x" }), lead("L3", "", { stage: "lost" })];
 const msgs = [...talk, m("q1", "2026-09-25T10:00:00Z", "in", "?", "77770001111"), m("q2", "2026-09-25T10:30:00Z", "out", "!", "77770001111")];

@@ -29,6 +29,11 @@ function toLead(r: Record<string, string>): Lead {
     nextTouchAt: toIsoDate(r.NextTouchAt).slice(0, 10),
     lostReason: r.LostReason || "",
     clientId: (r.ClientID || "").trim(),
+    campaign: (r.Campaign || "").trim(),
+    segment: (r.Segment || "").trim(),
+    history: r.History || "",
+    firstSeenAt: toIsoDate(r.FirstSeenAt).slice(0, 10),
+    pastOrders: Number(r.PastOrders) || 0,
   };
 }
 
@@ -43,6 +48,7 @@ function toTouch(r: Record<string, string>): LeadTouch {
     stageFrom: r.StageFrom || "",
     stageTo: r.StageTo || "",
     nextTouchAt: toIsoDate(r.NextTouchAt).slice(0, 10),
+    outcome: (r.Outcome || "").trim(),
   };
 }
 
@@ -55,9 +61,9 @@ export async function listLeads(options: { fresh?: boolean } = {}): Promise<Lead
   }
 }
 
-export async function listLeadTouches(): Promise<LeadTouch[]> {
+export async function listLeadTouches(options: { fresh?: boolean } = {}): Promise<LeadTouch[]> {
   try {
-    const table = await readTable(SHEET_TABS.LEAD_TOUCHES);
+    const table = await readTable(SHEET_TABS.LEAD_TOUCHES, options);
     return table.rows.map((row) => toTouch(rowToRecord(SHEET_TABS.LEAD_TOUCHES, row))).filter((t) => t.touchId && t.leadId);
   } catch {
     return [];
@@ -65,7 +71,7 @@ export async function listLeadTouches(): Promise<LeadTouch[]> {
 }
 
 /** Лид и номер его строки — свежим чтением: по нему будем писать. */
-async function findLeadRow(leadId: string): Promise<{ lead: Lead; rowNumber: number } | null> {
+export async function findLeadRow(leadId: string): Promise<{ lead: Lead; rowNumber: number } | null> {
   const table = await readTable(SHEET_TABS.LEADS, { fresh: true });
   for (let i = 0; i < table.rows.length; i++) {
     const lead = toLead(rowToRecord(SHEET_TABS.LEADS, table.rows[i]));
@@ -79,7 +85,11 @@ export async function getLead(leadId: string, options: { fresh?: boolean } = {})
   return (await listLeads()).find((l) => l.leadId === leadId) ?? null;
 }
 
-export type NewLead = Omit<Lead, "leadId" | "createdAt" | "stage" | "stageChangedAt" | "nextTouchAt" | "lostReason" | "clientId">;
+export type NewLead = Omit<
+  Lead,
+  "leadId" | "createdAt" | "stage" | "stageChangedAt" | "nextTouchAt" | "lostReason" | "clientId" | "campaign" | "segment" | "history" | "firstSeenAt" | "pastOrders"
+> &
+  Partial<Pick<Lead, "campaign" | "segment" | "history" | "firstSeenAt" | "pastOrders">>;
 
 function leadRecord(input: NewLead, nowIso: string, nextTouchAt = ""): Record<string, unknown> {
   return {
@@ -100,6 +110,11 @@ function leadRecord(input: NewLead, nowIso: string, nextTouchAt = ""): Record<st
     NextTouchAt: nextTouchAt,
     LostReason: "",
     ClientID: "",
+    Campaign: input.campaign ?? "",
+    Segment: input.segment ?? "",
+    History: input.history ?? "",
+    FirstSeenAt: input.firstSeenAt ?? "",
+    PastOrders: input.pastOrders ? input.pastOrders : "",
   };
 }
 
@@ -115,6 +130,32 @@ export async function createLeads(inputs: NewLead[]): Promise<number> {
   const now = new Date().toISOString();
   await commitAtomic([{ kind: "append", tab: SHEET_TABS.LEADS, records: inputs.map((i) => leadRecord(i, now)) }]);
   return inputs.length;
+}
+
+/**
+ * Раздача: у многих лидов меняется менеджер — одним атомарным запросом.
+ * Читается СВЕЖИМ (грабли 1.15): отдаём только тех, кто всё ещё ничей или всё
+ * ещё у того, у кого забираем, — иначе раздача затёрла бы взятый за эту минуту.
+ */
+export async function reassignLeads(
+  assignments: { leadId: string; managerEmail: string }[],
+  stillOwnedBy: (lead: Lead) => boolean
+): Promise<number> {
+  if (assignments.length === 0) return 0;
+  const table = await readTable(SHEET_TABS.LEADS, { fresh: true });
+  const rowOf = new Map<string, { lead: Lead; rowNumber: number }>();
+  table.rows.forEach((row, i) => {
+    const lead = toLead(rowToRecord(SHEET_TABS.LEADS, row));
+    if (lead.leadId) rowOf.set(lead.leadId, { lead, rowNumber: table.rowNumbers[i] });
+  });
+  const ops = [];
+  for (const a of assignments) {
+    const found = rowOf.get(a.leadId);
+    if (!found || !stillOwnedBy(found.lead)) continue;
+    ops.push({ kind: "update" as const, tab: SHEET_TABS.LEADS, rowNumber: found.rowNumber, changes: { ManagerEmail: a.managerEmail } });
+  }
+  if (ops.length > 0) await commitAtomic(ops);
+  return ops.length;
 }
 
 /** Правка ячеек лида: только изменившиеся, одним запросом. */
@@ -133,11 +174,13 @@ export async function updateLead(leadId: string, changes: Record<string, string>
  */
 export async function addTouch(
   leadId: string,
-  touch: Omit<LeadTouch, "touchId" | "leadId" | "createdAt">,
+  touch: Omit<LeadTouch, "touchId" | "leadId" | "createdAt" | "outcome"> & { outcome?: string },
   leadChanges: Record<string, string>,
-  nowIso: string
+  nowIso: string,
+  /** Номер строки лида, если его только что прочитали свежим (лишнее чтение 3 700 строк ни к чему). */
+  knownRowNumber?: number
 ): Promise<void> {
-  const found = await findLeadRow(leadId);
+  const found = knownRowNumber ? { rowNumber: knownRowNumber } : await findLeadRow(leadId);
   if (!found) throw new Error("Лид не найден — возможно, его удалили в таблице");
   await commitAtomic([
     {
@@ -154,6 +197,7 @@ export async function addTouch(
           StageFrom: touch.stageFrom,
           StageTo: touch.stageTo,
           NextTouchAt: touch.nextTouchAt,
+          Outcome: touch.outcome ?? "",
         },
       ],
     },

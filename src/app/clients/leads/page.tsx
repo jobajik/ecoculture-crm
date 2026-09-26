@@ -26,6 +26,8 @@ import { clientsTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// Загрузка базы на тысячи строк и раздача пишут в таблицу одним большим запросом.
+export const maxDuration = 60;
 
 /**
  * «Клиенты → Лиды»: база тех, кто ещё не покупал, и работа с ней по стадиям.
@@ -65,7 +67,11 @@ export default async function LeadsPage({
 
   // Менеджеру — свои и ничьи; РОПу и админу — все (`canSeeLead`).
   const visible = leads.filter((l) => canSeeLead(role, email, l));
-  const rows = buildLeadRows(visible, touches, nameByEmail, today).sort(compareLeadRows);
+  // «Что известно» из прошлой CRM в списке не нужно — только лишний вес страницы
+  // (у загруженной базы это 3 700 строк по полстраницы текста).
+  const rows = buildLeadRows(visible, touches, nameByEmail, today)
+    .sort(compareLeadRows)
+    .map((r) => ({ ...r, history: "" }));
   const summary = summarizeLeads(rows, touches, nameByEmail, today);
 
   // Переписка WhatsApp: метки у лидов и «написали сами» с незнакомых номеров.

@@ -11,9 +11,12 @@ import {
   canUseLeads,
   canWorkLead,
   cleanStage,
+  dealEvenly,
   leadChangesAfterTouch,
+  MAX_IMPORT_ROWS,
   nameKey,
   parseLeadMatrix,
+  rowsToMatrix,
   phoneKey,
   stageIndex,
   touchRefusal,
@@ -22,9 +25,9 @@ import {
   type TouchInput,
 } from "@/lib/leads";
 import { addTouch, createLead, createLeads, getLead, listLeads, updateLead, type NewLead } from "@/lib/repo/leads";
-import { createClient, listClients } from "@/lib/repo/clients";
+import { listClients } from "@/lib/repo/clients";
 import { listUsers } from "@/lib/repo/users";
-import { readFirstSheetMatrix } from "@/lib/excel";
+import { ensureClientForLead } from "@/lib/leadConvert";
 
 /**
  * Лиды ведут продажи. Менеджер работает со своими лидами и может взять
@@ -233,81 +236,71 @@ async function convertLeadActionInner(leadId: string, input: { paymentTerms?: st
   if (!canWorkLead(role, email, lead)) throw new Error("Это лид другого менеджера");
   if (lead.clientId) return { clientId: lead.clientId, linked: true };
   if (!lead.city.trim()) throw new Error("Укажите город лида — без него клиента не завести");
-
-  const key = phoneKey(lead.phone);
-  const existing = key ? (await listClients()).find((c) => phoneKey(c.phone) === key) : undefined;
-  let clientId = existing?.clientId ?? "";
-  if (!clientId) {
-    clientId = await createClient({
-      name: lead.name,
-      city: lead.city,
-      shopName: "",
-      clientType: fromList(lead.clientType, CLIENT_TYPES),
-      contactPerson: lead.contactPerson,
-      phone: lead.phone,
-      messenger: "",
-      address: lead.address,
-      paymentTerms: fromList(input.paymentTerms, PAYMENT_TERMS),
-      source: fromList(lead.source, CLIENT_SOURCES),
-      note: lead.note,
-      managerEmail: lead.managerEmail || email,
-      paymentMethod: "",
-      kaspiPay1: "",
-      kaspiPay2: "",
-      retail: "",
-    });
-  }
-  const changes: Record<string, string> = { ClientID: clientId };
-  if (stageIndex(cleanStage(lead.stage)) < stageIndex("trial") || lead.stage === "lost") {
-    changes.Stage = "trial";
-    changes.StageChangedAt = new Date().toISOString();
-    changes.LostReason = "";
-  }
-  if (!lead.managerEmail) changes.ManagerEmail = email;
-  await updateLead(leadId, changes);
+  const res = await ensureClientForLead(lead, email, { paymentTerms: input.paymentTerms, paymentTermsList: PAYMENT_TERMS });
   revalidatePath(LEADS_PATH);
   revalidatePath(`${LEADS_PATH}/${leadId}`);
   revalidatePath("/clients");
-  return { clientId, linked: !!existing };
+  return { clientId: res.clientId, linked: res.linked };
 }
 
 // --- Загрузка базы файлом ------------------------------------------------------------
 
-async function parseLeadFileActionInner(formData: FormData): Promise<LeadImportResult> {
+/** Кто может получить лиды: активные менеджеры и РОП. */
+async function sellers() {
+  const users = await listUsers();
+  return users.filter((u) => u.active && (u.role === ROLES.MANAGER || u.role === ROLES.SALES_HEAD));
+}
+
+/**
+ * Предпросмотр загрузки. Файл разбирается в браузере (`xlsxLite.ts` — ExcelJS
+ * читал выгрузку из прошлой CRM три минуты), сюда приходят строки, и сервер
+ * проверяет их заново против живой базы: кто уже в лидах, кто уже клиент.
+ */
+async function checkLeadImportActionInner(rows: LeadImportRow[]): Promise<LeadImportResult> {
   const { manage } = await requireLeads();
   if (!manage) throw new Error("Базу лидов загружает РОП");
-  const file = formData.get("file");
-  if (!file || typeof file === "string") return { rows: [], fresh: 0, skipped: 0, fatalError: "Файл не получен" };
-  const matrix = await readFirstSheetMatrix(await (file as File).arrayBuffer(), (file as File).name);
-  if (!matrix) return { rows: [], fresh: 0, skipped: 0, fatalError: "Не удалось прочитать файл. Нужен Excel (.xlsx) или CSV." };
-  const [leads, clients, users] = await Promise.all([listLeads(), listClients(), listUsers()]);
-  return parseLeadMatrix(matrix, { leads, clients }, users.filter((u) => u.active && (u.role === ROLES.MANAGER || u.role === ROLES.SALES_HEAD)));
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error("В файле не нашлось строк");
+  if (rows.length > MAX_IMPORT_ROWS) throw new Error(`Больше ${MAX_IMPORT_ROWS} строк за раз не загружаем — разбейте файл`);
+  const [leads, clients, users] = await Promise.all([listLeads(), listClients(), sellers()]);
+  const result = parseLeadMatrix(rowsToMatrix(rows), { leads, clients }, users);
+  // Номер строки — из файла человека, а не из пересобранной таблицы.
+  result.rows.forEach((r, i) => {
+    r.line = rows[i]?.line ?? r.line;
+  });
+  return result;
 }
 
 /**
  * Записывает новые строки. Двойники проверяются ЗАНОВО по свежей базе:
  * между предпросмотром и нажатием кто-то мог завести тот же лид, а присланным
  * из браузера строкам сервер не верит (грабли 1.11).
+ *
+ * `distributeTo` — раздать поровну и случайно между этими менеджерами
+ * (`dealEvenly`: бывшие покупатели делятся поровну отдельно от остальных);
+ * пусто — менеджер из файла, если он узнан, иначе `defaultManager` или никто.
  */
-async function importLeadsActionInner(rows: LeadImportRow[], defaultManager = "") {
+async function importLeadsActionInner(
+  rows: LeadImportRow[],
+  options: { campaign?: string; distributeTo?: string[]; defaultManager?: string } = {}
+) {
   const { email, manage } = await requireLeads();
   if (!manage) throw new Error("Базу лидов загружает РОП");
   if (!Array.isArray(rows) || rows.length === 0) throw new Error("Нечего загружать");
-  if (rows.length > 3000) throw new Error("Больше 3 000 строк за раз не загружаем");
+  if (rows.length > MAX_IMPORT_ROWS) throw new Error(`Больше ${MAX_IMPORT_ROWS} строк за раз не загружаем`);
+  const campaign = (options.campaign ?? "").trim().slice(0, 60);
 
-  const header = ["Название", "Город", "Телефон", "Контактное лицо", "Тип точки", "Источник", "Адрес", "Комментарий", "Менеджер"];
-  const matrix = [
-    header,
-    ...rows.map((r) => [r.name, r.city, r.phone, r.contactPerson, r.clientType, r.source, r.address, r.note, r.managerEmail || r.managerRaw].map((v) => String(v ?? ""))),
-  ];
-  const [leads, clients, users] = await Promise.all([listLeads({ fresh: true }), listClients(), listUsers()]);
-  const sellers = users.filter((u) => u.active && (u.role === ROLES.MANAGER || u.role === ROLES.SALES_HEAD));
-  const parsed = parseLeadMatrix(matrix, { leads, clients }, sellers);
+  const [leads, clients, users] = await Promise.all([listLeads({ fresh: true }), listClients(), sellers()]);
+  const parsed = parseLeadMatrix(rowsToMatrix(rows), { leads, clients }, users);
   if (parsed.fatalError) throw new Error(parsed.fatalError);
 
-  const fallback = defaultManager.trim().toLowerCase();
-  if (fallback && !sellers.some((u) => u.email.toLowerCase() === fallback)) throw new Error("Такого менеджера нет");
+  const known = new Set(users.map((u) => u.email.toLowerCase()));
+  const fallback = (options.defaultManager ?? "").trim().toLowerCase();
+  if (fallback && !known.has(fallback)) throw new Error("Такого менеджера нет");
+  const team = Array.from(new Set((options.distributeTo ?? []).map((e) => String(e).trim().toLowerCase()).filter(Boolean)));
+  for (const e of team) if (!known.has(e)) throw new Error("В списке раздачи есть неизвестный менеджер");
+
   const fresh = parsed.rows.filter((r) => !r.skip);
+  const dealt = team.length > 0 ? dealEvenly(fresh, team, (r) => r.pastOrders > 0) : null;
   const created = await createLeads(
     fresh.map((r) => ({
       createdByEmail: email,
@@ -319,11 +312,19 @@ async function importLeadsActionInner(rows: LeadImportRow[], defaultManager = ""
       source: r.source,
       address: r.address,
       note: r.note,
-      managerEmail: r.managerEmail || fallback,
+      managerEmail: dealt ? dealt.get(r) ?? "" : r.managerEmail || fallback,
+      campaign,
+      segment: r.segment,
+      history: r.history,
+      firstSeenAt: r.firstSeenAt,
+      pastOrders: r.pastOrders,
     }))
   );
   revalidatePath(LEADS_PATH);
-  return { created, skipped: parsed.rows.length - fresh.length };
+  revalidatePath(`${LEADS_PATH}/calls`);
+  const perManager: Record<string, number> = {};
+  if (dealt) for (const e of Array.from(dealt.values())) perManager[e] = (perManager[e] ?? 0) + 1;
+  return { created, skipped: parsed.rows.length - fresh.length, perManager };
 }
 
 // ---------------------------------------------------------------------------
@@ -345,8 +346,8 @@ export async function addTouchAction(...args: Parameters<typeof addTouchActionIn
 export async function convertLeadAction(...args: Parameters<typeof convertLeadActionInner>) {
   return guard(() => convertLeadActionInner(...args));
 }
-export async function parseLeadFileAction(...args: Parameters<typeof parseLeadFileActionInner>) {
-  return guard(() => parseLeadFileActionInner(...args));
+export async function checkLeadImportAction(...args: Parameters<typeof checkLeadImportActionInner>) {
+  return guard(() => checkLeadImportActionInner(...args));
 }
 export async function importLeadsAction(...args: Parameters<typeof importLeadsActionInner>) {
   return guard(() => importLeadsActionInner(...args));

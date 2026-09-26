@@ -74,7 +74,9 @@ export default function LeadsBoard({
     return true;
   });
   const filtered = !!(stage || q || when !== "work");
-  const shown = expanded || filtered ? list : list.slice(0, COLLAPSED_TABLE_SIZE * 2);
+  // Базы бывают на тысячи строк: даже отфильтрованный список рисуем кусками,
+  // иначе страница с 3 700 лидами открывается секундами.
+  const shown = expanded ? list.slice(0, 1000) : list.slice(0, filtered ? 200 : COLLAPSED_TABLE_SIZE * 2);
 
   const counts = LEAD_STAGES.map((s) => ({ ...s, count: byWho.filter((r) => r.stage === s.key).length }));
   const openCount = byWho.filter((r) => !isClosedStage(r.stage)).length;
@@ -229,8 +231,11 @@ export default function LeadsBoard({
           </table>
         </div>
       </div>
-      {!filtered && list.length > COLLAPSED_TABLE_SIZE * 2 && (
-        <MoreToggle expanded={expanded} hidden={list.length - COLLAPSED_TABLE_SIZE * 2} onToggle={() => setExpanded(!expanded)} what="лидов" />
+      {list.length > shown.length || expanded ? (
+        <MoreToggle expanded={expanded} hidden={Math.min(list.length, 1000) - shown.length} onToggle={() => setExpanded(!expanded)} what="лидов" />
+      ) : null}
+      {expanded && list.length > 1000 && (
+        <p className="px-4 pb-3 text-xs text-ink-muted">Показаны первые 1 000 из {list.length} — сузьте поиском или фильтром.</p>
       )}
     </section>
   );

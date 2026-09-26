@@ -29,7 +29,8 @@ const TODAY = "2026-09-25";
 const lead = (id: string, extra: Partial<Lead> = {}): Lead => ({
   leadId: id, createdAt: "2026-09-20T10:00:00", createdByEmail: "rop@x", name: `Лид ${id}`, city: "Алматы",
   contactPerson: "", phone: "", clientType: "", source: "", address: "", note: "", managerEmail: "m1@x",
-  stage: "new", stageChangedAt: "2026-09-20T10:00:00", nextTouchAt: "", lostReason: "", clientId: "", ...extra,
+  stage: "new", stageChangedAt: "2026-09-20T10:00:00", nextTouchAt: "", lostReason: "", clientId: "",
+  campaign: "", segment: "", history: "", firstSeenAt: "", pastOrders: 0, ...extra,
 });
 
 // --- Телефон ------------------------------------------------------------------
@@ -88,9 +89,9 @@ const leads = [
   lead("ODD", { stage: "что-то" }),
 ];
 const touches: LeadTouch[] = [
-  { touchId: "T1", leadId: "OLD", createdAt: "2026-09-19T10:00:00", managerEmail: "m1@x", channel: "Звонок", comment: "первый", stageFrom: "new", stageTo: "contact", nextTouchAt: "2026-09-20" },
-  { touchId: "T2", leadId: "OLD", createdAt: "2026-09-22T10:00:00", managerEmail: "m1@x", channel: "WhatsApp", comment: "второй", stageFrom: "contact", stageTo: "contact", nextTouchAt: "2026-09-20" },
-  { touchId: "T3", leadId: "WON", createdAt: "2026-09-10T10:00:00", managerEmail: "m2@x", channel: "Звонок", comment: "давно", stageFrom: "new", stageTo: "contact", nextTouchAt: "" },
+  { touchId: "T1", leadId: "OLD", createdAt: "2026-09-19T10:00:00", managerEmail: "m1@x", channel: "Звонок", comment: "первый", stageFrom: "new", stageTo: "contact", nextTouchAt: "2026-09-20", outcome: "" },
+  { touchId: "T2", leadId: "OLD", createdAt: "2026-09-22T10:00:00", managerEmail: "m1@x", channel: "WhatsApp", comment: "второй", stageFrom: "contact", stageTo: "contact", nextTouchAt: "2026-09-20", outcome: "" },
+  { touchId: "T3", leadId: "WON", createdAt: "2026-09-10T10:00:00", managerEmail: "m2@x", channel: "Звонок", comment: "давно", stageFrom: "new", stageTo: "contact", nextTouchAt: "", outcome: "" },
 ];
 const names = new Map([["m1@x", "Эмиль"], ["m2@x", "Ильяс"]]);
 const rows = buildLeadRows(leads, touches, names, TODAY);
@@ -145,13 +146,24 @@ check("тип и источник из списка без регистра", [l
 check("менеджер по имени", line(2).managerEmail, "m1@x");
 check("менеджер по почте", line(3).managerEmail, "m2@x");
 check("уже клиент по телефону", line(4).skip, "уже клиент (тот же телефон)");
-check("уже лид по названию и городу", line(5).skip, "уже в лидах (то же название и город)");
+// Есть колонка телефона, а у строки его нет — звонить некуда, такого не заводим.
+check("без телефона при колонке телефона — не заводим", line(5).skip, "нет телефона");
 check("повтор телефона в файле", line(7).skip, "повтор в файле, строка 2 (тот же телефон)");
 check("без названия", line(8).skip, "нет названия");
 check("незнакомый тип — пусто", line(9).clientType, "");
 check("незнакомый менеджер — ничей", line(9).managerEmail, "");
-check("второй «Магнолия» в том же городе — повтор", line(10).skip.startsWith("повтор в файле"), true);
-check("новых и пропущенных", [parsed.fresh, parsed.skipped], [3, 5]);
+check("«Магнолия» без телефона — тоже", line(10).skip, "нет телефона");
+check("новых и пропущенных", [parsed.fresh, parsed.skipped], [2, 6]);
+
+// Файл без колонки телефона (база для встреч, не для обзвона): двойник — по названию и городу.
+const noPhone = parseLeadMatrix(
+  [["Название", "Город"], ["Уже лид", "Шымкент"], ["Магнолия", "Алматы"], ["Магнолия", "Алматы"], ["Магнолия", "Астана"]],
+  { leads: [lead("X", { name: "Уже лид", city: "Шымкент" })], clients: [] },
+  []
+);
+check("без колонки телефона: уже лид по названию и городу", noPhone.rows[0].skip, "уже в лидах (то же название и город)");
+check("без колонки телефона: вторая «Магнолия» в том же городе — повтор", noPhone.rows[2].skip.startsWith("повтор в файле"), true);
+check("без колонки телефона: «Магнолия» в другом городе — новая", noPhone.rows[3].skip, "");
 check("нет заголовков — понятная ошибка", !!parseLeadMatrix([["a", "b"]], { leads: [], clients: [] }, []).fatalError, true);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);

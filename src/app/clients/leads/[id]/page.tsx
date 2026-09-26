@@ -31,6 +31,7 @@ import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
 import { latestByLead, newSinceAnalysis, touchPrefill } from "@/lib/talkAnalysis";
 import { messagesForPhone, minutesSince, replyStats } from "@/lib/whatsapp";
 import { whatsappLink } from "@/lib/leads";
+import { outcomeLabel } from "@/lib/calls";
 import { greenConfig } from "@/lib/greenApi";
 import { openAiConfigured } from "@/lib/openai";
 import { clientsTabsFor } from "../../tabs";
@@ -142,6 +143,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
       </ol>
 
       <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 items-start">
+        <div className="space-y-4 min-w-0">
         <LeadInfoForm
           lead={lead}
           canWork={work}
@@ -151,6 +153,24 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
           managerName={lead.managerEmail ? nameByEmail.get(lead.managerEmail) ?? lead.managerEmail : ""}
           clientName={client?.name ?? ""}
         />
+        {(lead.history || lead.campaign) && (
+          <Section tone="leads" icon="note" title="Что известно" className="!mb-0">
+            <div className="space-y-1.5 text-sm">
+              {lead.campaign && (
+                <p className="text-xs text-ink-muted">
+                  Обзвон «{lead.campaign}»{lead.segment ? ` · группа «${lead.segment}»` : ""}
+                </p>
+              )}
+              {lead.history && <p className="break-words">{lead.history}</p>}
+              {lead.campaign && work && !isClosedStage(stage) && (
+                <Link href="/clients/leads/calls" className="text-accent hover:underline text-sm">
+                  Звонить по очереди →
+                </Link>
+              )}
+            </div>
+          </Section>
+        )}
+        </div>
 
         <div className="space-y-4 min-w-0">
           {showTalk && (
@@ -196,6 +216,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
                       <span className="tabular-nums">{formatMoment(t.createdAt)}</span>
                       <span>· {t.channel}</span>
                       <span>· {nameByEmail.get(t.managerEmail) ?? t.managerEmail}</span>
+                      {t.outcome && <span className="font-medium text-section-leads">· {outcomeLabel(t.outcome)}</span>}
                       {t.stageTo && t.stageFrom !== t.stageTo && (
                         <span className="text-accent">
                           · {stageLabel(t.stageFrom)} → {stageLabel(t.stageTo)}

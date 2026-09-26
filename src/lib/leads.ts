@@ -1,4 +1,5 @@
 import { CLIENT_SOURCES, CLIENT_TYPES, ROLES } from "./constants";
+import { toIsoDate } from "./sheetDate";
 import type { Lead, LeadTouch } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,8 @@ export const LEAD_LOST_REASONS = [
   "Не выходит на связь",
   "Неверный контакт",
   "Закрылись",
+  // Хотел букет, а не опт. Это не отказ: такого человека продать оптом нельзя.
+  "Не оптовик (розница)",
   "Другое",
 ] as const;
 
@@ -316,6 +319,12 @@ export interface LeadImportRow {
   /** Как написано в файле — имя или почта менеджера. */
   managerRaw: string;
   managerEmail: string;
+  /** Группа из файла («Спящий», «Только заявка»…) — по ней решают, кого грузить. */
+  segment: string;
+  /** Что известно из прошлой CRM — одной строкой для экрана звонка. */
+  history: string;
+  firstSeenAt: string;
+  pastOrders: number;
   /** Пусто — новый; иначе почему не заводим. */
   skip: string;
 }
@@ -325,28 +334,49 @@ export interface LeadImportResult {
   fresh: number;
   skipped: number;
   fatalError?: string;
+  /** С какого листа взята база (в файле их бывает несколько). */
+  sheet?: string;
+  /** Группы из файла с числом новых строк — чтобы снять лишние галочкой. */
+  segments?: { name: string; count: number; bought: boolean }[];
 }
+
+/** Больше за раз не загружаем: одна запись в таблицу, и та не резиновая. */
+export const MAX_IMPORT_ROWS = 6000;
+const MAX_HISTORY = 600;
 
 /** Как может называться колонка в файле владельца. Сравнение — без регистра и знаков. */
 const HEADER_SYNONYMS: Record<string, string[]> = {
-  name: ["название", "наименование", "клиент", "компания", "магазин", "имя", "организация", "точка", "name"],
+  name: ["название", "наименование", "клиент", "компания", "магазин", "имя", "организация", "точка", "name", "названиеклиента"],
   city: ["город", "city", "населенныйпункт"],
   phone: ["телефон", "тел", "номер", "номертелефона", "phone", "whatsapp", "ватсап", "контакты"],
   contactPerson: ["контактноелицо", "контакт", "фио", "лпр", "имяконтакта"],
-  clientType: ["тип", "типточки", "типклиента"],
+  clientType: ["тип", "типточки", "типклиента", "видклиента"],
   source: ["источник", "откуда"],
   address: ["адрес", "address"],
   note: ["комментарий", "примечание", "заметка", "описание", "note", "коммент"],
   manager: ["менеджер", "ответственный", "manager"],
+  // Выгрузка из прошлой CRM: группа, покупки, даты. Всё это — подсказка
+  // менеджеру на экране звонка, в отдельные поля карточки не раскладывается.
+  segment: ["статус", "сегмент", "группа", "статусклиента"],
+  orders: ["заказов", "количествозаказов", "заказы"],
+  revenue: ["выручка", "суммазаказов", "выручкатг"],
+  lastOrder: ["последнийзаказ", "датапоследнегозаказа"],
+  firstSeen: ["первоеобращение", "первыйконтакт", "датаобращения", "датапервогообращения"],
+  mainVariety: ["основнойсорт"],
+  branch: ["филиал", "регион"],
+  contactId: ["idконтакта", "idклиента", "контактid"],
+  requests: ["заявокбеззаказа"],
+  history: ["история"],
 };
 
 const headerKey = (v: string) => (v || "").toLowerCase().replace(/ё/g, "е").replace(/[^\p{L}\p{N}]+/gu, "");
 
 /** Находит строку заголовков (в первых 10) и какая колонка чем является. */
 export function detectLeadColumns(matrix: string[][]): { headerRow: number; columns: Record<string, number> } | null {
+  let best: { headerRow: number; columns: Record<string, number> } | null = null;
   for (let r = 0; r < Math.min(10, matrix.length); r++) {
     const columns: Record<string, number> = {};
-    matrix[r].forEach((cell, c) => {
+    (matrix[r] ?? []).forEach((cell, c) => {
       const k = headerKey(cell);
       if (!k) return;
       for (const [field, names] of Object.entries(HEADER_SYNONYMS)) {
@@ -357,9 +387,28 @@ export function detectLeadColumns(matrix: string[][]): { headerRow: number; colu
         }
       }
     });
-    if (columns.name !== undefined) return { headerRow: r, columns };
+    if (columns.name !== undefined && (!best || Object.keys(columns).length > Object.keys(best.columns).length)) {
+      best = { headerRow: r, columns };
+    }
   }
-  return null;
+  return best;
+}
+
+/**
+ * Какой лист файла — база. В выгрузке из прошлой CRM листов восемь (сводка,
+ * сделки, позиции, клиенты…), и первым идёт сводка. Берём лист, где узнаётся
+ * больше всего колонок, при равенстве — где больше строк.
+ */
+export function pickLeadSheet(sheets: { name: string; matrix: string[][] }[]): { name: string; matrix: string[][] } | null {
+  let best: { sheet: { name: string; matrix: string[][] }; score: number; rows: number } | null = null;
+  for (const sheet of sheets) {
+    const d = detectLeadColumns(sheet.matrix);
+    if (!d || d.columns.phone === undefined) continue;
+    const score = Object.keys(d.columns).length;
+    const rows = sheet.matrix.length - d.headerRow - 1;
+    if (!best || score > best.score || (score === best.score && rows > best.rows)) best = { sheet, score, rows };
+  }
+  return best?.sheet ?? (sheets[0] ? sheets[0] : null);
 }
 
 const fromList = (value: string, list: readonly string[]) => {
@@ -367,16 +416,156 @@ const fromList = (value: string, list: readonly string[]) => {
   return list.find((x) => headerKey(x) === k) ?? "";
 };
 
+/** Источник из чужой CRM («WhatsApp ОПТ Алматы») — к нашему закрытому списку. */
+export function sourceFrom(raw: string): string {
+  const exact = fromList(raw, CLIENT_SOURCES);
+  if (exact) return exact;
+  if (/whats\s*app|ватсап|вотсап/i.test(raw)) return "Написали в WhatsApp";
+  if (/insta|инстаграм/i.test(raw)) return "Instagram";
+  return "";
+}
+
+/** «Мелкий опт», «Средний опт» → «Оптовик» и т. п.; незнакомое — пусто. */
+export function clientTypeFrom(raw: string): string {
+  const exact = fromList(raw, CLIENT_TYPES);
+  if (exact) return exact;
+  if (/опт/i.test(raw)) return "Оптовик";
+  if (/салон/i.test(raw)) return "Флористический салон";
+  if (/сеть/i.test(raw)) return "Сеть магазинов";
+  if (/магазин|киоск|бутик/i.test(raw)) return "Розничный магазин";
+  return "";
+}
+
+const KNOWN_CITIES: [RegExp, string][] = [
+  [/алмат/i, "Алматы"],
+  [/астан|нур-?султан/i, "Астана"],
+  [/шымкент/i, "Шымкент"],
+  [/караганд/i, "Караганда"],
+  [/павлодар/i, "Павлодар"],
+  [/семей|семипалат/i, "Семей"],
+  [/усть-?каменогор|өскемен/i, "Усть-Каменогорск"],
+  [/актобе/i, "Актобе"],
+  [/атырау/i, "Атырау"],
+  [/костанай/i, "Костанай"],
+  [/кызылорд/i, "Кызылорда"],
+  [/тараз/i, "Тараз"],
+  [/петропавл/i, "Петропавловск"],
+  [/талдыкорган/i, "Талдыкорган"],
+  [/уральск|орал/i, "Уральск"],
+  [/актау/i, "Актау"],
+  [/туркестан/i, "Туркестан"],
+  [/экибастуз/i, "Экибастуз"],
+  [/кордай/i, "Кордай"],
+  [/бишкек/i, "Бишкек"],
+];
+
+/** Город по косвенным признакам: филиал, адрес, источник («…ОПТ Астаны»). */
+export function guessCity(...texts: string[]): string {
+  for (const t of texts) {
+    if (!t) continue;
+    for (const [re, city] of KNOWN_CITIES) if (re.test(t)) return city;
+  }
+  return "";
+}
+
+/** Телефон к одному виду: «8 705 …», «+7(705)…», «7705…» → «+77051234567». */
+export function normalizePhone(raw: string): string {
+  const t = (raw || "").trim();
+  const d = t.replace(/\D/g, "");
+  if (d.length === 11 && (d.startsWith("7") || d.startsWith("8"))) return `+7${d.slice(1)}`;
+  if (d.length === 10 && d.startsWith("7")) return `+7${d}`;
+  return t;
+}
+
+function dayText(raw: string): string {
+  const iso = toIsoDate(raw);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : "";
+}
+function ruDay(iso: string): string {
+  return iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "";
+}
+function num(raw: string): number {
+  const n = Number(String(raw || "").replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+function money(n: number): string {
+  return Math.round(n).toLocaleString("ru-RU").replace(/ /g, " ");
+}
+function plainText(raw: string): string {
+  return (raw || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&[a-z]+;/g, " ")
+    .replace(/\[\/?[a-z]\]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function ordersWord(n: number): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return "заказ";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "заказа";
+  return "заказов";
+}
+
+/**
+ * Что человек спрашивал раньше — по другим листам выгрузки (сделки, позиции):
+ * номер контакта → последние осмысленные комментарии («270 хризантем», «к 8
+ * марта»). Пустые, «Нет» и повторы отбрасываются.
+ */
+export function collectRequests(sheets: { name: string; matrix: string[][] }[], skipSheet: string): Map<string, string[]> {
+  const out = new Map<string, { day: string; text: string }[]>();
+  for (const sheet of sheets) {
+    if (sheet.name === skipSheet) continue;
+    const head = sheet.matrix[0] ?? [];
+    const keys = head.map(headerKey);
+    const idCol = keys.findIndex((k) => HEADER_SYNONYMS.contactId.includes(k));
+    if (idCol < 0) continue;
+    const textCols = keys
+      .map((k, i) => (k === "комментарий" || k === "комментарийконтакта" ? i : -1))
+      .filter((i) => i >= 0);
+    if (textCols.length === 0) continue;
+    const dateCol = keys.findIndex((k) => k === "датасоздания" || k === "дата");
+    for (let r = 1; r < sheet.matrix.length; r++) {
+      const row = sheet.matrix[r] ?? [];
+      const id = (row[idCol] ?? "").trim();
+      if (!id) continue;
+      const day = dateCol >= 0 ? dayText(row[dateCol] ?? "") : "";
+      for (const c of textCols) {
+        const text = plainText(row[c] ?? "");
+        if (text.length < 3 || /^(нет|-|—|сделка #\d+)$/i.test(text)) continue;
+        const list = out.get(id) ?? [];
+        if (!list.some((x) => x.text.toLowerCase() === text.toLowerCase())) list.push({ day, text: text.slice(0, 80) });
+        out.set(id, list);
+      }
+    }
+  }
+  const result = new Map<string, string[]>();
+  for (const [id, list] of Array.from(out.entries())) {
+    result.set(
+      id,
+      list
+        .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
+        .slice(0, 3)
+        .map((x) => (x.day ? `${x.day.slice(8, 10)}.${x.day.slice(5, 7)} — ${x.text}` : x.text))
+    );
+  }
+  return result;
+}
+
 /**
  * Разбирает таблицу из файла в строки лидов. Двойники ищутся по телефону и по
  * названию+городу — и среди уже заведённых лидов и клиентов, и внутри самого
  * файла. Двойника не заводим: второй лид на ту же точку — два менеджера звонят
- * одному человеку.
+ * одному человеку. Если один телефон в файле встречается несколько раз,
+ * остаётся строка, где человек ПОКУПАЛ (в выгрузке из прошлой CRM один и тот же
+ * номер заведён и «заявкой», и «спящим клиентом»).
  */
 export function parseLeadMatrix(
   matrix: string[][],
   existing: { leads: Pick<Lead, "name" | "city" | "phone">[]; clients: { name: string; city: string; phone: string }[] },
-  users: { email: string; name: string }[]
+  users: { email: string; name: string }[],
+  requests: Map<string, string[]> = new Map()
 ): LeadImportResult {
   const detected = detectLeadColumns(matrix);
   if (!detected) {
@@ -384,6 +573,10 @@ export function parseLeadMatrix(
   }
   const { headerRow, columns } = detected;
   const get = (row: string[], field: string) => (columns[field] === undefined ? "" : (row[columns[field]] ?? "").toString().trim());
+  const hasPhoneColumn = columns.phone !== undefined;
+  if (matrix.length - headerRow - 1 > MAX_IMPORT_ROWS) {
+    return { rows: [], fresh: 0, skipped: 0, fatalError: `В файле больше ${MAX_IMPORT_ROWS.toLocaleString("ru-RU")} строк — разбейте на части` };
+  }
 
   const seenPhones = new Map<string, string>();
   const seenNames = new Map<string, string>();
@@ -406,40 +599,166 @@ export function parseLeadMatrix(
     }
   }
 
+  // Один телефон несколько раз — оставляем строку, где больше покупок, при
+  // равенстве — более позднюю по первому обращению (там свежее имя).
+  const bestLine = new Map<string, { r: number; orders: number; seen: string }>();
+  for (let r = headerRow + 1; r < matrix.length; r++) {
+    const row = matrix[r] ?? [];
+    const pk = phoneKey(get(row, "phone"));
+    if (!pk || pk.length < 10) continue;
+    const orders = num(get(row, "orders"));
+    const seen = dayText(get(row, "firstSeen"));
+    const cur = bestLine.get(pk);
+    if (!cur || orders > cur.orders || (orders === cur.orders && seen > cur.seen)) bestLine.set(pk, { r, orders, seen });
+  }
+
   const rows: LeadImportRow[] = [];
   for (let r = headerRow + 1; r < matrix.length; r++) {
     const row = matrix[r] ?? [];
     const name = get(row, "name");
-    const phone = get(row, "phone");
-    const city = get(row, "city");
-    if (!name && !phone) continue;
+    const rawPhone = get(row, "phone");
+    if (!name && !rawPhone) continue;
     const managerRaw = get(row, "manager");
+    const segment = get(row, "segment").slice(0, 60);
+    const orders = Math.max(0, Math.round(num(get(row, "orders"))));
+    const firstSeenAt = dayText(get(row, "firstSeen"));
+    const sourceRaw = get(row, "source");
+    const typeRaw = get(row, "clientType");
+    const address = get(row, "address");
+    const city = get(row, "city") || guessCity(get(row, "branch"), address, sourceRaw);
+    const phone = normalizePhone(rawPhone);
+    const source = sourceFrom(sourceRaw);
+    const clientType = clientTypeFrom(typeRaw);
+
+    let history = get(row, "history");
+    if (!history) {
+      const parts: string[] = [];
+      if (segment) parts.push(segment);
+      if (orders > 0) {
+        const revenue = num(get(row, "revenue"));
+        parts.push(`${orders} ${ordersWord(orders)}${revenue > 0 ? ` на ${money(revenue)} ₸` : ""}`);
+        const last = dayText(get(row, "lastOrder"));
+        if (last) parts.push(`последний ${ruDay(last)}`);
+        const variety = get(row, "mainVariety");
+        if (variety) parts.push(`брал ${variety}`);
+      } else {
+        const req = Math.round(num(get(row, "requests")));
+        if (req > 1) parts.push(`заявок без заказа: ${req}`);
+      }
+      if (firstSeenAt) parts.push(`впервые написал ${ruDay(firstSeenAt)}`);
+      if (typeRaw && typeRaw !== clientType) parts.push(typeRaw);
+      if (sourceRaw && sourceRaw !== source) parts.push(sourceRaw);
+      if (managerRaw) parts.push(`вёл(а): ${managerRaw}`);
+      const asked = requests.get(get(row, "contactId"));
+      if (asked && asked.length > 0) parts.push(`спрашивал: ${asked.join("; ")}`);
+      history = parts.join(" · ");
+    }
+    history = history.slice(0, MAX_HISTORY);
+
     const item: LeadImportRow = {
       line: r + 1,
       name,
       city,
       phone,
       contactPerson: get(row, "contactPerson"),
-      clientType: fromList(get(row, "clientType"), CLIENT_TYPES),
-      source: fromList(get(row, "source"), CLIENT_SOURCES),
-      address: get(row, "address"),
+      clientType,
+      source,
+      address: address && address !== city ? address : "",
       note: get(row, "note"),
       managerRaw,
       managerEmail: managerRaw ? userByKey.get(headerKey(managerRaw)) ?? "" : "",
+      segment,
+      history,
+      firstSeenAt,
+      pastOrders: orders,
       skip: "",
     };
     const pk = phoneKey(phone);
     const nk = `${nameKey(name)}|${nameKey(city)}`;
+    const best = pk ? bestLine.get(pk) : undefined;
     if (!name) item.skip = "нет названия";
     else if (name.length > 200) item.skip = "слишком длинное название";
+    else if (hasPhoneColumn && !pk) item.skip = "нет телефона";
+    else if (hasPhoneColumn && pk.length < 10) item.skip = "неполный телефон";
     else if (pk && seenPhones.has(pk)) item.skip = `${seenPhones.get(pk)} (тот же телефон)`;
+    else if (best && best.r !== r) item.skip = `повтор в файле, оставлена строка ${best.r + 1}`;
     else if (!pk && seenNames.has(nk)) item.skip = `${seenNames.get(nk)} (то же название и город)`;
     if (!item.skip) remember(name, city, phone, `повтор в файле, строка ${item.line}`);
     rows.push(item);
   }
-  if (rows.length > 3000) {
-    return { rows: [], fresh: 0, skipped: 0, fatalError: "В файле больше 3 000 строк — разбейте на части" };
-  }
   const fresh = rows.filter((x) => !x.skip).length;
-  return { rows, fresh, skipped: rows.length - fresh };
+  const segs = new Map<string, { name: string; count: number; bought: boolean }>();
+  for (const x of rows) {
+    if (x.skip || !x.segment) continue;
+    const s = segs.get(x.segment) ?? { name: x.segment, count: 0, bought: false };
+    s.count += 1;
+    if (x.pastOrders > 0) s.bought = true;
+    segs.set(x.segment, s);
+  }
+  return {
+    rows,
+    fresh,
+    skipped: rows.length - fresh,
+    segments: Array.from(segs.values()).sort((a, b) => b.count - a.count),
+  };
+}
+
+/**
+ * Раздать поровну и случайно. Сначала раздаются бывшие покупатели, потом
+ * остальные — счётчик идёт дальше, поэтому у каждого менеджера и всего, и
+ * «покупавших» получается поровну (±1). Порядок внутри группы — случайный.
+ */
+export function dealEvenly<T>(
+  items: T[],
+  emails: string[],
+  bought: (item: T) => boolean,
+  random: () => number = Math.random
+): Map<T, string> {
+  const out = new Map<T, string>();
+  if (emails.length === 0) return out;
+  const shuffle = (list: T[]) => {
+    const a = [...list];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  const order = shuffle(emails.map((_, i) => i as unknown as T)) as unknown as number[];
+  let k = 0;
+  for (const group of [items.filter(bought), items.filter((x) => !bought(x))]) {
+    for (const item of shuffle(group)) {
+      out.set(item, emails[order[k % emails.length]]);
+      k += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Строки предпросмотра обратно в таблицу — для повторной проверки на сервере.
+ * Заголовки подобраны под `HEADER_SYNONYMS`, поэтому сервер разбирает их тем же
+ * `parseLeadMatrix`, что и файл: присланному из браузера не верим (грабли 1.11).
+ */
+export function rowsToMatrix(rows: LeadImportRow[]): string[][] {
+  return [
+    ["Название", "Город", "Телефон", "Контактное лицо", "Тип точки", "Источник", "Адрес", "Комментарий", "Менеджер", "Статус", "Заказов", "Первое обращение", "История"],
+    ...rows.map((r) =>
+      [
+        r.name,
+        r.city,
+        r.phone,
+        r.contactPerson,
+        r.clientType,
+        r.source,
+        r.address,
+        r.note,
+        r.managerEmail || r.managerRaw,
+        r.segment,
+        r.pastOrders ? String(r.pastOrders) : "",
+        r.firstSeenAt,
+        r.history,
+      ].map((v) => String(v ?? "").slice(0, 1000))
+    ),
+  ];
 }
