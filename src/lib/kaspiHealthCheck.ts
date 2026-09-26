@@ -19,7 +19,12 @@ export interface KaspiFarmHealth extends KaspiHealthParsed {
 
 const OK_TTL = 3 * 60 * 1000;
 const BROKEN_TTL = 60 * 1000;
-const memo = new Map<string, { at: number; health: KaspiFarmHealth }>();
+// Память общая на процесс через globalThis: серверные действия и отрисовка
+// страниц в Next.js собираются в разные бандлы со своими копиями модуля, и
+// «забыть» из действия переподключения иначе не доходило бы до страницы.
+type Memo = Map<string, { at: number; health: KaspiFarmHealth }>;
+const holder = globalThis as unknown as { __kaspiHealthMemo?: Memo };
+const memo: Memo = (holder.__kaspiHealthMemo ??= new Map());
 
 async function checkFarm(farm: string): Promise<KaspiFarmHealth> {
   const label = FARM_LABELS[farm] ?? farm;
@@ -69,4 +74,9 @@ export function noteKaspiSessionLost(farm: string): void {
       holdingSince: "",
     },
   });
+}
+
+/** Кассира переподключили — забыть «сломано», следующая страница спросит ApiPay заново. */
+export function forgetKaspiHealth(farm: string): void {
+  memo.delete(farm);
 }

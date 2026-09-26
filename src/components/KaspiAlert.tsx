@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { canEditFinance } from "@/lib/financeAccess";
 import { brokenKaspiFarms } from "@/lib/kaspiHealthCheck";
 import { formatMoment } from "@/lib/formatDate";
+import KaspiReconnect from "@/components/KaspiReconnect";
 
 /**
  * Красная полоса «Kaspi-касса отключилась» — бухгалтеру и админу, на всех
@@ -21,7 +22,7 @@ export default async function KaspiAlert() {
   return (
     <div role="alert" className="rounded-xl border border-status-critical/40 bg-status-critical/[0.07] px-4 py-3 space-y-1.5">
       {broken.map((h) => (
-        <div key={h.farm} className="space-y-1">
+        <div key={h.farm} className="space-y-2">
           <div className="font-semibold text-status-critical">
             Kaspi-касса {h.label} отключилась
             {h.since ? <span className="font-normal text-ink-secondary"> · с {formatMoment(h.since)}</span> : null}
@@ -32,11 +33,12 @@ export default async function KaspiAlert() {
               <> ApiPay придерживает новые счета{h.holdingSince ? ` с ${formatMoment(h.holdingSince)}` : ""} и отправит их после переподключения.</>
             )}
           </p>
+          <KaspiReconnect farm={h.farm} />
         </div>
       ))}
       <p className="text-sm text-ink-secondary">
-        <b>Что сделать:</b> в кабинете ApiPay переподключите кассира по SMS. Под номером кассира в приложение
-        Kaspi Pay не заходить — иначе вылетит снова. Пока касса отключена, оплату вносите вручную.
+        Нужен телефон с SIM-картой кассира — на него придёт SMS. Под номером кассира в приложение Kaspi Pay не
+        заходить — иначе вылетит снова. Пока касса отключена, оплату вносите вручную.
       </p>
     </div>
   );

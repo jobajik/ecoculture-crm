@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { FARMS } from "./constants";
-import { isKaspiSessionError, KASPI_SESSION_MESSAGE } from "./kaspiHealth";
+import { isKaspiSessionError, KASPI_SESSION_MESSAGE, reconnectErrorText } from "./kaspiHealth";
 
 // ---------------------------------------------------------------------------
 // ApiPay (apipay.kz) — REST API к кассе Kaspi Pay. Только сервер: ключ API
@@ -193,6 +193,61 @@ export async function cancelInvoice(cfg: ApiPayFarmConfig, id: string): Promise<
  */
 export async function getAccountHealth(cfg: ApiPayFarmConfig, timeoutMs = 4000): Promise<unknown> {
   return call<unknown>(cfg, "GET", "/account/health", undefined, timeoutMs);
+}
+
+// --- Переподключение кассира (`src/lib/kaspiHealth.ts` — зачем и как) --------
+
+/** Кассиры организации. Нужен ключ с правом управлять кассирами. */
+export async function listConnections(cfg: ApiPayFarmConfig): Promise<unknown> {
+  return withReconnectText(() => call<unknown>(cfg, "GET", "/connections", undefined, 8000));
+}
+
+/** Шаг 1: начать вход кассира. */
+export async function connectionAuthInit(cfg: ApiPayFarmConfig, id: number): Promise<Record<string, unknown>> {
+  return reconnectStep(() => call<unknown>(cfg, "POST", `/connections/${id}/auth/init`, {}, 20000));
+}
+
+/** Шаг 2: номер кассира — Kaspi отправит на него SMS. `phone` — «7XXXXXXXXXX». */
+export async function connectionAuthSendPhone(cfg: ApiPayFarmConfig, id: number, phone: string): Promise<Record<string, unknown>> {
+  return reconnectStep(() =>
+    call<unknown>(cfg, "POST", `/connections/${id}/auth/send-phone`, { cashier_phone: phone, phone }, 30000)
+  );
+}
+
+/** Шаг 3: код из SMS. */
+export async function connectionAuthVerifyOtp(cfg: ApiPayFarmConfig, id: number, otp: string): Promise<Record<string, unknown>> {
+  return reconnectStep(() => call<unknown>(cfg, "POST", `/connections/${id}/auth/verify-otp`, { otp, code: otp }, 30000));
+}
+
+async function withReconnectText<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof ApiPayError) {
+      const text = reconnectErrorText(err.code);
+      if (text) throw new ApiPayError(text, err.status, err.code, err.body);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Шаг входа. ApiPay отвечает на неверный код не ошибкой, а
+ * `200 { success: false, error: "invalid_otp" }` — такой ответ тоже отказ.
+ */
+async function reconnectStep(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
+  const raw = await withReconnectText(run);
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  if (body.success === false) {
+    const code = String(body.error || body.code || body.error_code || "");
+    throw new ApiPayError(
+      reconnectErrorText(code) || String(body.message || "") || `ApiPay отказал${code ? ` (${code})` : ""}`,
+      200,
+      code,
+      body
+    );
+  }
+  return body;
 }
 
 /** Для диагностики: что видит ключ (без самого ключа). */

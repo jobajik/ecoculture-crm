@@ -14,7 +14,15 @@ import {
   type KaspiSendInput,
 } from "../src/lib/kaspiInvoice";
 import { unwrapInvoice, validationText, verifyWebhookSignature } from "../src/lib/apipay";
-import { isKaspiSessionError, parseAccountHealth } from "../src/lib/kaspiHealth";
+import {
+  cashierPhone,
+  cleanOtp,
+  isKaspiSessionError,
+  parseAccountHealth,
+  parseConnections,
+  pickConnection,
+  reconnectErrorText,
+} from "../src/lib/kaspiHealth";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -151,6 +159,36 @@ check("код kaspi_session_expired — вход потерян", isKaspiSession
 check("код kaspi_session_not_configured — вход потерян", isKaspiSessionError("kaspi_session_not_configured"), true);
 check("client_not_found — не про кассу", isKaspiSessionError("client_not_found"), false);
 check("пусто — не про кассу", isKaspiSessionError(""), false);
+
+console.log("\nПереподключение кассира");
+const conns = parseConnections({
+  data: [
+    { id: 11, label: "Касса 1", phone: "77071234567", session_status: "active", needs_reauth: false },
+    { id: 12, name: "Касса 2", cashier_phone: "7707***4567", session_status: "expired" },
+    { id: "bad" },
+  ],
+});
+check("список кассиров — без мусора", conns.map((c) => c.id), [11, 12]);
+check("имя из name", conns[1].label, "Касса 2");
+check("кто просит переподключения", conns.map((c) => c.needsReauth), [false, true]);
+check("голый массив тоже понимаем", parseConnections([{ id: 5 }]).length, 1);
+check("непонятный ответ — пусто", parseConnections({ foo: 1 }).length, 0);
+check("один кассир — он", pickConnection([conns[0]], null)?.id, 11);
+check("несколько — тот, что отключился", pickConnection(conns, null)?.id, 12);
+check("номер из настроек — главный", pickConnection(conns, 11)?.id, 11);
+check("номера из настроек нет в списке — никого", pickConnection(conns, 99), null);
+check("пустой список — никого", pickConnection([], null), null);
+check("номер кассира 8 707… → 7707…", cashierPhone("8 707 123 45 67"), "77071234567");
+check("+7 (707) … → 7707…", cashierPhone("+7 (707) 123-45-67"), "77071234567");
+check("десять цифр → с семёркой", cashierPhone("7071234567"), "77071234567");
+check("короткий номер — пусто", cashierPhone("12345"), "");
+check("код 4 цифры", cleanOtp("1234"), "1234");
+check("код с пробелом", cleanOtp("12 34 56"), "123456");
+check("код из букв — пусто", cleanOtp("12a4"), "");
+check("код из 3 цифр — пусто", cleanOtp("123"), "");
+check("нет права у ключа — объяснение", reconnectErrorText("cashier_management_disabled").includes("кабинете ApiPay"), true);
+check("неверный код — объяснение", reconnectErrorText("invalid_otp").startsWith("Код не подошёл"), true);
+check("незнакомый код — пусто", reconnectErrorText("something_else"), "");
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

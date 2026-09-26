@@ -13,10 +13,20 @@ import { appendKaspiInvoice, findKaspiInvoice, listKaspiInvoices, updateKaspiInv
 import { farmPayments } from "@/lib/orderMoney";
 import { hasNoClientInvoice } from "@/lib/orderKind";
 import { orderCode } from "@/lib/paymentStage";
-import { ApiPayError, apiPayConfig, cancelInvoice, createInvoice, getInvoice } from "@/lib/apipay";
+import {
+  ApiPayError,
+  apiPayConfig,
+  cancelInvoice,
+  connectionAuthInit,
+  connectionAuthSendPhone,
+  connectionAuthVerifyOtp,
+  createInvoice,
+  getInvoice,
+  listConnections,
+} from "@/lib/apipay";
 import { applyApiPayInvoice } from "@/lib/kaspiSync";
-import { isKaspiSessionError } from "@/lib/kaspiHealth";
-import { getKaspiHealth, noteKaspiSessionLost } from "@/lib/kaspiHealthCheck";
+import { cashierPhone, cleanOtp, isKaspiSessionError, parseConnections, pickConnection } from "@/lib/kaspiHealth";
+import { forgetKaspiHealth, getKaspiHealth, noteKaspiSessionLost } from "@/lib/kaspiHealthCheck";
 import {
   isOpenKaspiStatus,
   kaspiDescription,
@@ -221,7 +231,87 @@ async function cancelKaspiInvoiceActionInner(invoiceId: string) {
   return { ok: true };
 }
 
+// --- Переподключение кассира из CRM ----------------------------------------
+// Три шага, как в кабинете ApiPay: начать → номер кассира (Kaspi шлёт SMS) →
+// код из SMS. Только бухгалтер и админ. Код никуда не пишется и не логируется.
+
+function reconnectConfig(farm: string) {
+  const cfg = apiPayConfig(farm);
+  if (!cfg) throw new Error("Касса этой компании не подключена к ApiPay");
+  return cfg;
+}
+
+function apiPayText(err: unknown): never {
+  if (err instanceof ApiPayError) throw new Error(err.message);
+  throw new Error("Не удалось связаться с ApiPay — попробуйте ещё раз");
+}
+
+async function kaspiReconnectStartActionInner(farm: string) {
+  await requireAccountant();
+  const cfg = reconnectConfig(farm);
+  try {
+    const conn = pickConnection(parseConnections(await listConnections(cfg)), cfg.connectionId);
+    if (!conn) throw new Error("В ApiPay не найден кассир этой компании — подключите его в кабинете ApiPay");
+    const init = await connectionAuthInit(cfg, conn.id);
+    return {
+      connectionId: conn.id,
+      label: conn.label,
+      // Полный номер подставляем в поле; маску вида «7707***4567» — только подсказкой.
+      phone: cashierPhone(conn.phone) ? conn.phone : "",
+      phoneHint: conn.phone,
+      status: String(init.process_status || init.status || ""),
+    };
+  } catch (err) {
+    if (err instanceof ApiPayError) apiPayText(err);
+    throw err;
+  }
+}
+
+function connectionIdOf(raw: unknown): number {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) throw new Error("Начните переподключение заново");
+  return id;
+}
+
+async function kaspiReconnectPhoneActionInner(input: { farm: string; connectionId: number; phone: string }) {
+  await requireAccountant();
+  const cfg = reconnectConfig(input.farm);
+  const phone = cashierPhone(input.phone);
+  if (!phone) throw new Error("Впишите мобильный номер кассира, например 8 707 123 45 67");
+  try {
+    const r = await connectionAuthSendPhone(cfg, connectionIdOf(input.connectionId), phone);
+    return { status: String(r.process_status || r.status || "") };
+  } catch (err) {
+    apiPayText(err);
+  }
+}
+
+async function kaspiReconnectOtpActionInner(input: { farm: string; connectionId: number; otp: string }) {
+  const { email } = await requireAccountant();
+  const cfg = reconnectConfig(input.farm);
+  const otp = cleanOtp(input.otp);
+  if (!otp) throw new Error("Код из SMS — 4–6 цифр");
+  try {
+    await connectionAuthVerifyOtp(cfg, connectionIdOf(input.connectionId), otp);
+  } catch (err) {
+    apiPayText(err);
+  }
+  forgetKaspiHealth(input.farm);
+  console.log(`Kaspi: кассир ${FARM_LABELS[input.farm] ?? input.farm} переподключён (${email})`);
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
 // Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается (грабли 1.13).
+export async function kaspiReconnectStartAction(...args: Parameters<typeof kaspiReconnectStartActionInner>) {
+  return guard(() => kaspiReconnectStartActionInner(...args));
+}
+export async function kaspiReconnectPhoneAction(...args: Parameters<typeof kaspiReconnectPhoneActionInner>) {
+  return guard(() => kaspiReconnectPhoneActionInner(...args));
+}
+export async function kaspiReconnectOtpAction(...args: Parameters<typeof kaspiReconnectOtpActionInner>) {
+  return guard(() => kaspiReconnectOtpActionInner(...args));
+}
 export async function loadKaspiAction(...args: Parameters<typeof loadKaspiActionInner>) {
   return guard(() => loadKaspiActionInner(...args));
 }
