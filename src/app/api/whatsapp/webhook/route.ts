@@ -3,6 +3,9 @@ import { downloadMedia, webhookTokenOk } from "@/lib/greenApi";
 import { openAiConfigured, transcribeAudio } from "@/lib/openai";
 import { parseGreenWebhook } from "@/lib/whatsapp";
 import { appendWaMessages } from "@/lib/repo/talks";
+import { appendWaStatuses } from "@/lib/repo/broadcasts";
+import { botIncomingOf, parseGreenStatus } from "@/lib/greenOut";
+import { runBot } from "@/lib/botEngine";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,9 +16,13 @@ export const maxDuration = 60;
  * прописывает `scripts/whatsapp-setup.ts` (его запускает whatsapp-key.bat).
  *
  * Входа тут нет, поэтому доверяем только ТОКЕНУ (`Authorization: Bearer …`,
- * WHATSAPP_WEBHOOK_TOKEN); без него — 401 и ничего не пишется. Всё, что не
- * сообщение из личного чата (статусы, группы, реакции), — 200 без записи, иначе
- * Green API повторял бы уведомление сутки.
+ * WHATSAPP_WEBHOOK_TOKEN); без него — 401 и ничего не пишется. Статус доставки
+ * сообщения, отправленного через API (рассылка, бот), пишется в WaStatuses;
+ * остальное, что не сообщение из личного чата (статусы переписки с телефона,
+ * группы, реакции), — 200 без записи, иначе Green API повторял бы уведомление.
+ *
+ * После записи сообщения — бот (`runBot`): отвечает клиенту или замечает, что
+ * ответил живой менеджер. Бот вебхук не роняет.
  *
  * Таблицу вебхук НЕ читает: лимит Google общий на всю компанию (грабли 1.17), а
  * к лиду сообщение привязывается при чтении, по номеру. Голосовое расшифровывается
@@ -31,6 +38,17 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
+  }
+
+  const status = parseGreenStatus(body);
+  if (status) {
+    try {
+      await appendWaStatuses([status]);
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      console.error("whatsapp status:", err instanceof Error ? err.message : err);
+      return NextResponse.json({ error: "temporary" }, { status: 500 });
+    }
   }
 
   const message = parseGreenWebhook(body);
@@ -51,10 +69,13 @@ export async function POST(request: Request) {
 
   try {
     await appendWaMessages([message]);
-    return NextResponse.json({ ok: true });
   } catch (err) {
     // 500 — Green API повторит позже; это правильно, если не ответила таблица.
     console.error("whatsapp webhook:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "temporary" }, { status: 500 });
   }
+
+  const incoming = botIncomingOf(body, message);
+  if (incoming) await runBot([incoming]);
+  return NextResponse.json({ ok: true });
 }

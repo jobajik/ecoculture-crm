@@ -119,7 +119,7 @@ export async function chatJson(
   schemaName: string,
   schema: Record<string, unknown>,
   /**
-   * `fast` — для бота-автоответчика: Wazzup ждёт ответа вебхука 30 секунд,
+   * `fast` — для бота-автоответчика: Green API ждёт ответа вебхука недолго,
    * поэтому быстрые модели и короткое ожидание.
    */
   options: { fast?: boolean } = {}

@@ -35,13 +35,13 @@ import {
   sentOnDay,
   waPhone,
 } from "@/lib/broadcast";
-import { isChannelError } from "@/lib/wazzup";
-import { WazzupError, listChannels, pickWhatsappChannel, sendWazzup, wazzupConfigured } from "@/lib/wazzupApi";
-import { publicFileUrl } from "@/lib/waFileSign";
+import { GreenError, getInstanceState, greenConfig, sendFileByUrl, sendText, type GreenConfig } from "@/lib/greenApi";
+import { MAX_CAPTION, greenFailureKind, greenFileName, greenStateText } from "@/lib/greenOut";
+import { publicFileUrl, safeFileName } from "@/lib/waFileSign";
 import { phoneKey } from "@/lib/leads";
 
 /**
- * Рассылки WhatsApp через Wazzup — только админ и РОП (решение владельца):
+ * Рассылки WhatsApp через Green API — только админ и РОП (решение владельца):
  * сообщение уходит сразу сотням клиентов, и нажимать эту кнопку должны немногие.
  */
 async function requireBroadcaster() {
@@ -84,23 +84,45 @@ async function uploadFilePartActionInner(input: {
 
 // --- Канал ------------------------------------------------------------------
 
-async function channelOrThrow() {
-  if (!wazzupConfigured()) throw new Error("Wazzup не подключён — владелец вводит ключ в wazzup-key.bat");
-  const channel = pickWhatsappChannel(await listChannels());
-  if (!channel) throw new Error("В Wazzup нет канала WhatsApp — подключите номер в кабинете Wazzup");
-  if (channel.transport !== "whatsapp") throw new Error("Канал Wazzup — не обычный WhatsApp. Для WABA нужны шаблоны, их пока не поддерживаем");
-  if (channel.state !== "active") throw new Error(`Канал WhatsApp в Wazzup не работает (${channel.state}) — проверьте в кабинете Wazzup`);
-  return channel;
+/** Green API подключён и номер в сети — иначе понятный отказ. */
+async function channelOrThrow(): Promise<GreenConfig> {
+  const cfg = greenConfig();
+  if (!cfg) throw new Error("WhatsApp (Green API) не подключён — владелец вводит ключи в whatsapp-key.bat");
+  let state = "";
+  try {
+    state = await getInstanceState(cfg);
+  } catch {
+    throw new Error("Green API не ответил — попробуйте через минуту");
+  }
+  if (state !== "authorized") throw new Error(`WhatsApp в Green API: ${greenStateText(state)}`);
+  return cfg;
 }
 
-/** Одно сообщение рассылки: сначала файл, потом текст (вместе Wazzup не шлёт). */
-async function deliver(channelId: string, phone: string, text: string, file: { id: string; name: string } | null, tag: string) {
+/**
+ * Одно сообщение рассылки. С файлом — файл с подписью-текстом одним сообщением;
+ * если текст длиннее подписи WhatsApp (1024 знака) — файл, потом текст.
+ */
+async function deliver(cfg: GreenConfig, phone: string, text: string, file: { id: string; name: string; mime: string } | null) {
   const ids: string[] = [];
   if (file) {
-    ids.push(await sendWazzup({ channelId, phone, contentUri: publicFileUrl(SITE(), file.id, file.name), crmMessageId: `${tag}-f` }));
+    const url = publicFileUrl(SITE(), file.id, file.name);
+    const name = greenFileName(safeFileName(file.name), file.mime);
+    const inCaption = text.length <= MAX_CAPTION;
+    ids.push(await sendFileByUrl(cfg, phone, url, name, inCaption ? text : ""));
+    if (!inCaption && text) ids.push(await sendText(cfg, phone, text));
+    return ids;
   }
-  if (text) ids.push(await sendWazzup({ channelId, phone, text, crmMessageId: `${tag}-t` }));
+  if (text) ids.push(await sendText(cfg, phone, text));
   return ids;
+}
+
+/** Тип файла по имени — для расширения, если в имени его нет. */
+function mimeOf(name: string): string {
+  const n = (name || "").toLowerCase();
+  if (n.endsWith(".pdf")) return "application/pdf";
+  if (n.endsWith(".png")) return "image/png";
+  if (n.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
 }
 
 async function sendTestActionInner(input: { text: string; fileId: string; fileName: string; phone: string; withOptOut: boolean }) {
@@ -109,12 +131,12 @@ async function sendTestActionInner(input: { text: string; fileId: string; fileNa
   if (!phone) throw new Error("Впишите мобильный номер для проверки");
   const refusal = broadcastTextRefusal(input.text, !!input.fileId);
   if (refusal) throw new Error(refusal);
-  const channel = await channelOrThrow();
+  const cfg = await channelOrThrow();
   const text = personalize(input.text, "Тест", input.withOptOut);
   try {
-    await deliver(channel.channelId, phone, text, input.fileId ? { id: input.fileId, name: input.fileName } : null, `test-${Date.now()}`);
+    await deliver(cfg, phone, text, input.fileId ? { id: input.fileId, name: input.fileName, mime: mimeOf(input.fileName) } : null);
   } catch (err) {
-    if (err instanceof WazzupError) throw new Error(err.message);
+    if (err instanceof GreenError) throw new Error(err.message);
     throw err;
   }
   return { ok: true };
@@ -226,9 +248,9 @@ async function sendNextActionInner(broadcastId: string) {
     return result({ waitSeconds: 1, note: "" });
   }
 
-  let channelId = "";
+  let cfg: GreenConfig;
   try {
-    channelId = (await channelOrThrow()).channelId;
+    cfg = await channelOrThrow();
   } catch (err) {
     writes.push(broadcastUpdate(found.rowNumber, { Status: BROADCAST_STATUSES.PAUSED, Note: err instanceof Error ? err.message : "канал не работает" }));
     await commitAtomic(writes);
@@ -238,7 +260,7 @@ async function sendNextActionInner(broadcastId: string) {
 
   const text = personalize(b.text, next.name, false);
   try {
-    const ids = await deliver(channelId, next.phone, text, b.fileId ? { id: b.fileId, name: b.fileName } : null, `${broadcastId}-${next.rowNumber}`);
+    const ids = await deliver(cfg, next.phone, text, b.fileId ? { id: b.fileId, name: b.fileName, mime: mimeOf(b.fileName) } : null);
     writes.push(recipientUpdate(next.rowNumber, { Status: "sent", MessageID: ids[ids.length - 1], SentAt: now.toISOString(), Error: "" }));
     // Номера наших сообщений — в память чата: бот поймёт, что это не менеджер написал.
     const c = chat ?? emptyBotChat(next.phone);
@@ -247,12 +269,18 @@ async function sendNextActionInner(broadcastId: string) {
     await commitAtomic(writes);
     return result({ waitSeconds: nextGapSeconds(), note: "", sentTo: next.name || next.phone, remaining: remaining() - 1 });
   } catch (err) {
-    const e = err instanceof WazzupError ? err : null;
-    if (e && isChannelError(e.code, e.status)) {
+    const e = err instanceof GreenError ? err : null;
+    const kind = e ? greenFailureKind(e.status) : "recipient";
+    if (e && kind === "pause") {
       writes.push(broadcastUpdate(found.rowNumber, { Status: BROADCAST_STATUSES.PAUSED, Note: e.message }));
       await commitAtomic(writes);
       revalidatePath("/clients/broadcasts");
       return { status: BROADCAST_STATUSES.PAUSED, remaining: remaining(), waitSeconds: 0, note: e.message };
+    }
+    if (e && kind === "retry") {
+      // Сбой связи: этого же получателя попробуем через минуту, ошибку ему не ставим.
+      await commitAtomic(writes);
+      return result({ waitSeconds: 60, note: e.message });
     }
     writes.push(recipientUpdate(next.rowNumber, { Status: "error", Error: (err instanceof Error ? err.message : "ошибка").slice(0, 200), SentAt: now.toISOString() }));
     await commitAtomic(writes);

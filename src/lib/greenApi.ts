@@ -1,10 +1,13 @@
 import { parseHistoryItem } from "./whatsapp";
 import type { WaMessage } from "./types";
+import { greenSendErrorText } from "./greenOut";
 
 // ---------------------------------------------------------------------------
 // Green API — шлюз к рабочему WhatsApp (green-api.com). Номер подключается в
-// их кабинете по QR-коду, как WhatsApp Web; программа только читает историю
-// чата и принимает уведомления на `/api/whatsapp/webhook`.
+// их кабинете по QR-коду, как WhatsApp Web. Программа читает историю чата,
+// принимает уведомления на `/api/whatsapp/webhook` и — для рассылок и бота —
+// отправляет сообщения (`sendText`, `sendFileByUrl`). Для рассылок нужен тариф
+// «Бизнес»: бесплатный «Разработчик» пишет только в 3 чата.
 //
 // Ключи владелец вводит сам (`whatsapp-key.bat`): GREENAPI_URL (apiUrl из
 // карточки инстанса), GREENAPI_INSTANCE (idInstance), GREENAPI_TOKEN
@@ -53,6 +56,59 @@ async function call<T>(cfg: GreenConfig, method: string, body?: unknown, timeout
   }
 }
 
+/** Отказ Green API при отправке: код ответа нужен, чтобы решить — пауза, повтор или номер. */
+export class GreenError extends Error {
+  constructor(message: string, readonly status: number, readonly body: string) {
+    super(message);
+  }
+}
+
+/** Отправка: в отличие от `call`, отказ несёт код ответа (0 — не дозвонились). */
+async function send(cfg: GreenConfig, method: string, body: Record<string, unknown>): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(endpoint(cfg, method), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20000),
+      cache: "no-store",
+    });
+  } catch (err) {
+    throw new GreenError(greenSendErrorText(0, ""), 0, safeError(cfg, err).message);
+  }
+  const text = (await res.text()).split(cfg.token).join("***");
+  if (!res.ok) throw new GreenError(greenSendErrorText(res.status, text), res.status, text.slice(0, 300));
+  let id = "";
+  try {
+    id = String((JSON.parse(text) as { idMessage?: string }).idMessage || "");
+  } catch {
+    /* ниже — общий отказ */
+  }
+  if (!id) throw new GreenError("Green API не вернул номер сообщения", 502, text.slice(0, 300));
+  return id;
+}
+
+/** Текстовое сообщение. Возвращает idMessage — по нему придут статусы доставки. */
+export async function sendText(cfg: GreenConfig, phone: string, message: string): Promise<string> {
+  const chatId = chatIdForPhone(phone);
+  if (!chatId) throw new GreenError("неверный номер", 400, "");
+  return send(cfg, "sendMessage", { chatId, message });
+}
+
+/** Файл по ссылке (картинка, PDF) с подписью до 1024 знаков. */
+export async function sendFileByUrl(
+  cfg: GreenConfig,
+  phone: string,
+  urlFile: string,
+  fileName: string,
+  caption: string
+): Promise<string> {
+  const chatId = chatIdForPhone(phone);
+  if (!chatId) throw new GreenError("неверный номер", 400, "");
+  return send(cfg, "sendFileByUrl", { chatId, urlFile, fileName, ...(caption ? { caption } : {}) });
+}
+
 /** chatId WhatsApp из номера: «8 701 …» и «+7 701 …» → «7701…@c.us». */
 export function chatIdForPhone(phone: string): string {
   let d = (phone || "").replace(/\D/g, "");
@@ -77,7 +133,11 @@ export async function getInstanceState(cfg: GreenConfig): Promise<string> {
   return String(r?.stateInstance || "unknown");
 }
 
-/** Уведомления — на наш адрес, с токеном; нужны входящие и отправленные с телефона. */
+/**
+ * Уведомления — на наш адрес, с токеном: входящие, отправленные с телефона и
+ * через API, и статусы доставки (`outgoingWebhook`) — их ждут рассылки. Статусы
+ * переписки с телефона вебхук отбрасывает сам (`parseGreenStatus`).
+ */
 export async function configureWebhook(cfg: GreenConfig, webhookUrl: string, webhookToken: string): Promise<unknown> {
   return call(cfg, "setSettings", {
     webhookUrl,
@@ -85,8 +145,7 @@ export async function configureWebhook(cfg: GreenConfig, webhookUrl: string, web
     incomingWebhook: "yes",
     outgoingMessageWebhook: "yes",
     outgoingAPIMessageWebhook: "yes",
-    // Статусы «доставлено / прочитано» — шум: по уведомлению на каждое сообщение.
-    outgoingWebhook: "no",
+    outgoingWebhook: "yes",
     stateWebhook: "no",
     incomingCallWebhook: "no",
     pollMessageWebhook: "no",

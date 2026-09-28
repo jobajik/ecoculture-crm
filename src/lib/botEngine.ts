@@ -15,12 +15,12 @@ import {
   type BotChat,
 } from "./broadcast";
 import { chatJson, openAiConfigured } from "./openai";
-import { sendWazzup, wazzupConfigured } from "./wazzupApi";
-import type { WazzupIncoming } from "./wazzup";
+import { greenConfig, sendText } from "./greenApi";
+import type { BotIncoming } from "./greenOut";
 import { phoneKey } from "./leads";
 
 // ---------------------------------------------------------------------------
-// Бот-автоответчик WhatsApp (Wazzup). Зовётся из вебхука ПОСЛЕ того, как
+// Бот-автоответчик WhatsApp (Green API). Зовётся из вебхука ПОСЛЕ того, как
 // сообщения записаны в WaMessages, и никогда не роняет вебхук: сбой бота — это
 // «ответит менеджер», а не повтор уведомления и двойные сообщения.
 //
@@ -86,7 +86,10 @@ function transcript(chat: BotChat): string {
  * Разобрать входящие одного уведомления: отметить, где писал человек,
  * отписку, и, если бот должен ответить, — ответить. Ничего не бросает.
  */
-export async function runBot(messages: WazzupIncoming[]): Promise<void> {
+export async function runBot(all: BotIncoming[]): Promise<void> {
+  // Эхо наших же сообщений через API (рассылка, сам бот) ничего не меняет —
+  // и таблицу ради него не читаем (лимит общий, грабли 1.17).
+  const messages = all.filter((m) => !(m.isEcho && m.fromApi));
   if (messages.length === 0) return;
   try {
     await prefetchTables([SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]);
@@ -99,12 +102,16 @@ export async function runBot(messages: WazzupIncoming[]): Promise<void> {
     for (const key of phones) {
       const mine = messages.filter((m) => phoneKey(m.phone) === key).sort((a, b) => (a.at < b.at ? -1 : 1));
       const existing = byKey.get(key) ?? null;
+      // Номер рабочий: по нему идёт вся переписка менеджеров. Память заводим
+      // только тем, с кем бот может говорить, — иначе вкладка BotChats копила бы
+      // строку на каждого, кто хоть раз написал в WhatsApp.
+      if (!existing && !(settings.enabled && settings.scope === "all" && mine.some((m) => !m.isEcho))) continue;
       const chat: BotChat = existing ? { ...existing, context: [...existing.context], ourIds: [...existing.ourIds] } : emptyBotChat(mine[0].phone);
       let changed = false;
 
       for (const m of mine.filter((x) => x.isEcho)) {
         if (chat.ourIds.includes(m.messageId)) continue;
-        // Написал живой человек (из Wazzup или с телефона) — бот уступает.
+        // Написал живой человек (с телефона или из WhatsApp Web) — бот уступает.
         chat.humanAt = m.at;
         chat.context = pushContext(chat.context, { role: "us", text: m.text || "[файл]", at: m.at });
         changed = true;
@@ -124,7 +131,7 @@ export async function runBot(messages: WazzupIncoming[]): Promise<void> {
         if (!duplicate && isOptOutText(last.text) && chat.ourIds.length > 0 && chat.mode !== BOT_MODES.OPT_OUT) {
           chat.mode = BOT_MODES.OPT_OUT;
           await reply(chat, last, BOT_OPT_OUT_TEXT);
-        } else if (!silence && wazzupConfigured()) {
+        } else if (!silence && greenConfig()) {
           await answer(chat, last, settings.instructions);
         }
       }
@@ -132,23 +139,25 @@ export async function runBot(messages: WazzupIncoming[]): Promise<void> {
     }
     if (writes.length > 0) await commitAtomic(writes);
   } catch (err) {
-    console.error("wazzup bot:", err instanceof Error ? err.message : err);
+    console.error("whatsapp bot:", err instanceof Error ? err.message : err);
   }
 }
 
-async function reply(chat: BotChat, to: WazzupIncoming, text: string): Promise<boolean> {
+async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<boolean> {
+  const cfg = greenConfig();
+  if (!cfg) return false;
   try {
-    const id = await sendWazzup({ channelId: to.channelId, phone: to.phone, text });
+    const id = await sendText(cfg, to.phone, text);
     chat.ourIds = [...chat.ourIds, id].slice(-20);
     chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
     return true;
   } catch (err) {
-    console.error("wazzup bot send:", err instanceof Error ? err.message : err);
+    console.error("whatsapp bot send:", err instanceof Error ? err.message : err);
     return false;
   }
 }
 
-async function answer(chat: BotChat, last: WazzupIncoming, instructions: string): Promise<void> {
+async function answer(chat: BotChat, last: BotIncoming, instructions: string): Promise<void> {
   const now = new Date().toISOString();
   if (!openAiConfigured()) {
     chat.mode = BOT_MODES.HANDOFF;
@@ -167,7 +176,7 @@ async function answer(chat: BotChat, last: WazzupIncoming, instructions: string)
     );
     decision = botDecision(data);
   } catch (err) {
-    console.error("wazzup bot ai:", err instanceof Error ? err.message : err);
+    console.error("whatsapp bot ai:", err instanceof Error ? err.message : err);
     chat.mode = BOT_MODES.HANDOFF;
     chat.handoffAt = now;
     chat.handoffReason = "бот не смог ответить — ответьте сами";

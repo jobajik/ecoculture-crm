@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 /**
- * «Клиенты → Рассылки»: WhatsApp через Wazzup. Только админ и РОП.
+ * «Клиенты → Рассылки»: WhatsApp через Green API. Только админ и РОП.
  * Правила — `src/lib/broadcast.ts`, действия — `./actions.ts`.
  */
 export default async function BroadcastsPage() {

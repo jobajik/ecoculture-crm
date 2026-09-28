@@ -5,9 +5,9 @@ import { readWaFile } from "@/lib/repo/broadcasts";
 export const dynamic = "force-dynamic";
 
 /**
- * Файл рассылки для Wazzup (картинка, прайс PDF): `/api/wa-files/<id>/<имя>?t=<подпись>`.
+ * Файл рассылки для Green API (картинка, прайс PDF): `/api/wa-files/<id>/<имя>?t=<подпись>`.
  * Без верной подписи — 404, как будто файла нет. Ответ кэшируется на CDN
- * Vercel надолго: Wazzup качает файл на каждого получателя, а читать вкладку
+ * Vercel надолго: Green API качает файл на каждого получателя, а читать вкладку
  * с файлом на каждое скачивание — это лимит Google (грабли 1.17).
  */
 export async function GET(request: Request, { params }: { params: { id: string; name: string } }) {

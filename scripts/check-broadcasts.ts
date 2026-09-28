@@ -1,5 +1,5 @@
 /*
- * Рассылки WhatsApp (Wazzup) и бот-автоответчик — чистые правила.
+ * Рассылки WhatsApp (Green API) и бот-автоответчик — чистые правила.
  *
  * Что стережём:
  *   - номер: городской и мусор в WhatsApp не уходят, «8…» и «+7…» — одно;
@@ -8,7 +8,7 @@
  *   - отчёт: лучший статус, ответ — только ПОСЛЕ отправки, ошибка перебивает «отправлено»;
  *   - бот: когда молчит (человек в чате, передано, отписка, не из рассылки,
  *     рабочее время, повтор уведомления), разбор ответа модели;
- *   - разбор уведомлений Wazzup;
+ *   - разбор уведомлений Green API (статусы, эхо API, отказы отправки);
  *   - подпись ссылки на файл.
  *
  * Запуск: npx tsx scripts/check-broadcasts.ts
@@ -40,7 +40,16 @@ import {
   type BotSettings,
   type RecipientRow,
 } from "../src/lib/broadcast";
-import { isChannelError, parseWazzupMessages, parseWazzupStatuses, wazzupErrorText } from "../src/lib/wazzup";
+import {
+  MAX_CAPTION,
+  botIncomingOf,
+  greenFailureKind,
+  greenFileName,
+  greenSendErrorText,
+  greenStateText,
+  parseGreenStatus,
+} from "../src/lib/greenOut";
+import { parseGreenWebhook } from "../src/lib/whatsapp";
 import { fileSignatureOk, publicFileUrl, safeFileName, signFileId } from "../src/lib/waFileSign";
 import type { WaMessage } from "../src/lib/types";
 
@@ -148,7 +157,7 @@ const msg = (phone: string, at: string, direction: "in" | "out" = "in"): WaMessa
   text: "Интересно, пришлите прайс",
   mediaUrl: "",
   senderName: "",
-  source: "wazzup",
+  source: "webhook",
 });
 const views = recipientViews(rows, delivery, [
   msg("77015552030", "2026-09-28T09:30:00.000Z"),
@@ -212,36 +221,48 @@ check("пустой ответ — передать человеку", botDecisi
 check("мусор — передать человеку", botDecision(null).handoff, true);
 check("текст передачи есть", BOT_HANDOFF_TEXT.length > 10, true);
 
-console.log("\nУведомления Wazzup");
-const parsed = parseWazzupMessages({
-  messages: [
-    { messageId: "abc", dateTime: "2026-09-28T09:30:00.000Z", channelId: "ch", chatType: "whatsapp", chatId: "77015552030", type: "text", isEcho: false, text: "Сколько роза?", contact: { name: "Айгуль" } },
-    { messageId: "def", dateTime: "2026-09-28T09:31:00.000Z", channelId: "ch", chatType: "whatsapp", chatId: "77015552030", type: "text", isEcho: true, sentFromApp: true, text: "Добрый день!", authorName: "Юлия" },
-    { messageId: "grp", chatType: "whatsgroup", chatId: "123", type: "text", text: "группа" },
-    { messageId: "call", chatType: "whatsapp", chatId: "77015552030", type: "missing_call" },
-    { messageId: "img", chatType: "whatsapp", chatId: "77015552030", type: "image", contentUri: "https://x/y.jpg", isEcho: false },
-  ],
+console.log("\nУведомления Green API");
+const st = (status: string, extra: Record<string, unknown> = {}) =>
+  parseGreenStatus({ typeWebhook: "outgoingMessageStatus", chatId: "77015552030@c.us", timestamp: 1790577000, idMessage: "3EB0AA", status, sendByApi: true, ...extra });
+check("доставлено", [st("delivered")?.messageId, st("delivered")?.status, st("delivered")?.error], ["3EB0AA", "delivered", ""]);
+check("прочитано", st("read")?.status, "read");
+check("нет WhatsApp — ошибка", [st("noAccount")?.status, st("noAccount")?.error], ["error", "у номера нет WhatsApp"]);
+check("сбой с описанием", st("failed", { description: "bad" })?.error, "не отправилось: bad");
+check("ограничение номера — ошибка", st("suspended")?.error, "WhatsApp временно ограничил номер");
+check("старое имя yellowCard понимается", st("yellowCard")?.status, "error");
+check("переписка с телефона — не пишем", st("delivered", { sendByApi: false }), null);
+check("незнакомый статус — мимо", st("weird"), null);
+check("входящее сообщение — не статус", parseGreenStatus({ typeWebhook: "incomingMessageReceived" }), null);
+check("номер под ограничением — пауза", greenStateText("suspended").includes("ограничил"), true);
+
+const hook = (typeWebhook: string, text: string) => ({
+  typeWebhook,
+  timestamp: 1790577000,
+  idMessage: `${typeWebhook}-1`,
+  senderData: { chatId: "77015552030@c.us", senderName: "Айгуль" },
+  messageData: { typeMessage: "textMessage", textMessageData: { textMessage: text } },
 });
-check("личные чаты WhatsApp, без групп и звонков", parsed.map((m) => m.messageId), ["wz-abc", "wz-def", "wz-img"]);
-check("входящее", [parsed[0].direction, parsed[0].senderName, parsed[0].phone, parsed[0].source], ["in", "Айгуль", "77015552030", "wazzup"]);
-check("эхо — наше, из Wazzup", [parsed[1].direction, parsed[1].isEcho, parsed[1].sentFromApp, parsed[1].senderName], ["out", true, true, "Юлия"]);
-check("картинка", [parsed[2].type, parsed[2].mediaUrl], ["image", "https://x/y.jpg"]);
-check("пустое тело — ничего", parseWazzupMessages({ test: true }).length, 0);
-const st = parseWazzupStatuses({
-  statuses: [
-    { messageId: "abc", timestamp: "2026-09-28T09:30:05.000Z", status: "delivered" },
-    { messageId: "xyz", timestamp: "2026-09-28T09:30:06.000Z", status: "error", error: { error: "BAD_CONTACT", description: "no" } },
-    { messageId: "q", status: "weird" },
-  ],
-});
-check("статусы", st.map((s) => [s.messageId, s.status, s.error]), [
-  ["wz-abc", "delivered", ""],
-  ["wz-xyz", "error", "у номера нет WhatsApp"],
-]);
-check("незнакомая ошибка — описание", wazzupErrorText("NEW_CODE", "что-то"), "что-то");
-check("канал — пауза", isChannelError("CHANNEL_NOT_FOUND", 400), true);
-check("ключ — пауза", isChannelError("", 401), true);
-check("номер — не пауза", isChannelError("BAD_CONTACT", 400), false);
+const inBody = hook("incomingMessageReceived", "Сколько роза?");
+const apiBody = hook("outgoingAPIMessageReceived", "Рассылка");
+const phoneBody = hook("outgoingMessageReceived", "Ответ менеджера");
+const inMsg = botIncomingOf(inBody, parseGreenWebhook(inBody));
+const apiMsg = botIncomingOf(apiBody, parseGreenWebhook(apiBody));
+const phoneMsg = botIncomingOf(phoneBody, parseGreenWebhook(phoneBody));
+check("входящее — клиент", [inMsg?.isEcho, inMsg?.fromApi, inMsg?.phone], [false, false, "77015552030"]);
+check("через API — наше, не менеджер", [apiMsg?.isEcho, apiMsg?.fromApi], [true, true]);
+check("с телефона — живой менеджер", [phoneMsg?.isEcho, phoneMsg?.fromApi], [true, false]);
+check("нет сообщения — нет и бота", botIncomingOf(inBody, null), null);
+
+check("лимит тарифа — пауза", greenFailureKind(466), "pause");
+check("чужой ключ — пауза", greenFailureKind(401), "pause");
+check("сбой связи — повтор", [greenFailureKind(0), greenFailureKind(502), greenFailureKind(429)], ["retry", "retry", "retry"]);
+check("неверный номер — у получателя", greenFailureKind(400), "recipient");
+check("текст про тариф", greenSendErrorText(466, "").includes("«Бизнес»"), true);
+check("состояние", [greenStateText("authorized"), greenStateText("notAuthorized").includes("QR")], ["работает", true]);
+check("незнакомое состояние", greenStateText("odd"), "состояние «odd»");
+check("имя файла с расширением", greenFileName("28.09.pdf", "application/pdf"), "28.09.pdf");
+check("имя без расширения — по типу", [greenFileName("file", "image/jpeg"), greenFileName("", "application/pdf")], ["file.jpg", "file.pdf"]);
+check("подпись WhatsApp — 1024", MAX_CAPTION, 1024);
 
 console.log("\nСсылка на файл");
 const sig = signFileId("F-260928-ABCDE");

@@ -1,12 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Подпись ссылки на файл рассылки. Wazzup скачивает файл сам, без входа в
+ * Подпись ссылки на файл рассылки. Green API скачивает файл сам, без входа в
  * CRM, поэтому ссылка открыта — но только с подписью: номер файла без неё
  * ничего не отдаёт. Ключ — NEXTAUTH_SECRET (он есть всегда и нигде не светится).
  */
 function secret(): string {
-  return (process.env.NEXTAUTH_SECRET || process.env.WAZZUP_WEBHOOK_TOKEN || "").trim();
+  return (process.env.NEXTAUTH_SECRET || process.env.WHATSAPP_WEBHOOK_TOKEN || "").trim();
 }
 
 export function signFileId(fileId: string): string {
@@ -28,7 +28,7 @@ export function safeFileName(name: string): string {
   return cleaned || "file";
 }
 
-/** Публичная ссылка на файл для Wazzup. */
+/** Публичная ссылка на файл для Green API. */
 export function publicFileUrl(site: string, fileId: string, name: string): string {
   return `${site.replace(/\/+$/, "")}/api/wa-files/${encodeURIComponent(fileId)}/${safeFileName(name)}?t=${signFileId(fileId)}`;
 }

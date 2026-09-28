@@ -12,7 +12,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listLeads } from "@/lib/repo/leads";
 import { listUsers } from "@/lib/repo/users";
 import { openAiConfigured } from "@/lib/openai";
-import { wazzupConfigured } from "@/lib/wazzupApi";
+import { greenConfig } from "@/lib/greenApi";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import BotSettingsForm from "@/components/BotSettingsForm";
@@ -75,9 +75,9 @@ export default async function BotPage() {
         }
       />
 
-      {(!wazzupConfigured() || !openAiConfigured()) && (
+      {(!greenConfig() || !openAiConfigured()) && (
         <div className="rounded-xl bg-status-warning/10 px-4 py-3 text-sm text-[#8a5a00]">
-          {!wazzupConfigured() && "Wazzup не подключён — ключ вводится в wazzup-key.bat. "}
+          {!greenConfig() && "WhatsApp (Green API) не подключён — ключи вводятся в whatsapp-key.bat. "}
           {!openAiConfigured() && "ИИ (OpenAI) не подключён — без него бот только передаёт чаты менеджеру."}
         </div>
       )}
