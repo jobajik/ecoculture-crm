@@ -426,12 +426,30 @@ export function pushContext(
 }
 
 /** Ответ модели → то, что бот сделает. Пустой или странный ответ — передать человеку. */
-export function botDecision(raw: unknown): { reply: string; handoff: boolean; reason: string } {
+export function botDecision(raw: unknown): { reply: string; handoff: boolean; reason: string; silent: boolean } {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  // Молчать можно, только если модель прямо так решила и не зовёт человека:
+  // автоответ магазина, «👍», «спасибо». Первая рассылка показала — бот трижды
+  // отвечал на «👍» и заводил разговор с автоответчиками магазинов.
+  if (o.silent === true && o.handoff !== true) return { reply: "", handoff: false, reason: "", silent: true };
   const reply = typeof o.reply === "string" ? o.reply.trim().slice(0, 1500) : "";
   const reason = typeof o.reason === "string" ? o.reason.trim().slice(0, 200) : "";
   const handoff = o.handoff === true || !reply;
-  return { reply, handoff, reason: reason || (reply ? "" : "бот не нашёл ответа") };
+  return { reply, handoff, reason: reason || (reply ? "" : "бот не нашёл ответа"), silent: false };
+}
+
+/**
+ * Сообщение-кивок: смайлики, «ок», «спасибо», «👍». Отвечать на него нечем —
+ * бот молчит и модель не спрашивает (живой случай: три ответа на три «👍»).
+ */
+export function isAckOnly(text: string): boolean {
+  const t = String(text || "")
+    .toLowerCase()
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]/gu, "")
+    .replace(/[.!,)\s(]+/g, " ")
+    .trim();
+  if (!t) return true;
+  return /^(ок|окей|ok|спасибо|рахмет|благодарю|понял|поняла|ясно|спс|👍)( (спасибо|рахмет|большое))?$/.test(t);
 }
 
 export const BOT_HANDOFF_TEXT = "Спасибо! Передаю ваш вопрос менеджеру — он скоро ответит.";

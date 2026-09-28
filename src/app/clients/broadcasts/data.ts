@@ -1,5 +1,15 @@
 import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
-import { listBroadcasts, listRecipients, listWaStatuses, optedOutKeys } from "@/lib/repo/broadcasts";
+import {
+  latestBroadcastAnalyses,
+  listBroadcasts,
+  listRecipients,
+  listWaStatuses,
+  optedOutKeys,
+  type StoredBroadcastAnalysis,
+} from "@/lib/repo/broadcasts";
+import { listOrdersWithItems } from "@/lib/repo/orders";
+import { listLeads } from "@/lib/repo/leads";
+import { ordersAfterBroadcast, type BroadcastOrders, type OrderLite } from "@/lib/broadcastAnalysis";
 import { listWaMessages } from "@/lib/repo/talks";
 import { mergeMessages } from "@/lib/whatsapp";
 import { broadcastTotals, deliveryByMessage, recipientViews, type BroadcastTotals, type RecipientView } from "@/lib/broadcast";
@@ -9,7 +19,7 @@ import type { Broadcast } from "@/lib/repo/broadcasts";
 
 /** Всё для страниц рассылок — одним batchGet (грабли 1.17). */
 export async function loadBroadcastData(): Promise<{
-  broadcasts: (Broadcast & { totals: BroadcastTotals })[];
+  broadcasts: (Broadcast & { totals: BroadcastTotals; results: BroadcastOrders; analysis: StoredBroadcastAnalysis | null })[];
   views: RecipientView[];
   optedOut: Set<string>;
 }> {
@@ -19,23 +29,42 @@ export async function loadBroadcastData(): Promise<{
     SHEET_TABS.WA_STATUSES,
     SHEET_TABS.WA_MESSAGES,
     SHEET_TABS.BOT_CHATS,
+    SHEET_TABS.BROADCAST_ANALYSES,
+    SHEET_TABS.ORDERS,
+    SHEET_TABS.ORDER_ITEMS,
+    SHEET_TABS.CLIENTS,
+    SHEET_TABS.LEADS,
   ]);
-  const [broadcasts, recipients, statuses, messages, optedOut] = await Promise.all([
+  const [broadcasts, recipients, statuses, messages, optedOut, analyses, orders, leads] = await Promise.all([
     listBroadcasts(),
     listRecipients(),
     listWaStatuses(),
     listWaMessages(),
     optedOutKeys(),
+    latestBroadcastAnalyses(),
+    listOrdersWithItems().catch(() => []),
+    listLeads().catch(() => []),
   ]);
   const views = recipientViews(recipients, deliveryByMessage(statuses), mergeMessages(messages));
+  const lite: OrderLite[] = orders.map((o) => ({
+    orderId: o.orderId,
+    clientId: o.clientId,
+    clientName: o.clientName,
+    createdAt: o.createdAt,
+    status: o.status,
+    amount: o.totalAmount,
+  }));
+  const leadClient = new Map(leads.filter((l) => l.clientId).map((l) => [l.leadId, l.clientId]));
   return {
-    broadcasts: broadcasts.map((b) => ({
-      ...b,
-      totals: broadcastTotals(
-        views.filter((v) => v.broadcastId === b.broadcastId),
-        optedOut
-      ),
-    })),
+    broadcasts: broadcasts.map((b) => {
+      const mine = views.filter((v) => v.broadcastId === b.broadcastId);
+      return {
+        ...b,
+        totals: broadcastTotals(mine, optedOut),
+        results: ordersAfterBroadcast(mine, lite, leadClient),
+        analysis: analyses.get(b.broadcastId) ?? null,
+      };
+    }),
     views,
     optedOut,
   };

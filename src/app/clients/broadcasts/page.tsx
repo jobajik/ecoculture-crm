@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { ROLES } from "@/lib/constants";
 import { formatMoment } from "@/lib/formatDate";
 import { BROADCAST_STATUS_LABELS } from "@/lib/broadcast";
+import { shortMoney } from "@/lib/formatNumber";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import { clientsTabsFor } from "../tabs";
@@ -68,6 +69,7 @@ export default async function BroadcastsPage() {
                   <th className="px-3 py-2.5 font-medium text-right">Прочитали</th>
                   <th className="px-3 py-2.5 font-medium text-right">Ответили</th>
                   <th className="px-3 py-2.5 font-medium text-right">Ошибки</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Заявки за 7 дн.</th>
                 </tr>
               </thead>
               <tbody>
@@ -96,6 +98,15 @@ export default async function BroadcastsPage() {
                     </td>
                     <td className="px-3 py-2.5 sm:text-right tabular-nums" data-label="Ошибки">
                       {b.totals.errors || "—"}
+                    </td>
+                    <td className="px-3 py-2.5 sm:text-right tabular-nums" data-label="Заявки за 7 дн.">
+                      {b.results.count > 0 ? (
+                        <>
+                          {b.results.count} <span className="text-ink-muted">· {shortMoney(b.results.amount)}</span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 ))}

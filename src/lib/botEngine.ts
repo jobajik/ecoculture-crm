@@ -10,6 +10,7 @@ import {
   botDecision,
   botSettingsFrom,
   botSilenceReason,
+  isAckOnly,
   isOptOutText,
   pushContext,
   type BotChat,
@@ -31,11 +32,15 @@ import { phoneKey } from "./leads";
 const BOT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "handoff", "reason"],
+  required: ["reply", "handoff", "reason", "silent"],
   properties: {
     reply: { type: "string", description: "Ответ клиенту: коротко, вежливо, на его языке. Пусто — если сразу передаёшь человеку." },
     handoff: { type: "boolean", description: "true — вопрос должен решать менеджер (заказ, наличие, сроки, жалоба, непонятно)." },
     reason: { type: "string", description: "Почему передаёшь менеджеру — одной фразой. Пусто, если не передаёшь." },
+    silent: {
+      type: "boolean",
+      description: "true — не отвечать вовсе: это автоответ магазина (приветствие-шаблон, часы работы, адрес) или отвечать не на что.",
+    },
   },
 };
 
@@ -73,6 +78,9 @@ function systemPrompt(instructions: string, prices: string): string {
     "Не обещай наличие, сроки и стоимость доставки, скидки и условия оплаты. Хочет заказать, спрашивает о наличии,",
     "доставке, счёте, жалуется или вопрос непонятен — handoff=true и напиши, что менеджер скоро ответит.",
     "Никогда не проси номера карт, пароли и коды из SMS. Не спорь и не обсуждай посторонние темы.",
+    "Ты НЕ можешь отправлять файлы, каталог, фото и прайс-файл — не обещай их; нужен каталог — handoff=true.",
+    "Если сообщение — автоответ магазина или бота (приветствие-шаблон, «спасибо за обращение», часы работы, адрес,",
+    "условия доставки) — silent=true: с автоответчиком не разговаривают. Не представляйся заново, если в переписке уже представился.",
     instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены):\n${instructions}` : "",
     prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — о ценах отвечает менеджер (handoff=true).",
   ].join("\n");
@@ -131,7 +139,7 @@ export async function runBot(all: BotIncoming[]): Promise<void> {
         if (!duplicate && isOptOutText(last.text) && chat.ourIds.length > 0 && chat.mode !== BOT_MODES.OPT_OUT) {
           chat.mode = BOT_MODES.OPT_OUT;
           await reply(chat, last, BOT_OPT_OUT_TEXT);
-        } else if (!silence && greenConfig()) {
+        } else if (!silence && greenConfig() && !(last.type === "text" && isAckOnly(last.text))) {
           await answer(chat, last, settings.instructions);
         }
       }
@@ -165,7 +173,7 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
     chat.handoffReason = "ИИ не подключён";
     return;
   }
-  let decision: { reply: string; handoff: boolean; reason: string };
+  let decision: ReturnType<typeof botDecision>;
   try {
     const { data } = await chatJson(
       systemPrompt(instructions, await priceText()),
@@ -182,6 +190,7 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
     chat.handoffReason = "бот не смог ответить — ответьте сами";
     return;
   }
+  if (decision.silent) return;
   const text = decision.handoff ? decision.reply || BOT_HANDOFF_TEXT : decision.reply;
   const sent = await reply(chat, last, text);
   chat.botReplies += sent ? 1 : 0;

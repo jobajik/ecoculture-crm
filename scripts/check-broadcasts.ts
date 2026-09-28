@@ -26,6 +26,7 @@ import {
   dailyLimitOf,
   deliveryByMessage,
   greetingName,
+  isAckOnly,
   isOptOutText,
   nextGapSeconds,
   personalize,
@@ -50,6 +51,14 @@ import {
   parseGreenStatus,
 } from "../src/lib/greenOut";
 import { parseGreenWebhook } from "../src/lib/whatsapp";
+import {
+  analysisIsStale,
+  broadcastTranscript,
+  kindCounts,
+  ordersAfterBroadcast,
+  parseBroadcastAnalysis,
+  type OrderLite,
+} from "../src/lib/broadcastAnalysis";
 import { fileSignatureOk, publicFileUrl, safeFileName, signFileId } from "../src/lib/waFileSign";
 import type { WaMessage } from "../src/lib/types";
 
@@ -216,7 +225,11 @@ const long = Array.from({ length: 30 }, (_, i) => ({ role: "client" as const, te
 const ctx = long.reduce((acc, item) => pushContext(acc, item), [] as BotChat["context"]);
 check("память бота короткая", ctx.length <= 12 && JSON.stringify(ctx).length <= 3000, true);
 check("последнее сообщение в памяти", ctx[ctx.length - 1].text.startsWith("сообщение 29"), true);
-check("ответ модели", botDecision({ reply: "Роза 60 см — 180 ₸.", handoff: false, reason: "" }), { reply: "Роза 60 см — 180 ₸.", handoff: false, reason: "" });
+check("ответ модели", botDecision({ reply: "Роза 60 см — 180 ₸.", handoff: false, reason: "" }), { reply: "Роза 60 см — 180 ₸.", handoff: false, reason: "", silent: false });
+check("автоответ магазина — молчим", botDecision({ reply: "", handoff: false, reason: "", silent: true }).silent, true);
+check("молчать нельзя, если зовёт человека", botDecision({ reply: "", handoff: true, reason: "заказ", silent: true }).silent, false);
+check("кивки — не отвечаем", ["👍", "Спасибо!", "ок", "рахмет 🙏", "Спасибо большое"].map(isAckOnly), [true, true, true, true, true]);
+check("вопрос и «да» — отвечаем", ["Да", "Сколько?", "Хочу 300 роз", "Хорошо, пришлите"].map(isAckOnly), [false, false, false, false]);
 check("пустой ответ — передать человеку", botDecision({ reply: "", handoff: false }).handoff, true);
 check("мусор — передать человеку", botDecision(null).handoff, true);
 check("текст передачи есть", BOT_HANDOFF_TEXT.length > 10, true);
@@ -272,6 +285,60 @@ check("без подписи — нет", fileSignatureOk("F-260928-ABCDE", null
 check("имя файла без кириллицы и пробелов", safeFileName("Прайс роза 28.09.pdf"), "28.09.pdf");
 check("пустое имя", safeFileName("Прайс"), "file");
 check("ссылка", publicFileUrl("https://x.kz/", "F-1", "a b.jpg").startsWith("https://x.kz/api/wa-files/F-1/a_b.jpg?t="), true);
+
+console.log("\nИтог рассылки");
+{
+  const sent = "2026-09-28T10:00:00.000Z";
+  const mk = (phone: string, kind: string, refId: string, state: string) => ({
+    broadcastId: "B1", phone, name: `N${phone.slice(-2)}`, kind, refId, managerEmail: "", status: "sent", messageId: `m${phone}`,
+    sentAt: sent, error: "", state: state as "replied", replyText: "", replyAt: "",
+  });
+  const vs = [mk("77010000001", "client", "C1", "replied"), mk("77010000002", "lead", "L2", "read"), mk("77010000003", "client", "C3", "delivered"), { ...mk("77010000004", "client", "C4", "queued"), sentAt: "" }];
+  const ord = (orderId: string, clientId: string, createdAt: string, amount: number, status = "new"): OrderLite => ({ orderId, clientId, clientName: clientId, createdAt, status, amount });
+  const orders = [
+    ord("O1", "C1", "2026-09-29T08:00:00.000Z", 100000),
+    ord("O2", "C1", "2026-09-27T08:00:00.000Z", 50000), // до рассылки — нет
+    ord("O3", "CL2", "2026-10-01T08:00:00.000Z", 70000), // лид, ставший клиентом
+    ord("O4", "C3", "2026-10-09T08:00:00.000Z", 30000), // позже 7 дней — нет
+    ord("O5", "C3", "2026-09-30T08:00:00.000Z", 40000, "cancelled"), // отменена — нет
+    ord("O6", "C4", "2026-09-29T08:00:00.000Z", 90000), // ему ещё не отправили — нет
+  ];
+  const res = ordersAfterBroadcast(vs, orders, new Map([["L2", "CL2"]]));
+  check("заявки после рассылки", [res.count, res.amount, res.buyers, res.orders.map((o) => o.orderId)], [2, 170000, 2, ["O3", "O1"]]);
+  check("по номеру", res.byPhone.get("7010000001"), { count: 1, amount: 100000 });
+
+  const msgs: WaMessage[] = [
+    { messageId: "a", at: "2026-09-28T09:00:00.000Z", chatId: "", phone: "77010000001", direction: "in", type: "text", text: "старое", mediaUrl: "", senderName: "", source: "webhook" },
+    { messageId: "b", at: "2026-09-28T10:05:00.000Z", chatId: "", phone: "77010000001", direction: "in", type: "text", text: "Когда будет высшая?", mediaUrl: "", senderName: "", source: "webhook" },
+    { messageId: "c", at: "2026-09-28T10:06:00.000Z", chatId: "", phone: "77010000001", direction: "out", type: "text", text: "В четверг", mediaUrl: "", senderName: "", source: "webhook" },
+  ];
+  const tr = broadcastTranscript("Здравствуйте, {имя}!", [vs[0]], msgs);
+  check("переписка — только после отправки", [tr.phones, tr.text.includes("старое"), tr.text.includes("Когда будет высшая?"), tr.text.includes("Мы: В четверг")], [["77010000001"], false, true, true]);
+
+  const parsed = parseBroadcastAnalysis(
+    {
+      summary: "Треть ответила.",
+      people: [
+        { phone: "+7 701 000 00 01", kind: "order", note: "хочет высшую", callFirst: true },
+        { phone: "77099999999", kind: "order", note: "чужой номер", callFirst: true },
+        { phone: "77010000001", kind: "other", note: "повтор", callFirst: false },
+        { phone: "77010000002", kind: "stop", note: "отписалась", callFirst: true },
+      ],
+      questions: ["Когда высшая?"],
+      objections: [],
+      advice: ["Писать цену за стебль"],
+    },
+    ["77010000001", "77010000002"]
+  );
+  check("разбор: чужие номера и повторы отброшены", parsed.people.map((p) => [p.phone, p.kind, p.callFirst]), [
+    ["77010000001", "order", true],
+    ["77010000002", "stop", false],
+  ]);
+  check("разбор: счётчики", kindCounts(parsed).map((k) => [k.kind, k.count]), [["order", 1], ["stop", 1]]);
+  check("незнакомый вид — «другое»", parseBroadcastAnalysis({ people: [{ phone: "77010000001", kind: "wow" }] }, ["77010000001"]).people[0].kind, "other");
+  check("мусор — пустой разбор", parseBroadcastAnalysis(null, []), { summary: "", people: [], questions: [], objections: [], advice: [] });
+  check("разбор устарел", [analysisIsStale(5, null), analysisIsStale(5, 5), analysisIsStale(6, 5), analysisIsStale(0, null)], [true, false, true, false]);
+}
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

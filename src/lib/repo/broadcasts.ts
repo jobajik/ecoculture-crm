@@ -3,6 +3,7 @@ import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import { phoneKey } from "../leads";
 import type { BotChat, RecipientRow, WaStatusRow } from "../broadcast";
+import { parseBroadcastAnalysis, type BroadcastAnalysis } from "../broadcastAnalysis";
 
 /**
  * Рассылки, их получатели, статусы доставки, файлы и состояние чатов бота.
@@ -320,4 +321,69 @@ export async function settingsMap(fresh = false): Promise<Record<string, string>
     if (key) map[key] = r.record.Value ?? "";
   }
   return map;
+}
+
+// --- Разбор ответов (ИИ) ----------------------------------------------------
+
+export interface StoredBroadcastAnalysis {
+  broadcastId: string;
+  createdAt: string;
+  createdBy: string;
+  model: string;
+  /** Сколько человек ответило на момент разбора — чтобы видеть, что он устарел. */
+  replies: number;
+  analysis: BroadcastAnalysis;
+}
+
+/** Последний разбор по каждой рассылке. */
+export async function latestBroadcastAnalyses(): Promise<Map<string, StoredBroadcastAnalysis>> {
+  const out = new Map<string, StoredBroadcastAnalysis>();
+  for (const { record: r } of await rows(SHEET_TABS.BROADCAST_ANALYSES)) {
+    if (!r.BroadcastID) continue;
+    let data: unknown = null;
+    try {
+      data = JSON.parse(r.Data || "null");
+    } catch {
+      continue;
+    }
+    const createdAt = toIsoDateTime(r.CreatedAt) || r.CreatedAt || "";
+    const prev = out.get(r.BroadcastID);
+    if (prev && prev.createdAt >= createdAt) continue;
+    const people = (data as { people?: { phone: string }[] } | null)?.people ?? [];
+    out.set(r.BroadcastID, {
+      broadcastId: r.BroadcastID,
+      createdAt,
+      createdBy: r.CreatedBy || "",
+      model: r.Model || "",
+      replies: Number(r.Replies) || 0,
+      // Уже проверенное при записи — повторная проверка лишь отсекает порчу руками.
+      analysis: parseBroadcastAnalysis(data, people.map((p) => String(p.phone || ""))),
+    });
+  }
+  return out;
+}
+
+export async function appendBroadcastAnalysis(input: {
+  broadcastId: string;
+  createdBy: string;
+  model: string;
+  replies: number;
+  analysis: BroadcastAnalysis;
+}): Promise<void> {
+  await commitAtomic([
+    {
+      kind: "append",
+      tab: SHEET_TABS.BROADCAST_ANALYSES,
+      records: [
+        {
+          BroadcastID: input.broadcastId,
+          CreatedAt: new Date().toISOString(),
+          CreatedBy: input.createdBy,
+          Model: input.model,
+          Replies: input.replies,
+          Data: JSON.stringify(input.analysis).slice(0, 45000),
+        },
+      ],
+    },
+  ]);
 }

@@ -39,6 +39,7 @@ import { GreenError, getInstanceState, greenConfig, sendFileByUrl, sendText, typ
 import { MAX_CAPTION, greenFailureKind, greenFileName, greenStateText } from "@/lib/greenOut";
 import { publicFileUrl, safeFileName } from "@/lib/waFileSign";
 import { phoneKey } from "@/lib/leads";
+import { analyzeBroadcastNow } from "@/lib/broadcastAnalysisRunner";
 
 /**
  * Рассылки WhatsApp через Green API — только админ и РОП (решение владельца):
@@ -326,6 +327,16 @@ async function releaseHandoffActionInner(phone: string) {
   return { ok: true };
 }
 
+// --- Разбор ответов ------------------------------------------------------------
+
+/** Разобрать ответы на рассылку ИИ сейчас (кнопка на странице рассылки). */
+async function analyzeBroadcastActionInner(broadcastId: string) {
+  const { email } = await requireBroadcaster();
+  await analyzeBroadcastNow(String(broadcastId || ""), email);
+  revalidatePath(`/clients/broadcasts/${broadcastId}`);
+  return { ok: true };
+}
+
 // Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается (грабли 1.13).
 export async function uploadFilePartAction(...args: Parameters<typeof uploadFilePartActionInner>) {
   return guard(() => uploadFilePartActionInner(...args));
@@ -347,4 +358,7 @@ export async function saveBotSettingsAction(...args: Parameters<typeof saveBotSe
 }
 export async function releaseHandoffAction(...args: Parameters<typeof releaseHandoffActionInner>) {
   return guard(() => releaseHandoffActionInner(...args));
+}
+export async function analyzeBroadcastAction(...args: Parameters<typeof analyzeBroadcastActionInner>) {
+  return guard(() => analyzeBroadcastActionInner(...args));
 }

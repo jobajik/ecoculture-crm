@@ -51,6 +51,9 @@ export const SHEET_TABS = {
   // Состояние чата для бота-автоответчика: когда писал человек, передан ли
   // менеджеру, отписался ли клиент, короткая память разговора.
   BOT_CHATS: "BotChats",
+  // Разбор ответов на рассылку (ИИ): строка на разбор, итог — JSON в одной
+  // ячейке. Только дописывается; на странице берётся последний по рассылке.
+  BROADCAST_ANALYSES: "BroadcastAnalyses",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -454,6 +457,7 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   ],
   [SHEET_TABS.WA_STATUSES]: ["MessageID", "At", "Status", "Error", "CreatedAt"],
   [SHEET_TABS.WA_FILES]: ["FileID", "CreatedAt", "CreatedByEmail", "Name", "Mime", "Size", "Part", "Data"],
+  [SHEET_TABS.BROADCAST_ANALYSES]: ["BroadcastID", "CreatedAt", "CreatedBy", "Model", "Replies", "Data"],
   [SHEET_TABS.BOT_CHATS]: [
     "Phone",
     "UpdatedAt",
