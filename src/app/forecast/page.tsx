@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getForecastForMonth } from "@/lib/repo/harvestForecast";
 import { getMixForMonth } from "@/lib/repo/harvestMix";
+import Link from "next/link";
 import {
+  FARM_ORDER,
   FLOWER_TYPES,
   ROLES,
   farmLabel,
@@ -27,14 +29,18 @@ const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPE
 export default async function ForecastPage({
   searchParams,
 }: {
-  searchParams: { period?: string };
+  searchParams: { period?: string; farm?: string };
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
   if (role !== ROLES.AGRONOMIST && role !== ROLES.ADMIN) redirect("/");
 
-  // Агроном ведёт прогноз только по своему производству, администратор — по всем.
-  const farm = role === ROLES.ADMIN ? null : session?.user?.farm ?? null;
+  // Агроном ведёт прогноз только по своему производству. Администратор видит
+  // оба и переключает компанию (?farm=rose_farm | esentai), по умолчанию — всё.
+  const isAdmin = role === ROLES.ADMIN;
+  const chosenFarm =
+    isAdmin && FARM_ORDER.includes(searchParams.farm ?? "") ? searchParams.farm! : null;
+  const farm = isAdmin ? chosenFarm : session?.user?.farm ?? null;
   const allowedTypes = FLOWER_ORDER.filter((t) =>
     (flowerTypesForFarm(farm) as string[]).includes(t)
   ) as string[];
@@ -45,6 +51,7 @@ export default async function ForecastPage({
       : periodOf(new Date());
 
   const weeks = weeksOfMonth(month);
+  const farmHref = (f: string) => `/forecast?period=${month}${f ? `&farm=${f}` : ""}`;
 
   const [savedVarieties, savedMix] = await Promise.all([
     getForecastForMonth(month, allowedTypes),
@@ -84,7 +91,29 @@ export default async function ForecastPage({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <PeriodPicker period={month} />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <PeriodPicker period={month} />
+          {isAdmin && (
+            <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1">
+              {[
+                { key: "", label: "Все" },
+                ...FARM_ORDER.map((f) => ({ key: f, label: farmLabel(f) })),
+              ].map((f) => (
+                <Link
+                  key={f.key || "all"}
+                  href={farmHref(f.key)}
+                  className={
+                    (farm ?? "") === f.key
+                      ? "rounded-md px-3 py-1.5 text-sm bg-surface shadow-sm font-medium"
+                      : "rounded-md px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary"
+                  }
+                >
+                  {f.label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
         <p className="text-sm text-ink-muted">
           {filledWeeks > 0
             ? `Заполнено недель: ${filledWeeks} из ${weeks.length}`
@@ -93,9 +122,9 @@ export default async function ForecastPage({
         </p>
       </div>
 
-      <ForecastImportForm key={`import-${month}`} month={month} />
+      <ForecastImportForm key={`import-${month}-${farm ?? ""}`} month={month} farm={farm} />
 
-      <ForecastView key={month} summary={summary} />
+      <ForecastView key={`${month}-${farm ?? ""}`} summary={summary} />
     </div>
   );
 }

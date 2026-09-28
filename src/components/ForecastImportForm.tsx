@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { importForecastAction, parseForecastFileAction } from "@/app/forecast/actions";
-import { FLOWER_TYPE_LABELS, formatGrade, periodLabel, weekLabel } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, farmLabel, formatGrade, periodLabel, weekLabel } from "@/lib/constants";
 import type { ForecastParseResult } from "@/lib/excel";
 import { unwrapValue } from "@/lib/actionResult";
 import Hint from "./Hint";
@@ -13,7 +13,14 @@ import Hint from "./Hint";
  * только по кнопке записываем: неверно понятый файл, молча ушедший в таблицу, —
  * худший вид ошибки, потому что о нём узнают через месяц.
  */
-export default function ForecastImportForm({ month }: { month: string }) {
+export default function ForecastImportForm({
+  month,
+  farm = null,
+}: {
+  month: string;
+  /** Выбранная администратором компания: шаблон и загрузка — только по ней. */
+  farm?: string | null;
+}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -40,6 +47,7 @@ export default function ForecastImportForm({ month }: { month: string }) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("month", month);
+      if (farm) formData.append("farm", farm);
       setResult(unwrapValue(await parseForecastFileAction(formData)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
@@ -80,14 +88,15 @@ export default function ForecastImportForm({ month }: { month: string }) {
         <div>
           <h2 className="font-medium">Загрузка из Excel</h2>
           <p className="text-sm text-ink-secondary mt-0.5">
-            Файл <b>заменит</b> <span className="capitalize">{periodLabel(month)}</span> целиком.
+            Файл <b>заменит</b> <span className="capitalize">{periodLabel(month)}</span>{" "}
+            {farm ? <>по {farmLabel(farm)}</> : "целиком"}.
             <Hint>
               Позиции, которых нет в файле, обнулятся. Цветок без своего листа в файле не
               трогается. На цветок два листа: «сорта» и «ростовка», колонки — недели.
             </Hint>
           </p>
         </div>
-        <a href={`/api/forecast/template?period=${month}`} className="btn-secondary !py-1.5">
+        <a href={`/api/forecast/template?period=${month}${farm ? `&farm=${farm}` : ""}`} className="btn-secondary !py-1.5">
           ↓ Скачать шаблон
         </a>
       </div>

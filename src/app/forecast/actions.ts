@@ -20,6 +20,7 @@ import {
 import {
   FLOWER_TYPE_LABELS,
   ROLES,
+  FARM_ORDER,
   farmLabel,
   flowerTypesForFarm,
   getFarmFor,
@@ -166,9 +167,14 @@ async function parseForecastFileActionInner(formData: FormData): Promise<Forecas
     };
   }
 
+  // Администратор, выбравший на странице одну компанию, загружает файл только
+  // по ней: строки чужих цветков помечаются ошибкой и не записываются.
+  const picked = String(formData.get("farm") ?? "");
+  const scope = farm ?? (FARM_ORDER.includes(picked) ? picked : null);
+
   const catalog = await listVarietiesByType();
   const buffer = await (file as File).arrayBuffer();
-  return parseForecastWorkbook(buffer, catalog, flowerTypesForFarm(farm), month);
+  return parseForecastWorkbook(buffer, catalog, flowerTypesForFarm(scope), month);
 }
 
 /**
