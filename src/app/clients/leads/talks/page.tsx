@@ -79,7 +79,7 @@ export default async function TalksPage() {
         area="leads"
         title="Разговоры"
         icon="chart"
-        tabs={clientsTabsFor()}
+        tabs={clientsTabsFor(undefined, role)}
         subtitle={
           <>
             Переписка с лидами в рабочем WhatsApp за {PERIOD_DAYS} дней

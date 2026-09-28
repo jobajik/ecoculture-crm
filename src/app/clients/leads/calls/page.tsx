@@ -69,7 +69,7 @@ export default async function CallsPage({ searchParams }: { searchParams?: { c?:
 
   return (
     <div className="space-y-4">
-      <PageHeader area="leads" title="Обзвон" tabs={clientsTabsFor()} />
+      <PageHeader area="leads" title="Обзвон" tabs={clientsTabsFor(undefined, role)} />
 
       {campaigns.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-sm">

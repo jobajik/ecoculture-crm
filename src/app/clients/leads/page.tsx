@@ -103,7 +103,7 @@ export default async function LeadsPage({
 
   return (
     <div className="space-y-4">
-      <PageHeader area="leads" title="Лиды" tabs={clientsTabsFor()} />
+      <PageHeader area="leads" title="Лиды" tabs={clientsTabsFor(undefined, role)} />
 
       <p className="text-sm text-ink-secondary">
         В работе {summary.open}

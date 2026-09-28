@@ -25,7 +25,11 @@ const TRANSCRIBE_MODELS = () =>
     (m): m is string => !!m && !!m.trim()
   );
 
+const FAST_MODELS = () =>
+  [process.env.OPENAI_BOT_MODEL, "gpt-4.1-mini", "gpt-4o-mini"].filter((m): m is string => !!m && !!m.trim());
+
 let chosenText: string | null = null;
+let chosenFast: string | null = null;
 let chosenTranscribe: string | null = null;
 
 class ModelUnavailable extends Error {}
@@ -113,15 +117,21 @@ export async function chatJson(
   system: string,
   user: string,
   schemaName: string,
-  schema: Record<string, unknown>
+  schema: Record<string, unknown>,
+  /**
+   * `fast` — для бота-автоответчика: Wazzup ждёт ответа вебхука 30 секунд,
+   * поэтому быстрые модели и короткое ожидание.
+   */
+  options: { fast?: boolean } = {}
 ): Promise<{ data: unknown; model: string }> {
   const key = openAiKey();
   if (!key) throw new Error("OpenAI не подключён — владелец вводит ключ в whatsapp-key.bat.");
   let usedModel = "";
+  const fast = !!options.fast;
   const data = await withModels(
-    TEXT_MODELS(),
-    chosenText,
-    (m) => (chosenText = m),
+    fast ? FAST_MODELS() : TEXT_MODELS(),
+    fast ? chosenFast : chosenText,
+    (m) => (fast ? (chosenFast = m) : (chosenText = m)),
     async (model) => {
       const res = await fetch(`${BASE()}/chat/completions`, {
         method: "POST",
@@ -134,7 +144,7 @@ export async function chatJson(
           ],
           response_format: { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } },
         }),
-        signal: AbortSignal.timeout(50000),
+        signal: AbortSignal.timeout(fast ? 20000 : 50000),
       });
       if (!res.ok) throw await failure(res, "Разбор");
       const body = (await res.json()) as { choices?: { message?: { content?: string; refusal?: string } }[] };

@@ -37,6 +37,20 @@ export const SHEET_TABS = {
   // Разборы переписки ИИ: строка на разбор — кратко, потребность, следующий
   // шаг, оценка менеджера по чек-листу, возражения, подсказка стадии.
   LEAD_ANALYSES: "LeadAnalyses",
+  // Рассылки WhatsApp через Wazzup: строка на рассылку и строка на получателя.
+  // Статусы доставки («доставлено», «прочитано», ошибка) вебхук ДОПИСЫВАЕТ в
+  // WaStatuses, не читая таблицу (грабли 1.17), — к получателю они
+  // привязываются при чтении, по номеру сообщения.
+  BROADCASTS: "Broadcasts",
+  BROADCAST_RECIPIENTS: "BroadcastRecipients",
+  WA_STATUSES: "WaStatuses",
+  // Файлы к рассылке (картинка, прайс PDF): другого хранилища у программы нет,
+  // поэтому файл лежит здесь base64 кусками по ячейке — и отдаётся Wazzup по
+  // ссылке с подписью (`/api/wa-files`).
+  WA_FILES: "WaFiles",
+  // Состояние чата для бота-автоответчика: когда писал человек, передан ли
+  // менеджеру, отписался ли клиент, короткая память разговора.
+  BOT_CHATS: "BotChats",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -408,6 +422,50 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "SenderName",
     "Source",
     "CreatedAt",
+  ],
+  [SHEET_TABS.BROADCASTS]: [
+    "BroadcastID",
+    "CreatedAt",
+    "CreatedByEmail",
+    "Title",
+    "Text",
+    "FileID",
+    "FileName",
+    "Status",
+    "Audience",
+    "StartedAt",
+    "FinishedAt",
+    "LastSendAt",
+    "UpdatedAt",
+    "Note",
+  ],
+  [SHEET_TABS.BROADCAST_RECIPIENTS]: [
+    "BroadcastID",
+    "Phone",
+    "Name",
+    "Kind",
+    "RefID",
+    "ManagerEmail",
+    "Status",
+    "MessageID",
+    "SentAt",
+    "Error",
+    "UpdatedAt",
+  ],
+  [SHEET_TABS.WA_STATUSES]: ["MessageID", "At", "Status", "Error", "CreatedAt"],
+  [SHEET_TABS.WA_FILES]: ["FileID", "CreatedAt", "CreatedByEmail", "Name", "Mime", "Size", "Part", "Data"],
+  [SHEET_TABS.BOT_CHATS]: [
+    "Phone",
+    "UpdatedAt",
+    "Mode",
+    "HumanAt",
+    "HandoffAt",
+    "HandoffReason",
+    "LastInMessageID",
+    "OurIDs",
+    "Context",
+    "Name",
+    "BotReplies",
   ],
   [SHEET_TABS.LEAD_ANALYSES]: [
     "AnalysisID",

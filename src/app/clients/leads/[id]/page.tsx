@@ -98,7 +98,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
         area="leads"
         eyebrow="Лид"
         title={lead.name}
-        tabs={clientsTabsFor()}
+        tabs={clientsTabsFor(undefined, role)}
         subtitle={
           <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-1">
             <LeadStageBadge stage={stage} />

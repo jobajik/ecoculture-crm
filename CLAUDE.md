@@ -513,7 +513,7 @@ Google считает лимит по этому доступу. Значит, 6
 Вкладки: `Users`, `Orders`, `OrderItems`, `Batches`, `Shipments`, `Writeoffs`, `PriceHistory`,
 `Varieties`, `Plans`, `ShipmentPlans`, `HarvestForecast`, `HarvestMix`, `Claims`, `MoneyLog`,
 `Clients`, `Settings`, `StaffTakeouts`, `Payments`, `Leads`, `LeadTouches`, `KaspiInvoices`, `WaMessages`,
-`LeadAnalyses`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
+`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
 истины (см. грабли 1.1).
 
 Новые вкладки создаёт `npm run setup-sheet`: он дописывает недостающие листы и проставляет
@@ -793,6 +793,50 @@ Google считает лимит по этому доступу. Значит, 6
   по менеджерам, «сегодня ещё не звонили» и лента всех звонков с фильтрами. **Звонок проверить
   нельзя — АТС нет**, видна только отметка менеджера; поэтому считаются «быстрые» отметки — итог
   меньше чем через 20 секунд после предыдущего (`FAST_MARK_SECONDS`): позвонить за это время нельзя.
+
+**Рассылки WhatsApp и бот** (сентябрь 2026, «Клиенты → Рассылки», `/clients/broadcasts`; правила —
+`src/lib/broadcast.ts`, Wazzup — `src/lib/wazzup.ts` и `src/lib/wazzupApi.ts`, запись —
+`src/lib/repo/broadcasts.ts`, бот — `src/lib/botEngine.ts`, действия —
+`src/app/clients/broadcasts/actions.ts`, проверка `check-broadcasts`). Владелец: «бот по рассылке для
+наших клиентов через WhatsApp, чтобы у меня был такой интерфейс». Его решения: канал — Wazzup
+(wazzup24.com, он там зарегистрировался); получатели — клиенты из базы, лиды и ручной выбор; текст,
+картинка или прайс (PDF), ответы — менеджеру, автоответ ботом; доступ — только админ и РОП.
+
+- **вкладки**: `Broadcasts` (рассылка), `BroadcastRecipients` (строка на получателя со статусом),
+  `WaStatuses` (статусы доставки от Wazzup — вебхук таблицу не читает, грабли 1.17), `WaFiles`
+  (картинка base64 кусками по 45 000 знаков — у приложения нет доступа к диску), `BotChats` (память
+  бота по номеру). Нужен `npm run setup-sheet`;
+- **получатели** (`loadAudience`, `prepareAudience`): клиенты (активные, не наши магазины) и лиды (не
+  отказ, без карточки клиента), фильтры по менеджеру, городу, типу, обзвону, группе, «не заказывали N
+  дней». Один номер — один человек (`phoneKey`, клиент перебивает лида); городские номера и написавшие
+  «СТОП» не получают. Список на сервере собирается ЗАНОВО по присланным ссылкам (грабли 1.11);
+- **номер WhatsApp** — `waPhone()`: казахстанские и российские мобильные к виду 7XXXXXXXXXX,
+  городские (7 7xx…) выбрасываются — WhatsApp там нет;
+- **обращение** `{имя}` — `greetingName()`: без «ИП/ТОО/ООО», длинное название — пусто («Здравствуйте!»
+  вместо «Здравствуйте, ТОО Цветочный мир на Абая!»);
+- **отправка идёт, пока страница рассылки открыта** (`BroadcastSender`): страница просит сервер
+  отправить следующее, пауза 25–50 с случайно, дневной предел (`BroadcastDailyLimit` в `Settings`,
+  по умолчанию 150). Причина — неофициальный WhatsApp банят за «робота»: ровный поток сотен
+  одинаковых сообщений. Сервер сам держит паузу (`LastSendAt`), две открытые вкладки не ускоряют.
+  Закрыли вкладку — рассылка стоит, «Продолжить» идёт с того же места. В конце каждого сообщения —
+  «Чтобы не получать рассылку, ответьте СТОП» (`OPT_OUT_LINE`);
+- **картинка/PDF**: картинка сжимается в браузере, грузится кусками (предел запроса действия — 1 МБ),
+  отдаётся Wazzup по подписанной ссылке `/api/wa-files/<id>/<имя>?t=…` (HMAC на `NEXTAUTH_SECRET`),
+  потом уходит текст отдельным сообщением (у Wazzup текст и файл взаимоисключающие);
+- **ответы** приходят вебхуком на `/api/wazzup/webhook/<WAZZUP_WEBHOOK_TOKEN>` (Wazzup заголовков
+  не шлёт — секрет в адресе), пишутся в ту же `WaMessages` с пометкой `wazzup` и видны в «Разговорах»
+  лида. В рассылке видно: отправлено → доставлено → прочитано → ответил;
+- **бот** (`runBot`, страница «Бот»): отвечает только в рабочие часы и только тем, кому мы писали
+  рассылкой (или всем — настройка `BotScope`). Прайс берёт из прайс-листа, инструкции — от владельца
+  (`BotInstructions`). Хочет заказ, спорит, жалуется, просит человека — «передаю менеджеру» и
+  замолкает на 24 ч (`handoff`, список «Передано менеджеру»). Менеджер ответил сам — бот молчит 12 ч.
+  Не больше 8 ответов на разговор. «СТОП» — отписка навсегда. Наши собственные сообщения из API бот
+  узнаёт по `OurIDs`, иначе принял бы их за ответ менеджера;
+- **WABA-канал (официальный WhatsApp Business API) пока не поддержан**: там нужны шаблоны,
+  одобренные Meta. Страница предупреждает, если канал WABA;
+- **подключение**: `wazzup-key.bat` (не в репозитории) — скрытый ввод ключа Wazzup («Интеграции с
+  CRM → API»), сам придумывает `WAZZUP_WEBHOOK_TOKEN`, отправляет на Vercel, пересобирает сайт и
+  `scripts/wazzup-setup.ts` прописывает адрес вебхука в Wazzup и проверяет его.
 
 **Собственная розница** (роли `retail_almaty` и `retail_regions`, раздел `/retail`, правило —
 `src/lib/retail.ts`). У хозяйства есть свои цветочные магазины: в Алматы и в регионах. Менеджер
@@ -2283,7 +2327,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;
@@ -2415,7 +2459,8 @@ src/
 `GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_OAUTH_REFRESH_TOKEN`; для Kaspi Pay — `APIPAY_ESENTAI_KEY`,
 `APIPAY_ESENTAI_WEBHOOK_SECRET` (и то же с `ROSE_FARM`, когда подключат розу); для WhatsApp и ИИ —
 `GREENAPI_URL`, `GREENAPI_INSTANCE`, `GREENAPI_TOKEN`, `WHATSAPP_WEBHOOK_TOKEN`, `OPENAI_API_KEY`
-(необязательные `OPENAI_MODEL`, `OPENAI_TRANSCRIBE_MODEL`).
+(необязательные `OPENAI_MODEL`, `OPENAI_TRANSCRIBE_MODEL`, `OPENAI_BOT_MODEL`); для рассылок —
+`WAZZUP_API_KEY`, `WAZZUP_WEBHOOK_TOKEN` (необязательный `WAZZUP_CHANNEL_ID`).
 `.env.local` в репозиторий не коммитится никогда.
 
 **Смена домена** описана в граблях 1.7: три места (`next.config.js`, `NEXTAUTH_URL` на Vercel,

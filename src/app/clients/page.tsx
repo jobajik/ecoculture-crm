@@ -46,7 +46,7 @@ export default async function ClientsPage() {
 
   return (
     <div>
-      <PageHeader area="clients" title="Клиенты" tabs={clientsTabsFor()} />
+      <PageHeader area="clients" title="Клиенты" tabs={clientsTabsFor(undefined, role)} />
       <p className="text-sm text-ink-secondary mb-4">
         {t.clients === 0
           ? "Клиентов пока нет."

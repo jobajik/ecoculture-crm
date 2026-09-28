@@ -51,7 +51,7 @@ export default async function ClientAnalyticsPage({ searchParams }: { searchPara
 
   return (
     <div className="space-y-5">
-      <PageHeader area="clients" title="Аналитика клиентов" icon="chart" tabs={clientsTabsFor(period)} />
+      <PageHeader area="clients" title="Аналитика клиентов" icon="chart" tabs={clientsTabsFor(period, role)} />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <PeriodPicker period={period} />
