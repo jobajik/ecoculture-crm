@@ -137,6 +137,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       farm: p.farm,
       method: p.method,
       enteredOn: (p.createdAt || "").slice(0, 10),
+      flowerType: p.flowerType || "",
     }));
   // Бухгалтер работает с оплатой прямо на заявке (просьба Юлии: «неудобно
   // заходить в заявку, потом искать её в неоплаченных и ставить отметку»).

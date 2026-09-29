@@ -12,7 +12,7 @@ import {
   setRealizationAction,
 } from "@/app/finance/actions";
 import type { FinancePayment } from "@/lib/finance";
-import { paymentHistory, type Realization } from "@/lib/payments";
+import { flowerOwed, paymentHistory, type Realization } from "@/lib/payments";
 import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
 import { MIXED_PAYMENT_METHOD, PAYMENT_METHODS } from "@/lib/constants";
@@ -119,6 +119,7 @@ export default function PaymentPanel({
             totalAmount={totalAmount}
             paidAmount={paidAmount}
             farms={farms}
+            payments={payments}
             defaultMethod={defaultMethod}
           />
         </div>
@@ -371,6 +372,14 @@ function PaymentsList({
               <span className="flex-1 min-w-0 text-ink-secondary">
                 {dayLabel(p.date)} · {p.method}
                 {p.farm && farms.length > 1 && ` · ${farmLabel(p.farm)}`}
+                {(() => {
+                  // Цветок пишем, только если у его компании в заявке их два.
+                  const f = full.flowerType || "";
+                  const row = farms.find((x) => x.flowers.some((y) => y.flowerType === f));
+                  return f && row && row.flowers.length > 1
+                    ? ` · ${(row.flowers.find((y) => y.flowerType === f)?.label ?? f).toLowerCase()}`
+                    : "";
+                })()}
               </span>
               {canRemove && (
                 <button
@@ -407,12 +416,14 @@ function AddPayment({
   totalAmount,
   paidAmount,
   farms,
+  payments,
   defaultMethod,
 }: {
   orderId: string;
   totalAmount: number;
   paidAmount: number;
   farms: FarmPayment[];
+  payments: FinancePayment[];
   defaultMethod: string;
 }) {
   const router = useRouter();
@@ -426,27 +437,73 @@ function AddPayment({
   };
   const mixed = defaultMethod === MIXED_PAYMENT_METHOD;
   const firstMethod = PAYMENT_METHODS.includes(defaultMethod as never) ? defaultMethod : PAYMENT_METHODS[0];
+
+  // Владелец: «в оплате у Rose Farm должно быть разделение, что по розе, а что
+  // по эустоме». Если у выбранной компании в заявке два цветка, сумма вносится
+  // строкой на каждый цветок — с подсказкой, сколько по нему осталось.
+  const farmRow = farms.find((f) => f.farm === (split ? farm : farms[0]?.farm));
+  const flowers = farmRow?.flowers ?? [];
+  const byFlower = flowers.length > 1;
+  const owedByFlower = farmRow ? flowerOwed(farmRow, payments, !split) : [];
+  const flowerLabel = (f: string) => flowers.find((x) => x.flowerType === f)?.label ?? f;
+
+  type Line = { amount: number; method: string; flowerType: string };
+  const initialLines = (fl: typeof flowers): Line[] =>
+    fl.length > 1
+      ? fl.map((f) => ({ amount: 0, method: firstMethod, flowerType: f.flowerType }))
+      : mixed
+        ? [
+            { amount: 0, method: PAYMENT_METHODS[0], flowerType: "" },
+            { amount: 0, method: PAYMENT_METHODS[1], flowerType: "" },
+          ]
+        : [{ amount: 0, method: firstMethod, flowerType: "" }];
   // Менеджер написал «Смешанная» — сразу две строки: картой и наличными.
-  const [lines, setLines] = useState<{ amount: number; method: string }[]>(
-    mixed
-      ? [
-          { amount: 0, method: PAYMENT_METHODS[0] },
-          { amount: 0, method: PAYMENT_METHODS[1] },
-        ]
-      : [{ amount: 0, method: firstMethod }]
-  );
+  const [lines, setLines] = useState<Line[]>(() => initialLines(flowers));
   const [date, setDate] = useState(todayKey());
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const owed = owedFor(farm);
   const total = Math.round(lines.reduce((s, l) => s + (l.amount || 0), 0) * 100) / 100;
   const unusedMethod = PAYMENT_METHODS.find((m) => !lines.some((l) => l.method === m));
+  const canAddLine = byFlower || Boolean(unusedMethod);
 
-  function setLine(i: number, patch: Partial<{ amount: number; method: string }>) {
+  function changeFarm(next: string) {
+    setFarm(next);
+    const row = farms.find((f) => f.farm === next);
+    setLines(initialLines(row?.flowers ?? []));
+  }
+
+  function setLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   }
 
+  function addLine() {
+    if (byFlower) {
+      const f = flowers[0].flowerType;
+      const method = PAYMENT_METHODS.find((m) => !lines.some((l) => l.flowerType === f && l.method === m)) ?? PAYMENT_METHODS[0];
+      setLines((prev) => [...prev, { amount: 0, method, flowerType: f }]);
+    } else if (unusedMethod) {
+      setLines((prev) => [...prev, { amount: 0, method: unusedMethod, flowerType: "" }]);
+    }
+  }
+
   function fillRest() {
+    if (byFlower) {
+      // Каждому цветку — его остаток: в последнюю строку этого цветка, за
+      // вычетом того, что уже вписано в другие его строки.
+      setLines((prev) => {
+        const next = [...prev];
+        for (const f of owedByFlower) {
+          const idx = next.map((l) => l.flowerType).lastIndexOf(f.flowerType);
+          const others = next.reduce((s, l, j) => (l.flowerType === f.flowerType && j !== idx ? s + (l.amount || 0) : s), 0);
+          const rest = Math.max(0, Math.round((f.owed - others) * 100) / 100);
+          if (idx >= 0) next[idx] = { ...next[idx], amount: rest };
+          else if (rest > 0) next.push({ amount: rest, method: firstMethod, flowerType: f.flowerType });
+        }
+        return next;
+      });
+      return;
+    }
     // Остаток кладётся в последнюю строку: в первых уже стоят известные части.
     const others = lines.slice(0, -1).reduce((s, l) => s + (l.amount || 0), 0);
     const rest = Math.max(0, Math.round((owed - others) * 100) / 100);
@@ -465,7 +522,7 @@ function AddPayment({
             lines: lines.filter((l) => l.amount > 0),
           })
         );
-        setLines([{ amount: 0, method: firstMethod }]);
+        setLines(initialLines(flowers));
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось сохранить");
@@ -479,7 +536,7 @@ function AddPayment({
         {split && (
           <label className="text-sm">
             <span className="block text-ink-secondary mb-1">Какой компании</span>
-            <select className="input !w-auto" value={farm} onChange={(e) => setFarm(e.target.value)}>
+            <select className="input !w-auto" value={farm} onChange={(e) => changeFarm(e.target.value)}>
               {farms.map((f) => (
                 <option key={f.farm} value={f.farm}>
                   {f.farmLabel}
@@ -501,54 +558,85 @@ function AddPayment({
       </div>
 
       <div className="space-y-2">
-        {lines.map((line, i) => (
-          <div key={i} className="flex flex-wrap items-end gap-3">
-            <label className="text-sm">
-              {i === 0 && <span className="block text-ink-secondary mb-1">Сумма, ₸</span>}
-              <input
-                className="input !w-36 text-right tabular-nums"
-                inputMode="decimal"
-                value={line.amount ? line.amount.toLocaleString("ru-RU") : ""}
-                placeholder={
-                  lines.length === 1 && owed > 0 ? Math.round(owed).toLocaleString("ru-RU") : ""
-                }
-                onFocus={(e) => e.target.select()}
-                onChange={(e) => setLine(i, { amount: parseNumber(e.target.value) })}
-              />
-            </label>
-            <label className="text-sm">
-              {i === 0 && <span className="block text-ink-secondary mb-1">Способ</span>}
-              <select
-                className="input !w-auto"
-                value={line.method}
-                onChange={(e) => setLine(i, { method: e.target.value })}
-              >
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {lines.length > 1 && (
-              <button
-                type="button"
-                onClick={() => setLines((prev) => prev.filter((_, j) => j !== i))}
-                className="text-xs text-ink-muted hover:text-status-critical pb-3"
-              >
-                убрать
-              </button>
-            )}
-          </div>
-        ))}
-        {unusedMethod && (
-          <button
-            type="button"
-            onClick={() => setLines((prev) => [...prev, { amount: 0, method: unusedMethod }])}
-            className="text-sm text-accent hover:underline"
-          >
+        {lines.map((line, i) => {
+          const flowerLeft = owedByFlower.find((f) => f.flowerType === line.flowerType)?.owed ?? 0;
+          const placeholder = byFlower
+            ? flowerLeft > 0 && lines.filter((l) => l.flowerType === line.flowerType).length === 1
+              ? Math.round(flowerLeft).toLocaleString("ru-RU")
+              : ""
+            : lines.length === 1 && owed > 0
+              ? Math.round(owed).toLocaleString("ru-RU")
+              : "";
+          return (
+            <div key={i} className="flex flex-wrap items-end gap-3">
+              {byFlower && (
+                <label className="text-sm">
+                  {i === 0 && <span className="block text-ink-secondary mb-1">Цветок</span>}
+                  <select
+                    className="input !w-auto"
+                    value={line.flowerType}
+                    onChange={(e) => setLine(i, { flowerType: e.target.value })}
+                  >
+                    {flowers.map((f) => (
+                      <option key={f.flowerType} value={f.flowerType}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="text-sm">
+                {i === 0 && <span className="block text-ink-secondary mb-1">Сумма, ₸</span>}
+                <input
+                  className="input !w-36 text-right tabular-nums"
+                  inputMode="decimal"
+                  value={line.amount ? line.amount.toLocaleString("ru-RU") : ""}
+                  placeholder={placeholder}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setLine(i, { amount: parseNumber(e.target.value) })}
+                />
+              </label>
+              <label className="text-sm">
+                {i === 0 && <span className="block text-ink-secondary mb-1">Способ</span>}
+                <select
+                  className="input !w-auto"
+                  value={line.method}
+                  onChange={(e) => setLine(i, { method: e.target.value })}
+                >
+                  {PAYMENT_METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {lines.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setLines((prev) => prev.filter((_, j) => j !== i))}
+                  className="text-xs text-ink-muted hover:text-status-critical pb-3"
+                >
+                  убрать
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {canAddLine && (
+          <button type="button" onClick={addLine} className="text-sm text-accent hover:underline">
             + часть другим способом
           </button>
+        )}
+        {byFlower && (
+          <p className="text-xs text-ink-muted">
+            К оплате:{" "}
+            {owedByFlower.map((f, i) => (
+              <span key={f.flowerType}>
+                {i > 0 && " · "}
+                {flowerLabel(f.flowerType).toLowerCase()} {money(f.owed)}
+              </span>
+            ))}
+          </p>
         )}
       </div>
 
@@ -560,13 +648,13 @@ function AddPayment({
         >
           {pending
             ? "Сохраняю…"
-            : lines.length > 1
+            : lines.length > 1 && total > 0
               ? `Внести ${money(total)}`
               : "Внести платёж"}
         </button>
         {owed > 1 && Math.abs(total - owed) > 0.5 && (
           <button type="button" onClick={fillRest} className="btn-secondary">
-            {lines.length > 1 ? "Добить остаток" : `Весь остаток ${money(owed)}`}
+            {lines.length > 1 && !byFlower ? "Добить остаток" : `Весь остаток ${money(owed)}`}
           </button>
         )}
         {lines.length > 1 && owed > 0 && (

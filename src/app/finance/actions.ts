@@ -18,10 +18,11 @@ import {
 import { createClaim, decideClaim, listClaims } from "@/lib/repo/claims";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { confirmRefusal, moneyRefusal } from "@/lib/orderRules";
-import { invoiceByFarm } from "@/lib/orderMoney";
+import { invoiceByFarm, invoiceByFlower } from "@/lib/orderMoney";
 import { appendPayments, deletePayment, listPayments } from "@/lib/repo/payments";
 import {
   addPaymentRefusal,
+  assignPaymentFlowers,
   duplicatePaymentRefusal,
   joinRealizations,
   parseRealizations,
@@ -40,6 +41,7 @@ import {
   ORDER_STATUSES,
   PAYMENT_METHODS,
   FARM_LABELS,
+  FLOWER_TYPE_LABELS,
   ROLES,
 } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
@@ -601,7 +603,7 @@ async function addPaymentActionInner(input: {
    * картой, часть наличными» — просьба бухгалтера) — несколько, и каждая
    * становится отдельным платежом со своим способом.
    */
-  lines: { amount: number; method: string }[];
+  lines: { amount: number; method: string; flowerType?: string }[];
   note?: string;
 }) {
   const email = await requireAccountant();
@@ -637,6 +639,11 @@ async function addPaymentActionInner(input: {
   const farm = invoice.length > 1 ? input.farm : invoice[0]?.farm ?? "";
   const amount = Math.round(total * 100) / 100;
 
+  // За какой цветок каждая часть: у Rose Farm роза и эустома вносятся раздельно.
+  const flowered = assignPaymentFlowers(split.lines, invoiceByFlower(order.items, farm).map((f) => f.flowerType));
+  if (flowered.refusal) throw new Error(flowered.refusal);
+  const flowerSplit = new Set(flowered.lines.map((l) => l.flowerType)).size > 1;
+
   // Повтор того же платежа: второе нажатие, повтор после сбоя связи или то же
   // поступление, внесённое с другого устройства. Правило — `duplicatePaymentRefusal`.
   const dup = duplicatePaymentRefusal({
@@ -652,7 +659,7 @@ async function addPaymentActionInner(input: {
   // легко заметить. При обратном порядке итог вырос бы молча, без следа.
   // Все части — одной записью.
   await appendPayments(
-    split.lines.map((l) => ({
+    flowered.lines.map((l) => ({
       orderId: order.orderId,
       date: input.date,
       amount: l.amount,
@@ -660,6 +667,7 @@ async function addPaymentActionInner(input: {
       method: l.method,
       accountantEmail: email,
       note: (input.note || "").trim().slice(0, 200),
+      flowerType: l.flowerType,
     }))
   );
   const after = await writeTotalsAfter(order, farm, amount, email, split.lines[0].method);
@@ -670,7 +678,13 @@ async function addPaymentActionInner(input: {
     action: MONEY_LOG_ACTIONS.PAYMENT_ADDED,
     details:
       `Платёж ${money(amount)} за ${input.date.split("-").reverse().join(".")} · ` +
-      split.lines.map((l) => (split.lines.length > 1 ? `${l.method} ${money(l.amount)}` : l.method)).join(" + ") +
+      flowered.lines
+        .map((l) =>
+          flowered.lines.length > 1
+            ? `${flowerSplit ? `${FLOWER_TYPE_LABELS[l.flowerType] ?? l.flowerType} ` : ""}${l.method} ${money(l.amount)}`
+            : l.method
+        )
+        .join(" + ") +
       (invoice.length > 1 ? ` · ${FARM_LABELS[farm] ?? farm}` : "") +
       ` · всего получено ${money(after)} из ${money(order.totalAmount)}`,
     amountBefore: order.paidAmount,

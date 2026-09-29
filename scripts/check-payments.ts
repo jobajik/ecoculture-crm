@@ -21,7 +21,11 @@ import {
   splitPaymentLines,
   removePaymentRefusal,
   totalsAfter,
+  assignPaymentFlowers,
+  flowerOwed,
+  splitByFlowerOwed,
 } from "../src/lib/payments";
+import { invoiceByFlower } from "../src/lib/orderMoney";
 import { isConsignment } from "../src/lib/orderKind";
 import { isReadyToShip, notReadyReason } from "../src/lib/orderReady";
 import { getFinanceSnapshot } from "../src/lib/finance";
@@ -207,7 +211,13 @@ check(
     { amount: 70_000, method: "Каспи" },
     { amount: 50_000, method: "Наличные" },
   ]),
-  { lines: [{ method: "Каспи", amount: 70_000 }, { method: "Наличные", amount: 50_000 }], refusal: "" }
+  {
+    lines: [
+      { method: "Каспи", flowerType: "", amount: 70_000 },
+      { method: "Наличные", flowerType: "", amount: 50_000 },
+    ],
+    refusal: "",
+  }
 );
 check(
   "один способ дважды склеивается",
@@ -215,8 +225,59 @@ check(
     { amount: 10_000, method: "Наличные" },
     { amount: 5_000, method: "Наличные" },
   ]).lines,
-  [{ method: "Наличные", amount: 15_000 }]
+  [{ method: "Наличные", flowerType: "", amount: 15_000 }]
 );
+
+// --- Rose Farm: роза и эустома раздельно --------------------------------------
+check(
+  "один способ, два цветка — два платежа",
+  splitPaymentLines([
+    { amount: 400_000, method: "Каспи", flowerType: "rose" },
+    { amount: 160_000, method: "Каспи", flowerType: "eustoma" },
+    { amount: 1_000, method: "Каспи", flowerType: "rose" },
+  ]).lines,
+  [
+    { method: "Каспи", flowerType: "rose", amount: 401_000 },
+    { method: "Каспи", flowerType: "eustoma", amount: 160_000 },
+  ]
+);
+check("у компании два цветка — без цветка нельзя", refused(assignPaymentFlowers([{ flowerType: "", amount: 1 }], ["rose", "eustoma"]).refusal), true);
+check("чужой цветок — нельзя", refused(assignPaymentFlowers([{ flowerType: "chrysanthemum", amount: 1 }], ["rose", "eustoma"]).refusal), true);
+check("один цветок — ставится сам", assignPaymentFlowers([{ flowerType: "", amount: 1 }], ["chrysanthemum"]).lines[0].flowerType, "chrysanthemum");
+check(
+  "счёт компании по цветкам",
+  invoiceByFlower(
+    [
+      { flowerType: "eustoma", quantity: 400, unitPrice: 400 },
+      { flowerType: "rose", quantity: 1000, unitPrice: 400 },
+      { flowerType: "chrysanthemum", quantity: 100, unitPrice: 300 },
+    ],
+    "rose_farm"
+  ).map((f) => [f.flowerType, f.amount]),
+  [["rose", 400_000], ["eustoma", 160_000]]
+);
+{
+  const rf = { farm: "rose_farm", paidAmount: 150_000, flowers: [
+    { flowerType: "rose", label: "Роза", amount: 400_000 },
+    { flowerType: "eustoma", label: "Эустома", amount: 160_000 },
+  ] };
+  // 100 000 записано за розу, 50 000 — старыми деньгами без цветка (делятся по счёту 5:2).
+  const owed = flowerOwed(rf, [
+    { farm: "rose_farm", flowerType: "rose", amount: 100_000 },
+    { farm: "esentai", flowerType: "", amount: 30_000 },
+  ], false);
+  check("остаток по цветкам: свой платёж + доля старых", owed.map((f) => [f.flowerType, Math.round(f.paid), Math.round(f.owed)]), [
+    ["rose", 135_714, 264_286],
+    ["eustoma", 14_286, 145_714],
+  ]);
+  const whole = splitByFlowerOwed(410_000, owed);
+  check("Kaspi на весь остаток — каждому его остаток", whole.map((p) => [p.flowerType, p.amount]), [
+    ["rose", 264_285.71],
+    ["eustoma", 145_714.29],
+  ]);
+  check("сумма частей равна платежу", Math.round(whole.reduce((s, p) => s + p.amount, 0) * 100) / 100, 410_000);
+  check("один цветок — вся сумма ему", splitByFlowerOwed(5_000, [owed[0]]), [{ flowerType: "rose", amount: 5_000 }]);
+}
 check("пустая строка выбрасывается", splitPaymentLines([{ amount: 100, method: "Каспи" }, { amount: 0, method: "" }]).lines.length, 1);
 check("способ «Смешанная» у одного платежа нельзя", refused(splitPaymentLines([{ amount: 100, method: "Смешанная" }]).refusal), true);
 check("минус в части — отказ", refused(splitPaymentLines([{ amount: -5, method: "Каспи" }]).refusal), true);

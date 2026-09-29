@@ -2,8 +2,8 @@ import { getOrderById, setOrderPaidTotals } from "./repo/orders";
 import { appendPayments, listPayments } from "./repo/payments";
 import { logMoney } from "./repo/moneyLog";
 import { farmPayments, invoiceByFarm } from "./orderMoney";
-import { methodOfPayments, totalsAfter } from "./payments";
-import { FARM_LABELS, MONEY_LOG_ACTIONS, PAID_FIELD_BY_FARM } from "./constants";
+import { flowerOwed, methodOfPayments, splitByFlowerOwed, totalsAfter } from "./payments";
+import { FARM_LABELS, FLOWER_TYPE_LABELS, MONEY_LOG_ACTIONS, PAID_FIELD_BY_FARM } from "./constants";
 import { forgetReads } from "./sheets";
 
 // Запись платежа по заявке: строка в журнале Payments + новый итог заявки.
@@ -76,17 +76,25 @@ export async function recordPayment(input: {
   if (!order) return null;
   const invoice = invoiceByFarm(order.items);
   const farm = invoice.length > 1 ? input.farm : invoice[0]?.farm ?? input.farm;
-  const [paymentId] = await appendPayments([
-    {
+  // Kaspi-счёт оплачивают одним переводом за всю часть компании, а у Rose Farm
+  // в ней роза и эустома — перевод раскладывается по остаткам цветков.
+  const farmRow = farmPayments(order).find((f) => f.farm === farm);
+  const ledger = (await listPayments({ fresh: true })).filter((p) => p.orderId === order.orderId);
+  const parts = farmRow
+    ? splitByFlowerOwed(input.amount, flowerOwed(farmRow, ledger, invoice.length <= 1))
+    : [{ flowerType: "", amount: input.amount }];
+  const [paymentId] = await appendPayments(
+    (parts.length ? parts : [{ flowerType: "", amount: input.amount }]).map((p) => ({
       orderId: order.orderId,
       date: input.date,
-      amount: input.amount,
+      amount: p.amount,
       farm: invoice.length > 1 ? farm : "",
       method: input.method,
       accountantEmail: input.actorEmail,
       note: input.note.slice(0, 200),
-    },
-  ]);
+      flowerType: p.flowerType,
+    }))
+  );
   const after = await writeTotalsAfter(order, farm, input.amount, input.actorEmail, input.method);
   await logMoney({
     actorEmail: input.actorEmail,
@@ -95,6 +103,7 @@ export async function recordPayment(input: {
     details:
       `Платёж ${money(input.amount)} за ${input.date.split("-").reverse().join(".")} · ${input.method}` +
       (invoice.length > 1 ? ` · ${FARM_LABELS[farm] ?? farm}` : "") +
+      (parts.length > 1 ? ` (${parts.map((p) => `${FLOWER_TYPE_LABELS[p.flowerType] ?? p.flowerType} ${money(p.amount)}`).join(", ")})` : "") +
       ` · ${input.note} · всего получено ${money(after)} из ${money(order.totalAmount)}`,
     amountBefore: order.paidAmount,
     amountAfter: after,

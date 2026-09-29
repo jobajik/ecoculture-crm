@@ -21,6 +21,7 @@ function toPayment(record: Record<string, string>): Payment {
     method: record.Method || "",
     accountantEmail: (record.AccountantEmail || "").toLowerCase(),
     note: record.Note || "",
+    flowerType: (record.Flower || "").trim(),
   };
 }
 
@@ -53,6 +54,7 @@ export async function appendPayment(input: Omit<Payment, "paymentId" | "createdA
     Method: input.method,
     AccountantEmail: input.accountantEmail,
     Note: input.note,
+    Flower: input.flowerType || "",
   });
   return paymentId;
 }
@@ -79,6 +81,7 @@ export async function appendPayments(
       Method: input.method,
       AccountantEmail: input.accountantEmail,
       Note: input.note,
+      Flower: input.flowerType || "",
     }))
   );
   return ids;

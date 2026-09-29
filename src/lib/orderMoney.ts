@@ -1,4 +1,12 @@
-import { FARM_LABELS, FARM_ORDER, MONEY_EPSILON, PAID_FIELD_BY_FARM, getFarmFor } from "./constants";
+import {
+  FARM_LABELS,
+  FARM_ORDER,
+  FLOWER_TYPES,
+  FLOWER_TYPE_LABELS,
+  MONEY_EPSILON,
+  PAID_FIELD_BY_FARM,
+  getFarmFor,
+} from "./constants";
 
 /**
  * Деньги по заявке в разрезе КОМПАНИЙ.
@@ -110,6 +118,13 @@ export function paidByFarm(
   }));
 }
 
+/** Счёт компании по одному цветку (у Rose Farm — роза и эустома отдельно). */
+export interface FlowerMoney {
+  flowerType: string;
+  label: string;
+  amount: number;
+}
+
 /** Счёт и оплата рядом — то, с чем работает панель бухгалтера. */
 export interface FarmPayment {
   farm: string;
@@ -118,6 +133,28 @@ export interface FarmPayment {
   amount: number;
   /** Сколько по нему получено. */
   paidAmount: number;
+  /**
+   * Счёт компании по цветкам — только те, что есть в заявке, в привычном
+   * порядке. У Rose Farm бывает два: роза и эустома, и оплату по ним
+   * бухгалтер вносит раздельно (так они идут и в 1С).
+   */
+  flowers: FlowerMoney[];
+}
+
+const FLOWER_MONEY_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA] as string[];
+
+/** Счёт одной компании по цветкам заявки. */
+export function invoiceByFlower(items: InvoiceItem[], farm: string): FlowerMoney[] {
+  const sums = new Map<string, number>();
+  for (const item of items) {
+    if (getFarmFor(item.flowerType) !== farm) continue;
+    const amount = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+    sums.set(item.flowerType, (sums.get(item.flowerType) ?? 0) + amount);
+  }
+  const order = [...FLOWER_MONEY_ORDER, ...[...sums.keys()].filter((f) => !FLOWER_MONEY_ORDER.includes(f)).sort()];
+  return order
+    .filter((f) => sums.has(f))
+    .map((f) => ({ flowerType: f, label: FLOWER_TYPE_LABELS[f] ?? f, amount: round2(sums.get(f) ?? 0) }));
 }
 
 export function farmPayments(
@@ -130,5 +167,6 @@ export function farmPayments(
     farmLabel: row.farmLabel,
     amount: row.amount,
     paidAmount: paid[idx]?.amount ?? 0,
+    flowers: invoiceByFlower(order.items, row.farm),
   }));
 }

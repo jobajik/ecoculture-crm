@@ -26,6 +26,8 @@ export interface FinancePayment {
   method: string;
   /** Когда платёж внесли в программу — от этого зависит, можно ли его удалить. */
   enteredOn: string;
+  /** За какой цветок. Пусто — не разделено. */
+  flowerType?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +308,7 @@ export async function getFinanceSnapshot(
       farm: p.farm,
       method: p.method,
       enteredOn: (p.createdAt || "").slice(0, 10),
+      flowerType: p.flowerType || "",
     });
     paymentsByOrder.set(p.orderId, list);
   }

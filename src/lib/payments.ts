@@ -170,9 +170,11 @@ export function methodOfPayments(methods: string[]): string {
  * какая-то часть неверна.
  */
 export function splitPaymentLines(
-  lines: { amount: number; method: string }[]
-): { lines: { amount: number; method: string }[]; refusal: string } {
-  const byMethod = new Map<string, number>();
+  lines: { amount: number; method: string; flowerType?: string }[]
+): { lines: { amount: number; method: string; flowerType: string }[]; refusal: string } {
+  // Одинаковые способ и цветок склеиваются: две строки «Каспи · роза» — это
+  // один платёж, а «Каспи · роза» и «Каспи · эустома» — два.
+  const byKey = new Map<string, { amount: number; method: string; flowerType: string }>();
   for (const line of lines) {
     const amount = Number(line.amount);
     if (!line.method && (!amount || amount === 0)) continue;
@@ -182,13 +184,101 @@ export function splitPaymentLines(
     if (!PAYMENT_METHODS.includes(line.method as never)) {
       return { lines: [], refusal: "У каждой части оплаты выберите способ" };
     }
-    byMethod.set(line.method, round2((byMethod.get(line.method) ?? 0) + amount));
+    const flowerType = (line.flowerType || "").trim();
+    const key = `${line.method}|${flowerType}`;
+    const cur = byKey.get(key);
+    byKey.set(key, { method: line.method, flowerType, amount: round2((cur?.amount ?? 0) + amount) });
   }
-  if (byMethod.size === 0) return { lines: [], refusal: "Укажите сумму платежа" };
-  return {
-    lines: Array.from(byMethod.entries()).map(([method, amount]) => ({ method, amount })),
-    refusal: "",
-  };
+  if (byKey.size === 0) return { lines: [], refusal: "Укажите сумму платежа" };
+  return { lines: Array.from(byKey.values()), refusal: "" };
+}
+
+/**
+ * Цветок у каждой части платежа. Владелец: «в оплате у Rose Farm должно быть
+ * разделение, что по розе, а что по эустоме». Если у компании в заявке два
+ * цветка — цветок обязателен у каждой части; если один — ставится сам, чтобы
+ * и такие платежи были разнесены по цветку.
+ */
+export function assignPaymentFlowers<T extends { flowerType: string }>(
+  lines: T[],
+  farmFlowers: string[]
+): { lines: T[]; refusal: string } {
+  if (farmFlowers.length <= 1) return { lines: lines.map((l) => ({ ...l, flowerType: farmFlowers[0] ?? "" })), refusal: "" };
+  for (const l of lines) {
+    if (!farmFlowers.includes(l.flowerType)) {
+      return { lines: [], refusal: "Укажите у каждой части, за какой она цветок — розу или эустому" };
+    }
+  }
+  return { lines, refusal: "" };
+}
+
+export interface FlowerOwed {
+  flowerType: string;
+  label: string;
+  /** Счёт по цветку. */
+  amount: number;
+  /** Сколько по нему получено. */
+  paid: number;
+  /** Сколько ещё к оплате (не меньше нуля). */
+  owed: number;
+}
+
+/**
+ * Сколько по каждому цветку компании получено и сколько осталось.
+ *
+ * Платёж с цветком идёт в свой цветок. Деньги без цветка — старые платежи,
+ * Kaspi до разделения, итог, вписанный одним числом, — делятся по счёту
+ * пропорционально: другого способа их разложить нет, и так же делит касса.
+ */
+export function flowerOwed(
+  farm: { farm: string; paidAmount: number; flowers: { flowerType: string; label: string; amount: number }[] },
+  payments: { farm: string; flowerType?: string; amount: number }[],
+  singleFarm: boolean
+): FlowerOwed[] {
+  const flowers = farm.flowers;
+  const mine = payments.filter((p) => singleFarm || p.farm === farm.farm);
+  const tagged = new Map<string, number>();
+  for (const p of mine) {
+    const f = (p.flowerType || "").trim();
+    if (f && flowers.some((x) => x.flowerType === f)) tagged.set(f, (tagged.get(f) ?? 0) + (Number(p.amount) || 0));
+  }
+  const taggedSum = [...tagged.values()].reduce((s, v) => s + v, 0);
+  const untagged = Math.max(0, (Number(farm.paidAmount) || 0) - taggedSum);
+  const total = flowers.reduce((s, f) => s + f.amount, 0);
+  return flowers.map((f) => {
+    const share = total > 0 ? (untagged * f.amount) / total : flowers.length ? untagged / flowers.length : 0;
+    const paid = round2((tagged.get(f.flowerType) ?? 0) + share);
+    return { flowerType: f.flowerType, label: f.label, amount: f.amount, paid, owed: round2(Math.max(0, f.amount - paid)) };
+  });
+}
+
+/**
+ * Разложить одну сумму по цветкам — для Kaspi-счёта, который оплачивают одним
+ * переводом за всю часть компании. Делится пропорционально остаткам к оплате
+ * (оплатили весь остаток — каждому цветку ровно его остаток), а без остатков —
+ * по счёту. Копейки от округления — самой большой доле, сумма частей РАВНА целому.
+ */
+export function splitByFlowerOwed(amount: number, flowers: FlowerOwed[]): { flowerType: string; amount: number }[] {
+  const goal = round2(Math.max(0, Number(amount) || 0));
+  if (flowers.length === 0) return [];
+  if (flowers.length === 1) return [{ flowerType: flowers[0].flowerType, amount: goal }];
+  const owedSum = flowers.reduce((s, f) => s + f.owed, 0);
+  const base = owedSum > MONEY_EPSILON ? flowers.map((f) => f.owed) : flowers.map((f) => f.amount);
+  const baseSum = base.reduce((s, v) => s + v, 0);
+  const parts = flowers.map((f, i) => ({
+    flowerType: f.flowerType,
+    exact: baseSum > 0 ? (goal * base[i]) / baseSum : goal / flowers.length,
+  }));
+  const out = parts.map((p) => ({ flowerType: p.flowerType, amount: round2(p.exact) }));
+  const diff = round2(goal - out.reduce((s, p) => s + p.amount, 0));
+  if (Math.abs(diff) > 0) {
+    let big = 0;
+    parts.forEach((p, i) => {
+      if (p.exact > parts[big].exact) big = i;
+    });
+    out[big].amount = round2(out[big].amount + diff);
+  }
+  return out.filter((p) => p.amount > 0);
 }
 
 /** Окно, в котором одинаковый платёж считается повтором, а не вторым платежом. */

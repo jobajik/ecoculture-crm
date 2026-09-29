@@ -104,6 +104,8 @@ export interface Payment {
   method: string;
   accountantEmail: string;
   note: string;
+  /** За какой цветок (код типа). Пусто — не разделено по цветкам. */
+  flowerType?: string;
 }
 
 /**
