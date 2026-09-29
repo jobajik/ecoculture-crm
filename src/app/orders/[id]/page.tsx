@@ -342,7 +342,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                   {moneyTone === "good"
                     ? "оплачено"
                     : isConsignment(order)
-                      ? "реализация"
+                      ? "на точку"
                       : order.paidAmount > 0
                         ? `остаток ${Math.round(leftToPay).toLocaleString("ru-RU")} ₸`
                         : moneyTone === "bad"
@@ -674,6 +674,23 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               })}
             </div>
           )}
+          {isConsignment(loaded) ? (
+            <div className="space-y-2 text-sm">
+              <p>
+                Это перемещение на нашу точку на базаре — не продажа. Деньги точки бухгалтер вносит отчётом за
+                день: сколько пришло на Kaspi и наличными.
+              </p>
+              {loaded.paidAmount > 0 && (
+                <p className="text-ink-secondary">
+                  По этой заявке раньше внесено {Math.round(loaded.paidAmount).toLocaleString("ru-RU")} ₸ — эти
+                  деньги учтены в выручке точки.
+                </p>
+              )}
+              <Link href="/finance/point" className="text-accent hover:underline">
+                Открыть «Точку на базаре» →
+              </Link>
+            </div>
+          ) : (
           <PaymentPanel
             orderId={loaded.orderId}
             totalAmount={loaded.totalAmount}
@@ -686,6 +703,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             status={loaded.status}
             consignment={isConsignment(loaded)}
           />
+          )}
         </Section>
       )}
 

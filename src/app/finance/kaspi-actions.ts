@@ -11,7 +11,7 @@ import { getClientById } from "@/lib/repo/clients";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { appendKaspiInvoice, findKaspiInvoice, listKaspiInvoices, updateKaspiInvoiceRow } from "@/lib/repo/kaspiInvoices";
 import { farmPayments } from "@/lib/orderMoney";
-import { hasNoClientInvoice } from "@/lib/orderKind";
+import { isNotASale } from "@/lib/orderKind";
 import { orderCode } from "@/lib/paymentStage";
 import {
   ApiPayError,
@@ -92,7 +92,7 @@ async function loadKaspiActionInner(orderId: string): Promise<KaspiPanelData> {
     .filter((i) => i.orderId === orderId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   return {
-    farms: hasNoClientInvoice(order)
+    farms: isNotASale(order)
       ? []
       : farmPayments(order).map((f) => ({
           farm: f.farm,
@@ -123,7 +123,7 @@ async function sendKaspiInvoiceActionInner(input: { orderId: string; farm: strin
     farm: input.farm,
     invoiceFarms: farmPayments(order),
     orderStatus: order.status,
-    noInvoice: hasNoClientInvoice(order),
+    noInvoice: isNotASale(order),
     phone,
     amount,
     existing,

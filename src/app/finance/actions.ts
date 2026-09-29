@@ -31,7 +31,7 @@ import {
   removePaymentRefusal,
 } from "@/lib/payments";
 import { isRetailOrder, isRetailRole } from "@/lib/retail";
-import { isRegionOrder } from "@/lib/orderKind";
+import { isConsignment, isRegionOrder } from "@/lib/orderKind";
 import { invoiceSentRefusal } from "@/lib/paymentStage";
 import { canEditFinance } from "@/lib/financeAccess";
 import {
@@ -615,6 +615,9 @@ async function addPaymentActionInner(input: {
   forgetReads();
   const order = await getOrderById(input.orderId);
   if (!order) throw new Error("Заявка не найдена");
+  if (isConsignment(order)) {
+    throw new Error("Это перемещение на точку на базаре — деньги точки вносятся отчётом за день («Оплаты → Точка на базаре»)");
+  }
   const invoice = invoiceByFarm(order.items);
 
   const split = splitPaymentLines(input.lines ?? []);

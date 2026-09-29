@@ -513,7 +513,7 @@ Google считает лимит по этому доступу. Значит, 6
 Вкладки: `Users`, `Orders`, `OrderItems`, `Batches`, `Shipments`, `Writeoffs`, `PriceHistory`,
 `Varieties`, `Plans`, `ShipmentPlans`, `HarvestForecast`, `HarvestMix`, `Claims`, `MoneyLog`,
 `Clients`, `Settings`, `StaffTakeouts`, `Payments`, `Leads`, `LeadTouches`, `KaspiInvoices`, `WaMessages`,
-`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
+`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`, `PointSales`, `PointWriteoffs`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
 истины (см. грабли 1.1).
 
 Новые вкладки создаёт `npm run setup-sheet`: он дописывает недостающие листы и проставляет
@@ -2008,19 +2008,32 @@ Farm должно быть разделение, что по розе, а что
 **снятие оплаты способ больше не стирает** — вместе с деньгами пропало бы то, что знал менеджер.
 Бухгалтер видит его в строке списка («Наличные · …») и как способ по умолчанию в новом платеже.
 
-**Реализация — пожарка** (`isConsignment()` в `orderKind.ts`, список `CONSIGNMENT_DIRECTIONS`).
-Бухгалтер: «их заявки это не продажи; продают не всё, что забирают, там всегда будет висеть
-задолженность». Владелец выбрал вести такие заявки как реализацию:
+**Точка на базаре — «Пожарка»** (сентябрь 2026; правила — `src/lib/point.ts`, запись —
+`src/lib/repo/point.ts`, действия — `src/app/finance/point-actions.ts`, страница «Оплаты → Точка на
+базаре» `/finance/point`, проверка `check-point`). Владелец: «это наша точка на базаре, мы туда
+перемещаем товар, а по факту продажи реализуем; деньги принимают на Kaspi (счета выставляют сами) или
+наличкой; реализовать как перемещение, но заявку они делают как обычно». Его решения: деньги —
+отчётом за день, вносит бухгалтер, бонус менеджерам — по ставке цветка, списания на точке — есть.
 
-- **в долги, просрочку, звонки и «ждём оплату» не идут** — остаток там не долг, а непроданный цветок
-  (`onConsignment` в строке финансов, пометка «на реализации» в списке);
-- **отгружаются по одной галочке менеджера**: платят за проданное, то есть ПОСЛЕ отгрузки; потребуй
-  оплату — заявку не отгрузили бы никогда (`waitsForMoney()` в `orderReady.ts`);
-- деньги вносятся обычными платежами по мере продаж и идут в выручку и бонусы как обычно;
-- это НЕ третий случай `hasNoClientInvoice`: там денег нет вовсе, здесь они приходят.
+- **заявка — как обычно**: менеджер оформляет её с направлением «Пожарка» (`isConsignment()` в
+  `orderKind.ts`, список `CONSIGNMENT_DIRECTIONS`), склад отгружает по одной галочке менеджера;
+- **это НЕ продажа** — `isNotASale(order) = hasNoClientInvoice || isConsignment` стоит вместо
+  `hasNoClientInvoice` во всех расчётах выручки: продажи, рейтинг, аналитика, календарь, клиенты,
+  финансы. Платёж на такую заявку сервер не принимает (`addPaymentAction` отказывает), на странице
+  заявки вместо панели оплаты — ссылка на точку, в `ReadyChecks` одна галочка;
+- **«отвезли»** — ОТГРУЖЕННОЕ × цена заявки, в день доставки (`transferLines`, `transferDay`);
+- **выручка** — вкладка `PointSales`, строка на день: Kaspi и наличные. Повторный ввод дня
+  переписывает строку, 0 и 0 — удаляет. Платежи, внесённые на пожарку раньше (до сентября 2026), —
+  тоже выручка точки («по заявкам», по `PaidAt`);
+- **списания на точке** — вкладка `PointWriteoffs`: цветок, стебли, причина; сумма — по средней цене
+  отвезённого этого цветка (`avgTransferPrice`). Склад партий НЕ трогают: цветок уже уехал;
+- **«на точке сейчас, примерно»** = всё отвезённое − вся выручка − все списания (в деньгах);
+- **бонус** — `pointBonusShares`: выручка точки за период делится между менеджерами по тому, кто
+  сколько ОТВЁЗ за период (цветок × менеджер), и умножается на ставку цветка. В рейтинге — строкой
+  «в т.ч. точка на базаре»;
+- вносит бухгалтер и админ (`canEditPoint`), РОП только смотрит; день из будущего и минус — нельзя.
 
-Узнаётся реализация по направлению заявки «Пожарка» — его ставит менеджер. Объём на город с таким
-направлением реализацией не считается: счёта там нет.
+В «Оплаты» (итоги, касса по цветкам) выручка точки НЕ входит — только на странице точки.
 
 Проверка всего этого — `scripts/check-payments.ts`.
 
@@ -2369,7 +2382,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

@@ -8,7 +8,7 @@ import {
   periodShift,
   weeksOfMonth,
 } from "./constants";
-import { hasNoClientInvoice, isConsignment, isRegionOrder } from "./orderKind";
+import { hasNoClientInvoice, isConsignment, isNotASale, isRegionOrder } from "./orderKind";
 import { invoiceByFarm, paidByFarm } from "./orderMoney";
 import { splitPaymentByFlower } from "./cashByFlower";
 import { toIsoDate } from "./sheetDate";
@@ -188,7 +188,7 @@ export function buildFinanceAnalytics(input: {
   const who = (email: string) => nameByEmail.get((email || "").toLowerCase()) ?? (email || "без менеджера");
 
   const live = orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED);
-  const sales = live.filter((o) => !hasNoClientInvoice(o) && day(o.createdAt));
+  const sales = live.filter((o) => !isNotASale(o) && day(o.createdAt));
   const moneyOrders = new Map(live.filter((o) => !hasNoClientInvoice(o) || isRegionOrder(o)).map((o) => [o.orderId, o]));
 
   // --- Поступления: журнал + то, что внесено до него одной суммой ------------

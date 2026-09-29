@@ -1,7 +1,7 @@
 import { CLIENT_SLEEPING_DAYS, FLOWER_TYPE_LABELS_PLURAL, MONEY_EPSILON, ORDER_STATUSES, periodShift } from "./constants";
 import type { Client, OrderWithItems } from "./types";
 import { isOwnShop } from "./retail";
-import { hasNoClientInvoice, isConsignment } from "./orderKind";
+import { isConsignment, isNotASale } from "./orderKind";
 
 /**
  * Аналитика клиентов за месяц — «Клиенты → Аналитика».
@@ -215,7 +215,7 @@ export function buildClientAnalytics(input: {
   const byId = new Map(clients.map((c) => [c.clientId, c]));
   const nameOf = (email: string) => input.nameByEmail.get(email.toLowerCase()) ?? input.nameByEmail.get(email) ?? email;
 
-  const counted = input.orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && !hasNoClientInvoice(o));
+  const counted = input.orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && !isNotASale(o));
   // Заявка на карточку нашего магазина (старые, до разметки) клиентом не считается.
   const sales = counted.filter((o) => !o.clientId || byId.has(o.clientId));
 

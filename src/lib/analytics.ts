@@ -4,7 +4,7 @@ import { listBatches } from "./repo/batches";
 import { listWriteoffs } from "./repo/writeoffs";
 import { listStaffTakeouts } from "./repo/staffTakeouts";
 import { isCompanyUse } from "./staffTakeout";
-import { hasNoClientInvoice } from "./orderKind";
+import { isNotASale } from "./orderKind";
 import { listPriceHistory } from "./repo/priceHistory";
 import { listHarvestForecast } from "./repo/harvestForecast";
 import { getSettings } from "./repo/settings";
@@ -547,8 +547,8 @@ export async function getAnalyticsSummary(
   // Эту ошибку я сам и допустил, когда делал розницу: исключения расставил в
   // шести расчётах, а в главном отчёте — забыл. Нашлось при добавлении
   // городских заявок, потому что у них цена ноль и перекос стал очевиден.
-  const sellable = orders.filter((o) => !hasNoClientInvoice(o));
-  const transfers = orders.filter((o) => hasNoClientInvoice(o));
+  const sellable = orders.filter((o) => !isNotASale(o));
+  const transfers = orders.filter((o) => isNotASale(o));
 
   const nowSales = salesWindow(sellable, from, to);
   const prevSales = salesWindow(sellable, prevFrom, from);

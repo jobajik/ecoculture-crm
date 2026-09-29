@@ -376,7 +376,7 @@ async function main() {
     kind: "",
     invoiceSentAt: "",
     invoiceNote: "",
-    realization1c: orderId === "FIRE" ? "РН-7" : "",
+    realization1c: orderId === "SALE" ? "РН-7" : "",
     totalAmount: 100_000,
     items: [
       {
@@ -398,7 +398,7 @@ async function main() {
       {
         paymentId: "PAY-1",
         createdAt: "2026-09-10T10:00:00Z",
-        orderId: "FIRE",
+        orderId: "SALE",
         date: "2026-09-09",
         amount: 30_000,
         farm: "",
@@ -409,16 +409,16 @@ async function main() {
     ],
   });
   const row = (id: string) => snap.orders.find((r) => r.orderId === id)!;
-  check("пожарка не в долгах", row("FIRE").debt, 0);
-  check("остаток на реализации виден", row("FIRE").onConsignment, 70_000);
+  // С сентября 2026 пожарка — перемещение на нашу точку на базаре: в «Оплатах» её нет вовсе.
+  check("точка на базаре — не в «Оплатах»", snap.orders.some((r) => r.orderId === "FIRE"), false);
   check("обычная продажа — долг как был", row("SALE").debt, 70_000);
   check("в долгах по клиентам только обычная продажа", snap.debtTotal, 70_000);
   check("в звонках пожарки нет", snap.calls.map((c) => c.orderId), ["SALE"]);
   check("«ждём оплату» без реализации", snap.totals.unpaidAmount, 70_000);
-  check("платёж виден в строке заявки", row("FIRE").payments.map((p) => p.amount), [30_000]);
-  check("и день внесения при нём", row("FIRE").payments[0].enteredOn, "2026-09-10");
-  check("номер 1С в строке", row("FIRE").realization1c, "РН-7");
-  check("сумма по цветку в строке", row("FIRE").byFlower, [{ flowerType: "rose", label: "роза", amount: 100_000 }]);
+  check("платёж виден в строке заявки", row("SALE").payments.map((p) => p.amount), [30_000]);
+  check("и день внесения при нём", row("SALE").payments[0].enteredOn, "2026-09-10");
+  check("номер 1С в строке", row("SALE").realization1c, "РН-7");
+  check("сумма по цветку в строке", row("SALE").byFlower, [{ flowerType: "rose", label: "роза", amount: 100_000 }]);
 
   console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

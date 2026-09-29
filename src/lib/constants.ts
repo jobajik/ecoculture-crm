@@ -54,6 +54,11 @@ export const SHEET_TABS = {
   // Разбор ответов на рассылку (ИИ): строка на разбор, итог — JSON в одной
   // ячейке. Только дописывается; на странице берётся последний по рассылке.
   BROADCAST_ANALYSES: "BroadcastAnalyses",
+  // Наша точка на базаре («Пожарка»): товар туда ПЕРЕМЕЩАЕТСЯ заявками, а
+  // выручку бухгалтер вносит отчётом за день — строка на день (Kaspi и
+  // наличные). Списания на самой точке — отдельная вкладка.
+  POINT_SALES: "PointSales",
+  POINT_WRITEOFFS: "PointWriteoffs",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -462,6 +467,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_TABS.WA_STATUSES]: ["MessageID", "At", "Status", "Error", "CreatedAt"],
   [SHEET_TABS.WA_FILES]: ["FileID", "CreatedAt", "CreatedByEmail", "Name", "Mime", "Size", "Part", "Data"],
   [SHEET_TABS.BROADCAST_ANALYSES]: ["BroadcastID", "CreatedAt", "CreatedBy", "Model", "Replies", "Data"],
+  [SHEET_TABS.POINT_SALES]: ["Date", "Kaspi", "Cash", "Note", "AccountantEmail", "UpdatedAt"],
+  [SHEET_TABS.POINT_WRITEOFFS]: ["WriteoffID", "Date", "FlowerType", "Quantity", "Amount", "Reason", "CreatedByEmail", "CreatedAt"],
   [SHEET_TABS.BOT_CHATS]: [
     "Phone",
     "UpdatedAt",
@@ -717,10 +724,13 @@ export const MONEY_LOG_ACTIONS = {
   REALIZATION_1C: "realization_1c",
   // Часть заявки вернули (клиент не взял) или переместили в наш магазин.
   ITEMS_RETURNED: "items_returned",
+  // Точка на базаре: выручка за день (Kaspi и наличные).
+  POINT_DAY: "point_day",
 } as const;
 export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
 
 export const MONEY_LOG_LABELS: Record<string, string> = {
+  point_day: "Выручка точки на базаре",
   order_cancelled: "Заявка отменена",
   manager_confirmed: "Подтверждение менеджера",
   order_edited: "Заявка изменена",

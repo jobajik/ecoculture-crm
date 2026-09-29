@@ -66,9 +66,11 @@ export default function ReadyChecks({
   // иначе РОП прочитает про «наш магазин» и решит, что открыл чужую заявку.
   const isRetail = !!retail.trim();
   const isRegion = kind.trim().toLowerCase() === "region";
-  const noInvoice = isRetail || isRegion;
-  const credit = !noInvoice && !consignment && !paid && Boolean(creditTerms.trim());
-  const ready = managerConfirmed && (noInvoice || consignment || paid || credit);
+  // Пожарка — перемещение на нашу точку на базаре: денег по заявке нет,
+  // выручку точки бухгалтер вносит отчётом за день («Оплаты → Точка на базаре»).
+  const noInvoice = isRetail || isRegion || consignment;
+  const credit = !noInvoice && !paid && Boolean(creditTerms.trim());
+  const ready = managerConfirmed && (noInvoice || paid || credit);
   const partial = !paid && paidAmount > 0;
   // Счёт отправлен, но денег ещё нет — промежуточная ступень между «ничего не
   // сделано» и «оплачено». Без неё серая клетка означала сразу два разных
@@ -110,7 +112,7 @@ export default function ReadyChecks({
                 ? "Объём на город, без счёта"
                 : isRetail
                   ? "Наш магазин, без оплаты"
-                  : "Реализация: оплата после продаж"}
+                  : "Перемещение на нашу точку на базаре, без оплаты по заявке"}
             </p>
           )}
         </div>
@@ -181,15 +183,13 @@ export default function ReadyChecks({
                   ? `Получено ${money(paidAmount)} из ${money(totalAmount)}`
                   : invoiceSent
                     ? formatDay(invoiceSentAt, "")
-                    : consignment
-                      ? "Отмечает бухгалтер"
-                      : credit
+                    : credit
                         ? creditTerms.trim()
                       : "Отмечает бухгалтер"}
             </div>
             {partial && (
               <div className="text-xs text-[#8a5a00] mt-0.5">
-                {consignment ? "На реализации ещё" : "Остаток"} {money(totalAmount - paidAmount)}
+                Остаток {money(totalAmount - paidAmount)}
               </div>
             )}
           </div>

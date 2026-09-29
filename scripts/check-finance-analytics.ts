@@ -58,7 +58,8 @@ const orders: OrderWithItems[] = [
   order("O6", "2026-09-15", "2026-09-16", "rop@x", [["rose", 500, 0]], { kind: "region", direction: "Астана", paidAmount: 50000, paidAt: "2026-09-18" }),
   // Наш магазин — вне денег.
   order("O7", "2026-09-15", "2026-09-16", "r@x", [["rose", 100, 100]], { retail: "almaty" }),
-  // Реализация (пожарка): остаток — не долг.
+  // Перемещение на нашу точку на базаре («Пожарка»): не продажа — не выставлено,
+  // не долг; прежний платёж по ней остаётся поступлением.
   order("O8", "2026-09-15", "2026-09-15", "m2@x", [["rose", 100, 100]], { direction: "Пожарка", paidAmount: 3000, paidRoseFarm: 3000, paidAt: "2026-09-16" }),
   // Предоплата: заплатили до доставки.
   order("O9", "2026-09-18", "2026-09-20", "m1@x", [["rose", 10, 100]], { paidAmount: 1000, paidRoseFarm: 1000, paidAt: "2026-09-18" }),
@@ -76,9 +77,9 @@ const names = new Map([["m1@x", "Эмиль"], ["m2@x", "Ильяс"]]);
 const a = buildFinanceAnalytics({ orders, payments, nameByEmail: names, period: "2026-09", today: "2026-09-24" });
 const c = a.current;
 
-check("выставлено без отмен, магазина и опта", c.billed, 20000 + 30000 + 2000 + 10000 + 1000);
-check("заявок со счётом", c.orders, 5);
-check("собрано по счетам месяца", c.collected, 20000 + 20000 + 0 + 3000 + 1000);
+check("выставлено без отмен, магазина, опта и точки", c.billed, 20000 + 30000 + 2000 + 1000);
+check("заявок со счётом", c.orders, 4);
+check("собрано по счетам месяца", c.collected, 20000 + 20000 + 0 + 1000);
 check("поступило за месяц: журнал + старая сумма + опт", c.cashIn, 20000 + 20000 + 30000 + 50000 + 3000 + 1000);
 check("из него опт на город", c.cashInRegions, 50000);
 check("срок оплаты: медиана 0, 2, 12", c.daysToPay, 2);
@@ -90,7 +91,7 @@ check("долг сейчас", a.debt.total, 10000 + 2000);
 check("просрочено", a.debt.overdue, 10000);
 check("должников", [a.debt.clients, a.debt.orders], [2, 2]);
 check("сорванные обещания", [a.debt.brokenPromises, a.debt.brokenAmount], [1, 10000]);
-check("реализация — не долг", a.debt.onConsignment, 7000);
+check("точка на базаре — не долг", a.debt.onConsignment, 0);
 check(
   "возраст долга",
   a.debt.aging.filter((b) => b.amount > 0).map((b) => [b.key, b.amount]),
@@ -102,7 +103,7 @@ const m1 = a.byManager.find((r) => r.label === "Эмиль")!;
 const m2 = a.byManager.find((r) => r.label === "Ильяс")!;
 check("Эмиль: выставлено, собрано, поступило", [m1.billed, m1.collected, m1.cashIn], [51000, 41000, 41000]);
 check("Эмиль: долг и просрочка", [m1.debt, m1.overdue], [10000, 10000]);
-check("Ильяс: выставлено и к прошлому", [m2.billed, m2.prevBilled], [12000, 30000]);
+check("Ильяс: выставлено и к прошлому (точка — не продажа)", [m2.billed, m2.prevBilled], [2000, 30000]);
 check("Ильяс: поступило (август оплачен в сентябре)", m2.cashIn, 33000);
 check("доли менеджеров дают 100 %", Math.round(a.byManager.reduce((s, r) => s + r.share, 0)), 100);
 check("опт на город не попал в менеджеров", a.byManager.some((r) => r.key === "rop@x"), false);
@@ -110,7 +111,7 @@ check("опт на город не попал в менеджеров", a.byMana
 const rf = a.byCompany.find((r) => r.key === "rose_farm")!;
 const es = a.byCompany.find((r) => r.key === "esentai")!;
 check("компании по порядку", a.byCompany.map((r) => r.key), ["rose_farm", "esentai"]);
-check("Rose Farm: выставлено и собрано", [rf.billed, rf.collected], [43000, 24000]);
+check("Rose Farm: выставлено и собрано", [rf.billed, rf.collected], [33000, 21000]);
 check("Есентай: выставлено и собрано", [es.billed, es.collected], [20000, 20000]);
 check("компании: выставлено = итог", rf.billed + es.billed, c.billed);
 check("Rose Farm: долг — роза смешанной заявки", [rf.debt, rf.overdue], [12000, 10000]);
@@ -126,7 +127,7 @@ check("долг по условиям клиента", terms["Отсрочка 7
 check(
   "недели: выставлено",
   a.weeks.map((w) => w.billed),
-  [20000, 30000, 11000, 2000, 0]
+  [20000, 30000, 1000, 2000, 0]
 );
 check("недели: поступило", a.weeks.map((w) => w.cashIn), [50000, 20000, 54000, 0, 0]);
 check("последняя неделя — впереди", a.weeks.map((w) => w.future), [false, false, false, false, true]);

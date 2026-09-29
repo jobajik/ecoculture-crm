@@ -4,7 +4,9 @@ import { getPlansForPeriod } from "./repo/plans";
 import { ORDER_STATUSES, bonusRateFor, getFarmFor } from "./constants";
 import { periodRange, type FinancePeriod } from "./finance";
 import type { OrderWithItems } from "./types";
-import { hasNoClientInvoice } from "./orderKind";
+import { isNotASale } from "./orderKind";
+import { pointBonusShares, type PointDay } from "./point";
+import { listPointDays } from "./repo/point";
 
 // ---------------------------------------------------------------------------
 // Лидерборд менеджеров: кто сколько продал, чего именно и какой бонус заработал.
@@ -37,6 +39,8 @@ export interface LeaderboardRow {
   bonus: number;
   /** Сколько бонуса «висит» в неоплаченных заявках. */
   pendingBonus: number;
+  /** В т.ч. доля выручки нашей точки на базаре (`pointBonusShares`). */
+  pointAmount: number;
   /** План месяца из вкладки Plans (только для периода «месяц»). */
   targetAmount: number;
   progressPercent: number;
@@ -82,6 +86,7 @@ export async function getLeaderboard(
     orders: OrderWithItems[];
     users: Awaited<ReturnType<typeof listUsers>>;
     plans: Map<string, { targetAmount: number; targetStems: number }>;
+    pointDays?: PointDay[];
   }
 ): Promise<LeaderboardSnapshot> {
   const anchor =
@@ -91,15 +96,15 @@ export async function getLeaderboard(
 
   const { from, to, label } = periodRange(period, anchor);
 
-  const [orders, users, plans] = injected
-    ? [injected.orders, injected.users, injected.plans]
-    : await Promise.all([listOrdersWithItems(), listUsers(), getPlansForPeriod(monthKey(from))]);
+  const [orders, users, plans, pointDays] = injected
+    ? [injected.orders, injected.users, injected.plans, injected.pointDays ?? []]
+    : await Promise.all([listOrdersWithItems(), listUsers(), getPlansForPeriod(monthKey(from)), listPointDays()]);
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
   // Розница — не продажа, и бонус за неё не платится: менеджер не продал
   // цветок, а передал его в наш же магазин.
   const counted = orders.filter(
-    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !hasNoClientInvoice(o)
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.createdAt && !isNotASale(o)
   );
   const inPeriod = counted.filter((o) => {
     const key = dayKey(new Date(o.createdAt));
@@ -121,6 +126,7 @@ export async function getLeaderboard(
     bonusByFlowerType: {},
     bonus: 0,
     pendingBonus: 0,
+    pointAmount: 0,
     targetAmount: 0,
     progressPercent: 0,
     avgOrder: 0,
@@ -170,6 +176,20 @@ export async function getLeaderboard(
     map.set(email, row);
   }
 
+  // Точка на базаре: выручка вносится отчётом за день, без заявок. Владелец
+  // решил — в бонус по ставке цветка; менеджерам она делится по тому, кто
+  // сколько перевёз на точку за тот же период (`pointBonusShares`).
+  for (const share of pointBonusShares({ orders, days: pointDays, from, to })) {
+    const row = map.get(share.managerEmail) ?? blank(share.managerEmail);
+    row.paidAmount += share.amount;
+    row.totalAmount += share.amount;
+    row.pointAmount += share.amount;
+    row.paidByFlowerType[share.flowerType] = (row.paidByFlowerType[share.flowerType] ?? 0) + share.amount;
+    row.bonusByFlowerType[share.flowerType] = (row.bonusByFlowerType[share.flowerType] ?? 0) + share.bonus;
+    row.bonus += share.bonus;
+    map.set(share.managerEmail, row);
+  }
+
   const isMonth = period === "month";
   const rows = Array.from(map.values())
     .map((row) => {
@@ -184,7 +204,7 @@ export async function getLeaderboard(
       };
     })
     // Менеджеров без продаж и без плана в таблице не держим — она про результат.
-    .filter((row) => row.orders > 0 || row.targetAmount > 0)
+    .filter((row) => row.orders > 0 || row.targetAmount > 0 || row.pointAmount > 0)
     .sort((a, b) => b.paidAmount - a.paidAmount || b.totalAmount - a.totalAmount)
     .map((row, idx) => ({ ...row, rank: idx + 1 }));
 

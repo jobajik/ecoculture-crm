@@ -120,6 +120,9 @@ export default function Leaderboard({
 
                   <div className="text-right shrink-0">
                     <div className="text-lg font-semibold tabular-nums">{money(row.paidAmount)}</div>
+                    {row.pointAmount > 0 && (
+                      <div className="text-xs text-ink-muted tabular-nums">в т.ч. точка на базаре {money(row.pointAmount)}</div>
+                    )}
                     <div className="text-xs text-status-good font-medium tabular-nums">
                       бонус {money(row.bonus)}
                     </div>
