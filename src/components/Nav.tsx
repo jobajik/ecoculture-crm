@@ -163,7 +163,7 @@ export default function Nav() {
         <Link href="/" className="flex items-center gap-2 shrink-0">
           <Image
             src="/logo-mark.png"
-            alt="Eco Culture"
+            alt="Ecoculture"
             width={28}
             height={28}
             priority

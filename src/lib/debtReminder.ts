@@ -269,7 +269,7 @@ export function reminderText(
 ): string {
   const lines = [
     `Здравствуйте${g.greeting ? `, ${g.greeting}` : ""}!`,
-    "Напоминаем об оплате за цветы от Eco Culture:",
+    "Напоминаем об оплате за цветы от Ecoculture:",
     ...g.orders.map((o) => `• заказ от ${dm(o.day)} (№ ${o.code}) — ${money(o.debt)}`),
   ];
   if (g.orders.length > 1) lines.push(`Итого: ${money(g.total)}`);

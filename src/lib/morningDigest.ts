@@ -213,25 +213,31 @@ export function digestNumbers(input: DigestInput): DigestNumbers {
   };
 }
 
-/** Текст сводки. WhatsApp понимает *жирный* — им отмечены заголовки. */
-export function digestText(input: DigestInput): string {
+/**
+ * Сводка ДВУМЯ сообщениями (владелец: «чтобы не было кнопки „Далее“» —
+ * WhatsApp сворачивает длинное сообщение): первое — вчера и продажи по
+ * компаниям, второе — склад, отгрузка, долги, «требует внимания» и ссылка.
+ * WhatsApp понимает *жирный* — им отмечены заголовки.
+ */
+export function digestParts(input: DigestInput): string[] {
   const n = digestNumbers(input);
-  const lines: string[] = [`*Доброе утро! Сводка Eco Culture на ${dm(input.today)}*`, ""];
+  const lines: string[] = [`*Доброе утро! Сводка Ecoculture на ${dm(input.today)}*`, ""];
   lines.push(`*Вчера, ${dm(n.yesterday)}:*`);
   if (n.sales.count) {
-    lines.push(`• заявок ${num(n.sales.count)} на ${money(n.sales.amount)} (без Пожарки)`);
+    lines.push(`• заявок ${num(n.sales.count)} на *${money(n.sales.amount)}* (без Пожарки)`);
   } else {
     lines.push("• заявок не оформляли");
   }
-  lines.push(`• пришло денег: ${money(n.money)}`);
-  if (n.point > 0) lines.push(`• выручка точки на базаре: ${money(n.point)}`);
+  lines.push(`• пришло денег: *${money(n.money)}*`);
+  if (n.point > 0) lines.push(`• выручка точки на базаре: *${money(n.point)}*`);
   for (const f of salesByFarm(input, n.yesterday)) {
     lines.push("");
-    lines.push(`*${f.label}:* ${money(f.amount)} · ${num(f.stems)} шт.`);
-    for (const r of f.rows) lines.push(`• ${r.name}: ${r.stems ? `${money(r.amount)} · ${num(r.stems)} шт.` : "—"}`);
+    // Сначала штуки, потом деньги — жирным (владелец: «выделить деньги»).
+    lines.push(`*${f.label}:* ${num(f.stems)} шт. — *${money(f.amount)}*`);
+    for (const r of f.rows) lines.push(`• ${r.name}: ${r.stems ? `${num(r.stems)} шт. — *${money(r.amount)}*` : "—"}`);
   }
+  const first = lines.splice(0, lines.length).join("\n");
   if (input.stock && input.stock.length) {
-    lines.push("");
     lines.push("*Склад сейчас:*");
     for (const farm of FARM_ORDER) {
       const rows = input.stock.filter((x) => getFarmFor(x.flowerType) === farm && x.stems > 0);
@@ -260,5 +266,10 @@ export function digestText(input: DigestInput): string {
   }
   lines.push("");
   lines.push(input.site);
-  return lines.join("\n");
+  return [first, lines.join("\n").trim()];
+}
+
+/** Вся сводка одним текстом — для предпросмотра и проверок. */
+export function digestText(input: DigestInput): string {
+  return digestParts(input).join("\n\n");
 }

@@ -16,7 +16,7 @@ import {
   type WaOrderDraft,
 } from "../src/lib/waOrder";
 import { dueDateOf, planReminders, reminderText, termDays } from "../src/lib/debtReminder";
-import { digestNumbers, digestPhones, digestText, salesByFarm } from "../src/lib/morningDigest";
+import { digestNumbers, digestParts, digestPhones, digestText, salesByFarm } from "../src/lib/morningDigest";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -253,9 +253,17 @@ check("итог компании", [farms[0].amount, farms[1].stems], [25000, 65
 const sText = digestText({ ...fInput, stock: [{ flowerType: "rose", stems: 5000, expired: 300 }, { flowerType: "chrysanthemum", stems: 8000, expired: 0 }] }).replace(/[\u00a0\u202f]/g, " ");
 check(
   "текст: блоки компаний и склада",
-  [sText.includes("*Rose Farm:*"), sText.includes("• Пожарка: 50 000 ₸ · 200 шт."), sText.includes("*Склад сейчас:*"), sText.includes("роза 5 000 шт. (дольше срока 300)")],
+  [sText.includes("*Rose Farm:*"), sText.includes("• Пожарка: 200 шт. — *50 000 ₸*"), sText.includes("*Склад сейчас:*"), sText.includes("роза 5 000 шт. (дольше срока 300)")],
   [true, true, true, true]
 );
+
+// Два сообщения, чтобы WhatsApp не сворачивал «Далее»: вчера и компании — в первом, остальное — во втором.
+const parts = digestParts({ ...fInput, stock: [{ flowerType: "rose", stems: 5000, expired: 300 }] });
+check("сводка — два сообщения", parts.length, 2);
+check("первое: заголовок и компании, без склада", [parts[0].startsWith("*Доброе утро! Сводка Ecoculture"), parts[0].includes("*Rose Farm:*"), parts[0].includes("Склад")], [true, true, false]);
+check("второе: склад, долги, ссылка", [parts[1].startsWith("*Склад сейчас:*"), parts[1].includes("*Долги:*"), parts[1].endsWith("crm-ecoculture.kz")], [true, true, true]);
+check("без склада второе начинается с отгрузки", digestParts(fInput)[1].startsWith("*Сегодня к отгрузке:*"), true);
+check("текст напоминания — Ecoculture слитно", reminderText(a, []).includes("от Ecoculture:"), true);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

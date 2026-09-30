@@ -100,10 +100,16 @@ async function send(cfg: GreenConfig, method: string, body: Record<string, unkno
 }
 
 /** Текстовое сообщение. Возвращает idMessage — по нему придут статусы доставки. */
-export async function sendText(cfg: GreenConfig, phone: string, message: string): Promise<string> {
+export async function sendText(
+  cfg: GreenConfig,
+  phone: string,
+  message: string,
+  options: { linkPreview?: boolean } = {}
+): Promise<string> {
   const chatId = chatIdForPhone(phone);
   if (!chatId) throw new GreenError("неверный номер", 400, "");
-  return send(cfg, "sendMessage", { chatId, message });
+  // linkPreview: false — без карточки сайта над текстом (она занимает пол-экрана).
+  return send(cfg, "sendMessage", options.linkPreview === false ? { chatId, message, linkPreview: false } : { chatId, message });
 }
 
 /** Файл по ссылке (картинка, PDF) с подписью до 1024 знаков. */

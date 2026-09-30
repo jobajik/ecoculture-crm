@@ -291,7 +291,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <div className="relative p-5 sm:p-6 grid sm:grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-4">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <Image src="/logo.png" alt="Eco Culture" width={136} height={79} className="h-11 w-auto" />
+              <Image src="/logo.png" alt="Ecoculture" width={136} height={79} className="h-11 w-auto" />
               <span className="h-5 w-px bg-line-strong" aria-hidden="true" />
               <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
                 <Icon name="order" className="w-4 h-4" />

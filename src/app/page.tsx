@@ -106,7 +106,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
           /* Логотип компании — только на широком экране, чтобы не съедать место на телефоне. */
           <Image
             src="/logo.png"
-            alt="Eco Culture"
+            alt="Ecoculture"
             width={1020}
             height={593}
             priority

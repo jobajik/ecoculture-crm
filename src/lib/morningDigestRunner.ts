@@ -16,12 +16,12 @@ import { nameIndex } from "./personName";
 import { waPhone } from "./broadcast";
 import { sendText } from "./greenApi";
 import { checkGreenChannel } from "./greenChannel";
-import { DIGEST_SETTING, digestPhones, digestText } from "./morningDigest";
+import { DIGEST_SETTING, digestParts, digestPhones } from "./morningDigest";
 
 const SITE = () => (process.env.NEXTAUTH_URL || "https://www.crm-ecoculture.kz").replace(/\/+$/, "");
 
-/** Собрать текст сводки на сегодня из живой базы — одним чтением (грабли 1.17). */
-export async function buildMorningDigest(now: Date = new Date()): Promise<string> {
+/** Сводка на сегодня из живой базы (два сообщения) — одним чтением (грабли 1.17). */
+export async function buildMorningDigestParts(now: Date = new Date()): Promise<string[]> {
   await prefetchTables([
     SHEET_TABS.ORDERS,
     SHEET_TABS.ORDER_ITEMS,
@@ -60,7 +60,7 @@ export async function buildMorningDigest(now: Date = new Date()): Promise<string
     todayKey: today,
     extras: { expiredStems, stockStems: inStock.reduce((s, b) => s + b.quantityRemaining, 0) },
   });
-  return digestText({
+  return digestParts({
     today,
     orders,
     payments,
@@ -71,6 +71,11 @@ export async function buildMorningDigest(now: Date = new Date()): Promise<string
     dayOf: (iso) => localDayKey(new Date(iso)),
     site: SITE(),
   });
+}
+
+/** Вся сводка одним текстом — для предпросмотра («Как выглядит», diag-digest). */
+export async function buildMorningDigest(now: Date = new Date()): Promise<string> {
+  return (await buildMorningDigestParts(now)).join("\n\n— — —\n\n");
 }
 
 /**
@@ -89,12 +94,13 @@ export async function sendMorningDigest(phonesOverride?: string[]): Promise<{ se
   }
   if (channel.action !== "ok" || !channel.cfg) return { sent: [], failed: phones, note: channel.text };
 
-  const text = await buildMorningDigest();
+  const parts = await buildMorningDigestParts();
   const sent: string[] = [];
   const failed: string[] = [];
   for (const p of phones) {
     try {
-      await sendText(channel.cfg, p, text);
+      // Сообщения по порядку: второе уходит только после первого.
+      for (const part of parts) await sendText(channel.cfg, p, part, { linkPreview: false });
       sent.push(p);
     } catch (err) {
       console.error("digest send:", err instanceof Error ? err.message : err);
