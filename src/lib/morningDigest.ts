@@ -9,11 +9,19 @@
  * (`isNotASale`), деньги — по дню поступления, «требует внимания» — тот же
  * список, что на главной у владельца (`homeFocus`).
  */
-import { DEBT_OVERDUE_DAYS, MONEY_EPSILON, ORDER_STATUSES } from "./constants";
-import { isNotASale } from "./orderKind";
+import { DEBT_OVERDUE_DAYS, FARM_LABELS, FARM_ORDER, FLOWER_TYPE_LABELS, MONEY_EPSILON, ORDER_STATUSES, getFarmFor } from "./constants";
+import { isConsignment, isNotASale } from "./orderKind";
 import type { AttentionItem } from "./homeFocus";
 
 export const DIGEST_SETTING = "DigestPhones";
+
+/**
+ * Кто стоит в продажах по компаниям ВСЕГДА, даже с нулём (владелец, 30.09:
+ * «Ильяс, Эмиль, Бауыржан, Пожарка»). Узнаются по первому слову имени в
+ * `Users`. Остальные менеджеры появляются, только если вчера продавали.
+ */
+export const DIGEST_ALWAYS = ["Ильяс", "Эмиль", "Бауыржан"];
+export const POINT_LABEL = "Пожарка";
 
 export interface DigestOrder {
   orderId: string;
@@ -26,7 +34,14 @@ export interface DigestOrder {
   retail?: string;
   kind?: string;
   direction?: string;
-  items: { quantity: number; shippedQuantity: number }[];
+  items: { quantity: number; shippedQuantity: number; flowerType?: string; unitPrice?: number }[];
+}
+
+/** Остаток склада по цветку: всего стеблей и сколько из них дольше срока хранения. */
+export interface DigestStock {
+  flowerType: string;
+  stems: number;
+  expired: number;
 }
 
 export interface DigestInput {
@@ -38,6 +53,8 @@ export interface DigestInput {
   pointDays: { date: string; kaspi: number; cash: number }[];
   attention: AttentionItem[];
   names: Record<string, string>;
+  /** Остаток склада сейчас по цветкам. Пусто — блока «Склад» нет. */
+  stock?: DigestStock[];
   /** День оформления заявки по Алматы (сервер передаёт свой `localDayKey`). */
   dayOf: (iso: string) => string;
   site: string;
@@ -63,6 +80,79 @@ export function digestPhones(raw: string | null | undefined): string[] {
         .filter(Boolean)
     )
   );
+}
+
+export interface FarmSalesRow {
+  name: string;
+  amount: number;
+  stems: number;
+  /** «Пожарка» — перемещение на точку, а не продажа. */
+  point?: boolean;
+}
+
+export interface FarmSales {
+  farm: string;
+  label: string;
+  amount: number;
+  stems: number;
+  rows: FarmSalesRow[];
+}
+
+const firstWord = (s: string) => (s || "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+
+/**
+ * Вчерашние продажи по компаниям: внутри — менеджеры и «Пожарка». Считается по
+ * ПОЗИЦИЯМ: смешанная заявка попадает в обе компании своей долей. День — день
+ * оформления, как у всех продаж. Наши магазины и опт на город сюда не идут.
+ */
+export function salesByFarm(input: DigestInput, day: string): FarmSales[] {
+  const out = new Map<string, Map<string, FarmSalesRow>>();
+  const rowOf = (farm: string, key: string, name: string, point = false) => {
+    const m = out.get(farm) ?? new Map<string, FarmSalesRow>();
+    out.set(farm, m);
+    const r = m.get(key) ?? { name, amount: 0, stems: 0, ...(point ? { point: true } : {}) };
+    m.set(key, r);
+    return r;
+  };
+  const alwaysKeys = DIGEST_ALWAYS.map((label) => {
+    const email = Object.keys(input.names).find((e) => firstWord(input.names[e]) === label.toLowerCase());
+    return { key: email ?? `name:${label.toLowerCase()}`, name: email ? input.names[email].trim().split(/\s+/)[0] : label };
+  });
+  for (const farm of FARM_ORDER) {
+    for (const a of alwaysKeys) rowOf(farm, a.key, a.name);
+    rowOf(farm, "point", POINT_LABEL, true);
+  }
+  for (const o of input.orders) {
+    if (o.status === ORDER_STATUSES.CANCELLED || !o.createdAt || input.dayOf(o.createdAt) !== day) continue;
+    const point = isConsignment(o);
+    if (!point && isNotASale(o)) continue;
+    const email = (o.managerEmail || "").toLowerCase();
+    const name = (input.names[email] || email || "—").trim().split(/\s+/)[0];
+    for (const it of o.items) {
+      const farm = getFarmFor(it.flowerType ?? "");
+      if (!farm) continue;
+      const r = point ? rowOf(farm, "point", POINT_LABEL, true) : rowOf(farm, email, name);
+      r.amount += it.quantity * (it.unitPrice ?? 0);
+      r.stems += it.quantity;
+    }
+  }
+  const alwaysSet = new Set(alwaysKeys.map((a) => a.key));
+  return FARM_ORDER.map((farm) => {
+    const all = Array.from(out.get(farm)?.entries() ?? []);
+    const fixed = alwaysKeys.map((a) => out.get(farm)!.get(a.key)!);
+    const others = all
+      .filter(([k, r]) => k !== "point" && !alwaysSet.has(k) && r.stems > 0)
+      .map(([, r]) => r)
+      .sort((a, b) => b.amount - a.amount);
+    const rows = [...fixed, ...others, out.get(farm)!.get("point")!];
+    return {
+      farm,
+      label: FARM_LABELS[farm] ?? farm,
+      amount: rows.reduce((s, r) => s + r.amount, 0),
+      stems: rows.reduce((s, r) => s + r.stems, 0),
+      rows,
+    };
+  });
 }
 
 export interface DigestNumbers {
@@ -126,14 +216,31 @@ export function digestText(input: DigestInput): string {
   const lines: string[] = [`*Доброе утро! Сводка Eco Culture на ${dm(input.today)}*`, ""];
   lines.push(`*Вчера, ${dm(n.yesterday)}:*`);
   if (n.sales.count) {
-    lines.push(`• заявок ${num(n.sales.count)} на ${money(n.sales.amount)}`);
-    const top = n.sales.byManager.slice(0, 4).map((m) => `${m.name} ${num(m.count)} · ${money(m.amount)}`);
-    if (top.length) lines.push(`  ${top.join("; ")}`);
+    lines.push(`• заявок ${num(n.sales.count)} на ${money(n.sales.amount)} (без Пожарки)`);
   } else {
     lines.push("• заявок не оформляли");
   }
   lines.push(`• пришло денег: ${money(n.money)}`);
-  if (n.point > 0) lines.push(`• точка на базаре: ${money(n.point)}`);
+  if (n.point > 0) lines.push(`• выручка точки на базаре: ${money(n.point)}`);
+  for (const f of salesByFarm(input, n.yesterday)) {
+    lines.push("");
+    lines.push(`*${f.label}:* ${money(f.amount)} · ${num(f.stems)} шт.`);
+    for (const r of f.rows) lines.push(`• ${r.name}: ${r.stems ? `${money(r.amount)} · ${num(r.stems)} шт.` : "—"}`);
+  }
+  if (input.stock && input.stock.length) {
+    lines.push("");
+    lines.push("*Склад сейчас:*");
+    for (const farm of FARM_ORDER) {
+      const rows = input.stock.filter((x) => getFarmFor(x.flowerType) === farm && x.stems > 0);
+      if (!rows.length) continue;
+      const parts = rows.map(
+        (x) =>
+          `${(FLOWER_TYPE_LABELS[x.flowerType] ?? x.flowerType).toLowerCase()} ${num(x.stems)} шт.` +
+          (x.expired > 0 ? ` (дольше срока ${num(x.expired)})` : "")
+      );
+      lines.push(`• ${FARM_LABELS[farm] ?? farm}: ${parts.join(", ")}`);
+    }
+  }
   lines.push("");
   lines.push(
     n.today.count

@@ -1,4 +1,6 @@
-import { ROLES, SHEET_TABS } from "./constants";
+import { FLOWER_TYPES, ROLES, SHEET_TABS } from "./constants";
+
+const FLOWER_ORDER: string[] = [FLOWER_TYPES.ROSE, FLOWER_TYPES.EUSTOMA, FLOWER_TYPES.CHRYSANTHEMUM];
 import { prefetchTables } from "./sheets";
 import { localDayKey } from "./timezone";
 import { listOrdersWithItems } from "./repo/orders";
@@ -40,10 +42,17 @@ export async function buildMorningDigest(now: Date = new Date()): Promise<string
   ]);
   const today = localDayKey(now);
   const inStock = batches.filter((b) => b.quantityRemaining > 0);
-  const expiredStems = inStock
-    .map((b) => computeBatchStorageInfo(b, settings, now))
-    .filter((i) => i.status === "critical")
-    .reduce((s, i) => s + i.batch.quantityRemaining, 0);
+  const infos = inStock.map((b) => computeBatchStorageInfo(b, settings, now));
+  const expiredStems = infos.filter((i) => i.status === "critical").reduce((s, i) => s + i.batch.quantityRemaining, 0);
+  // Склад по цветкам: всего и сколько из этого дольше срока хранения.
+  const stockMap = new Map<string, { flowerType: string; stems: number; expired: number }>();
+  for (const i of infos) {
+    const row = stockMap.get(i.batch.flowerType) ?? { flowerType: i.batch.flowerType, stems: 0, expired: 0 };
+    row.stems += i.batch.quantityRemaining;
+    if (i.status === "critical") row.expired += i.batch.quantityRemaining;
+    stockMap.set(i.batch.flowerType, row);
+  }
+  const stock = FLOWER_ORDER.map((t) => stockMap.get(t)).filter((x): x is NonNullable<typeof x> => !!x);
   const focus = homeFocus({
     role: ROLES.ADMIN,
     email: "",
@@ -58,6 +67,7 @@ export async function buildMorningDigest(now: Date = new Date()): Promise<string
     pointDays,
     attention: focus?.attention ?? [],
     names: nameIndex(users),
+    stock,
     dayOf: (iso) => localDayKey(new Date(iso)),
     site: SITE(),
   });

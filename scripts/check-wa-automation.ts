@@ -16,7 +16,7 @@ import {
   type WaOrderDraft,
 } from "../src/lib/waOrder";
 import { dueDateOf, planReminders, reminderText, termDays } from "../src/lib/debtReminder";
-import { digestNumbers, digestPhones, digestText } from "../src/lib/morningDigest";
+import { digestNumbers, digestPhones, digestText, salesByFarm } from "../src/lib/morningDigest";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -230,6 +230,30 @@ check("сегодня к отгрузке: без отменённой, оста
 check("долги без точки, просрочка по доставке", [nums.debt, nums.overdue], [130000, 30000]);
 const dText = digestText(dInput);
 check("текст сводки: заголовок, внимание, ссылка", [dText.includes("на 30.09"), dText.includes("Опаздывают"), dText.endsWith("crm-ecoculture.kz")], [true, true, true]);
+
+// Продажи по компаниям: Ильяс, Эмиль, Бауыржан и Пожарка — всегда; остальные — если продавали.
+const fOrders = [
+  { orderId: "F1", createdAt: "2026-09-29T06:00:00.000Z", deliveryDate: "2026-09-30", status: "new", managerEmail: "ilyas@x", totalAmount: 0, paidAmount: 0,
+    items: [{ quantity: 100, shippedQuantity: 0, flowerType: "rose", unitPrice: 200 }, { quantity: 50, shippedQuantity: 0, flowerType: "chrysanthemum", unitPrice: 300 }] },
+  { orderId: "F2", createdAt: "2026-09-29T07:00:00.000Z", deliveryDate: "2026-09-30", status: "new", managerEmail: "sayat@x", totalAmount: 0, paidAmount: 0,
+    items: [{ quantity: 10, shippedQuantity: 0, flowerType: "eustoma", unitPrice: 500 }] },
+  { orderId: "F3", createdAt: "2026-09-29T08:00:00.000Z", deliveryDate: "2026-09-29", status: "shipped", managerEmail: "emil@x", totalAmount: 0, paidAmount: 0, direction: "Пожарка",
+    items: [{ quantity: 200, shippedQuantity: 200, flowerType: "chrysanthemum", unitPrice: 250 }] },
+  { orderId: "F4", createdAt: "2026-09-29T08:00:00.000Z", deliveryDate: "2026-09-29", status: "new", managerEmail: "emil@x", totalAmount: 0, paidAmount: 0, retail: "almaty",
+    items: [{ quantity: 99, shippedQuantity: 0, flowerType: "rose", unitPrice: 100 }] },
+];
+const fInput = { ...dInput, orders: fOrders, names: { "ilyas@x": "Ильяс Иванов", "emil@x": "Эмиль Нурланов", "sayat@x": "Саят", "baur@x": "Бауыржан К." } };
+const farms = salesByFarm(fInput, "2026-09-29");
+const show = (f: (typeof farms)[number]) => f.rows.map((r) => `${r.name}:${r.amount}/${r.stems}`);
+check("Rose Farm: всегда трое и Пожарка, Саят — потому что продавал, магазин не в счёт", show(farms[0]), ["Ильяс:20000/100", "Эмиль:0/0", "Бауыржан:0/0", "Саят:5000/10", "Пожарка:0/0"]);
+check("Есентай: Пожарка отдельной строкой, Саята нет", show(farms[1]), ["Ильяс:15000/50", "Эмиль:0/0", "Бауыржан:0/0", "Пожарка:50000/200"]);
+check("итог компании", [farms[0].amount, farms[1].stems], [25000, 250]);
+const sText = digestText({ ...fInput, stock: [{ flowerType: "rose", stems: 5000, expired: 300 }, { flowerType: "chrysanthemum", stems: 8000, expired: 0 }] }).replace(/[\u00a0\u202f]/g, " ");
+check(
+  "текст: блоки компаний и склада",
+  [sText.includes("*Rose Farm:*"), sText.includes("• Пожарка: 50 000 ₸ · 200 шт."), sText.includes("*Склад сейчас:*"), sText.includes("роза 5 000 шт. (дольше срока 300)")],
+  [true, true, true, true]
+);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);
