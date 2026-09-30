@@ -172,6 +172,8 @@ export default function OrderItemsEditor({
                   value={it.variety}
                   onChange={(e) => updatePosition(idx, { variety: e.target.value })}
                 >
+                  {/* Пусто бывает у позиции из заказа WhatsApp: клиент сорт не назвал. */}
+                  {!it.variety && <option value="">— выберите —</option>}
                   {(varieties[it.flowerType] ?? []).map((v) => (
                     <option key={v} value={v}>
                       {v}
@@ -186,6 +188,7 @@ export default function OrderItemsEditor({
                   value={it.grade}
                   onChange={(e) => updatePosition(idx, { grade: e.target.value })}
                 >
+                  {!it.grade && <option value="">— выберите —</option>}
                   {getGradesFor(it.flowerType).map((grade) => (
                     <option key={grade} value={grade}>
                       {formatGrade(grade)}

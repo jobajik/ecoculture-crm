@@ -7,6 +7,10 @@ import ShelfLifeForm from "@/components/ShelfLifeForm";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import { saveShelfLifeAction, saveStaffAction } from "./actions";
+import DigestForm from "@/components/DigestForm";
+import Hint from "@/components/Hint";
+import { settingsMap } from "@/lib/repo/broadcasts";
+import { DIGEST_SETTING } from "@/lib/morningDigest";
 import {
   FARM_ORDER,
   FLOWER_TYPE_LABELS,
@@ -66,10 +70,11 @@ const ROLE_GUIDE: { code: string; does: string; farm: string }[] = [
 ];
 
 export default async function AdminPage() {
-  const [session, users, settings] = await Promise.all([
+  const [session, users, settings, map] = await Promise.all([
     getServerSession(authOptions),
     listUsers(),
     getSettings(),
+    settingsMap(),
   ]);
 
   return (
@@ -159,6 +164,23 @@ export default async function AdminPage() {
           warningPercent={Math.round(settings.warningThreshold * 100)}
           save={saveShelfLifeAction}
         />
+      </Section>
+
+      <Section
+        tone="admin"
+        icon="message"
+        title={
+          <>
+            Утренняя сводка в WhatsApp{" "}
+            <Hint>
+              Каждое утро около 9:00 с рабочего номера приходит сводка: вчерашние заявки и деньги, точка на базаре,
+              что отгружать сегодня, долги и «требует внимания» с главной. Пустое поле — сводка не приходит.
+            </Hint>
+          </>
+        }
+        className="!mb-0"
+      >
+        <DigestForm initial={map[DIGEST_SETTING] ?? ""} />
       </Section>
     </div>
   );

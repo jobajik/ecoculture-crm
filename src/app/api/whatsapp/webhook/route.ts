@@ -6,6 +6,7 @@ import { appendWaMessages } from "@/lib/repo/talks";
 import { appendWaStatuses } from "@/lib/repo/broadcasts";
 import { botIncomingOf, parseGreenStatus } from "@/lib/greenOut";
 import { runBot } from "@/lib/botEngine";
+import { draftFromIncoming } from "@/lib/waOrderRunner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,7 +23,8 @@ export const maxDuration = 60;
  * группы, реакции), — 200 без записи, иначе Green API повторял бы уведомление.
  *
  * После записи сообщения — бот (`runBot`): отвечает клиенту или замечает, что
- * ответил живой менеджер. Бот вебхук не роняет.
+ * ответил живой менеджер. И заказ из сообщения клиента — черновиком заявки
+ * (`draftFromIncoming`, «Заявки → Заказы из WhatsApp»). Ни то ни другое вебхук не роняет.
  *
  * Таблицу вебхук НЕ читает: лимит Google общий на всю компанию (грабли 1.17), а
  * к лиду сообщение привязывается при чтении, по номеру. Голосовое расшифровывается
@@ -75,7 +77,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "temporary" }, { status: 500 });
   }
 
+  // Бот отвечает клиенту, а заказ из сообщения становится черновиком заявки
+  // для менеджера (`waOrder.ts`). Друг друга не ждут; оба ничего не бросают.
   const incoming = botIncomingOf(body, message);
-  if (incoming) await runBot([incoming]);
+  await Promise.all([incoming ? runBot([incoming]) : Promise.resolve(), draftFromIncoming(message)]);
   return NextResponse.json({ ok: true });
 }

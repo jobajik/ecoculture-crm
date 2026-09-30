@@ -18,6 +18,9 @@ export default function OrderForm({
   showDirection = false,
   initialDirection = "",
   stock,
+  initialItems,
+  initialNotes = "",
+  draftId = "",
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -51,12 +54,17 @@ export default function OrderForm({
    * день, и продавать вперёд нормально) — поэтому цифра, а не запрет.
    */
   stock?: Record<string, number>;
+  /** Позиции из заказа WhatsApp (`waOrder.ts`) — менеджер проверяет и сохраняет. */
+  initialItems?: DraftItem[];
+  initialNotes?: string;
+  /** Черновик из WhatsApp: после сохранения он помечается оформленным. */
+  draftId?: string;
 }) {
   const router = useRouter();
   const [client, setClient] = useState<ClientOption | null>(initialClient);
   const [clientPhone, setClientPhone] = useState(initialClient?.phone ?? "");
   const [deliveryDate, setDeliveryDate] = useState(initialDeliveryDate);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialNotes);
   const [direction, setDirection] = useState(
     initialDirection || directionForCity(initialClient?.city)
   );
@@ -72,7 +80,9 @@ export default function OrderForm({
     ORDER_PAYMENT_METHODS.includes(c?.paymentMethod ?? "") ? (c?.paymentMethod as string) : "";
   const [paymentMethod, setPaymentMethod] = useState(methodOf(initialClient));
   const [methodTouched, setMethodTouched] = useState(false);
-  const [items, setItems] = useState<DraftItem[]>([emptyItem(varieties, prices)]);
+  const [items, setItems] = useState<DraftItem[]>(
+    initialItems && initialItems.length ? initialItems : [emptyItem(varieties, prices)]
+  );
   // «Согласовано с клиентом» — подтверждение сразу при оформлении. По живой
   // базе менеджер жал отдельную галочку в ту же минуту, то есть это был лишний
   // шаг на каждую заявку. Снять — если состав ещё обсуждается.
@@ -106,6 +116,7 @@ export default function OrderForm({
         direction,
         paymentMethod,
         confirmed,
+        draftId: draftId || undefined,
         items: items.map((it) => ({
           flowerType: it.flowerType,
           variety: it.variety.trim(),

@@ -17,6 +17,11 @@ import PageHeader from "@/components/PageHeader";
 import { listUsers } from "@/lib/repo/users";
 import { nameIndex } from "@/lib/personName";
 import { localDayKey } from "@/lib/timezone";
+import { listClients } from "@/lib/repo/clients";
+import { listWaOrderDrafts } from "@/lib/repo/waOrders";
+import { draftSummary, freshDrafts, visibleDrafts } from "@/lib/waOrder";
+import { formatDay, formatMoment } from "@/lib/formatDate";
+import WaOrderDrafts, { type WaDraftRow } from "@/components/WaOrderDrafts";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +77,22 @@ export default async function OrdersPage({
   const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
   const newOrderLink = newOrderLinkFor(role);
 
+  // Заказы из WhatsApp — менеджеру (свои клиенты и те, кого нет в базе) и админу.
+  let draftRows: WaDraftRow[] = [];
+  if (role === ROLES.ADMIN || role === ROLES.MANAGER) {
+    const [drafts, clients] = await Promise.all([listWaOrderDrafts(), listClients()]);
+    draftRows = visibleDrafts(freshDrafts(drafts, new Date()), clients, role, myEmail).map(({ draft, client }) => ({
+      draftId: draft.draftId,
+      at: formatMoment(draft.createdAt),
+      who: client?.name || draft.senderName || `+${draft.phone}`,
+      unknown: !client,
+      managerName: client ? managerNames[(client.managerEmail || "").toLowerCase()] ?? "" : "",
+      text: draft.text,
+      summary: draftSummary(draft.items),
+      delivery: draft.deliveryDate ? formatDay(draft.deliveryDate) : "",
+    }));
+  }
+
   return (
     <div>
       <PageHeader
@@ -98,6 +119,11 @@ export default async function OrdersPage({
           </div>
         }
       />
+      {draftRows.length > 0 && (
+        <div className="mb-5">
+          <WaOrderDrafts rows={draftRows} />
+        </div>
+      )}
       <OrdersTable
         orders={orders}
         managerNames={managerNames}

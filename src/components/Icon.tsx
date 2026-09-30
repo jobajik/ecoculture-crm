@@ -27,7 +27,8 @@ export type IconName =
   | "trophy"
   | "list"
   | "upload"
-  | "check";
+  | "check"
+  | "message";
 
 const PATHS: Record<IconName, string> = {
   order: "M7 3h7l5 5v13H7z M14 3v5h5 M10 12h6 M10 16h6",
@@ -53,6 +54,7 @@ const PATHS: Record<IconName, string> = {
   list: "M9 6h11 M9 12h11 M9 18h11 M4 6h.01 M4 12h.01 M4 18h.01",
   upload: "M12 16V4 M7 9l5-5 5 5 M4 16v4h16v-4",
   check: "M5 12l5 5 9-10",
+  message: "M4 5h16v11H9l-5 4z M8 9h8 M8 12h5",
 };
 
 export default function Icon({ name, className = "w-4 h-4" }: { name: IconName; className?: string }) {

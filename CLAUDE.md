@@ -513,7 +513,7 @@ Google считает лимит по этому доступу. Значит, 6
 Вкладки: `Users`, `Orders`, `OrderItems`, `Batches`, `Shipments`, `Writeoffs`, `PriceHistory`,
 `Varieties`, `Plans`, `ShipmentPlans`, `HarvestForecast`, `HarvestMix`, `Claims`, `MoneyLog`,
 `Clients`, `Settings`, `StaffTakeouts`, `Payments`, `Leads`, `LeadTouches`, `KaspiInvoices`, `WaMessages`,
-`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`, `PointSales`, `PointWriteoffs`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
+`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`, `PointSales`, `PointWriteoffs`, `WaOrderDrafts`, `DebtReminders`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
 истины (см. грабли 1.1).
 
 Новые вкладки создаёт `npm run setup-sheet`: он дописывает недостающие листы и проставляет
@@ -863,6 +863,42 @@ Wazzup, всё было сделано под него (задание 110), п�
 поправлен по ним: он трижды ответил на три «👍» (теперь `isAckOnly` — кивки без ответа), заговорил
 с автоответчиками двух магазинов и пообещал «отправляю каталог», хотя слать файлы не умеет (теперь
 в подсказке запрет обещать файлы и `silent` в ответе модели — молчать на автоответ).
+
+**Три помощника через WhatsApp** (30.09.2026, владелец: «меньше ручной работы — заказ из WhatsApp
+сразу в заявку, напоминания о долгах без звонков, утренняя сводка мне в WhatsApp»; проверка —
+`scripts/check-wa-automation.ts`). Всё идёт через рабочий номер Green API, номера менеджеров и
+владельца привязывать не нужно.
+
+- **Заказ из WhatsApp → черновик заявки** (`src/lib/waOrder.ts`, `waOrderRunner.ts`, вкладка
+  `WaOrderDrafts`). Вебхук после записи входящего сообщения зовёт `draftFromIncoming`: дешёвый
+  фильтр `looksLikeOrder` (цифры + слова про цветок), модель разбирает по `WA_ORDER_SCHEMA`,
+  `parseWaOrder` отбрасывает чужой цветок, выдуманный сорт/длину, ноль и дату в прошлом. У
+  менеджера (свои клиенты по телефону или Kaspi-номеру карточки + неизвестные номера) и админа в
+  «Заявках» — блок «Заказы из WhatsApp» (свежие 3 дня); «Оформить» → `/orders/new?draft=…`: обычная
+  форма уже заполнена (цена из прайса, без сорта — общая по длине), после сохранения черновик
+  `done` (`createOrderAction` получает `draftId`). «Скрыть» — `dismissed`. Решение владельца:
+  **ИИ только предлагает**, заявка появляется, когда менеджер сохранил форму. Видит только
+  переписку рабочего номера — личные WhatsApp менеджеров не подключены;
+- **Напоминания о долгах** (`src/lib/debtReminder.ts`, `debtReminderRunner.ts`, вкладка
+  `DebtReminders`, страница «Оплаты → Напоминания» `/finance/reminders`). Срок оплаты = доставка
+  (нет — день оформления) + «Отсрочка N дней» из карточки (`dueDateOf`); в списке — долг есть, это
+  продажа (`isNotASale` — нет), срок наступил, клиент не обещал заплатить позже и по заявке не
+  напоминали `REMIND_GAP_DAYS` (3) дня; заявки клиента — одним сообщением. Решение владельца:
+  **отправляет бухгалтер одной кнопкой** (галочки, предпросмотр текста), по одному с паузой 20–40 с
+  (`SEND_GAP_SECONDS`), пока страница открыта. Сервер пересчитывает список заново (грабли 1.11),
+  сначала выставляет счёт Kaspi на долю компании, где касса подключена (`issueKaspiInvoice` в
+  `src/lib/kaspiIssue.ts` — тот же путь, что у кнопки в панели оплаты), потом пишет текст, который
+  говорит правду о выставленном счёте. Уже висящий счёт второй раз не выставляется. Не ушло — строка
+  с ошибкой без номера сообщения и напоминанием не считается;
+- **Утренняя сводка** (`src/lib/morningDigest.ts`, `morningDigestRunner.ts`, `/api/digest`,
+  расписание Vercel `0 4 * * *` = 9:00 Алматы, `CRON_SECRET`). Номера — настройка `DigestPhones`
+  («Настройки → Утренняя сводка», там же «Как выглядит» и «Отправить сейчас»). Вчера: заявки по
+  дню оформления без наших магазинов/городов/точки и по менеджерам, деньги по дню поступления, точка
+  на базаре; сегодня к отгрузке; долги и просрочка; «Требует внимания» — тот же `homeFocus`, что на
+  главной у владельца.
+
+Проверка номера в Green API у всех трёх (и у рассылок) — общая `checkGreenChannel()`
+(`src/lib/greenChannel.ts`).
 
 **Собственная розница** (роли `retail_almaty` и `retail_regions`, раздел `/retail`, правило —
 `src/lib/retail.ts`). У хозяйства есть свои цветочные магазины: в Алматы и в регионах. Менеджер
@@ -2382,7 +2418,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

@@ -13,6 +13,7 @@ import {
   type NewOrderInput,
   updateOrderStatus,
 } from "@/lib/repo/orders";
+import { closeWaOrderDraft } from "@/lib/repo/waOrders";
 import { logMoney } from "@/lib/repo/moneyLog";
 import { cancelRefusal } from "@/lib/orderRules";
 import {
@@ -76,7 +77,10 @@ import type { ReturnLineInput } from "@/lib/orderReturn";
 import { getCurrentPrices } from "@/lib/repo/prices";
 import { PRICE_KINDS } from "@/lib/priceList";
 
-async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">) {
+async function createOrderActionInner(
+  withDraft: Omit<NewOrderInput, "managerEmail"> & { draftId?: string }
+) {
+  const { draftId, ...input } = withDraft;
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role;
@@ -176,6 +180,15 @@ async function createOrderActionInner(input: Omit<NewOrderInput, "managerEmail">
       amountBefore: 0,
       amountAfter: 0,
     });
+  }
+  // Заявка из заказа WhatsApp: черновик разобран. Не записалось — не беда,
+  // черновик просто останется в списке, заявка уже есть.
+  if (draftId) {
+    try {
+      await closeWaOrderDraft(String(draftId), "done", session.user.email.toLowerCase(), orderId);
+    } catch (err) {
+      console.error("wa draft close:", err instanceof Error ? err.message : err);
+    }
   }
   revalidatePath("/orders");
   revalidatePath("/retail");

@@ -59,6 +59,8 @@ export const SHEET_TABS = {
   // наличные). Списания на самой точке — отдельная вкладка.
   POINT_SALES: "PointSales",
   POINT_WRITEOFFS: "PointWriteoffs",
+  WA_ORDER_DRAFTS: "WaOrderDrafts",
+  DEBT_REMINDERS: "DebtReminders",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -469,6 +471,33 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_TABS.BROADCAST_ANALYSES]: ["BroadcastID", "CreatedAt", "CreatedBy", "Model", "Replies", "Data"],
   [SHEET_TABS.POINT_SALES]: ["Date", "Kaspi", "Cash", "Note", "AccountantEmail", "UpdatedAt"],
   [SHEET_TABS.POINT_WRITEOFFS]: ["WriteoffID", "Date", "FlowerType", "Quantity", "Amount", "Reason", "CreatedByEmail", "CreatedAt"],
+  [SHEET_TABS.WA_ORDER_DRAFTS]: [
+    "DraftID",
+    "CreatedAt",
+    "Phone",
+    "SenderName",
+    "MessageID",
+    "Text",
+    "ItemsJSON",
+    "DeliveryDate",
+    "Note",
+    "Status",
+    "OrderID",
+    "HandledByEmail",
+    "HandledAt",
+  ],
+  [SHEET_TABS.DEBT_REMINDERS]: [
+    "ReminderID",
+    "SentAt",
+    "Phone",
+    "ClientName",
+    "OrderIDs",
+    "Amount",
+    "MessageID",
+    "KaspiInvoices",
+    "SentByEmail",
+    "Error",
+  ],
   [SHEET_TABS.BOT_CHATS]: [
     "Phone",
     "UpdatedAt",

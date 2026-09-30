@@ -24,6 +24,9 @@ import {
   type FlowerType,
 } from "@/lib/constants";
 import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
+import { listWaOrderDrafts } from "@/lib/repo/waOrders";
+import { draftFormItems, visibleDrafts } from "@/lib/waOrder";
+import { type DraftItem } from "@/components/OrderItemsEditor";
 import {
   canOrderForShop,
   isOwnShop,
@@ -51,6 +54,8 @@ export default async function NewOrderPage({
     region?: string;
     /** «1» — менеджер розницы оформляет заявку клиенту, а не магазину. */
     sale?: string;
+    /** Черновик из WhatsApp (`waOrder.ts`): форма открывается заполненной. */
+    draft?: string;
   };
 }) {
   const session = await getServerSession(authOptions);
@@ -206,9 +211,19 @@ export default async function NewOrderPage({
       paymentMethod: c.paymentMethod,
     }));
 
-  const preselected = searchParams?.client
-    ? options.find((c) => c.clientId === searchParams.client) ?? null
+  // Заказ из WhatsApp: только тот черновик, что виден этому человеку (грабли 1.11).
+  const draftHit = searchParams?.draft
+    ? visibleDrafts(await listWaOrderDrafts(), clients, role, myEmail).find(
+        (x) => x.draft.draftId === searchParams.draft
+      ) ?? null
     : null;
+  const priceMap = priceMapForClient(prices);
+
+  const preselected = draftHit?.client
+    ? options.find((c) => c.clientId === draftHit.client?.clientId) ?? null
+    : searchParams?.client
+      ? options.find((c) => c.clientId === searchParams.client) ?? null
+      : null;
 
   // Направление из адреса — так РОП попадает сюда из раздела «Регионы», нажав
   // «Заявка в Астану». Значение проверяется по закрытому списку: подставленное
@@ -230,12 +245,28 @@ export default async function NewOrderPage({
   return (
     <div>
       <PageHeader area="orders" title={presetDirection ? `Новая заявка — ${presetDirection}` : "Новая заявка"} />
+      {draftHit && (
+        <div className="card mb-5 max-w-4xl text-sm border-accent/30 bg-accent-soft/40">
+          <div className="font-medium">
+            Заказ из WhatsApp · {draftHit.client?.name || draftHit.draft.senderName || `+${draftHit.draft.phone}`}
+          </div>
+          <div className="text-ink-secondary mt-1 whitespace-pre-line">«{draftHit.draft.text}»</div>
+          <div className="text-ink-muted mt-2">
+            {draftHit.client
+              ? "Заполнено по сообщению — проверьте сорт, длину, цену и дату, потом «Создать заявку»."
+              : `Клиента с номером +${draftHit.draft.phone} нет в базе — заведите его в поле «Клиент» (кнопка «новый клиент»), остальное заполнено.`}
+          </div>
+        </div>
+      )}
       <div>
         <OrderForm
           varieties={varieties}
-          prices={priceMapForClient(prices)}
+          prices={priceMap}
           initialClient={preselected}
-          initialDeliveryDate={preselectedDate}
+          initialDeliveryDate={draftHit?.draft.deliveryDate || preselectedDate}
+          initialItems={draftHit ? (draftFormItems(draftHit.draft, priceMap, varieties) as DraftItem[]) : undefined}
+          initialNotes={draftHit?.draft.note ?? ""}
+          draftId={draftHit?.draft.draftId ?? ""}
           clients={options}
           showDirection={canSetDirection(role)}
           initialDirection={presetDirection}
