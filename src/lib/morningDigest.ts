@@ -21,6 +21,9 @@ export const DIGEST_SETTING = "DigestPhones";
  * `Users`. Остальные менеджеры появляются, только если вчера продавали.
  */
 export const DIGEST_ALWAYS = ["Ильяс", "Эмиль", "Бауыржан"];
+
+/** Имя без «ы» после «ау» и в нижнем регистре: «Бауыржан» и «Бауржан» — один человек (в `Users` — «Бауржан»). */
+const nameKey = (s: string) => (s || "").trim().toLowerCase().replace(/ё/g, "е").replace(/ауы/g, "ау");
 export const POINT_LABEL = "Пожарка";
 
 export interface DigestOrder {
@@ -115,7 +118,7 @@ export function salesByFarm(input: DigestInput, day: string): FarmSales[] {
     return r;
   };
   const alwaysKeys = DIGEST_ALWAYS.map((label) => {
-    const email = Object.keys(input.names).find((e) => firstWord(input.names[e]) === label.toLowerCase());
+    const email = Object.keys(input.names).find((e) => nameKey(firstWord(input.names[e])) === nameKey(label));
     return { key: email ?? `name:${label.toLowerCase()}`, name: email ? input.names[email].trim().split(/\s+/)[0] : label };
   });
   for (const farm of FARM_ORDER) {

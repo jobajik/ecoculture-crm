@@ -242,12 +242,14 @@ const fOrders = [
   { orderId: "F4", createdAt: "2026-09-29T08:00:00.000Z", deliveryDate: "2026-09-29", status: "new", managerEmail: "emil@x", totalAmount: 0, paidAmount: 0, retail: "almaty",
     items: [{ quantity: 99, shippedQuantity: 0, flowerType: "rose", unitPrice: 100 }] },
 ];
-const fInput = { ...dInput, orders: fOrders, names: { "ilyas@x": "Ильяс Иванов", "emil@x": "Эмиль Нурланов", "sayat@x": "Саят", "baur@x": "Бауыржан К." } };
+const fInput = { ...dInput, orders: fOrders, names: { "ilyas@x": "Ильяс Иванов", "emil@x": "Эмиль Нурланов", "sayat@x": "Саят", "baur@x": "Бауржан К." } };
+fOrders.push({ orderId: "F5", createdAt: "2026-09-29T09:00:00.000Z", deliveryDate: "2026-09-30", status: "new", managerEmail: "baur@x", totalAmount: 0, paidAmount: 0,
+  items: [{ quantity: 400, shippedQuantity: 0, flowerType: "chrysanthemum", unitPrice: 270 }] } as never);
 const farms = salesByFarm(fInput, "2026-09-29");
 const show = (f: (typeof farms)[number]) => f.rows.map((r) => `${r.name}:${r.amount}/${r.stems}`);
-check("Rose Farm: всегда трое и Пожарка, Саят — потому что продавал, магазин не в счёт", show(farms[0]), ["Ильяс:20000/100", "Эмиль:0/0", "Бауыржан:0/0", "Саят:5000/10", "Пожарка:0/0"]);
-check("Есентай: Пожарка отдельной строкой, Саята нет", show(farms[1]), ["Ильяс:15000/50", "Эмиль:0/0", "Бауыржан:0/0", "Пожарка:50000/200"]);
-check("итог компании", [farms[0].amount, farms[1].stems], [25000, 250]);
+check("Rose Farm: всегда трое и Пожарка, Саят — потому что продавал, магазин не в счёт", show(farms[0]), ["Ильяс:20000/100", "Эмиль:0/0", "Бауржан:0/0", "Саят:5000/10", "Пожарка:0/0"]);
+check("Есентай: Бауржан из Users узнан как «Бауыржан», Пожарка отдельно, Саята нет", show(farms[1]), ["Ильяс:15000/50", "Эмиль:0/0", "Бауржан:108000/400", "Пожарка:50000/200"]);
+check("итог компании", [farms[0].amount, farms[1].stems], [25000, 650]);
 const sText = digestText({ ...fInput, stock: [{ flowerType: "rose", stems: 5000, expired: 300 }, { flowerType: "chrysanthemum", stems: 8000, expired: 0 }] }).replace(/[\u00a0\u202f]/g, " ");
 check(
   "текст: блоки компаний и склада",
