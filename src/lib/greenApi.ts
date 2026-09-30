@@ -39,20 +39,30 @@ function safeError(cfg: GreenConfig, err: unknown): Error {
   return new Error(msg.split(cfg.token).join("***"));
 }
 
+/**
+ * Служебный запрос. Отказ — `GreenError` с кодом ответа (0 — не дозвонились или
+ * не дождались): по коду рассылка решает, пережидать минуту или вставать на паузу.
+ */
 async function call<T>(cfg: GreenConfig, method: string, body?: unknown, timeoutMs = 20000): Promise<T> {
+  let res: Response;
   try {
-    const res = await fetch(endpoint(cfg, method), {
+    res = await fetch(endpoint(cfg, method), {
       method: body === undefined ? "GET" : "POST",
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`Green API ${method}: ${res.status} ${text.slice(0, 200)}`);
-    return (text ? JSON.parse(text) : null) as T;
   } catch (err) {
-    throw safeError(cfg, err);
+    const detail = safeError(cfg, err).message;
+    throw new GreenError(`Green API ${method}: нет ответа (${detail})`, 0, detail);
+  }
+  const text = (await res.text()).split(cfg.token).join("***");
+  if (!res.ok) throw new GreenError(`Green API ${method}: ${res.status} ${text.slice(0, 200)}`, res.status, text.slice(0, 300));
+  try {
+    return (text ? JSON.parse(text) : null) as T;
+  } catch {
+    throw new GreenError(`Green API ${method}: непонятный ответ`, 502, text.slice(0, 300));
   }
 }
 

@@ -36,7 +36,7 @@ import {
   waPhone,
 } from "@/lib/broadcast";
 import { GreenError, getInstanceState, greenConfig, sendFileByUrl, sendText, type GreenConfig } from "@/lib/greenApi";
-import { MAX_CAPTION, greenFailureKind, greenFileName, greenStateText } from "@/lib/greenOut";
+import { MAX_CAPTION, channelProblem, greenFailureKind, greenFileName, type ChannelCheck } from "@/lib/greenOut";
 import { publicFileUrl, safeFileName } from "@/lib/waFileSign";
 import { phoneKey } from "@/lib/leads";
 import { analyzeBroadcastNow } from "@/lib/broadcastAnalysisRunner";
@@ -85,18 +85,25 @@ async function uploadFilePartActionInner(input: {
 
 // --- Канал ------------------------------------------------------------------
 
+/** Спросить Green API, в сети ли номер. Не бросает: ответ разбирает `channelProblem`. */
+async function checkChannel(): Promise<{ cfg: GreenConfig | null; action: "ok" | "retry" | "pause"; text: string }> {
+  const cfg = greenConfig();
+  if (!cfg) return { cfg: null, action: "pause", text: "WhatsApp (Green API) не подключён — владелец вводит ключи в whatsapp-key.bat" };
+  let check: ChannelCheck;
+  try {
+    check = { state: await getInstanceState(cfg) };
+  } catch (err) {
+    check = { httpStatus: err instanceof GreenError ? err.status : 0 };
+    console.error("green state:", err instanceof Error ? err.message : err);
+  }
+  return { cfg, ...channelProblem(check) };
+}
+
 /** Green API подключён и номер в сети — иначе понятный отказ. */
 async function channelOrThrow(): Promise<GreenConfig> {
-  const cfg = greenConfig();
-  if (!cfg) throw new Error("WhatsApp (Green API) не подключён — владелец вводит ключи в whatsapp-key.bat");
-  let state = "";
-  try {
-    state = await getInstanceState(cfg);
-  } catch {
-    throw new Error("Green API не ответил — попробуйте через минуту");
-  }
-  if (state !== "authorized") throw new Error(`WhatsApp в Green API: ${greenStateText(state)}`);
-  return cfg;
+  const c = await checkChannel();
+  if (c.action !== "ok" || !c.cfg) throw new Error(c.text);
+  return c.cfg;
 }
 
 /**
@@ -195,7 +202,12 @@ async function setBroadcastStatusActionInner(broadcastId: string, status: "sendi
   if (!found) throw new Error("Рассылка не найдена");
   const cur = found.broadcast.status;
   if (cur === BROADCAST_STATUSES.DONE || cur === BROADCAST_STATUSES.CANCELLED) throw new Error("Рассылка уже закончена");
-  if (status === "sending") await channelOrThrow();
+  // Продолжить можно и при разовом сбое Green API — страница сама проверит снова
+  // через минуту. Не пускаем, только если без человека не исправится.
+  if (status === "sending") {
+    const c = await checkChannel();
+    if (c.action === "pause") throw new Error(c.text);
+  }
   const changes: Record<string, unknown> = { Status: status, Note: "" };
   if (status === "sending" && !found.broadcast.startedAt) changes.StartedAt = new Date().toISOString();
   if (status === "cancelled") changes.FinishedAt = new Date().toISOString();
@@ -249,15 +261,19 @@ async function sendNextActionInner(broadcastId: string) {
     return result({ waitSeconds: 1, note: "" });
   }
 
-  let cfg: GreenConfig;
-  try {
-    cfg = await channelOrThrow();
-  } catch (err) {
-    writes.push(broadcastUpdate(found.rowNumber, { Status: BROADCAST_STATUSES.PAUSED, Note: err instanceof Error ? err.message : "канал не работает" }));
+  const channel = await checkChannel();
+  if (channel.action === "retry") {
+    // Разовый сбой: рассылку НЕ останавливаем, этого же получателя — через минуту.
+    await commitAtomic(writes);
+    return result({ waitSeconds: 60, note: channel.text });
+  }
+  if (channel.action === "pause" || !channel.cfg) {
+    writes.push(broadcastUpdate(found.rowNumber, { Status: BROADCAST_STATUSES.PAUSED, Note: channel.text }));
     await commitAtomic(writes);
     revalidatePath("/clients/broadcasts");
-    return { status: BROADCAST_STATUSES.PAUSED, remaining: remaining(), waitSeconds: 0, note: err instanceof Error ? err.message : "" };
+    return { status: BROADCAST_STATUSES.PAUSED, remaining: remaining(), waitSeconds: 0, note: channel.text };
   }
+  const cfg = channel.cfg;
 
   const text = personalize(b.text, next.name, false);
   try {

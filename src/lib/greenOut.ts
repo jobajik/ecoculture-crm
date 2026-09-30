@@ -111,6 +111,30 @@ export function greenFailureKind(httpStatus: number): "pause" | "retry" | "recip
   return "recipient";
 }
 
+/**
+ * Проверка номера перед сообщением рассылки не удалась — что делать.
+ * `retry` — Green API не ответил, сбой у них, «пишите реже» или номер ещё
+ * запускается: подождать минуту и проверить снова САМИМ, рассылку не
+ * останавливать (26–30.09 разовый сбой ставил на паузу всю рассылку, хотя
+ * через минуту всё работало). `pause` — ключ, тариф или номер отключён:
+ * без человека не исправится.
+ */
+export type ChannelCheck = { state: string } | { httpStatus: number };
+
+export function channelProblem(check: ChannelCheck): { action: "ok" | "retry" | "pause"; text: string } {
+  if ("state" in check) {
+    if (check.state === "authorized") return { action: "ok", text: "" };
+    if (check.state === "starting") return { action: "retry", text: "WhatsApp в Green API запускается — проверю снова через минуту" };
+    return { action: "pause", text: `WhatsApp в Green API: ${greenStateText(check.state)}` };
+  }
+  const s = check.httpStatus;
+  if (s === 0) return { action: "retry", text: "Green API не ответил (нет связи) — пробую снова через минуту" };
+  if (s === 429) return { action: "retry", text: "Green API просит писать реже — пробую снова через минуту" };
+  if (s >= 500) return { action: "retry", text: `Green API не ответил (сбой у них, код ${s}) — пробую снова через минуту` };
+  const kind = greenFailureKind(s);
+  return { action: "pause", text: kind === "pause" ? greenSendErrorText(s, "") : `Green API отказал в проверке номера (код ${s})` };
+}
+
 /** Подпись к файлу у WhatsApp — до 1024 знаков; длиннее уходит отдельным сообщением. */
 export const MAX_CAPTION = 1024;
 

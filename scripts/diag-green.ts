@@ -20,6 +20,17 @@ async function get(method: string): Promise<Record<string, unknown>> {
 }
 
 async function main() {
+  // Проверка номера — то же, что рассылка делает перед каждым сообщением.
+  for (let i = 1; i <= 5; i++) {
+    const t = Date.now();
+    try {
+      const st = await get("getStateInstance");
+      console.log(`getStateInstance #${i}: ${String(st.stateInstance)} за ${Date.now() - t} мс`);
+    } catch (err) {
+      console.log(`getStateInstance #${i}: ОШИБКА за ${Date.now() - t} мс — ${err instanceof Error ? err.message : err}`);
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
   const wa = await get("getWaSettings");
   console.log(`Номер инстанса: ${String(wa.phone || wa.wid || "(не указан)")}`);
   console.log(`Состояние:      ${String(wa.stateInstance || "")}`);

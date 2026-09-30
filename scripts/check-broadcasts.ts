@@ -45,6 +45,7 @@ import {
   MAX_CAPTION,
   botIncomingOf,
   greenFailureKind,
+  channelProblem,
   greenFileName,
   greenSendErrorText,
   greenStateText,
@@ -270,6 +271,13 @@ check("лимит тарифа — пауза", greenFailureKind(466), "pause");
 check("чужой ключ — пауза", greenFailureKind(401), "pause");
 check("сбой связи — повтор", [greenFailureKind(0), greenFailureKind(502), greenFailureKind(429)], ["retry", "retry", "retry"]);
 check("неверный номер — у получателя", greenFailureKind(400), "recipient");
+// Проверка номера перед сообщением: разовый сбой не останавливает рассылку.
+const act = (c: Parameters<typeof channelProblem>[0]) => channelProblem(c).action;
+check("номер в сети — отправляем", act({ state: "authorized" }), "ok");
+check("Green API не ответил / 5xx / 429 — повтор через минуту", [act({ httpStatus: 0 }), act({ httpStatus: 502 }), act({ httpStatus: 429 })], ["retry", "retry", "retry"]);
+check("номер запускается — повтор", act({ state: "starting" }), "retry");
+check("ключ, тариф, номер отключён — пауза", [act({ httpStatus: 401 }), act({ httpStatus: 466 }), act({ state: "notAuthorized" }), act({ state: "yellowCard" })], ["pause", "pause", "pause", "pause"]);
+check("незнакомый отказ проверки — пауза с кодом", channelProblem({ httpStatus: 404 }), { action: "pause", text: "Green API отказал в проверке номера (код 404)" });
 check("текст про тариф", greenSendErrorText(466, "").includes("«Бизнес»"), true);
 check("состояние", [greenStateText("authorized"), greenStateText("notAuthorized").includes("QR")], ["работает", true]);
 check("незнакомое состояние", greenStateText("odd"), "состояние «odd»");
