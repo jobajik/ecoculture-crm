@@ -85,6 +85,19 @@ async function main() {
     console.log(`${mask(m.phone)} | ${m.at.slice(0, 16)} | ${(m.text || `[${m.type}]`).replace(/\s+/g, " ").slice(0, 40)} | ${reason}`);
     if (seen.size >= 15) break;
   }
+
+  // Чаты, тронутые за последние сутки: что бот сказал и почему передал менеджеру.
+  const since = Date.now() - 24 * 3600 * 1000;
+  const recent = chats.filter((c) => Date.parse(c.updatedAt || "") >= since).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  console.log(`\n=== Чаты за сутки: ${recent.length} ===`);
+  for (const c of recent.slice(0, 12)) {
+    console.log(
+      `\n${mask(c.phone)} · режим ${c.mode || "-"} · ответов бота ${c.botReplies} · передан ${c.handoffAt ? c.handoffAt.slice(0, 16) : "-"} «${c.handoffReason || ""}» · писал менеджер ${c.humanAt ? c.humanAt.slice(0, 16) : "-"}`
+    );
+    for (const line of c.context.slice(-5)) {
+      console.log(`   ${line.at.slice(11, 16)} ${line.role === "us" ? "МЫ " : "КЛ "} ${line.text.replace(/\s+/g, " ").slice(0, 110)}`);
+    }
+  }
 }
 
 main().catch((err) => {
