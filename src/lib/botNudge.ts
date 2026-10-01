@@ -1,19 +1,24 @@
-import { BOT_HUMAN_QUIET_HOURS, BOT_MODES, type BotChat, type BotSettings } from "./broadcast";
+import { BOT_MODES, type BotChat, type BotSettings } from "./broadcast";
 
 // ---------------------------------------------------------------------------
 // Дожим молчащего клиента (владелец, 01.10.2026: «бот уходит в инактив, когда
 // клиент молчит; давай каждый час спрашивать и пытаться продавать»).
 //
-// Не каждый час без конца: неофициальный WhatsApp банят за «робота», а клиент
-// на пятое «ну что, берёте?» пишет «СТОП» — и рассылки ему больше не уходят
-// никогда. Поэтому три касания с растущей паузой — через 1 ч, ещё через 3 ч и
-// назавтра — и только днём. Клиент ответил — счёт заново. Модель вправе решить,
+// Не без конца: неофициальный WhatsApp банят за «робота», а клиент на десятое
+// «ну что, берёте?» пишет «СТОП» — и рассылки ему больше не уходят никогда.
+// Поэтому четыре касания раз в полтора часа (владелец, 01.10: «таймер раз в
+// 1.5 часа») и только днём; дальше бот ждёт, пока клиент напишет сам. Клиент
+// ответил — счёт заново. Модель вправе решить,
 // что дожимать нечего (отказ, заказ оплачен, служебный разговор), — тогда
 // дожим этого разговора закрыт. Проверка — `check-bot-order`.
 // ---------------------------------------------------------------------------
 
-/** Пауза перед каждым касанием, часов: 1-е — через час после нашего ответа, 2-е — через 3 ч после 1-го, 3-е — назавтра. */
-export const NUDGE_GAPS_HOURS = [1, 3, 20];
+/**
+ * Пауза перед каждым касанием, часов: каждые полтора часа, пока клиент молчит,
+ * четыре раза (владелец, 01.10.2026: «давай таймер раз в 1.5 часа, если клиент
+ * молчит»). Было 1 / 3 / 20 ч. Последнее касание — мягкое, без цен.
+ */
+export const NUDGE_GAPS_HOURS = [1.5, 1.5, 1.5, 1.5];
 /** Дожимаем только днём по Алматы: [с, до). */
 export const NUDGE_FROM_HOUR = 9;
 export const NUDGE_TO_HOUR = 20;
@@ -28,30 +33,41 @@ function hoursSince(iso: string, now: Date): number {
 }
 
 /**
- * Пора ли дожимать этот чат. Возвращает номер касания (1…3) или 0 — не надо.
+ * Пора ли дожимать этот чат и почему нет. `attempt` — номер касания (1…4) или
+ * 0; `reason` — словами, для диагностики (`scripts/diag-bot-nudge.ts`).
  * Только разговоры, где клиент уже отвечал, а последним писали мы.
  */
-export function nudgeDue(input: { settings: BotSettings; chat: BotChat; now: Date; hour: number }): number {
+export function nudgeStatus(input: { settings: BotSettings; chat: BotChat; now: Date; hour: number }): { attempt: number; reason: string } {
   const { settings, chat, now, hour } = input;
-  if (!settings.enabled) return 0;
-  if (chat.mode === BOT_MODES.OPT_OUT) return 0;
-  if (settings.scope === "broadcast" && chat.ourIds.length === 0) return 0;
-  if (hour < NUDGE_FROM_HOUR || hour >= NUDGE_TO_HOUR) return 0;
-  if (hoursSince(chat.humanAt, now) < BOT_HUMAN_QUIET_HOURS) return 0;
+  const no = (reason: string) => ({ attempt: 0, reason });
+  if (!settings.enabled) return no("бот выключен");
+  if (chat.mode === BOT_MODES.OPT_OUT) return no("отписался");
+  if (settings.scope === "broadcast" && chat.ourIds.length === 0) return no("не из рассылки");
+  if (hour < NUDGE_FROM_HOUR || hour >= NUDGE_TO_HOUR) return no("не рабочее время");
   // Менеджер сам писал в этом чате за две недели — это его клиент и его разговор (доставка, «как в
   // прошлый раз»): бот туда с «пробной партией» не лезет. Первая проверка на живых чатах показала
   // именно это — «Ок», «Как в прошлый раз с доставкой в ГРЭС», «Я у Ильяса беру».
-  if (hoursSince(chat.humanAt, now) < NUDGE_MANAGER_CHAT_DAYS * 24) return 0;
+  if (hoursSince(chat.humanAt, now) < NUDGE_MANAGER_CHAT_DAYS * 24) return no("менеджер писал в чате за 14 дней");
   const nudge = chat.nudge ?? { count: 0, at: "", done: false };
-  if (nudge.done || nudge.count >= NUDGE_GAPS_HOURS.length) return 0;
+  if (nudge.done) return no("дожим закрыт (модель: не писать, или заказ и счёт)");
+  if (nudge.count >= NUDGE_GAPS_HOURS.length) return no(`все ${NUDGE_GAPS_HOURS.length} касания были`);
   const ctx = chat.context;
   const last = ctx[ctx.length - 1];
-  if (!last || last.role !== "us") return 0;
+  if (!last) return no("пустой чат");
+  if (last.role !== "us") return no("последним писал клиент — ждёт ответа бота");
   const lastClient = [...ctx].reverse().find((c) => c.role === "client");
-  if (!lastClient) return 0; // клиент ни разу не ответил — это рассылка, а не разговор
-  if (hoursSince(lastClient.at, now) > NUDGE_MAX_SILENCE_DAYS * 24) return 0;
+  if (!lastClient) return no("клиент ни разу не ответил"); // это рассылка, а не разговор
+  if (hoursSince(lastClient.at, now) > NUDGE_MAX_SILENCE_DAYS * 24) return no("клиент молчит дольше 3 дней");
   const from = nudge.count === 0 ? last.at : nudge.at;
-  return hoursSince(from, now) >= NUDGE_GAPS_HOURS[nudge.count] ? nudge.count + 1 : 0;
+  const gap = NUDGE_GAPS_HOURS[nudge.count];
+  const passed = hoursSince(from, now);
+  if (passed < gap) return no(`рано: прошло ${passed.toFixed(1)} ч из ${gap}`);
+  return { attempt: nudge.count + 1, reason: "пора" };
+}
+
+/** Пора ли дожимать: номер касания (1…4) или 0. */
+export function nudgeDue(input: { settings: BotSettings; chat: BotChat; now: Date; hour: number }): number {
+  return nudgeStatus(input).attempt;
 }
 
 /** Задание модели на касание: вместо «ответь на последнее сообщение». */
@@ -147,14 +163,28 @@ export function pickNudgeOffers(input: {
   return out;
 }
 
-/** Текст касания. Цены — из `pickNudgeOffers`, то есть из прайса. */
+/**
+ * Текст касания. Цены — из `pickNudgeOffers`, то есть из прайса. Оформление
+ * WhatsApp: позиции списком, цена и сумма жирным, вопрос отдельной строкой.
+ */
 export function nudgeText(attempt: number, offers: NudgeOffer[], labels: (o: NudgeOffer) => string): string {
-  const list = offers.map((o) => `${labels(o)} — ${Math.round(o.price).toLocaleString("ru-RU").replace(/\s/g, " ")} ₸`);
-  if (attempt >= NUDGE_GAPS_HOURS.length || list.length === 0) {
-    return "Если цветы понадобятся — просто напишите сюда: подберём по наличию и привезём. Хорошего дня!";
+  const price = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\s/g, " ")} ₸`;
+  const line = (o: NudgeOffer) => `• ${labels(o)} — *${price(o.price)}*`;
+  if (attempt >= NUDGE_GAPS_HOURS.length || offers.length === 0) {
+    return "Если цветы понадобятся — просто напишите сюда.\nПодберём по наличию и привезём. Хорошего дня!";
   }
+  const first = offers[0];
   if (attempt === 1) {
-    return `Здравствуйте! Сегодня свежий срез: ${list.join("; ")}. Поставить вам на завтра? Для пробы можно от 50 шт.`;
+    return ["Здравствуйте! Сегодня свежий срез:", "", ...offers.map(line), "", "Поставить вам на завтра? Для пробы — от 50 шт."].join("\n");
   }
-  return `${list[0]} — сейчас хорошо в наличии, разбирают быстро. Отложить для вас 50–100 шт. на завтра?`;
+  if (attempt === 2) {
+    return [line(first), "", "Сейчас хорошо в наличии, но разбирают быстро.", "Отложить для вас 50–100 шт. на завтра?"].join("\n");
+  }
+  return [
+    "Могу собрать пробную партию:",
+    "",
+    `• ${labels(first)} — 50 шт. × ${price(first.price)} = *${price(first.price * 50)}*`,
+    "",
+    "Доставка завтра. Оформить?",
+  ].join("\n");
 }

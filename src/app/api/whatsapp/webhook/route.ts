@@ -7,6 +7,7 @@ import { appendWaStatuses } from "@/lib/repo/broadcasts";
 import { botIncomingOf, parseGreenStatus } from "@/lib/greenOut";
 import { runBot } from "@/lib/botEngine";
 import { draftFromIncoming } from "@/lib/waOrderRunner";
+import { kickFollowup } from "@/lib/botFollowUpRun";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
   if (status) {
     try {
       await appendWaStatuses([status]);
+      await kickFollowup(siteOrigin(request));
       return NextResponse.json({ ok: true });
     } catch (err) {
       console.error("whatsapp status:", err instanceof Error ? err.message : err);
@@ -84,5 +86,18 @@ export async function POST(request: Request) {
   const incoming = botIncomingOf(body, message);
   const botAnswered = incoming ? await runBot([incoming]) : false;
   if (!botAnswered) await draftFromIncoming(message);
+  // Заодно — дожим молчащих и напоминания об оплате (не чаще раза в 25 мин, `botFollowUpRun.ts`).
+  await kickFollowup(siteOrigin(request));
   return NextResponse.json({ ok: true });
+}
+
+/** Адрес сайта для своего же вызова: основной (с www), иначе — тот, куда пришёл вебхук. */
+function siteOrigin(request: Request): string {
+  const configured = (process.env.NEXTAUTH_URL || "").replace(/\/+$/, "");
+  if (configured) return configured;
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return "";
+  }
 }

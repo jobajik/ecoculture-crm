@@ -5,7 +5,7 @@ import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
 import { lastBroadcastForBot, pricesForBot, stockForBot } from "./botKnowledge";
-import { BOT_ORDER_SCHEMA } from "./botOrder";
+import { BOT_ORDER_SCHEMA, toWhatsApp } from "./botOrder";
 import { botClientContext, cancelBotOrder, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
 import {
   BOT_MODES,
@@ -116,7 +116,11 @@ function systemPrompt(p: {
     "довести разговор до подтверждённого заказа. Ты НИКОГДА не передаёшь разговор менеджеру и не пишешь «передам менеджеру»,",
     "«менеджер свяжется», «менеджер ответит» — ты сам и есть менеджер в этом чате.",
     "",
-    "Стиль: коротко (1–4 предложения), живо и уверенно, на языке клиента (русский или казахский), без разметки и без эмодзи.",
+    "Стиль: коротко, живо и уверенно, на языке клиента (русский или казахский), без эмодзи.",
+    "Оформление WhatsApp — НЕ стеной текста: 1–3 коротких блока через пустую строку; две и больше позиции или цены —",
+    "списком, каждая с новой строки «• Хризантема Altaj, Третья — 270 ₸»; сумму заказа и номер заказа выделяй *звёздочками*",
+    "(жирный WhatsApp, не больше двух выделений); вопрос к клиенту — последней строкой отдельно. Не используй # и **.",
+    "Не повторяй состав заказа в каждом сообщении: повторил один раз — дальше спрашивай только то, чего не хватает.",
     "НЕ обращайся к клиенту по имени — имя в WhatsApp часто чужое (магазин, муж, сотрудник). Только «Здравствуйте» или без обращения.",
     "Не говори, что ты бот. Не здоровайся заново, если уже здоровался в переписке.",
     "КАЖДЫЙ ответ заканчивай вопросом, который двигает к заказу: «Сколько штук поставить?», «На какой день доставка?»,",
@@ -322,7 +326,7 @@ export async function botAct(
     const again = await reissueBotInvoices(chat.phone, decision.kaspiPhone);
     if (again) text = again;
   }
-  return { text, note: notes.join("; ") };
+  return { text: toWhatsApp(text), note: notes.join("; ") };
 }
 
 /** Ответил ли бот (тогда заказ ведёт он, и черновик для менеджера не нужен). */

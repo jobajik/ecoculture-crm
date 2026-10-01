@@ -201,6 +201,12 @@ export interface InvoiceOutcome {
   error?: string;
 }
 
+// --- Тексты клиенту ------------------------------------------------------------
+//
+// Оформление WhatsApp (владелец, 01.10.2026: «не нравится визуал — идут стеной
+// текста»): короткие блоки через пустую строку, позиции и варианты — списком «•»,
+// главное (номер заказа, сумма) — *жирным* (звёздочки — разметка WhatsApp).
+
 /** Подтверждение клиенту: номер заказа, позиции, сумма, счета. */
 export function botOrderText(input: {
   code: string;
@@ -210,41 +216,50 @@ export function botOrderText(input: {
   invoices: InvoiceOutcome[];
 }): string {
   const lines = input.items.map(
-    (i) => `• ${itemName(i.flowerType, i.variety, i.grade)} — ${i.quantity} шт. × ${money(i.unitPrice)} = ${money(i.quantity * i.unitPrice)}`
+    (i) =>
+      `• ${itemName(i.flowerType, i.variety, i.grade)} — ${i.quantity} шт. × ${money(i.unitPrice)}` +
+      (input.items.length > 1 ? ` = ${money(i.quantity * i.unitPrice)}` : "")
   );
   const total = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const out = [
-    `Заказ №${input.code} оформлен:`,
+    `*Заказ №${input.code} оформлен*`,
+    "",
     ...lines,
-    `Итого: ${money(total)}. Доставка: ${dayText(input.deliveryDate)}${input.city ? `, ${input.city}` : ""}.`,
+    "",
+    `Итого: *${money(total)}*`,
+    `Доставка: ${dayText(input.deliveryDate)}${input.city ? `, ${input.city}` : ""}`,
     "",
   ];
-  const sent = input.invoices.filter((i) => i.result === "sent");
   const many = input.invoices.length > 1;
-  for (const inv of sent) {
-    out.push(`Счёт Kaspi${many ? ` (${inv.farmLabel})` : ""} на ${money(inv.amount)} отправлен на номер ${prettyKaspiPhone(inv.phone)} — оплатите в приложении Kaspi.`);
+  for (const inv of input.invoices.filter((i) => i.result === "sent")) {
+    out.push(`Счёт Kaspi${many ? ` (${inv.farmLabel})` : ""} на *${money(inv.amount)}* отправлен на номер ${prettyKaspiPhone(inv.phone)} — оплатите в приложении Kaspi.`);
   }
   for (const inv of input.invoices.filter((i) => i.result !== "sent")) {
-    out.push(`Счёт${many ? ` (${inv.farmLabel})` : ""} на ${money(inv.amount)} пришлём сюда же в ближайшее время.`);
+    out.push(`Счёт${many ? ` (${inv.farmLabel})` : ""} на *${money(inv.amount)}* пришлём сюда же в ближайшее время.`);
   }
-  out.push("Как только оплата придёт, заказ уйдёт на сборку — я сразу напишу.");
+  out.push("", "После оплаты заказ сразу уйдёт на сборку — я напишу.");
   return out.join("\n");
 }
 
 export function botPaidText(input: { code: string; amount: number; fullyPaid: boolean; deliveryDate: string }): string {
   return input.fullyPaid
-    ? `Оплата ${money(input.amount)} по заказу №${input.code} получена, спасибо! Заказ передан на сборку, доставка ${dayText(input.deliveryDate)}.`
-    : `Оплата ${money(input.amount)} по заказу №${input.code} получена, спасибо! Ждём оплату по второму счёту — после неё заказ уйдёт на сборку.`;
+    ? `*Оплата получена* — ${money(input.amount)} по заказу №${input.code}. Спасибо!\n\nЗаказ передан на сборку, доставка ${dayText(input.deliveryDate)}.`
+    : `*Оплата получена* — ${money(input.amount)} по заказу №${input.code}. Спасибо!\n\nЖдём оплату по второму счёту — после неё заказ уйдёт на сборку.`;
 }
 
 export function botInvoiceErrorText(input: { code: string; phone: string; reason: string }): string {
-  return `Счёт Kaspi по заказу №${input.code} на номер ${prettyKaspiPhone(input.phone)} не дошёл: ${input.reason}. Напишите номер, к которому привязан ваш Kaspi, — выставлю счёт заново.`;
+  return [
+    `Счёт Kaspi по заказу №${input.code} на номер ${prettyKaspiPhone(input.phone)} *не дошёл*: ${input.reason}.`,
+    "",
+    "Напишите номер, к которому привязан ваш Kaspi, — выставлю счёт заново.",
+  ].join("\n");
 }
 
 export function botReminderText(input: { code: string; amount: number; reissued: boolean }): string {
-  return input.reissued
-    ? `Напоминаю про заказ №${input.code}: прошлый счёт истёк, я выставил новый на ${money(input.amount)} — он в приложении Kaspi. После оплаты заказ сразу уйдёт на сборку.`
-    : `Напоминаю про заказ №${input.code}: счёт Kaspi на ${money(input.amount)} ждёт оплаты в приложении Kaspi. После оплаты заказ сразу уйдёт на сборку.`;
+  const head = input.reissued
+    ? `Напоминаю про заказ №${input.code}: прошлый счёт истёк, я выставил новый на *${money(input.amount)}* — он в приложении Kaspi.`
+    : `Напоминаю про заказ №${input.code}: счёт Kaspi на *${money(input.amount)}* ждёт оплаты в приложении Kaspi.`;
+  return `${head}\n\nПосле оплаты заказ сразу уйдёт на сборку.`;
 }
 
 /**
@@ -253,19 +268,44 @@ export function botReminderText(input: { code: string; amount: number; reissued:
  * выставлять заново молча, а спросить, что не так, и предложить выходы.
  */
 export function botDeclinedText(input: { code: string; amount: number }): string {
-  return (
-    `Вижу, счёт Kaspi по заказу №${input.code} на ${money(input.amount)} отклонён. Что-то не так? ` +
-    "Могу поменять количество или сорт, перенести доставку, выставить счёт на другой номер Kaspi или заново на этот — " +
-    "а если заказ уже не нужен, просто напишите, я его отменю."
-  );
+  return [
+    `Счёт Kaspi по заказу №${input.code} на *${money(input.amount)}* отклонён. Что-то не так?`,
+    "",
+    "Могу:",
+    "• поменять количество или сорт",
+    "• перенести доставку",
+    "• выставить счёт заново или на другой номер Kaspi",
+    "• отменить заказ, если он уже не нужен",
+    "",
+    "Напишите, как вам удобнее.",
+  ].join("\n");
 }
 
 /** Назавтра после отклонённого счёта клиент молчит — один раз спросить, держать ли заказ. */
 export function botDeclinedReminderText(input: { code: string; amount: number }): string {
-  return `Заказ №${input.code} на ${money(input.amount)} пока ждёт оплаты — счёт был отклонён. Держать заказ за вами? Выставить счёт заново или отменить?`;
+  return [
+    `Заказ №${input.code} на *${money(input.amount)}* пока ждёт оплаты — счёт был отклонён.`,
+    "",
+    "Держать заказ за вами? Могу выставить счёт заново или отменить.",
+  ].join("\n");
 }
 
 /** Заказ отменён по просьбе клиента. */
 export function botCancelledText(code: string): string {
   return `Заказ №${code} отменил.`;
+}
+
+/**
+ * Текст модели — в разметку WhatsApp: «**жирный**» (Markdown) → «*жирный*»,
+ * без заголовков «#», маркеры списка «-»/«*» → «•», не больше одной пустой строки.
+ */
+export function toWhatsApp(text: string): string {
+  return String(text || "")
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    .replace(/__(.+?)__/g, "_$1_")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/^[ \t]*[-*][ \t]+/gm, "• ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }

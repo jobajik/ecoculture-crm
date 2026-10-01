@@ -7,6 +7,7 @@ import {
   botDeclinedText,
   botDeclinedReminderText,
   botCancelledText,
+  toWhatsApp,
   normalizeGrade,
   parseBotOrder,
   planBotOrder,
@@ -15,7 +16,8 @@ import {
 import { getLeaderboard } from "../src/lib/leaderboard";
 import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "../src/lib/botIdentity";
 import { nameIndex, personName } from "../src/lib/personName";
-import { nudgeDue, nudgeTask, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
+import { followupRunDue, followupRunText } from "../src/lib/botFollowUpRun";
+import { nudgeDue, nudgeStatus, nudgeTask, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
 import type { BotChat, BotSettings } from "../src/lib/broadcast";
 
 let failed = 0;
@@ -119,13 +121,17 @@ async function main() {
     city: "Алматы",
     invoices: [{ farmLabel: "Есентай Агро Хим", amount: 27000, result: "sent", phone: "87014050523" }],
   });
-  check("подтверждение: номер, позиция, итог, счёт", text.split("\n"), [
-    "Заказ №71YDW оформлен:",
-    "• Хризантема Altaj, Третья — 100 шт. × 270 ₸ = 27 000 ₸",
-    "Итого: 27 000 ₸. Доставка: 02.10, Алматы.",
+  check("подтверждение: блоками, номер и сумма жирным", text.split("\n"), [
+    "*Заказ №71YDW оформлен*",
     "",
-    "Счёт Kaspi на 27 000 ₸ отправлен на номер 8 701 405 05 23 — оплатите в приложении Kaspi.",
-    "Как только оплата придёт, заказ уйдёт на сборку — я сразу напишу.",
+    "• Хризантема Altaj, Третья — 100 шт. × 270 ₸",
+    "",
+    "Итого: *27 000 ₸*",
+    "Доставка: 02.10, Алматы",
+    "",
+    "Счёт Kaspi на *27 000 ₸* отправлен на номер 8 701 405 05 23 — оплатите в приложении Kaspi.",
+    "",
+    "После оплаты заказ сразу уйдёт на сборку — я напишу.",
   ]);
   const mixed = botOrderText({
     code: "AB123",
@@ -140,15 +146,16 @@ async function main() {
       { farmLabel: "Есентай Агро Хим", amount: 29000, result: "sent", phone: "87014050523" },
     ],
   });
-  check("две компании: касса не подключена — «пришлём отдельно»", mixed.includes("Счёт (Rose Farm) на 22 000 ₸ пришлём сюда же"), true);
-  check("две компании: счёт Есентая с подписью", mixed.includes("Счёт Kaspi (Есентай Агро Хим) на 29 000 ₸ отправлен"), true);
+  check("две компании: касса не подключена — «пришлём отдельно»", mixed.includes("Счёт (Rose Farm) на *22 000 ₸* пришлём сюда же"), true);
+  check("две компании: счёт Есентая с подписью", mixed.includes("Счёт Kaspi (Есентай Агро Хим) на *29 000 ₸* отправлен") && mixed.includes("= 22 000 ₸"), true);
   check("оплата полностью — на сборку", botPaidText({ code: "71YDW", amount: 27000, fullyPaid: true, deliveryDate: "2026-10-02" }).includes("передан на сборку, доставка 02.10"), true);
   check("оплата частью — ждём второй счёт", botPaidText({ code: "AB123", amount: 29000, fullyPaid: false, deliveryDate: "2026-10-03" }).includes("второму счёту"), true);
   check("счёт не дошёл — попросить номер", botInvoiceErrorText({ code: "71YDW", phone: "87014050523", reason: "номер не найден в Kaspi" }).includes("Напишите номер"), true);
   check("напоминание: перевыставлен", botReminderText({ code: "71YDW", amount: 27000, reissued: true }).includes("выставил новый"), true);
   const declined = botDeclinedText({ code: "CNF9X", amount: 27000 });
-  check("счёт отклонён: номер, сумма и вопрос", declined.includes("№CNF9X") && declined.includes("27 000 ₸") && declined.includes("?"), true);
-  check("счёт отклонён: предлагает выходы", ["количество", "другой номер", "отменю"].every((w) => declined.includes(w)), true);
+  check("счёт отклонён: номер, сумма и вопрос", declined.includes("№CNF9X") && declined.includes("*27 000 ₸*") && declined.includes("?"), true);
+  check("счёт отклонён: выходы списком", declined.split("\n").filter((l) => l.startsWith("• ")).length, 4);
+  check("Markdown модели → WhatsApp", toWhatsApp("**Итого:** 27 000 ₸\n\n\n\n- Altaj — 270 ₸\n### Шапка"), "*Итого:* 27 000 ₸\n\n• Altaj — 270 ₸\nШапка");
   check("назавтра после отказа — держать ли заказ", botDeclinedReminderText({ code: "CNF9X", amount: 27000 }).includes("Держать заказ"), true);
   check("отмена заказа", botCancelledText("CNF9X"), "Заказ №CNF9X отменил.");
 
@@ -207,6 +214,7 @@ async function main() {
   });
   const due = (c: BotChat, hour = 11, now = nowN) => nudgeDue({ settings: on, chat: c, now, hour });
   check("клиент молчит 1,5 ч после нашего ответа — первое касание", due(talk()), 1);
+  check("прошёл час — рано", due(talk({ context: [talk().context[0], { ...talk().context[1], at: t(-1) }] })), 0);
   check("прошло полчаса — рано", due(talk({ context: [talk().context[0], { ...talk().context[1], at: t(-0.5) }] })), 0);
   check("последним писал клиент — это не молчание", due(talk({ context: [talk().context[1], talk().context[0]] })), 0);
   check("клиент ни разу не отвечал (только рассылка) — не дожимаем", due(talk({ context: [talk().context[1]] })), 0);
@@ -218,17 +226,18 @@ async function main() {
   check("менеджер писал месяц назад — можно", due(talk({ humanAt: t(-24 * 30) })), 1);
   check("бот выключен — нет", nudgeDue({ settings: { ...on, enabled: false }, chat: talk(), now: nowN, hour: 11 }), 0);
   check("модель закрыла дожим — нет", due(talk({ nudge: { count: 1, at: t(-5), done: true } })), 0);
-  check("после первого касания 2 ч — рано для второго", due(talk({ nudge: { count: 1, at: t(-2), done: false } })), 0);
-  check("после первого касания 3 ч — второе", due(talk({ nudge: { count: 1, at: t(-3), done: false } })), 2);
-  check("после второго 10 ч — рано для третьего", due(talk({ nudge: { count: 2, at: t(-10), done: false } })), 0);
-  check("после второго назавтра — третье", due(talk({ nudge: { count: 2, at: t(-21), done: false } })), 3);
-  check("три касания были — хватит", due(talk({ nudge: { count: 3, at: t(-48), done: false } })), 0);
+  check("после первого касания час — рано для второго", due(talk({ nudge: { count: 1, at: t(-1), done: false } })), 0);
+  check("после первого касания 1,5 ч — второе", due(talk({ nudge: { count: 1, at: t(-1.5), done: false } })), 2);
+  check("после второго 1,5 ч — третье", due(talk({ nudge: { count: 2, at: t(-1.6), done: false } })), 3);
+  check("после третьего 1,5 ч — четвёртое", due(talk({ nudge: { count: 3, at: t(-1.6), done: false } })), 4);
+  check("четыре касания были — хватит", due(talk({ nudge: { count: 4, at: t(-5), done: false } })), 0);
+  check("причина «рано» видна", nudgeStatus({ settings: on, chat: talk({ nudge: { count: 1, at: t(-1), done: false } }), now: nowN, hour: 11 }).reason.startsWith("рано"), true);
   check(
     "клиент молчит больше трёх дней — разговор закончен",
     due(talk({ context: [{ role: "client", text: "да", at: t(-80) }, { role: "us", text: "Сколько?", at: t(-79) }] })),
     0
   );
-  check("последнее касание — мягкое", nudgeTask(3, 20).includes("последнее касание"), true);
+  check("последнее касание — мягкое", nudgeTask(4, 20).includes("последнее касание"), true);
   check("решение модели: мусор — не писать", parseNudgeDecision(null).nudge, false);
   const nstock = [
     { flower: "rose", variety: "Jumilia", grade: "60", qty: 900 },
@@ -245,9 +254,23 @@ async function main() {
   });
   check("предложение: сначала то, о чём спрашивали, цена из прайса, без уценки и мелких остатков", offers.map((o) => `${o.variety} ${o.grade} ${o.price}`), ["Altaj Высшая 580", "Jumilia 60 220"]);
   const lbl = (o: { variety: string; grade: string }) => `${o.variety}, ${o.grade}`;
-  check("касание 1 — с ценами", nudgeText(1, offers, lbl), "Здравствуйте! Сегодня свежий срез: Altaj, Высшая — 580 ₸; Jumilia, 60 — 220 ₸. Поставить вам на завтра? Для пробы можно от 50 шт.");
-  check("касание 3 — мягкое без цен", nudgeText(3, offers, lbl).startsWith("Если цветы понадобятся"), true);
+  check("касание 1 — списком с ценами", nudgeText(1, offers, lbl).split("\n"), [
+    "Здравствуйте! Сегодня свежий срез:",
+    "",
+    "• Altaj, Высшая — *580 ₸*",
+    "• Jumilia, 60 — *220 ₸*",
+    "",
+    "Поставить вам на завтра? Для пробы — от 50 шт.",
+  ]);
+  check("касание 3 — пробная партия с суммой", nudgeText(3, offers, lbl).includes("50 шт. × 580 ₸ = *29 000 ₸*"), true);
+  check("касание 4 — мягкое без цен", nudgeText(4, offers, lbl).startsWith("Если цветы понадобятся"), true);
   check("в касании заказ не оформляется", nudgeTask(1, 1).includes("order.confirmed=false"), true);
+  const runAt = new Date("2026-10-01T11:00:00Z");
+  const lastRun = followupRunText(runAt, "вебхук", "дожато 1");
+  check("запуск дожима: запись начинается со времени", lastRun.startsWith("2026-10-01T11:00:00.000Z · вебхук"), true);
+  check("через 10 минут — рано", followupRunDue(lastRun, new Date(runAt.getTime() + 10 * 60000)), false);
+  check("через 25 минут — пора", followupRunDue(lastRun, new Date(runAt.getTime() + 25 * 60000)), true);
+  check("запусков не было — пора", followupRunDue("", runAt), true);
 
   console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
   process.exit(failed === 0 ? 0 : 1);

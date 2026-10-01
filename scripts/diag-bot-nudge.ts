@@ -10,7 +10,8 @@ dotenv.config();
 import { prefetchTables, SHEET_TABS } from "../src/lib/sheets";
 import { listBotChats, listBroadcasts, listRecipients, settingsMap } from "../src/lib/repo/broadcasts";
 import { botSettingsFrom } from "../src/lib/broadcast";
-import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
+import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeDue, nudgeStatus, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
+import { FOLLOWUP_LAST_RUN } from "../src/lib/botFollowUpRun";
 import { chatJson } from "../src/lib/openai";
 import { listBatches } from "../src/lib/repo/batches";
 import { getSettings } from "../src/lib/repo/settings";
@@ -41,6 +42,17 @@ async function main() {
   const realHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Almaty", hour: "numeric", hour12: false }).format(now)) % 24;
   const hour = Number.isFinite(forcedHour) ? forcedHour : realHour;
   const due = chats.map((c) => ({ c, attempt: nudgeDue({ settings, chat: c, now, hour }) })).filter((x) => x.attempt > 0);
+  console.log(`Последний запуск дожима: ${map[FOLLOWUP_LAST_RUN] || "ни разу"}`);
+  const reasons = new Map<string, number>();
+  for (const c of chats) {
+    const r = nudgeStatus({ settings, chat: c, now, hour }).reason.replace(/[\d.]+ ч из [\d.]+/, "…");
+    reasons.set(r, (reasons.get(r) ?? 0) + 1);
+  }
+  console.log("Почему (по чатам):");
+  for (const [r, n] of Array.from(reasons.entries()).sort((a, b) => b[1] - a[1])) console.log(`   ${n} — ${r}`);
+  const touched = chats.filter((c) => (c.nudge?.count ?? 0) > 0);
+  console.log(`Уже дожимали: ${touched.length}`);
+  for (const c of touched) console.log(`   ${mask(c.phone)} · касаний ${c.nudge.count} · последнее ${c.nudge.at.slice(0, 16)}${c.nudge.done ? " · закрыт" : ""}`);
   console.log(`Час по Алматы: ${hour}${Number.isFinite(forcedHour) ? " (подставлен)" : ""}. Пора дожать: ${due.length} из ${chats.length} чатов.`);
   for (const { c, attempt } of due.slice(0, limit)) {
     const last = c.context[c.context.length - 1];
