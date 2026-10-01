@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -476,7 +477,7 @@ export default function BroadcastComposer({
         <div className="flex flex-wrap items-end gap-2">
           <label className="space-y-1">
             <span className="label">Отправить пробное на свой номер</span>
-            <input className="input !w-56" inputMode="tel" placeholder="8 7XX XXX XX XX" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} />
+            <PhoneInput className="input !w-56" value={testPhone} onChange={setTestPhone} />
           </label>
           <button type="button" className="btn-secondary" disabled={pending || !testPhone.trim()} onClick={sendTest}>
             Отправить пробное

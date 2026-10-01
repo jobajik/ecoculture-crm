@@ -246,3 +246,26 @@ export function botReminderText(input: { code: string; amount: number; reissued:
     ? `Напоминаю про заказ №${input.code}: прошлый счёт истёк, я выставил новый на ${money(input.amount)} — он в приложении Kaspi. После оплаты заказ сразу уйдёт на сборку.`
     : `Напоминаю про заказ №${input.code}: счёт Kaspi на ${money(input.amount)} ждёт оплаты в приложении Kaspi. После оплаты заказ сразу уйдёт на сборку.`;
 }
+
+/**
+ * Клиент отклонил счёт Kaspi (владелец, 01.10.2026: «я отклонил оплату, которую
+ * бот мне выставил — теперь нужно же какое-то взаимодействие клиенту»). Не
+ * выставлять заново молча, а спросить, что не так, и предложить выходы.
+ */
+export function botDeclinedText(input: { code: string; amount: number }): string {
+  return (
+    `Вижу, счёт Kaspi по заказу №${input.code} на ${money(input.amount)} отклонён. Что-то не так? ` +
+    "Могу поменять количество или сорт, перенести доставку, выставить счёт на другой номер Kaspi или заново на этот — " +
+    "а если заказ уже не нужен, просто напишите, я его отменю."
+  );
+}
+
+/** Назавтра после отклонённого счёта клиент молчит — один раз спросить, держать ли заказ. */
+export function botDeclinedReminderText(input: { code: string; amount: number }): string {
+  return `Заказ №${input.code} на ${money(input.amount)} пока ждёт оплаты — счёт был отклонён. Держать заказ за вами? Выставить счёт заново или отменить?`;
+}
+
+/** Заказ отменён по просьбе клиента. */
+export function botCancelledText(code: string): string {
+  return `Заказ №${code} отменил.`;
+}

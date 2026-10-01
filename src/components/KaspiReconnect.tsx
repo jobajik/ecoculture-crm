@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -82,13 +83,11 @@ export default function KaspiReconnect({ farm }: { farm: string }) {
             <span className="label">
               Номер кассира в Kaspi Pay{hint ? <span className="text-ink-muted font-normal"> · в ApiPay: {hint}</span> : null}
             </span>
-            <input
+            <PhoneInput
               className="input !w-56"
-              inputMode="tel"
               autoFocus
-              placeholder="8 7XX XXX XX XX"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={setPhone}
             />
           </label>
           <button className="btn-primary" disabled={pending || !phone.trim()}>

@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -286,14 +287,7 @@ export default function KaspiInvoiceBlock({
               )}
               {v.choice === "other" && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <input
-                    className="input !w-52"
-                    inputMode="tel"
-                    autoFocus
-                    value={v.other}
-                    placeholder="8 7XX XXX XX XX"
-                    onChange={(e) => set({ other: e.target.value })}
-                  />
+                  <PhoneInput className="input !w-52" autoFocus value={v.other} onChange={(other) => set({ other })} />
                   {v.other && !phone && (
                     <span className="text-xs text-status-critical">нужен мобильный номер</span>
                   )}

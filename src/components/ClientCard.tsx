@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import Section from "./Section";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -193,7 +194,10 @@ export default function ClientCard({
         {field("Магазин / точка", "shopName")}
         {select("Тип точки", "clientType", CLIENT_TYPES)}
         {field("Контактное лицо", "contactPerson")}
-        {field("Телефон", "phone")}
+        <label className="text-sm block">
+          <span className="label">Телефон</span>
+          <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+        </label>
         {field("WhatsApp / Instagram", "messenger")}
         {field("Адрес доставки", "address")}
         {select("Условия оплаты", "paymentTerms", PAYMENT_TERMS)}

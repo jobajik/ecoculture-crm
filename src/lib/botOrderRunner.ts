@@ -7,8 +7,8 @@ import { getCurrentPrices } from "./repo/prices";
 import { priceFor } from "./priceList";
 import { createClient, listClients } from "./repo/clients";
 import { listLeads } from "./repo/leads";
-import { createOrder, getOrderById, listOrdersWithItems } from "./repo/orders";
-import { listKaspiInvoices } from "./repo/kaspiInvoices";
+import { createOrder, getOrderById, listOrdersWithItems, updateOrderStatus } from "./repo/orders";
+import { findKaspiInvoice, listKaspiInvoices, updateKaspiInvoiceRow } from "./repo/kaspiInvoices";
 import { logMoney } from "./repo/moneyLog";
 import { ensureClientForLead } from "./leadConvert";
 import { clientForPhone } from "./waOrder";
@@ -16,12 +16,12 @@ import { phoneKey } from "./leads";
 import { directionForCity } from "./direction";
 import { farmPayments } from "./orderMoney";
 import { orderCode } from "./paymentStage";
-import { apiPayConfig } from "./apipay";
+import { apiPayConfig, cancelInvoice } from "./apipay";
 import { issueKaspiInvoice } from "./kaspiIssue";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText, kaspiPhone, prettyKaspiPhone } from "./kaspiInvoice";
 import { stockMap } from "./botKnowledge";
 import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
-import { botOrderText, planBotOrder, type BotOrderDraft, type InvoiceOutcome } from "./botOrder";
+import { botCancelledText, botOrderText, planBotOrder, type BotOrderDraft, type InvoiceOutcome } from "./botOrder";
 import type { KaspiInvoice, OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -227,8 +227,9 @@ export async function placeBotOrder(input: {
  * бота, у которых последний счёт не дошёл, истёк или отменён. Пусто — нечего.
  */
 export async function reissueBotInvoices(phone: string, newPhone: string): Promise<string> {
-  const num = kaspiPhone(newPhone);
-  if (!num) return "";
+  // Пустой номер — «выставьте ещё раз»: на тот же номер, что и прошлый счёт.
+  const given = kaspiPhone(newPhone);
+  if (newPhone && !given) return "";
   try {
     await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.KASPI_INVOICES]);
     const [orders, invoices] = await Promise.all([listOrdersWithItems(), listKaspiInvoices({ fresh: true })]);
@@ -237,6 +238,8 @@ export async function reissueBotInvoices(phone: string, newPhone: string): Promi
       for (const part of dueParts(order)) {
         const last = lastInvoice(invoices, order.orderId, part.farm);
         if (last && (isOpenKaspiStatus(last.status) || isPaidKaspiStatus(last.status))) continue;
+        const num = given || kaspiPhone(last?.phone) || kaspiPhone(phone);
+        if (!num) continue;
         const r = await invoicePart(order, part.farm, part.due, num);
         if (r.result === "sent") lines.push(`Выставил счёт Kaspi по заказу №${orderCode(order.orderId)} на ${money(part.due)} на номер ${prettyKaspiPhone(num)} — оплатите в приложении Kaspi.`);
       }
@@ -245,6 +248,57 @@ export async function reissueBotInvoices(phone: string, newPhone: string): Promi
   } catch (err) {
     console.error("bot reissue:", err instanceof Error ? err.message : err);
     return "";
+  }
+}
+
+/**
+ * Клиент просит отменить заказ бота (отказался или меняет заказ — тогда следом
+ * оформляется новый). Только неоплаченный и не отгруженный: иначе это работа
+ * бухгалтера и склада — записка менеджеру. Номер не совпал, но у клиента ровно
+ * один такой заказ — отменяется он. Открытый счёт Kaspi отменяется тоже: иначе
+ * клиент оплатит заказ, которого нет.
+ */
+export async function cancelBotOrder(phone: string, code: string): Promise<{ text: string; note: string; cancelled: boolean }> {
+  try {
+    await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.KASPI_INVOICES]);
+    const [orders, invoices] = await Promise.all([listOrdersWithItems(), listKaspiInvoices({ fresh: true })]);
+    const mine = botOrdersOf(orders, phone, "");
+    const want = code.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+    const unpaid = mine.filter((o) => !(Number(o.paidAmount) > 1) && o.items.every((i) => i.shippedQuantity === 0));
+    const order = mine.find((o) => orderCode(o.orderId).toUpperCase() === want) ?? (unpaid.length === 1 ? unpaid[0] : undefined);
+    if (!order) return { text: "", note: want ? `внимание: клиент просит отменить заказ №${want}, бот его не нашёл` : "", cancelled: false };
+    const label = orderCode(order.orderId);
+    if (!unpaid.includes(order)) {
+      return {
+        text: `Заказ №${label} уже оплачен или в пути — отменить его сам не могу, передал вопрос, с вами свяжутся.`,
+        note: `внимание: клиент просит отменить заказ №${label}, но по нему уже есть оплата или отгрузка`,
+        cancelled: false,
+      };
+    }
+    for (const inv of invoices.filter((i) => i.orderId === order.orderId && isOpenKaspiStatus(i.status))) {
+      const cfg = apiPayConfig(inv.farm);
+      if (!cfg) continue;
+      try {
+        const res = await cancelInvoice(cfg, inv.invoiceId);
+        const found = await findKaspiInvoice(inv.invoiceId);
+        if (found) await updateKaspiInvoiceRow(found.rowNumber, { Status: String(res?.status || "cancelling"), UpdatedAt: new Date().toISOString() });
+      } catch (err) {
+        console.error("bot cancel invoice:", err instanceof Error ? err.message : err);
+      }
+    }
+    await updateOrderStatus(order.orderId, ORDER_STATUSES.CANCELLED);
+    await logMoney({
+      actorEmail: BOT_MANAGER_EMAIL,
+      orderId: order.orderId,
+      action: MONEY_LOG_ACTIONS.ORDER_CANCELLED,
+      details: "Клиент отказался в WhatsApp (бот)",
+      amountBefore: order.totalAmount,
+      amountAfter: 0,
+    });
+    return { text: botCancelledText(label), note: `отмена: заказ №${label} — клиент отказался в WhatsApp`, cancelled: true };
+  } catch (err) {
+    console.error("bot cancel:", err instanceof Error ? err.message : err);
+    return { text: "", note: `внимание: бот не смог отменить заказ (${err instanceof Error ? err.message : err}) — отмените вручную`, cancelled: false };
   }
 }
 
@@ -269,7 +323,8 @@ export async function botClientContext(phone: string): Promise<string> {
         if (!last) return "счёт ещё не выставлен";
         if (isOpenKaspiStatus(last.status)) return `счёт Kaspi ждёт оплаты на номер ${prettyKaspiPhone(last.phone)}`;
         if (last.status === "error") return `счёт не дошёл (${kaspiErrorText(last.errorCode, last.errorMessage)}) — попроси номер Kaspi`;
-        return `счёт ${last.status === "expired" ? "истёк" : "отменён"}`;
+        if (last.status === "expired") return "счёт истёк — предложи выставить заново (invoiceAgain)";
+        return "клиент ОТКЛОНИЛ счёт Kaspi — узнай причину и реши: заново на этот номер (invoiceAgain), на другой (kaspiPhone), поправить заказ (cancelOrder этого номера + новый order) или отменить (cancelOrder)";
       });
       lines.push(
         `Заказ №${orderCode(o.orderId)} от ${o.createdAt.slice(0, 10)}: ${items}; сумма ${money(o.totalAmount)}; доставка ${o.deliveryDate}; ` +

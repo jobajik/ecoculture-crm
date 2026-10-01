@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createLeadAction } from "@/app/clients/leads/actions";
@@ -79,7 +80,7 @@ export default function NewLeadForm({
         </label>
         <label className="block">
           <span className="text-sm text-ink-secondary">Телефон</span>
-          <input className="input" value={form.phone} onChange={set("phone")} inputMode="tel" placeholder="+7 7__ ___ __ __" />
+          <PhoneInput value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
         </label>
         <label className="block">
           <span className="text-sm text-ink-secondary">Контактное лицо</span>

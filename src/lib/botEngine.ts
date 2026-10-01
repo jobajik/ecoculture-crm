@@ -6,7 +6,7 @@ import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
 import { lastBroadcastForBot, pricesForBot, stockForBot } from "./botKnowledge";
 import { BOT_ORDER_SCHEMA } from "./botOrder";
-import { botClientContext, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
+import { botClientContext, cancelBotOrder, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
 import {
   BOT_MODES,
   BOT_OPT_OUT_TEXT,
@@ -36,13 +36,22 @@ import { phoneKey } from "./leads";
 const BOT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "order", "kaspiPhone", "alert", "silent"],
+  required: ["reply", "order", "kaspiPhone", "invoiceAgain", "cancelOrder", "alert", "silent"],
   properties: {
     reply: { type: "string", description: "Ответ клиенту: коротко, по делу, на его языке, с вопросом, который ведёт к заказу." },
     order: BOT_ORDER_SCHEMA,
     kaspiPhone: {
       type: "string",
       description: "Клиент назвал номер для счёта Kaspi (другой, чем этот WhatsApp, или после «счёт не дошёл») — только цифры. Иначе пусто.",
+    },
+    invoiceAgain: {
+      type: "boolean",
+      description: "true — клиент просит выставить счёт Kaspi ещё раз на тот же номер (отклонил случайно, счёт истёк). Иначе false.",
+    },
+    cancelOrder: {
+      type: "string",
+      description:
+        "Номер заказа (из «О клиенте»), который клиент просит отменить, или который заменяется новым заказом (поменять количество, сорт, дату). Иначе пусто.",
     },
     alert: { type: "string", description: "Жалоба или клиент просит живого человека — одной фразой для менеджера. Иначе пусто." },
     silent: {
@@ -143,6 +152,10 @@ function systemPrompt(p: {
     "   Не ставь confirmed=true, пока клиент не согласился с итоговым заказом, и не повторяй уже оформленный заказ.",
     "4) Хочет добавить к оформленному — оформи ДОПОЛНИТЕЛЬНЫЙ заказ только с новыми позициями (тоже через подтверждение).",
     "5) Счёт Kaspi уходит на номер этого WhatsApp. Клиент хочет на другой номер или счёт не дошёл и он прислал номер — kaspiPhone.",
+    "5а) Клиент ОТКЛОНИЛ счёт (см. «О клиенте») — не дави и не выставляй молча: узнай, что не так. Ответил:",
+    "   «выставьте ещё раз» / «случайно» — invoiceAgain=true; другой номер — kaspiPhone; поменять количество, сорт или",
+    "   дату — повтори НОВЫЙ заказ целиком и после «да» заполни order (confirmed=true) и cancelOrder=номер старого заказа;",
+    "   передумал, не нужно — cancelOrder=номер заказа и вежливо попрощайся, предложив написать, когда понадобятся цветы.",
     "6) Оплатил — поблагодари: оплата придёт в систему сама, и ты напишешь, когда заказ уйдёт на сборку. Не подтверждай оплату сам.",
     "   Хочет платить наличными или по реквизитам — согласись, заполни alert («оплата наличными/по реквизитам»), заказ всё равно оформляй.",
     "Доставка — завтра и позже обычно; сегодня — только если клиент просит, не обещай время, «уточним при сборке».",
@@ -292,16 +305,24 @@ export async function botAct(
 ): Promise<{ text: string; note: string }> {
   if (decision.silent) return { text: "", note: "" };
   let text = decision.reply;
-  let note = decision.alert ? `внимание: ${decision.alert}` : "";
+  const notes: string[] = decision.alert ? [`внимание: ${decision.alert}`] : [];
+  // Отмена — первой: если следом новый заказ (клиент поменял количество), старый не должен висеть рядом.
+  let cancelledText = "";
+  if (decision.cancelOrder) {
+    const c = await cancelBotOrder(chat.phone, decision.cancelOrder);
+    if (c.note) notes.unshift(c.note);
+    if (c.text) cancelledText = c.text;
+    if (!decision.order.confirmed && c.text) text = c.cancelled && decision.reply ? `${c.text} ${decision.reply}` : c.text;
+  }
   if (decision.order.confirmed) {
     const placed = await placeBotOrder({ phone: chat.phone, senderName: chat.name, draft: decision.order, kaspiPhone: decision.kaspiPhone });
-    text = placed.text;
-    if (placed.note) note = note ? `${placed.note}; ${note}` : placed.note;
-  } else if (decision.kaspiPhone) {
+    text = cancelledText ? `${cancelledText}\n${placed.text}` : placed.text;
+    if (placed.note) notes.unshift(placed.note);
+  } else if (decision.kaspiPhone || decision.invoiceAgain) {
     const again = await reissueBotInvoices(chat.phone, decision.kaspiPhone);
     if (again) text = again;
   }
-  return { text, note };
+  return { text, note: notes.join("; ") };
 }
 
 /** Ответил ли бот (тогда заказ ведёт он, и черновик для менеджера не нужен). */

@@ -1,3 +1,4 @@
+import { formatPhone } from "../phone";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
@@ -99,7 +100,7 @@ function leadRecord(input: NewLead, nowIso: string, nextTouchAt = ""): Record<st
     Name: input.name,
     City: input.city,
     ContactPerson: input.contactPerson,
-    Phone: input.phone,
+    Phone: formatPhone(input.phone),
     ClientType: input.clientType,
     Source: input.source,
     Address: input.address,
@@ -162,6 +163,7 @@ export async function reassignLeads(
 export async function updateLead(leadId: string, changes: Record<string, string>): Promise<Lead> {
   const found = await findLeadRow(leadId);
   if (!found) throw new Error("Лид не найден — возможно, его удалили в таблице");
+  if (changes.Phone !== undefined) changes = { ...changes, Phone: formatPhone(changes.Phone) };
   if (Object.keys(changes).length > 0) {
     await commitAtomic([{ kind: "update", tab: SHEET_TABS.LEADS, rowNumber: found.rowNumber, changes }]);
   }

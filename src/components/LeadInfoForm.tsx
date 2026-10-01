@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -200,7 +201,6 @@ export default function LeadInfoForm({
               [
                 ["name", "Название"],
                 ["city", "Город"],
-                ["phone", "Телефон"],
                 ["contactPerson", "Контактное лицо"],
                 ["address", "Адрес"],
               ] as [keyof Info, string][]
@@ -210,6 +210,10 @@ export default function LeadInfoForm({
                 <input className="input" value={form[k]} onChange={set(k)} />
               </label>
             ))}
+            <label className="block">
+              <span className="text-sm text-ink-secondary">Телефон</span>
+              <PhoneInput value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
+            </label>
             <label className="block">
               <span className="text-sm text-ink-secondary">Тип точки</span>
               <select className="input" value={form.clientType} onChange={set("clientType")}>

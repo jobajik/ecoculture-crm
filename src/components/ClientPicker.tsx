@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import { useMemo, useState, useTransition } from "react";
 import clsx from "clsx";
 import {
@@ -195,7 +196,10 @@ export default function ClientPicker({
           {field("Магазин / точка", "shopName", "Если отличается от названия")}
           {select("Тип точки", "clientType", CLIENT_TYPES)}
           {field("Контактное лицо", "contactPerson", "С кем говорим")}
-          {field("Телефон", "phone", "+7 ...")}
+          <label className="text-sm block">
+            <span className="label">Телефон</span>
+            <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+          </label>
           {field("WhatsApp / Instagram", "messenger", "@nickname или номер")}
           {field("Адрес доставки", "address", "Куда возить")}
           {select("Условия оплаты", "paymentTerms", PAYMENT_TERMS)}
@@ -319,21 +323,11 @@ export function KaspiFields({
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="text-sm block">
           <span className="label">Каспи Pay №1</span>
-          <input
-            className="input"
-            placeholder="+7 ..."
-            value={pay1}
-            onChange={(e) => onChange({ kaspiPay1: e.target.value })}
-          />
+          <PhoneInput value={pay1} onChange={(v) => onChange({ kaspiPay1: v })} />
         </label>
         <label className="text-sm block">
           <span className="label">Каспи Pay №2</span>
-          <input
-            className="input"
-            placeholder="если платит и со второго"
-            value={pay2}
-            onChange={(e) => onChange({ kaspiPay2: e.target.value })}
-          />
+          <PhoneInput value={pay2} placeholder="если платит и со второго" onChange={(v) => onChange({ kaspiPay2: v })} />
         </label>
       </div>
       <p className="text-xs text-ink-muted">

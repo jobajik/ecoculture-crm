@@ -243,6 +243,9 @@ check(
   false
 );
 check("новый номер Kaspi — не молчим", botDecision({ reply: "", kaspiPhone: "+7 701 555 20 30" }).kaspiPhone, "77015552030");
+check("«выставьте ещё раз» — не молчим", botDecision({ reply: "", invoiceAgain: true }).silent, false);
+check("отмена заказа: номер без мусора", botDecision({ reply: "Хорошо", cancelOrder: "№cnf9x" }).cancelOrder, "CNF9X");
+check("отмена без текста — не молчим", botDecision({ reply: "", cancelOrder: "CNF9X" }).silent, false);
 check("пустой ответ — ничего не шлём", botDecision({ reply: "" }).silent, true);
 check("мусор — ничего не шлём", botDecision(null).silent, true);
 

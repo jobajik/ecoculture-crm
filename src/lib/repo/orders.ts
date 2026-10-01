@@ -1,3 +1,4 @@
+import { formatPhone } from "../phone";
 import { statusAfterShipping } from "../shipRules";
 import {
   changedCells,
@@ -221,7 +222,7 @@ export function buildNewOrder(
     CreatedAt: createdAt,
     ManagerEmail: input.managerEmail,
     ClientName: input.clientName,
-    ClientPhone: input.clientPhone,
+    ClientPhone: formatPhone(input.clientPhone),
     DeliveryDate: input.deliveryDate,
     Status: ORDER_STATUSES.NEW,
     Notes: input.notes ?? "",
@@ -536,7 +537,7 @@ export async function updateOrderHeader(
     (record) => record.OrderID === orderId,
     () => ({
       ...(fields.deliveryDate !== undefined ? { DeliveryDate: fields.deliveryDate } : {}),
-      ...(fields.clientPhone !== undefined ? { ClientPhone: fields.clientPhone } : {}),
+      ...(fields.clientPhone !== undefined ? { ClientPhone: formatPhone(fields.clientPhone) } : {}),
       ...(fields.notes !== undefined ? { Notes: fields.notes } : {}),
       ...(fields.client
         ? { ClientID: fields.client.clientId, ClientName: fields.client.clientName, Retail: fields.client.retail }

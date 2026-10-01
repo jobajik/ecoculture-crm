@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/PhoneInput";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createOrderAction } from "@/app/orders/actions";
@@ -150,11 +151,10 @@ export default function OrderForm({
         </div>
         <div>
           <label className="label">Телефон для этой доставки</label>
-          <input
-            className="input"
+          <PhoneInput
             placeholder={client?.phone || "Если отличается от карточки"}
             value={clientPhone}
-            onChange={(e) => setClientPhone(e.target.value)}
+            onChange={setClientPhone}
           />
         </div>
         <div>

@@ -1,3 +1,4 @@
+import { formatPhone } from "../phone";
 import { appendRow, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
@@ -93,7 +94,7 @@ export async function createClient(input: NewClientInput): Promise<string> {
     ShopName: input.shopName,
     ClientType: input.clientType,
     ContactPerson: input.contactPerson,
-    Phone: input.phone,
+    Phone: formatPhone(input.phone),
     Messenger: input.messenger,
     Address: input.address,
     PaymentTerms: input.paymentTerms,
@@ -102,8 +103,8 @@ export async function createClient(input: NewClientInput): Promise<string> {
     ManagerEmail: input.managerEmail,
     Active: "TRUE",
     PaymentMethod: input.paymentMethod,
-    KaspiPay1: input.kaspiPay1,
-    KaspiPay2: input.kaspiPay2,
+    KaspiPay1: formatPhone(input.kaspiPay1),
+    KaspiPay2: formatPhone(input.kaspiPay2),
     Retail: input.retail || "",
   });
   return clientId;
@@ -124,7 +125,7 @@ export async function updateClient(
   if (patch.shopName !== undefined) map.ShopName = patch.shopName;
   if (patch.clientType !== undefined) map.ClientType = patch.clientType;
   if (patch.contactPerson !== undefined) map.ContactPerson = patch.contactPerson;
-  if (patch.phone !== undefined) map.Phone = patch.phone;
+  if (patch.phone !== undefined) map.Phone = formatPhone(patch.phone);
   if (patch.messenger !== undefined) map.Messenger = patch.messenger;
   if (patch.address !== undefined) map.Address = patch.address;
   if (patch.paymentTerms !== undefined) map.PaymentTerms = patch.paymentTerms;
@@ -132,8 +133,8 @@ export async function updateClient(
   if (patch.note !== undefined) map.Note = patch.note;
   if (patch.managerEmail !== undefined) map.ManagerEmail = patch.managerEmail;
   if (patch.paymentMethod !== undefined) map.PaymentMethod = patch.paymentMethod;
-  if (patch.kaspiPay1 !== undefined) map.KaspiPay1 = patch.kaspiPay1;
-  if (patch.kaspiPay2 !== undefined) map.KaspiPay2 = patch.kaspiPay2;
+  if (patch.kaspiPay1 !== undefined) map.KaspiPay1 = formatPhone(patch.kaspiPay1);
+  if (patch.kaspiPay2 !== undefined) map.KaspiPay2 = formatPhone(patch.kaspiPay2);
   if (patch.retail !== undefined) map.Retail = patch.retail;
   if (patch.active !== undefined) map.Active = patch.active ? "TRUE" : "FALSE";
 

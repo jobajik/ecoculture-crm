@@ -452,6 +452,10 @@ export function botDecision(raw: unknown): {
   reply: string;
   order: BotOrderDraft;
   kaspiPhone: string;
+  /** Выставить счёт заново на тот же номер (клиент отклонил случайно или передумал). */
+  invoiceAgain: boolean;
+  /** Номер заказа, который клиент просит отменить (или заменить новым). Пусто — ничего. */
+  cancelOrder: string;
   alert: string;
   silent: boolean;
 } {
@@ -460,10 +464,13 @@ export function botDecision(raw: unknown): {
   const reply = text(o.reply, 1500);
   const order = parseBotOrder(o.order);
   const kaspiPhone = text(o.kaspiPhone, 30).replace(/\D/g, "");
-  const act = order.confirmed || kaspiPhone.length >= 10;
+  const invoiceAgain = o.invoiceAgain === true;
+  const cancelOrder = text(o.cancelOrder, 20).replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+  const act = order.confirmed || kaspiPhone.length >= 10 || invoiceAgain || !!cancelOrder;
   // Молчать — автоответ магазина, «👍», разговор о доставке: модель так решила или ответа нет.
-  if (!act && (o.silent === true || !reply)) return { reply: "", order: EMPTY_BOT_ORDER, kaspiPhone: "", alert: "", silent: true };
-  return { reply, order, kaspiPhone, alert: text(o.alert, 200), silent: false };
+  if (!act && (o.silent === true || !reply))
+    return { reply: "", order: EMPTY_BOT_ORDER, kaspiPhone: "", invoiceAgain: false, cancelOrder: "", alert: "", silent: true };
+  return { reply, order, kaspiPhone, invoiceAgain, cancelOrder, alert: text(o.alert, 200), silent: false };
 }
 
 /**

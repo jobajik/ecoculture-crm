@@ -4,6 +4,9 @@ import {
   botOrderText,
   botPaidText,
   botReminderText,
+  botDeclinedText,
+  botDeclinedReminderText,
+  botCancelledText,
   normalizeGrade,
   parseBotOrder,
   planBotOrder,
@@ -143,6 +146,11 @@ async function main() {
   check("оплата частью — ждём второй счёт", botPaidText({ code: "AB123", amount: 29000, fullyPaid: false, deliveryDate: "2026-10-03" }).includes("второму счёту"), true);
   check("счёт не дошёл — попросить номер", botInvoiceErrorText({ code: "71YDW", phone: "87014050523", reason: "номер не найден в Kaspi" }).includes("Напишите номер"), true);
   check("напоминание: перевыставлен", botReminderText({ code: "71YDW", amount: 27000, reissued: true }).includes("выставил новый"), true);
+  const declined = botDeclinedText({ code: "CNF9X", amount: 27000 });
+  check("счёт отклонён: номер, сумма и вопрос", declined.includes("№CNF9X") && declined.includes("27 000 ₸") && declined.includes("?"), true);
+  check("счёт отклонён: предлагает выходы", ["количество", "другой номер", "отменю"].every((w) => declined.includes(w)), true);
+  check("назавтра после отказа — держать ли заказ", botDeclinedReminderText({ code: "CNF9X", amount: 27000 }).includes("Держать заказ"), true);
+  check("отмена заказа", botCancelledText("CNF9X"), "Заказ №CNF9X отменил.");
 
   console.log("\nБот в рейтинге — без бонуса");
   check("имя бота вместо почты", personName(BOT_MANAGER_EMAIL, nameIndex([])), BOT_MANAGER_NAME);

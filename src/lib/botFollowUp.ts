@@ -5,7 +5,7 @@ import { botChatWrite, emptyBotChat, listBotChats, settingsMap } from "./repo/br
 import { appendDebtReminder, listDebtReminders } from "./repo/debtReminders";
 import { greenConfig, sendText } from "./greenApi";
 import { phoneKey } from "./leads";
-import { botSettingsFrom, pushContext } from "./broadcast";
+import { botSettingsFrom, EMPTY_NUDGE, pushContext } from "./broadcast";
 import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
 import { chatJson, openAiConfigured } from "./openai";
 import { listBatches } from "./repo/batches";
@@ -19,7 +19,7 @@ import { orderCode } from "./paymentStage";
 import { ORDER_STATUSES } from "./constants";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText } from "./kaspiInvoice";
 import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
-import { botInvoiceErrorText, botPaidText, botReminderText } from "./botOrder";
+import { botDeclinedReminderText, botDeclinedText, botInvoiceErrorText, botPaidText, botReminderText } from "./botOrder";
 import { dueParts, invoicePart, lastInvoice } from "./botOrderRunner";
 import type { KaspiInvoice } from "./types";
 
@@ -30,8 +30,12 @@ import type { KaspiInvoice } from "./types";
 // ронять ни вебхук оплаты, ни сводку.
 // ---------------------------------------------------------------------------
 
-/** Написать клиенту от имени бота и запомнить это в памяти чата. */
-export async function sendBotMessage(phone: string, text: string): Promise<string> {
+/**
+ * Написать клиенту от имени бота и запомнить это в памяти чата. Это сообщение
+ * про заказ и деньги — общий дожим («свежий срез…») после него не нужен, его
+ * место занимают напоминания об оплате. `note` — записка менеджеру на странице «Бот».
+ */
+export async function sendBotMessage(phone: string, text: string, note = ""): Promise<string> {
   const cfg = greenConfig();
   if (!cfg) return "";
   const id = await sendText(cfg, phone, text);
@@ -42,6 +46,11 @@ export async function sendBotMessage(phone: string, text: string): Promise<strin
     const chat = found ? { ...found, context: [...found.context], ourIds: [...found.ourIds] } : emptyBotChat(phone.replace(/\D/g, ""));
     chat.ourIds = [...chat.ourIds, id].slice(-20);
     chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
+    chat.nudge = { ...(chat.nudge ?? EMPTY_NUDGE), done: true };
+    if (note) {
+      chat.handoffAt = new Date().toISOString();
+      chat.handoffReason = note.slice(0, 500);
+    }
     await commitAtomic([botChatWrite(chat, found?.rowNumber ?? null)]);
   } catch (err) {
     console.error("bot memory:", err instanceof Error ? err.message : err);
@@ -51,15 +60,30 @@ export async function sendBotMessage(phone: string, text: string): Promise<strin
 
 /**
  * Счёт Kaspi по заявке бота сменил статус (вебхук ApiPay). Оплачен — спасибо и
- * «передан на сборку»; не дошёл — попросить номер Kaspi. Остальное — молча.
+ * «передан на сборку»; не дошёл — попросить номер Kaspi; клиент отклонил —
+ * спросить, что не так, и предложить выходы. Остальное — молча.
+ *
+ * `invoice` — строка счёта ДО обновления. «Отменён» после нашего «отменяется»
+ * (бухгалтер или сам бот отменили счёт) — это не отказ клиента: молчим.
  */
 export async function onBotInvoiceUpdate(invoice: KaspiInvoice, status: string, errorCode: string, errorMessage: string): Promise<void> {
   try {
     const paid = isPaidKaspiStatus(status);
-    if (!paid && status !== "error") return;
+    const declined = status === "cancelled" && invoice.status !== "cancelling";
+    if (!paid && status !== "error" && !declined) return;
     const order = await getOrderById(invoice.orderId);
     if (!order || !isBotEmail(order.managerEmail) || !order.clientPhone) return;
     const code = orderCode(order.orderId);
+    if (declined) {
+      if (order.status === ORDER_STATUSES.CANCELLED || order.paid) return;
+      // Уже выставлен счёт новее этого (бот перевыставил) — отказ по старому не повод писать.
+      const newer = (await listKaspiInvoices({ fresh: true })).some(
+        (i) => i.orderId === invoice.orderId && i.farm === invoice.farm && i.invoiceId !== invoice.invoiceId && i.createdAt > invoice.createdAt
+      );
+      if (newer) return;
+      await sendBotMessage(order.clientPhone, botDeclinedText({ code, amount: invoice.amount }), `внимание: клиент отклонил счёт Kaspi по заказу №${code}`);
+      return;
+    }
     const text = paid
       ? botPaidText({ code, amount: invoice.amount, fullyPaid: order.paid, deliveryDate: order.deliveryDate })
       : botInvoiceErrorText({ code, phone: invoice.phone, reason: kaspiErrorText(errorCode, errorMessage) });
@@ -102,7 +126,14 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
         if (isOpenKaspiStatus(last.status) && Date.now() - Date.parse(last.createdAt) >= REMIND_AFTER_HOURS * 3600000) {
           texts.push(botReminderText({ code: orderCode(order.orderId), amount: part.due, reissued: false }));
           amount += part.due;
-        } else if (last.status === "expired" || last.status === "cancelled") {
+        } else if (last.status === "cancelled") {
+          // Клиент отклонил счёт — заново молча не выставляем. Назавтра один раз спросить, держать ли заказ.
+          const declinedAt = Date.parse(last.updatedAt || last.createdAt) || 0;
+          if (now.getTime() - declinedAt < REMIND_GAP_HOURS * 3600000) continue;
+          if (lastReminder > declinedAt) continue;
+          texts.push(botDeclinedReminderText({ code: orderCode(order.orderId), amount: part.due }));
+          amount += part.due;
+        } else if (last.status === "expired") {
           const r = await invoicePart(order, part.farm, part.due, last.phone);
           if (r.result === "sent") {
             texts.push(botReminderText({ code: orderCode(order.orderId), amount: part.due, reissued: true }));
