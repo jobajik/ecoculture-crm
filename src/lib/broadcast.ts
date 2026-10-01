@@ -456,6 +456,8 @@ export function botDecision(raw: unknown): {
   invoiceAgain: boolean;
   /** Номер заказа, который клиент просит отменить (или заменить новым). Пусто — ничего. */
   cancelOrder: string;
+  /** Клиент просит каталог или фото: код цветка, «all» — все. Пусто — не слать. */
+  catalog: string;
   alert: string;
   silent: boolean;
 } {
@@ -466,11 +468,12 @@ export function botDecision(raw: unknown): {
   const kaspiPhone = text(o.kaspiPhone, 30).replace(/\D/g, "");
   const invoiceAgain = o.invoiceAgain === true;
   const cancelOrder = text(o.cancelOrder, 20).replace(/[^0-9A-Za-z]/g, "").toUpperCase();
-  const act = order.confirmed || kaspiPhone.length >= 10 || invoiceAgain || !!cancelOrder;
+  const catalog = /^(all|rose|chrysanthemum|eustoma)$/.test(text(o.catalog, 20)) ? text(o.catalog, 20) : "";
+  const act = order.confirmed || kaspiPhone.length >= 10 || invoiceAgain || !!cancelOrder || !!catalog;
   // Молчать — автоответ магазина, «👍», разговор о доставке: модель так решила или ответа нет.
   if (!act && (o.silent === true || !reply))
-    return { reply: "", order: EMPTY_BOT_ORDER, kaspiPhone: "", invoiceAgain: false, cancelOrder: "", alert: "", silent: true };
-  return { reply, order, kaspiPhone, invoiceAgain, cancelOrder, alert: text(o.alert, 200), silent: false };
+    return { reply: "", order: EMPTY_BOT_ORDER, kaspiPhone: "", invoiceAgain: false, cancelOrder: "", catalog: "", alert: "", silent: true };
+  return { reply, order, kaspiPhone, invoiceAgain, cancelOrder, catalog, alert: text(o.alert, 200), silent: false };
 }
 
 /**

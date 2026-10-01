@@ -8,6 +8,7 @@ import { formatMoment } from "@/lib/formatDate";
 import { BROADCAST_STATUS_LABELS, RECIPIENT_STATE_LABELS, type RecipientState } from "@/lib/broadcast";
 import { listUsers } from "@/lib/repo/users";
 import { publicFileUrl } from "@/lib/waFileSign";
+import { isSpecialFile, specialFileLabel } from "@/lib/botPhotos";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import BroadcastSender from "@/components/BroadcastSender";
@@ -207,7 +208,8 @@ export default async function BroadcastPage({ params, searchParams }: { params: 
       </Section>
 
       <Section tone="leads" icon="note" title="Сообщение">
-        {b.fileId && (
+        {b.fileId && isSpecialFile(b.fileId) && <p className="mb-2 text-sm">Вложение: {specialFileLabel(b.fileId)}</p>}
+        {b.fileId && !isSpecialFile(b.fileId) && (
           <p className="mb-2 text-sm">
             Файл:{" "}
             <a href={publicFileUrl(site, b.fileId, b.fileName)} target="_blank" rel="noreferrer" className="text-accent hover:underline">

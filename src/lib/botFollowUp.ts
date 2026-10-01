@@ -1,12 +1,14 @@
-import { commitAtomic, prefetchTables, SHEET_TABS } from "./sheets";
+import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets";
 import { getOrderById, listOrdersWithItems } from "./repo/orders";
 import { listKaspiInvoices } from "./repo/kaspiInvoices";
 import { botChatWrite, emptyBotChat, listBotChats, settingsMap } from "./repo/broadcasts";
 import { appendDebtReminder, listDebtReminders } from "./repo/debtReminders";
-import { greenConfig, sendText } from "./greenApi";
+import { greenConfig, sendFileByUrl, sendText } from "./greenApi";
+import { loadPhotoContext, rotationPhoto, type PhotoContext } from "./botPhotoSend";
+import { nudgePhotoQuestion, photoLabel } from "./botPhotos";
 import { phoneKey } from "./leads";
 import { botSettingsFrom, EMPTY_NUDGE, pushContext } from "./broadcast";
-import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
+import { NUDGE_DECISION_SCHEMA, NUDGE_GAPS_HOURS, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
 import { chatJson, openAiConfigured } from "./openai";
 import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
@@ -215,6 +217,8 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
     const stock = Array.from(stockMap(batches, shelf, now).values());
     const label = (o: { flowerType: string; variety: string; grade: string }) =>
       `${FLOWER_TYPE_LABELS[o.flowerType] ?? o.flowerType} ${o.variety}, ${formatGrade(o.grade)}`;
+    let photoCtx: PhotoContext | null = null;
+    const photoWrites: WriteOp[] = [];
     for (const { chat: found, attempt } of due) {
       if (Date.now() - started > budget) break;
       const chat = { ...found, context: [...found.context], ourIds: [...found.ourIds], nudge: { ...found.nudge } };
@@ -234,15 +238,32 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
             mentioned: `${transcriptText}\n${lastBroadcastForBot(broadcasts, recipients, chat.phone)}`,
             isLiquid: isLiquidGrade,
           });
-          const text = nudgeText(attempt, offers, label);
           if (sent > 0) await pause(3000 + Math.floor(Math.random() * 4000));
-          const id = await sendText(greenConfig()!, chat.phone, text);
+          // Касания 1–3 — фото из ротации с продающей подписью и ценами (владелец: «разные фотографии в
+          // ротации, с цветком и продающим текстом»); нет фото — текст. Последнее касание — мягкое, текстом.
+          const photo =
+            attempt < NUDGE_GAPS_HOURS.length
+              ? rotationPhoto((photoCtx ??= await loadPhotoContext()), {
+                  flowers: offers.map((o) => o.flowerType),
+                  question: nudgePhotoQuestion(attempt),
+                })
+              : null;
+          let id: string;
+          let memo: string;
+          if (photo) {
+            id = await sendFileByUrl(greenConfig()!, chat.phone, photo.url, photo.name, photo.caption);
+            memo = `[фото: ${photoLabel(photo.photo)}] ${photo.caption}`;
+            photoWrites.push(photo.after);
+          } else {
+            memo = nudgeText(attempt, offers, label);
+            id = await sendText(greenConfig()!, chat.phone, memo);
+          }
           chat.ourIds = [...chat.ourIds, id].slice(-20);
-          chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
+          chat.context = pushContext(chat.context, { role: "us", text: memo, at: new Date().toISOString() });
           chat.nudge = { count: attempt, at: new Date().toISOString(), done: false };
           sent += 1;
         }
-        await commitAtomic([botChatWrite(chat, found.rowNumber)]);
+        await commitAtomic([botChatWrite(chat, found.rowNumber), ...photoWrites.splice(0)]);
       } catch (err) {
         console.error("bot nudge:", err instanceof Error ? err.message : err);
         errors += 1;

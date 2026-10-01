@@ -32,3 +32,13 @@ export function safeFileName(name: string): string {
 export function publicFileUrl(site: string, fileId: string, name: string): string {
   return `${site.replace(/\/+$/, "")}/api/wa-files/${encodeURIComponent(fileId)}/${safeFileName(name)}?t=${signFileId(fileId)}`;
 }
+
+/** Ссылка на страницу каталога (`/api/catalog/<цветок>`): подпись по цветку, `v` — 15-минутка, чтобы цены не застревали в кэше. */
+export function publicCatalogUrl(site: string, flowerType: string, now = new Date(), download = false): string {
+  const v = Math.floor(now.getTime() / (15 * 60000)).toString(36);
+  return `${site.replace(/\/+$/, "")}/api/catalog/${encodeURIComponent(flowerType)}?t=${signFileId(`catalog-${flowerType}`)}&v=${v}${download ? "&download=1" : ""}`;
+}
+
+export function catalogSignatureOk(flowerType: string, given: string | null): boolean {
+  return fileSignatureOk(`catalog-${flowerType}`, given);
+}

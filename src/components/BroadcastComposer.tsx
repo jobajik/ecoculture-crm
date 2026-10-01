@@ -10,6 +10,8 @@ import { OPT_OUT_LINE, greetingName, personalize, type AudienceRow } from "@/lib
 import { LEAD_STAGES } from "@/lib/leads";
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import { fillPrices, insertTag, priceTagOptions } from "@/lib/broadcastPrices";
+import { readAsDataUrl, shrinkImage } from "@/lib/imageShrink";
+import { CATALOG_FILE, ROTATION_FILE, isSpecialFile, specialFileLabel } from "@/lib/botPhotos";
 
 /**
  * Новая рассылка: кому (клиенты, лиды, фильтры, галочки), что (текст с {имя},
@@ -41,40 +43,6 @@ const FLOWER_ORDER = ["chrysanthemum", "rose", "eustoma"];
 
 const PART_CHARS = 600_000;
 
-function readAsDataUrl(file: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result || ""));
-    r.onerror = () => reject(new Error("Файл не прочитался"));
-    r.readAsDataURL(file);
-  });
-}
-
-/** Картинку ужимаем в браузере: WhatsApp всё равно пережмёт, а таблице лишний мегабайт ни к чему. */
-async function shrinkImage(file: File): Promise<{ blob: Blob; name: string; mime: string }> {
-  if (!file.type.startsWith("image/") || file.size < 700_000) return { blob: file, name: file.name, mime: file.type };
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error("Картинка не открылась"));
-      i.src = url;
-    });
-    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(img.width * scale);
-    canvas.height = Math.round(img.height * scale);
-    canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Картинка не сжалась"))), "image/jpeg", 0.85)
-    );
-    return { blob, name: file.name.replace(/\.[^.]+$/, "") + ".jpg", mime: "image/jpeg" };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
 export default function BroadcastComposer({
   rows,
   managers,
@@ -84,6 +52,7 @@ export default function BroadcastComposer({
   segments,
   clientTypes,
   prices,
+  photoCount,
 }: {
   rows: Row[];
   managers: { email: string; name: string }[];
@@ -95,6 +64,8 @@ export default function BroadcastComposer({
   clientTypes: string[];
   /** Действующий клиентский прайс «цветок|сорт|длина» → цена — для предпросмотра меток {цены …}. */
   prices: Record<string, number>;
+  /** Сколько фото включено в ротацию («Фото и каталог»). */
+  photoCount: number;
 }) {
   const router = useRouter();
   const [useClients, setUseClients] = useState(true);
@@ -443,11 +414,29 @@ export default function BroadcastComposer({
             </label>
             <div className="space-y-1 text-sm">
               <div className="label">Картинка или прайс (PDF), до 5 МБ</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={clsx("rounded-full border px-3 py-1", file?.id === ROTATION_FILE ? "border-accent bg-accent-soft text-accent" : "border-line-strong")}
+                  disabled={photoCount === 0}
+                  title={photoCount === 0 ? "Сначала загрузите фото в «Фото и каталог»" : ""}
+                  onClick={() => setFile({ id: ROTATION_FILE, name: "", mime: "image/jpeg" })}
+                >
+                  Фото из ротации{photoCount ? ` (${photoCount})` : ""}
+                </button>
+                <button
+                  type="button"
+                  className={clsx("rounded-full border px-3 py-1", file?.id === CATALOG_FILE ? "border-accent bg-accent-soft text-accent" : "border-line-strong")}
+                  onClick={() => setFile({ id: CATALOG_FILE, name: "", mime: "image/jpeg" })}
+                >
+                  Каталог JPEG
+                </button>
+              </div>
               <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
               {uploading && <div className="text-ink-muted">{uploading}</div>}
               {file && (
                 <div className="text-status-good">
-                  Прикреплено: {file.name}{" "}
+                  Прикреплено: {isSpecialFile(file.id) ? specialFileLabel(file.id) : file.name}{" "}
                   <button type="button" className="text-ink-muted hover:underline" onClick={() => setFile(null)}>
                     убрать
                   </button>
@@ -460,8 +449,8 @@ export default function BroadcastComposer({
             <div className="rounded-xl bg-[#e5ddd5] p-4">
               {file && (
                 <div className="mb-2 ml-auto w-fit max-w-[85%] rounded-lg bg-white px-3 py-2 text-sm shadow-sm">
-                  {file.mime.startsWith("image/") ? "[фото] " : "[PDF] "}
-                  {file.name}
+                  {isSpecialFile(file.id) ? `[${specialFileLabel(file.id)}]` : file.mime.startsWith("image/") ? "[фото] " : "[PDF] "}
+                  {isSpecialFile(file.id) ? "" : file.name}
                 </div>
               )}
               <div className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-lg bg-[#dcf8c6] px-3 py-2 text-sm shadow-sm">

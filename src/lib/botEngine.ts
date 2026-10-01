@@ -20,7 +20,11 @@ import {
   type BotChat,
 } from "./broadcast";
 import { chatJson, openAiConfigured } from "./openai";
-import { greenConfig, sendText } from "./greenApi";
+import { greenConfig, sendFileByUrl, sendText } from "./greenApi";
+import { catalogFiles } from "./catalogFiles";
+import { loadPhotoContext, rotationPhoto } from "./botPhotoSend";
+import { photoLabel } from "./botPhotos";
+import { FLOWER_TYPE_LABELS } from "./constants";
 import type { BotIncoming } from "./greenOut";
 import { phoneKey } from "./leads";
 
@@ -36,7 +40,7 @@ import { phoneKey } from "./leads";
 const BOT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "order", "kaspiPhone", "invoiceAgain", "cancelOrder", "alert", "silent"],
+  required: ["reply", "order", "kaspiPhone", "invoiceAgain", "cancelOrder", "catalog", "alert", "silent"],
   properties: {
     reply: { type: "string", description: "Ответ клиенту: коротко, по делу, на его языке, с вопросом, который ведёт к заказу." },
     order: BOT_ORDER_SCHEMA,
@@ -52,6 +56,11 @@ const BOT_SCHEMA = {
       type: "string",
       description:
         "Номер заказа (из «О клиенте»), который клиент просит отменить, или который заменяется новым заказом (поменять количество, сорт, дату). Иначе пусто.",
+    },
+    catalog: {
+      type: "string",
+      enum: ["", "all", "rose", "chrysanthemum", "eustoma"],
+      description: "Клиент просит каталог, фото, прайс картинкой или «что есть» с фото — какой цветок (all — все). Иначе пусто.",
     },
     alert: { type: "string", description: "Жалоба или клиент просит живого человека — одной фразой для менеджера. Иначе пусто." },
     silent: {
@@ -138,7 +147,8 @@ function systemPrompt(p: {
     "- «Скидка» — только то, что есть в указаниях владельца; иначе: цена уже оптовая, на крупный объём посчитаем при оформлении",
     "  счёта, — и сразу спроси объём.",
     "- Явный отказ («не надо», «не интересно», «не пишите») — вежливо попрощайся одной фразой без давления.",
-    "- Каталог и фото отправить не можешь и не обещай — сразу пиши цены текстом по интересующему цветку (до 10 строк).",
+    "- Просят каталог, фото, прайс картинкой — заполни catalog (цветок или all): система сама пришлёт каталог JPEG с ценами",
+    "  и фото из теплицы. В reply тогда только короткая фраза после картинок с вопросом к заказу, цены текстом не дублируй.",
     "- Условия доставки — по указаниям владельца; чего там нет, не выдумывай: «уточним при сборке» — и дальше к заказу.",
     "",
     "Цены — ТОЛЬКО из прайса ниже (тенге за стебель): строка «Цветок Сорт: категория цена · …», «остальные сорта» — для сортов без",
@@ -306,8 +316,8 @@ export async function botReply(
 export async function botAct(
   chat: BotChat,
   decision: ReturnType<typeof botDecision>
-): Promise<{ text: string; note: string }> {
-  if (decision.silent) return { text: "", note: "" };
+): Promise<{ text: string; note: string; files: BotFile[] }> {
+  if (decision.silent) return { text: "", note: "", files: [] };
   let text = decision.reply;
   const notes: string[] = decision.alert ? [`внимание: ${decision.alert}`] : [];
   // Отмена — первой: если следом новый заказ (клиент поменял количество), старый не должен висеть рядом.
@@ -326,7 +336,61 @@ export async function botAct(
     const again = await reissueBotInvoices(chat.phone, decision.kaspiPhone);
     if (again) text = again;
   }
-  return { text: toWhatsApp(text), note: notes.join("; ") };
+  const files = decision.catalog ? await catalogForChat(decision.catalog) : [];
+  return { text: toWhatsApp(text), note: notes.join("; "), files };
+}
+
+/** Картинка от бота: ссылка для Green API, имя файла, подпись и что записать в память чата. */
+export interface BotFile {
+  url: string;
+  name: string;
+  caption: string;
+  memo: string;
+}
+
+/**
+ * Клиент попросил каталог или фото: страницы каталога (цветок или все) и одно
+ * фото из ротации с продающей подписью и ценами. Сбой — пусто: бот ответит
+ * текстом, а не замолчит.
+ */
+async function catalogForChat(which: string): Promise<BotFile[]> {
+  try {
+    const flower = which === "all" ? "" : which;
+    const out: BotFile[] = (await catalogFiles(flower)).map((c) => ({
+      url: c.url,
+      name: c.name,
+      caption: "",
+      memo: `[каталог: ${FLOWER_TYPE_LABELS[c.flowerType] ?? c.flowerType}]`,
+    }));
+    const ctx = await loadPhotoContext();
+    const r = rotationPhoto(ctx, { flowers: flower ? [flower] : [], question: "" });
+    if (r) {
+      out.push({ url: r.url, name: r.name, caption: r.caption, memo: `[фото: ${photoLabel(r.photo)}] ${r.caption}` });
+      await commitAtomic([r.after]).catch(() => undefined);
+    }
+    return out;
+  } catch (err) {
+    console.error("bot catalog:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+/** Отправить картинки бота и запомнить их в памяти чата. Возвращает, сколько ушло. */
+export async function sendBotFiles(chat: BotChat, phone: string, files: BotFile[]): Promise<number> {
+  const cfg = greenConfig();
+  if (!cfg || files.length === 0) return 0;
+  let sent = 0;
+  for (const f of files) {
+    try {
+      const id = await sendFileByUrl(cfg, phone, f.url, f.name, f.caption);
+      chat.ourIds = [...chat.ourIds, id].slice(-20);
+      chat.context = pushContext(chat.context, { role: "us", text: f.memo, at: new Date().toISOString() });
+      sent += 1;
+    } catch (err) {
+      console.error("whatsapp bot file:", err instanceof Error ? err.message : err);
+    }
+  }
+  return sent;
 }
 
 /** Ответил ли бот (тогда заказ ведёт он, и черновик для менеджера не нужен). */
@@ -339,10 +403,11 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
     console.error("whatsapp bot ai:", err instanceof Error ? err.message : err);
     return false;
   }
-  const { text, note } = await botAct(chat, decision);
-  if (!text) return false;
-  const sent = await reply(chat, last, text);
-  if (!sent) return false;
+  const { text, note, files } = await botAct(chat, decision);
+  const filesSent = await sendBotFiles(chat, last.phone, files);
+  if (!text && !filesSent) return false;
+  const sent = text ? await reply(chat, last, text) : true;
+  if (!sent && !filesSent) return false;
   // Предел ответов — на один разговор: после суток тишины счёт заново, иначе
   // постоянный клиент через месяц упёрся бы в предел навсегда.
   const quietMs = Date.now() - Date.parse(chat.updatedAt || "");

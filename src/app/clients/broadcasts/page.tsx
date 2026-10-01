@@ -37,6 +37,9 @@ export default async function BroadcastsPage() {
             <Link href="/clients/broadcasts/bot" className="btn-secondary">
               Бот
             </Link>
+            <Link href="/clients/broadcasts/photos" className="btn-secondary">
+              Фото и каталог
+            </Link>
             <Link href="/clients/broadcasts/new" className="btn-primary">
               + Новая рассылка
             </Link>

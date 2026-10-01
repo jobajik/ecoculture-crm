@@ -67,7 +67,7 @@ async function main() {
     try {
       const d = await botReply(c, bot.instructions);
       if (d.silent) console.log("   БОТ → молчит (автоответ/нечего отвечать)");
-      else console.log(`   БОТ → ${d.reply.replace(/\s+/g, " ")}${d.order.confirmed ? `  [ЗАКАЗ: ${d.order.items.map((i) => `${i.variety} ${i.grade} ${i.quantity}`).join(", ")}, ${d.order.deliveryDate}]` : ""}${d.kaspiPhone ? `  [kaspi: ${d.kaspiPhone}]` : ""}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
+      else console.log(`   БОТ → ${d.reply.replace(/\s+/g, " ")}${d.order.confirmed ? `  [ЗАКАЗ: ${d.order.items.map((i) => `${i.variety} ${i.grade} ${i.quantity}`).join(", ")}, ${d.order.deliveryDate}]` : ""}${d.kaspiPhone ? `  [kaspi: ${d.kaspiPhone}]` : ""}${d.catalog ? `  [каталог: ${d.catalog}]` : ""}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
     } catch (err) {
       console.log(`   БОТ → ошибка: ${err instanceof Error ? err.message : err}`);
     }

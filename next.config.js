@@ -64,6 +64,11 @@ const nextConfig = {
       // Файлы приёмки из теплицы — небольшие, но запас не мешает.
       bodySizeLimit: "8mb",
     },
+    // Каталог JPEG (`/api/catalog/<цветок>`) рисуется шрифтами @fontsource: файлы
+    // читаются с диска, и без этой строки Vercel их в функцию не положил бы.
+    outputFileTracingIncludes: {
+      "/api/catalog/[flower]": ["./node_modules/@fontsource/manrope/files/*.woff", "./node_modules/@fontsource/arimo/files/arimo-latin-ext-*.woff"],
+    },
   },
 };
 

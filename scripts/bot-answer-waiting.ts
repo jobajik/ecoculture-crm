@@ -13,7 +13,7 @@ dotenv.config();
 import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "../src/lib/sheets";
 import { botChatWrite, listBotChats, settingsMap } from "../src/lib/repo/broadcasts";
 import { botSettingsFrom, botSilenceReason, pushContext } from "../src/lib/broadcast";
-import { botAct, botReply, noteForManager } from "../src/lib/botEngine";
+import { botAct, botReply, noteForManager, sendBotFiles } from "../src/lib/botEngine";
 import { greenConfig, sendText } from "../src/lib/greenApi";
 
 const mask = (phone: string) => `…${String(phone).replace(/\D/g, "").slice(-4)}`;
@@ -62,12 +62,16 @@ async function main() {
     // Без --send ничего не делаем: подтверждённый заказ бот оформил бы по-настоящему.
     if (!send) continue;
     try {
-      const { text, note } = await botAct(chat, d);
-      if (!text) continue;
-      if (text !== d.reply) console.log(`   ОТПРАВЛЯЮ → ${text.replace(/\s+/g, " ")}`);
-      const id = await sendText(cfg!, chat.phone, text);
-      chat.ourIds = [...chat.ourIds, id].slice(-20);
-      chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
+      const { text, note, files } = await botAct(chat, d);
+      const filesSent = await sendBotFiles(chat, chat.phone, files);
+      if (filesSent) console.log(`   картинок отправлено: ${filesSent}`);
+      if (!text && !filesSent) continue;
+      if (text && text !== d.reply) console.log(`   ОТПРАВЛЯЮ → ${text.replace(/\s+/g, " ")}`);
+      if (text) {
+        const id = await sendText(cfg!, chat.phone, text);
+        chat.ourIds = [...chat.ourIds, id].slice(-20);
+        chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
+      }
       chat.botReplies += 1;
       noteForManager(chat, note);
       writes.push(botChatWrite(chat, found[0].rowNumber));

@@ -7,6 +7,7 @@ import { listUsers } from "@/lib/repo/users";
 import { getCurrentPrices } from "@/lib/repo/prices";
 import { priceMapForClient } from "@/lib/priceList";
 import { localDayKey } from "@/lib/timezone";
+import { listBotPhotos } from "@/lib/repo/botPhotos";
 import PageHeader from "@/components/PageHeader";
 import BroadcastComposer from "@/components/BroadcastComposer";
 import { clientsTabsFor } from "../../tabs";
@@ -29,7 +30,7 @@ export default async function NewBroadcastPage() {
   const role = session?.user?.role;
   if (role !== ROLES.ADMIN && role !== ROLES.SALES_HEAD) redirect("/clients");
 
-  const [audience, users, prices] = await Promise.all([loadAudience({ withOrders: true }), listUsers(), getCurrentPrices(localDayKey())]);
+  const [audience, users, prices, photos] = await Promise.all([loadAudience({ withOrders: true }), listUsers(), getCurrentPrices(localDayKey()), listBotPhotos()]);
   const rows = audience.map((a) => ({
     kind: a.kind,
     refId: a.refId,
@@ -63,6 +64,7 @@ export default async function NewBroadcastPage() {
         segments={distinct(rows.filter((r) => r.kind === "lead").map((r) => r.segment))}
         clientTypes={distinct(rows.map((r) => r.clientType))}
         prices={priceMapForClient(prices)}
+        photoCount={photos.filter((p) => p.active).length}
       />
     </div>
   );

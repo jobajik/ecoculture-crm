@@ -61,6 +61,7 @@ export const SHEET_TABS = {
   POINT_WRITEOFFS: "PointWriteoffs",
   WA_ORDER_DRAFTS: "WaOrderDrafts",
   DEBT_REMINDERS: "DebtReminders",
+  BOT_PHOTOS: "BotPhotos",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -485,6 +486,21 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "OrderID",
     "HandledByEmail",
     "HandledAt",
+  ],
+  // Фото для рассылок и бота (`botPhotos.ts`): сам файл — во вкладке WaFiles.
+  [SHEET_TABS.BOT_PHOTOS]: [
+    "PhotoID",
+    "CreatedAt",
+    "CreatedByEmail",
+    "FlowerType",
+    "Variety",
+    "Grade",
+    "Caption",
+    "FileID",
+    "FileName",
+    "Active",
+    "SentCount",
+    "LastSentAt",
   ],
   [SHEET_TABS.DEBT_REMINDERS]: [
     "ReminderID",

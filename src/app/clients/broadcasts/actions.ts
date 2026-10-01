@@ -39,6 +39,9 @@ import { GreenError, sendFileByUrl, sendText, type GreenConfig } from "@/lib/gre
 import { checkGreenChannel } from "@/lib/greenChannel";
 import { MAX_CAPTION, greenFailureKind, greenFileName } from "@/lib/greenOut";
 import { publicFileUrl, safeFileName } from "@/lib/waFileSign";
+import { ROTATION_FILE, isSpecialFile } from "@/lib/botPhotos";
+import { loadPhotoContext, rotationPhoto } from "@/lib/botPhotoSend";
+import { catalogFiles } from "@/lib/catalogFiles";
 import { phoneKey } from "@/lib/leads";
 import { analyzeBroadcastNow } from "@/lib/broadcastAnalysisRunner";
 import { getCurrentPrices } from "@/lib/repo/prices";
@@ -119,6 +122,29 @@ async function channelOrThrow(): Promise<GreenConfig> {
  */
 async function deliver(cfg: GreenConfig, phone: string, text: string, file: { id: string; name: string; mime: string } | null) {
   const ids: string[] = [];
+  // Фото из ротации — каждому своё (если текста нет — подпись к фото с ценами); каталог — страница на цветок.
+  if (file && isSpecialFile(file.id)) {
+    const files: { url: string; name: string }[] = [];
+    let caption = text;
+    if (file.id === ROTATION_FILE) {
+      const ctx = await loadPhotoContext();
+      const r = rotationPhoto(ctx, { question: "Поставить вам на завтра?", caption: text || undefined });
+      if (r) {
+        files.push({ url: r.url, name: greenFileName(safeFileName(r.name), "image/jpeg") });
+        caption = r.caption;
+        await commitAtomic([r.after]).catch(() => undefined);
+      }
+    } else {
+      for (const c of await catalogFiles()) files.push({ url: c.url, name: c.name });
+    }
+    const inCaption = caption.length <= MAX_CAPTION;
+    for (let i = 0; i < files.length; i++) {
+      const last = i === files.length - 1;
+      ids.push(await sendFileByUrl(cfg, phone, files[i].url, files[i].name, last && inCaption ? caption : ""));
+    }
+    if (caption && (files.length === 0 || !inCaption)) ids.push(await sendText(cfg, phone, caption));
+    return ids;
+  }
   if (file) {
     const url = publicFileUrl(SITE(), file.id, file.name);
     const name = greenFileName(safeFileName(file.name), file.mime);
