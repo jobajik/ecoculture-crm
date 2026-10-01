@@ -1,11 +1,10 @@
 import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets";
 import { localDayKey } from "./timezone";
-import { FLOWER_TYPE_LABELS, formatGrade, compareGrades } from "./constants";
 import { getCurrentPrices } from "./repo/prices";
 import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
-import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, settingsMap } from "./repo/broadcasts";
-import { lastBroadcastForBot, stockForBot } from "./botKnowledge";
+import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
+import { lastBroadcastForBot, pricesForBot, stockForBot } from "./botKnowledge";
 import {
   BOT_HANDOFF_TEXT,
   BOT_MODES,
@@ -55,20 +54,10 @@ function almatyHour(d: Date): number {
   return Number(h) % 24;
 }
 
-/** Действующий клиентский прайс одной строкой на позицию — для подсказки модели. */
+/** Действующий клиентский прайс, уже разрешённый по сортам (`pricesForBot`) — для подсказки модели. */
 async function priceText(): Promise<string> {
   try {
-    const prices = await getCurrentPrices(localDayKey());
-    const lines = Array.from(prices.values())
-      .filter((p) => p.price > 0)
-      .sort(
-        (a, b) =>
-          a.flowerType.localeCompare(b.flowerType) ||
-          (a.variety || "").localeCompare(b.variety || "") ||
-          compareGrades(a.flowerType, a.grade, b.grade)
-      )
-      .map((p) => `${FLOWER_TYPE_LABELS[p.flowerType] ?? p.flowerType} · ${p.variety || "все сорта"} · ${formatGrade(p.grade)} — ${Math.round(p.price)} ₸`);
-    const text = lines.join("\n");
+    const text = pricesForBot(Array.from((await getCurrentPrices(localDayKey())).values()));
     return text.length > 7000 ? `${text.slice(0, 7000)}\n…` : text;
   } catch {
     return "";
@@ -85,9 +74,10 @@ async function stockText(): Promise<string> {
   }
 }
 
-async function broadcastText(): Promise<string> {
+async function broadcastText(phone: string): Promise<string> {
   try {
-    return lastBroadcastForBot(await listBroadcasts());
+    const [list, recipients] = await Promise.all([listBroadcasts(), listRecipients()]);
+    return lastBroadcastForBot(list, recipients, phone);
   } catch {
     return "";
   }
@@ -106,7 +96,9 @@ function systemPrompt(instructions: string, prices: string, stock: string, broad
     "Не говори, что ты бот, и не представляйся заново, если в переписке уже представился.",
     "",
     "Что ты делаешь сам, без менеджера:",
-    "- ЦЕНЫ: бери ТОЛЬКО из прайса ниже (тенге за стебель). Нет позиции в прайсе — скажи, что уточнишь цену, и передай менеджеру.",
+    "- ЦЕНЫ: бери ТОЛЬКО из прайса ниже (тенге за стебель): строка «Цветок Сорт: категория цена · …», «остальные сорта» — для",
+    "  сортов, которых нет отдельной строкой. Сначала найди строку нужного сорта, потом нужную категорию в ней. Категории",
+    "  хризантемы: 1 = Первая, 2 = Вторая, 3 = Третья, 4 = Четвёртая; «Алтай» = Altaj. Нет позиции — скажи, что уточнишь цену.",
     "- НАЛИЧИЕ: отвечай по складу ниже — какие сорта и длины/категории есть сейчас. Точное число стеблей не называй;",
     "  если клиент называет объём, скажи, есть ли такой (по складу), или предложи то, что есть. Нет позиции на складе — так и скажи и предложи похожее.",
     "- КАТАЛОГ / ПРАЙС: файлы и фото ты отправить не можешь и не обещай их. Вместо этого сразу напиши цены текстом по тому цветку,",
@@ -124,6 +116,8 @@ function systemPrompt(instructions: string, prices: string, stock: string, broad
     "скажи, что менеджер уже получил его и скоро свяжется.",
     "Никогда не проси номера карт, пароли и коды из SMS. Не спорь и не обсуждай посторонние темы.",
     "Если сообщение — автоответ магазина или бота (приветствие-шаблон, «спасибо за обращение», часы работы, адрес) — silent=true.",
+    "Если это разговор о доставке уже оформленного заказа («келди», «пришли», «выезжаю», «буду через 5 минут», «позвоню ей») —",
+    "silent=true: его ведёт менеджер. Не обещай того, что сделать не можешь сам: позвонить, приехать, отправить файл.",
     instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены и наличие):\n${instructions}` : "",
     broadcast ? `\nПоследняя рассылка клиентам (на неё чаще всего и отвечают):\n${broadcast}` : "",
     prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — цену уточнит менеджер (handoff=true).",
@@ -216,9 +210,11 @@ async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<bool
  */
 export async function botReply(chat: BotChat, instructions: string): Promise<ReturnType<typeof botDecision>> {
   // Прайс, склад и рассылка — одним запросом и только когда бот правда отвечает (грабли 1.17).
-  await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.BROADCASTS, SHEET_TABS.PRICE_HISTORY]).catch(() => undefined);
+  await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS, SHEET_TABS.PRICE_HISTORY]).catch(
+    () => undefined
+  );
   const { data } = await chatJson(
-    systemPrompt(instructions, ...(await Promise.all([priceText(), stockText(), broadcastText()]))),
+    systemPrompt(instructions, ...(await Promise.all([priceText(), stockText(), broadcastText(chat.phone)]))),
     `Переписка (последние сообщения):\n${transcript(chat)}\n\nОтветь на последнее сообщение клиента.`,
     "bot_reply",
     BOT_SCHEMA,

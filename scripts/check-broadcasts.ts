@@ -53,7 +53,7 @@ import {
   parseGreenStatus,
 } from "../src/lib/greenOut";
 import { parseGreenWebhook } from "../src/lib/whatsapp";
-import { lastBroadcastForBot, roughStems, stockForBot } from "../src/lib/botKnowledge";
+import { lastBroadcastForBot, pricesForBot, roughStems, stockForBot } from "../src/lib/botKnowledge";
 import {
   analysisIsStale,
   broadcastTranscript,
@@ -433,6 +433,44 @@ console.log("\nЦены в тексте рассылки");
     "«Хризантема Алтай», отправлена 2026-10-01:\nЗдравствуйте, !\nАлтай высшая 580 ₸"
   );
   check("рассылок не было — пусто", lastBroadcastForBot([]), "");
+  const bl = [
+    { broadcastId: "b-akc", title: "Акция хризантемы", text: "Акция", startedAt: "2026-09-28T10:00:00Z", createdAt: "" },
+    { broadcastId: "b-alt", title: "Алтай", text: "Алтай 580", startedAt: "2026-10-01T05:00:00Z", createdAt: "" },
+    { broadcastId: "b-test", title: "Тестовая", text: "проверка", startedAt: "2026-10-01T06:00:00Z", createdAt: "" },
+  ];
+  const sent = (id: string, phone: string, at: string) => ({ broadcastId: id, phone, status: "sent", sentAt: at });
+  const rcp = [
+    sent("b-akc", "77011110001", "2026-09-28T10:01:00Z"),
+    sent("b-akc", "77011110002", "2026-09-28T10:02:00Z"),
+    sent("b-akc", "77011110003", "2026-09-28T10:03:00Z"),
+    sent("b-alt", "77011110002", "2026-10-01T05:01:00Z"),
+    sent("b-alt", "77011110004", "2026-10-01T05:02:00Z"),
+    sent("b-alt", "77011110005", "2026-10-01T05:03:00Z"),
+    sent("b-test", "77019998877", "2026-10-01T06:01:00Z"),
+  ];
+  check("рассылка — та, что ушла этому клиенту последней", lastBroadcastForBot(bl, rcp, "+7 701 111 00 02").split("\n")[0], "«Алтай», отправлена 2026-10-01:");
+  check("клиент получал только старую — старая", lastBroadcastForBot(bl, rcp, "87011110001").split("\n")[0], "«Акция хризантемы», отправлена 2026-09-28:");
+  check("номер не из рассылок — последняя настоящая, не проверочная", lastBroadcastForBot(bl, rcp, "77770000000").split("\n")[0], "«Алтай», отправлена 2026-10-01:");
+
+  const pr = (flowerType: string, variety: string, grade: string, price: number) => ({ flowerType, variety, grade, price });
+  check(
+    "прайс для бота: у сорта свои цены, сорта с одной ценой — одной строкой, остальные — по общей",
+    pricesForBot([
+      pr("chrysanthemum", "", "Высшая", 490),
+      pr("chrysanthemum", "", "Третья", 250),
+      pr("chrysanthemum", "Altaj", "Высшая", 580),
+      pr("chrysanthemum", "Altaj", "Третья", 270),
+      pr("chrysanthemum", "Baltika", "Высшая", 490),
+      pr("rose", "Avalanche", "60", 180),
+      pr("rose", "Red Naomi", "60", 180),
+      pr("rose", "", "60", 0),
+    ]).split("\n"),
+    [
+      "Роза Avalanche, Red Naomi: 60 см 180 ₸",
+      "Хризантема Altaj: Высшая 580 · Третья 270 ₸",
+      "Хризантема Baltika, остальные сорта: Высшая 490 · Третья 250 ₸",
+    ]
+  );
 }
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);

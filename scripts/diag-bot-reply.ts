@@ -11,24 +11,34 @@ dotenv.config();
  *   npx tsx scripts/diag-bot-reply.ts [сколько чатов, по умолчанию 8]
  */
 import { prefetchTables, SHEET_TABS } from "../src/lib/sheets";
-import { listBotChats, listBroadcasts, settingsMap } from "../src/lib/repo/broadcasts";
+import { listBotChats, listBroadcasts, listRecipients, settingsMap } from "../src/lib/repo/broadcasts";
+import { getCurrentPrices } from "../src/lib/repo/prices";
 import { listBatches } from "../src/lib/repo/batches";
 import { getSettings } from "../src/lib/repo/settings";
 import { botSettingsFrom } from "../src/lib/broadcast";
-import { lastBroadcastForBot, stockForBot } from "../src/lib/botKnowledge";
+import { lastBroadcastForBot, pricesForBot, stockForBot } from "../src/lib/botKnowledge";
 import { botReply } from "../src/lib/botEngine";
 
 const mask = (phone: string) => `…${String(phone).replace(/\D/g, "").slice(-4)}`;
 
 async function main() {
   const limit = Math.max(1, Number(process.argv[2]) || 8);
-  await prefetchTables([SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS, SHEET_TABS.BATCHES, SHEET_TABS.BROADCASTS]);
-  const [chats, map, batches, settings, broadcasts] = await Promise.all([
+  await prefetchTables([
+    SHEET_TABS.BOT_CHATS,
+    SHEET_TABS.SETTINGS,
+    SHEET_TABS.BATCHES,
+    SHEET_TABS.BROADCASTS,
+    SHEET_TABS.BROADCAST_RECIPIENTS,
+    SHEET_TABS.PRICE_HISTORY,
+  ]);
+  const [chats, map, batches, settings, broadcasts, recipients, prices] = await Promise.all([
     listBotChats(),
     settingsMap(),
     listBatches(),
     getSettings(),
     listBroadcasts(),
+    listRecipients(),
+    getCurrentPrices(),
   ]);
   const bot = botSettingsFrom(map);
 
@@ -36,8 +46,10 @@ async function main() {
   console.log("=== Склад для бота (первые 15 строк) ===");
   console.log(stock.split("\n").slice(0, 15).join("\n") || "(пусто)");
   console.log(`всего строк: ${stock ? stock.split("\n").length : 0}`);
-  console.log("\n=== Последняя рассылка для бота ===");
-  console.log(lastBroadcastForBot(broadcasts) || "(нет)");
+  console.log("\n=== Прайс для бота ===");
+  console.log(pricesForBot(Array.from(prices.values())) || "(пусто)");
+  console.log("\n=== Рассылка для бота, если номер неизвестен ===");
+  console.log(lastBroadcastForBot(broadcasts, recipients) || "(нет)");
 
   const waiting = chats
     .filter((c) => c.mode !== "optout" && c.context.length > 0 && c.context[c.context.length - 1].role === "client")
@@ -45,7 +57,8 @@ async function main() {
     .slice(0, limit);
   console.log(`\n=== Чаты, где последним писал клиент: показываю ${waiting.length} ===`);
   for (const c of waiting) {
-    console.log(`\n${mask(c.phone)} · режим ${c.mode} · обновлён ${c.updatedAt.slice(0, 16)}`);
+    const own = lastBroadcastForBot(broadcasts, recipients, c.phone);
+    console.log(`\n${mask(c.phone)} · режим ${c.mode} · обновлён ${c.updatedAt.slice(0, 16)} · рассылка: ${own.split("\n")[0] || "—"}`);
     for (const line of c.context.slice(-4)) console.log(`   ${line.role === "client" ? "КЛ" : "МЫ"}  ${line.text.replace(/\s+/g, " ").slice(0, 140)}`);
     try {
       const d = await botReply(c, bot.instructions);
