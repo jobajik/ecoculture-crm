@@ -34,6 +34,7 @@ import {
   shopDeliveries,
   shopOrderForm,
 } from "@/lib/retail";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -112,7 +113,7 @@ export default async function NewOrderPage({
     listUsers(),
   ]);
 
-  const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
   const territory = retailTerritoryFor(role);
 

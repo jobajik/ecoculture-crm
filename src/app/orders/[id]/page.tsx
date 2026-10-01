@@ -60,6 +60,7 @@ import { orderCode } from "@/lib/paymentStage";
 import { DEBT_OVERDUE_DAYS } from "@/lib/constants";
 import { canEditFinance } from "@/lib/financeAccess";
 import { paymentHistory, realizationsOf } from "@/lib/payments";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -158,7 +159,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
   // Рекламации показываем всем, кто видит заявку: складу тоже полезно знать,
   // что по этой отгрузке была жалоба. Заводить может только свой менеджер.
-  const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
   const claims: OrderClaimRow[] = allClaims
     .filter((c) => c.orderId === order.orderId)
     .map((c) => ({

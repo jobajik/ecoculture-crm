@@ -9,6 +9,7 @@ import Hint from "@/components/Hint";
 import PageHeader from "@/components/PageHeader";
 import MoneyLogView, { type MoneyLogRow } from "@/components/MoneyLogView";
 import { financeTabsFor } from "../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -29,7 +30,7 @@ export default async function MoneyLogPage() {
   ]);
 
   const orderById = new Map(orders.map((o) => [o.orderId, o]));
-  const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
 
   const rows: MoneyLogRow[] = entries.map((e) => ({
     logId: e.logId,

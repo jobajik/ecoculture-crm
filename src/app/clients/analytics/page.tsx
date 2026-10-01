@@ -18,6 +18,7 @@ import Hint from "@/components/Hint";
 import Change from "@/components/Change";
 import ClientBreakdown from "@/components/ClientBreakdown";
 import { clientsTabsFor } from "../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,7 +42,7 @@ export default async function ClientAnalyticsPage({ searchParams }: { searchPara
   // Три вкладки — одним запросом к Google (грабли 1.17).
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.USERS]);
   const [clients, orders, users] = await Promise.all([listClients(), listOrdersWithItems(), listUsers()]);
-  const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
 
   const a = buildClientAnalytics({ clients, orders, nameByEmail, period, today: localDayKey() });
   const c = a.current;

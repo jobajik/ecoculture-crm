@@ -16,7 +16,11 @@ import { getCurrentPrices } from "../src/lib/repo/prices";
 import { listBatches } from "../src/lib/repo/batches";
 import { getSettings } from "../src/lib/repo/settings";
 import { botSettingsFrom } from "../src/lib/broadcast";
-import { lastBroadcastForBot, pricesForBot, stockForBot } from "../src/lib/botKnowledge";
+import { lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "../src/lib/botKnowledge";
+import { planBotOrder } from "../src/lib/botOrder";
+import { priceFor } from "../src/lib/priceList";
+import { emptyBotChat } from "../src/lib/repo/broadcasts";
+import { localDayKey } from "../src/lib/timezone";
 import { botReply } from "../src/lib/botEngine";
 
 const mask = (phone: string) => `…${String(phone).replace(/\D/g, "").slice(-4)}`;
@@ -63,11 +67,38 @@ async function main() {
     try {
       const d = await botReply(c, bot.instructions);
       if (d.silent) console.log("   БОТ → молчит (автоответ/нечего отвечать)");
-      else console.log(`   БОТ → ${d.reply.replace(/\s+/g, " ")}${d.order ? `  [заказ: ${d.order}]` : ""}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
+      else console.log(`   БОТ → ${d.reply.replace(/\s+/g, " ")}${d.order.confirmed ? `  [ЗАКАЗ: ${d.order.items.map((i) => `${i.variety} ${i.grade} ${i.quantity}`).join(", ")}, ${d.order.deliveryDate}]` : ""}${d.kaspiPhone ? `  [kaspi: ${d.kaspiPhone}]` : ""}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
     } catch (err) {
       console.log(`   БОТ → ошибка: ${err instanceof Error ? err.message : err}`);
     }
   }
+  await scenario(bot.instructions, batches, settings, prices);
+}
+
+/**
+ * Проверка оформления на выдуманном разговоре: что модель вернёт на «Да» и
+ * оформила бы система заявку. Ничего не пишет и не отправляет.
+ */
+async function scenario(instructions: string, batches: Parameters<typeof stockMap>[0], settings: Parameters<typeof stockMap>[1], prices: Parameters<typeof priceFor>[0]) {
+  console.log("\n=== Проверка оформления на выдуманном разговоре (ничего не пишется) ===");
+  const chat = emptyBotChat("77000000000");
+  const at = new Date().toISOString();
+  chat.context = [
+    { role: "client", text: "Здравствуйте, Алтай третья категория есть? Нужно 100 штук на завтра", at },
+    { role: "us", text: "Здравствуйте! Хризантема Altaj третьей категории есть, 270 ₸ за стебель. 100 шт. — 27 000 ₸. Подскажите название точки и город — и оформлю.", at },
+    { role: "client", text: "Магазин «Цветы у дома», Алматы, Абая 10", at },
+    { role: "us", text: "Повторяю заказ: хризантема Altaj, Третья — 100 шт. × 270 ₸ = 27 000 ₸, доставка завтра, Алматы, Абая 10. Оформляю?", at },
+    { role: "client", text: "Да", at },
+  ];
+  const d = await botReply(chat, instructions);
+  console.log(`модель: confirmed=${d.order.confirmed}, позиции=${JSON.stringify(d.order.items)}, дата=${d.order.deliveryDate}, город=${d.order.city}, точка=${d.order.shopName}`);
+  const plan = planBotOrder({
+    draft: d.order,
+    stock: Array.from(stockMap(batches, settings, new Date()).values()),
+    priceOf: (f, v, g) => priceFor(prices, f, v, g),
+    today: localDayKey(),
+  });
+  console.log(plan.ok ? `система оформила бы: ${JSON.stringify(plan.items)} на ${plan.deliveryDate}` : `система спросила бы: ${plan.question}`);
 }
 
 main().catch((err) => {

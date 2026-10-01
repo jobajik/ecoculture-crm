@@ -20,6 +20,7 @@ import Hint from "@/components/Hint";
 import TalksRunButton from "@/components/TalksRunButton";
 import { ScoreChip, TemperatureChip } from "@/components/TalkChips";
 import { clientsTabsFor } from "../../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,7 +42,7 @@ export default async function TalksPage() {
 
   await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.USERS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.LEAD_ANALYSES]);
   const [leads, users, messages, analyses] = await Promise.all([listLeads(), listUsers(), listWaMessages(), listLeadAnalyses()]);
-  const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
   const visible = leads.filter((l) => canSeeLead(role, email, l));
   const infos = Array.from(talkInfoByLead(visible, messages, analyses).values());
   const now = new Date();

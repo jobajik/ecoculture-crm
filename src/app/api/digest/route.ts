@@ -1,4 +1,5 @@
 import { digestResultText, recordDigestRun, sendMorningDigest } from "@/lib/morningDigestRunner";
+import { remindBotInvoices } from "@/lib/botFollowUp";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -15,10 +16,12 @@ export async function GET(request: Request) {
   }
   // Расписание Vercel представляется «vercel-cron»; остальное — ручной вызов (diag-crons).
   const source = /vercel-cron/i.test(request.headers.get("user-agent") || "") ? "расписание" : "вручную";
+  // Утром бот напоминает об оплате по своим заявкам (не мешает сводке: ошибок не бросает).
+  const reminders = await remindBotInvoices();
   try {
     const result = await sendMorningDigest();
     await recordDigestRun(source, digestResultText(result));
-    return Response.json({ ok: true, sent: result.sent.length, failed: result.failed.length, note: result.note });
+    return Response.json({ ok: true, sent: result.sent.length, failed: result.failed.length, note: result.note, reminders });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await recordDigestRun(source, `ошибка: ${message}`);

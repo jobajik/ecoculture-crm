@@ -230,21 +230,18 @@ const long = Array.from({ length: 30 }, (_, i) => ({ role: "client" as const, te
 const ctx = long.reduce((acc, item) => pushContext(acc, item), [] as BotChat["context"]);
 check("память бота короткая", ctx.length <= 12 && JSON.stringify(ctx).length <= 3000, true);
 check("последнее сообщение в памяти", ctx[ctx.length - 1].text.startsWith("сообщение 29"), true);
-check("ответ модели", botDecision({ reply: "Роза 60 см — 180 ₸. Сколько поставить?", order: "", alert: "" }), {
-  reply: "Роза 60 см — 180 ₸. Сколько поставить?",
-  order: "",
-  alert: "",
-  silent: false,
-});
-check("автоответ магазина — молчим", botDecision({ reply: "", order: "", alert: "", silent: true }).silent, true);
-check("заказ записывается, разговор продолжается", botDecision({ reply: "Записал. Добавить эустому?", order: "Altaj высшая 100 шт", alert: "" }), {
-  reply: "Записал. Добавить эустому?",
-  order: "Altaj высшая 100 шт",
-  alert: "",
-  silent: false,
-});
-check("кивки — не отвечаем", ["👍", "Спасибо!", "ок", "рахмет 🙏", "Спасибо большое"].map(isAckOnly), [true, true, true, true, true]);
-check("вопрос и «да» — отвечаем", ["Да", "Сколько?", "Хочу 300 роз", "Хорошо, пришлите"].map(isAckOnly), [false, false, false, false]);
+check("ответ модели", botDecision({ reply: "Роза 60 см — 180 ₸. Сколько поставить?", alert: "" }).reply, "Роза 60 см — 180 ₸. Сколько поставить?");
+check("автоответ магазина — молчим", botDecision({ reply: "", alert: "", silent: true }).silent, true);
+check(
+  "подтверждённый заказ — не молчим, даже без текста",
+  botDecision({
+    reply: "",
+    silent: false,
+    order: { confirmed: true, items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Высшая", quantity: 100 }], deliveryDate: "2026-10-02", city: "Алматы", shopName: "", address: "", note: "" },
+  }).silent,
+  false
+);
+check("новый номер Kaspi — не молчим", botDecision({ reply: "", kaspiPhone: "+7 701 555 20 30" }).kaspiPhone, "77015552030");
 check("пустой ответ — ничего не шлём", botDecision({ reply: "" }).silent, true);
 check("мусор — ничего не шлём", botDecision(null).silent, true);
 

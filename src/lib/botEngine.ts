@@ -5,6 +5,8 @@ import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
 import { lastBroadcastForBot, pricesForBot, stockForBot } from "./botKnowledge";
+import { BOT_ORDER_SCHEMA } from "./botOrder";
+import { botClientContext, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
 import {
   BOT_MODES,
   BOT_OPT_OUT_TEXT,
@@ -33,12 +35,13 @@ import { phoneKey } from "./leads";
 const BOT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "order", "alert", "silent"],
+  required: ["reply", "order", "kaspiPhone", "alert", "silent"],
   properties: {
     reply: { type: "string", description: "Ответ клиенту: коротко, по делу, на его языке, с вопросом, который ведёт к заказу." },
-    order: {
+    order: BOT_ORDER_SCHEMA,
+    kaspiPhone: {
       type: "string",
-      description: "Клиент ПОДТВЕРДИЛ заказ — заказ одной строкой (цветок, сорт, категория, штуки, дата, город). Иначе пусто.",
+      description: "Клиент назвал номер для счёта Kaspi (другой, чем этот WhatsApp, или после «счёт не дошёл») — только цифры. Иначе пусто.",
     },
     alert: { type: "string", description: "Жалоба или клиент просит живого человека — одной фразой для менеджера. Иначе пусто." },
     silent: {
@@ -87,7 +90,16 @@ async function broadcastText(phone: string): Promise<string> {
  * переключать на менеджеров, он должен продать… сделай его максимально
  * продажным»). Менеджер получает только записку: собранный заказ или тревогу.
  */
-function systemPrompt(instructions: string, prices: string, stock: string, broadcast: string): string {
+function systemPrompt(p: {
+  instructions: string;
+  prices: string;
+  stock: string;
+  broadcast: string;
+  client: string;
+  today: string;
+}): string {
+  const { instructions, prices, stock, broadcast, client, today } = p;
+  const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${today}T12:00:00`).getDay()];
   return [
     "Ты — сильный продавец оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома).",
     "Продаём оптом салонам, магазинам и цветочникам. Пишешь клиентам в WhatsApp от имени компании. Твоя единственная цель — ПРОДАТЬ:",
@@ -113,21 +125,34 @@ function systemPrompt(instructions: string, prices: string, stock: string, broad
     "  счёта, — и сразу спроси объём.",
     "- Явный отказ («не надо», «не интересно», «не пишите») — вежливо попрощайся одной фразой без давления.",
     "- Каталог и фото отправить не можешь и не обещай — сразу пиши цены текстом по интересующему цветку (до 10 строк).",
-    "- Доставка и оплата — по указаниям владельца; чего там нет, не выдумывай: «уточним при оформлении счёта» — и дальше к заказу.",
+    "- Условия доставки — по указаниям владельца; чего там нет, не выдумывай: «уточним при сборке» — и дальше к заказу.",
     "",
     "Цены — ТОЛЬКО из прайса ниже (тенге за стебель): строка «Цветок Сорт: категория цена · …», «остальные сорта» — для сортов без",
     "своей строки. Сначала найди строку сорта, потом категорию. Категории хризантемы: 1 = Первая, 2 = Вторая, 3 = Третья,",
     "4 = Четвёртая; «Алтай» = Altaj. Позиции нет в прайсе — не выдумывай, предложи похожую с ценой. Сумму считай точно.",
     "Наличие — ТОЛЬКО по складу ниже; точное число стеблей не называй, но подтверждай, хватит ли на названный объём.",
     "",
-    "Заказ: собери цветок, сорт, категорию или длину, количество, дату доставки и город. Когда клиент подтвердил — повтори заказ",
-    "с ценами и суммой, скажи, что счёт придёт сюда же, и заполни order. После этого продолжай: допродажа или вопрос про оплату.",
-    "Жалоба или клиент прямо просит живого человека — извинись или согласись, скажи, что сейчас разберёмся, задай уточняющий",
+    "ЗАКАЗ ТЫ ОФОРМЛЯЕШЬ САМ, полностью: заявка уходит на склад, счёт Kaspi — клиенту на этот номер WhatsApp.",
+    "1) Собери по каждой позиции: цветок, сорт, категорию или длину, количество; дату доставки; для нового клиента — название точки",
+    "   и город (см. «О клиенте»). Адрес и пожелания — если назовёт.",
+    "2) Повтори заказ с ценами и суммой и спроси «Оформляю?».",
+    "3) Клиент ЯВНО согласился («да», «оформляйте», «давайте») — заполни order: confirmed=true, позиции ТОЧНО как в складе",
+    "   (flowerType: rose / chrysanthemum / eustoma, сорт и категорию/длину — как написано в складе), deliveryDate ГГГГ-ММ-ДД, city,",
+    "   shopName, address, note. Тогда reply не нужен: подтверждение с номером заказа и счётом отправит система сама.",
+    "   Не ставь confirmed=true, пока клиент не согласился с итоговым заказом, и не повторяй уже оформленный заказ.",
+    "4) Хочет добавить к оформленному — оформи ДОПОЛНИТЕЛЬНЫЙ заказ только с новыми позициями (тоже через подтверждение).",
+    "5) Счёт Kaspi уходит на номер этого WhatsApp. Клиент хочет на другой номер или счёт не дошёл и он прислал номер — kaspiPhone.",
+    "6) Оплатил — поблагодари: оплата придёт в систему сама, и ты напишешь, когда заказ уйдёт на сборку. Не подтверждай оплату сам.",
+    "   Хочет платить наличными или по реквизитам — согласись, заполни alert («оплата наличными/по реквизитам»), заказ всё равно оформляй.",
+    "Доставка — завтра и позже обычно; сегодня — только если клиент просит, не обещай время, «уточним при сборке».",
+    "Жалоба или клиент прямо просит живого человека — извинись или согласись, скажи, что разберёмся, задай уточняющий",
     "вопрос и заполни alert. Разговор продолжаешь ты.",
     "",
     "silent=true — только если: автоответ магазина или бота (шаблон, часы работы, адрес); кивок без вопроса; разговор о доставке",
     "уже оформленного заказа («келди», «пришли», «выезжаю», «буду через 5 минут»). Не обещай позвонить, приехать или прислать файл.",
     "Никогда не проси номера карт, пароли и коды из SMS. Не обсуждай посторонние темы.",
+    `\nСегодня ${today}, ${weekday} (Алматы). «Завтра», «в пятницу» переводи в дату сам.`,
+    client ? `\nО клиенте:\n${client}` : "",
     instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены и наличие):\n${instructions}` : "",
     broadcast ? `\nРассылка, которую получил этот клиент (на неё он, скорее всего, и отвечает):\n${broadcast}` : "",
     prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — цены не называй, предлагай по наличию и спрашивай объём.",
@@ -143,11 +168,12 @@ function transcript(chat: BotChat): string {
  * Разобрать входящие одного уведомления: отметить, где писал человек,
  * отписку, и, если бот должен ответить, — ответить. Ничего не бросает.
  */
-export async function runBot(all: BotIncoming[]): Promise<void> {
+export async function runBot(all: BotIncoming[]): Promise<boolean> {
+  let answered = false;
   // Эхо наших же сообщений через API (рассылка, сам бот) ничего не меняет —
   // и таблицу ради него не читаем (лимит общий, грабли 1.17).
   const messages = all.filter((m) => !(m.isEcho && m.fromApi));
-  if (messages.length === 0) return;
+  if (messages.length === 0) return false;
   try {
     await prefetchTables([SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]);
     const [chats, map] = await Promise.all([listBotChats(true), settingsMap()]);
@@ -189,7 +215,7 @@ export async function runBot(all: BotIncoming[]): Promise<void> {
           chat.mode = BOT_MODES.OPT_OUT;
           await reply(chat, last, BOT_OPT_OUT_TEXT);
         } else if (!silence && greenConfig() && !(last.type === "text" && isAckOnly(last.text))) {
-          await answer(chat, last, settings.instructions);
+          if (await answer(chat, last, settings.instructions)) answered = true;
         }
       }
       if (changed) writes.push(botChatWrite(chat, existing?.rowNumber ?? null));
@@ -198,6 +224,7 @@ export async function runBot(all: BotIncoming[]): Promise<void> {
   } catch (err) {
     console.error("whatsapp bot:", err instanceof Error ? err.message : err);
   }
+  return answered;
 }
 
 async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<boolean> {
@@ -215,16 +242,30 @@ async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<bool
 }
 
 /**
- * Что бот ответил бы на последнее сообщение клиента — без отправки и записи.
- * Им же пользуется `scripts/diag-bot-reply.ts`, чтобы посмотреть ответы на живых чатах.
+ * Что бот ответил бы на последнее сообщение клиента — решение модели, без
+ * отправки и записи. Им же пользуется `scripts/diag-bot-reply.ts`.
  */
 export async function botReply(chat: BotChat, instructions: string): Promise<ReturnType<typeof botDecision>> {
-  // Прайс, склад и рассылка — одним запросом и только когда бот правда отвечает (грабли 1.17).
-  await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS, SHEET_TABS.PRICE_HISTORY]).catch(
-    () => undefined
-  );
+  // Прайс, склад, рассылка и заказы — одним запросом и только когда бот правда отвечает (грабли 1.17).
+  await prefetchTables([
+    SHEET_TABS.BATCHES,
+    SHEET_TABS.BROADCASTS,
+    SHEET_TABS.BROADCAST_RECIPIENTS,
+    SHEET_TABS.PRICE_HISTORY,
+    SHEET_TABS.CLIENTS,
+    SHEET_TABS.LEADS,
+    SHEET_TABS.ORDERS,
+    SHEET_TABS.ORDER_ITEMS,
+    SHEET_TABS.KASPI_INVOICES,
+  ]).catch(() => undefined);
+  const [prices, stock, broadcast, client] = await Promise.all([
+    priceText(),
+    stockText(),
+    broadcastText(chat.phone),
+    botClientContext(chat.phone),
+  ]);
   const { data } = await chatJson(
-    systemPrompt(instructions, ...(await Promise.all([priceText(), stockText(), broadcastText(chat.phone)]))),
+    systemPrompt({ instructions, prices, stock, broadcast, client, today: localDayKey() }),
     `Переписка (последние сообщения):\n${transcript(chat)}\n\nОтветь на последнее сообщение клиента.`,
     "bot_reply",
     BOT_SCHEMA,
@@ -233,34 +274,58 @@ export async function botReply(chat: BotChat, instructions: string): Promise<Ret
   return botDecision(data);
 }
 
-async function answer(chat: BotChat, last: BotIncoming, instructions: string): Promise<void> {
-  if (!openAiConfigured()) return;
+/**
+ * Решение модели → дело: оформить подтверждённый заказ, перевыставить счёт на
+ * новый номер Kaspi. Возвращает текст клиенту (пусто — молчать) и записку менеджеру.
+ */
+export async function botAct(
+  chat: BotChat,
+  decision: ReturnType<typeof botDecision>
+): Promise<{ text: string; note: string }> {
+  if (decision.silent) return { text: "", note: "" };
+  let text = decision.reply;
+  let note = decision.alert ? `внимание: ${decision.alert}` : "";
+  if (decision.order.confirmed) {
+    const placed = await placeBotOrder({ phone: chat.phone, senderName: chat.name, draft: decision.order, kaspiPhone: decision.kaspiPhone });
+    text = placed.text;
+    if (placed.note) note = note ? `${placed.note}; ${note}` : placed.note;
+  } else if (decision.kaspiPhone) {
+    const again = await reissueBotInvoices(chat.phone, decision.kaspiPhone);
+    if (again) text = again;
+  }
+  return { text, note };
+}
+
+/** Ответил ли бот (тогда заказ ведёт он, и черновик для менеджера не нужен). */
+async function answer(chat: BotChat, last: BotIncoming, instructions: string): Promise<boolean> {
+  if (!openAiConfigured()) return false;
   let decision: ReturnType<typeof botDecision>;
   try {
     decision = await botReply(chat, instructions);
   } catch (err) {
     console.error("whatsapp bot ai:", err instanceof Error ? err.message : err);
-    return;
+    return false;
   }
-  if (decision.silent) return;
-  const sent = await reply(chat, last, decision.reply);
-  if (!sent) return;
+  const { text, note } = await botAct(chat, decision);
+  if (!text) return false;
+  const sent = await reply(chat, last, text);
+  if (!sent) return false;
   // Предел ответов — на один разговор: после суток тишины счёт заново, иначе
   // постоянный клиент через месяц упёрся бы в предел навсегда.
   const quietMs = Date.now() - Date.parse(chat.updatedAt || "");
   if (!Number.isFinite(quietMs) || quietMs >= 24 * 3600000) chat.botReplies = 0;
   chat.botReplies += 1;
-  noteForManager(chat, decision);
+  noteForManager(chat, note);
+  return true;
 }
 
 /**
  * Записка менеджеру: собранный заказ или тревога. Режим чата остаётся «бот» —
  * бот продолжает разговор; записка видна на странице «Бот» в «Заказы и тревоги».
  */
-export function noteForManager(chat: BotChat, decision: { order: string; alert: string }): void {
+export function noteForManager(chat: BotChat, note: string): void {
   if (chat.mode !== BOT_MODES.OPT_OUT) chat.mode = BOT_MODES.BOT;
-  const note = decision.order ? `заказ: ${decision.order}` : decision.alert ? `внимание: ${decision.alert}` : "";
   if (!note) return;
   chat.handoffAt = new Date().toISOString();
-  chat.handoffReason = note;
+  chat.handoffReason = note.slice(0, 500);
 }

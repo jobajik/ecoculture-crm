@@ -35,6 +35,7 @@ import { outcomeLabel } from "@/lib/calls";
 import { greenConfig } from "@/lib/greenApi";
 import { openAiConfigured } from "@/lib/openai";
 import { clientsTabsFor } from "../../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -66,7 +67,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
   // Чужой лид не открывается и по прямой ссылке (грабли 1.11).
   if (!lead || !canSeeLead(role, email, lead)) notFound();
 
-  const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
   const history = touches
     .filter((t) => t.leadId === lead.leadId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));

@@ -1,5 +1,6 @@
 import { listOrdersWithItems } from "./repo/orders";
 import { listUsers } from "./repo/users";
+import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME, isBotEmail } from "./botIdentity";
 import { getPlansForPeriod } from "./repo/plans";
 import { ORDER_STATUSES, bonusRateFor, getFarmFor } from "./constants";
 import { periodRange, type FinancePeriod } from "./finance";
@@ -101,6 +102,7 @@ export async function getLeaderboard(
     : await Promise.all([listOrdersWithItems(), listUsers(), getPlansForPeriod(monthKey(from)), listPointDays()]);
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  nameByEmail.set(BOT_MANAGER_EMAIL, BOT_MANAGER_NAME);
   // Розница — не продажа, и бонус за неё не платится: менеджер не продал
   // цветок, а передал его в наш же магазин.
   const counted = orders.filter(
@@ -151,7 +153,8 @@ export async function getLeaderboard(
 
     for (const item of order.items) {
       const amount = item.quantity * item.unitPrice;
-      const rate = bonusRateFor(item.flowerType);
+      // Бот бонуса не получает (решение владельца): продажи видны, бонус — ноль.
+      const rate = isBotEmail(email) ? 0 : bonusRateFor(item.flowerType);
       row.totalAmount += amount;
 
       const paidPart = amount * share;

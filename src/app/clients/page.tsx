@@ -11,6 +11,7 @@ import { isRetailRole } from "@/lib/retail";
 import { clients as clientsWord, orders as ordersWord } from "@/lib/plural";
 import PageHeader from "@/components/PageHeader";
 import { clientsTabsFor } from "./tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function ClientsPage() {
     listOrdersWithItems(),
     listUsers(),
   ]);
-  const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
 
   const stats = buildClientStats({
     clients,

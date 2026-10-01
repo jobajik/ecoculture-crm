@@ -13,7 +13,7 @@ dotenv.config();
 import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "../src/lib/sheets";
 import { botChatWrite, listBotChats, settingsMap } from "../src/lib/repo/broadcasts";
 import { botSettingsFrom, botSilenceReason, pushContext } from "../src/lib/broadcast";
-import { botReply, noteForManager } from "../src/lib/botEngine";
+import { botAct, botReply, noteForManager } from "../src/lib/botEngine";
 import { greenConfig, sendText } from "../src/lib/greenApi";
 
 const mask = (phone: string) => `…${String(phone).replace(/\D/g, "").slice(-4)}`;
@@ -54,16 +54,22 @@ async function main() {
       console.log(`${mask(chat.phone)}: бот решил промолчать`);
       continue;
     }
-    const text = d.reply;
+    const orderLine = d.order.confirmed
+      ? `  [ЗАКАЗ: ${d.order.items.map((i) => `${i.variety} ${i.grade} ${i.quantity}`).join(", ")}, ${d.order.deliveryDate}]`
+      : "";
     console.log(`\n${mask(chat.phone)} · клиент: ${last.text.replace(/\s+/g, " ").slice(0, 120)}`);
-    console.log(`   БОТ → ${text.replace(/\s+/g, " ")}${d.order ? `  [заказ: ${d.order}]` : ""}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
+    console.log(`   БОТ → ${d.reply.replace(/\s+/g, " ")}${orderLine}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
+    // Без --send ничего не делаем: подтверждённый заказ бот оформил бы по-настоящему.
     if (!send) continue;
     try {
+      const { text, note } = await botAct(chat, d);
+      if (!text) continue;
+      if (text !== d.reply) console.log(`   ОТПРАВЛЯЮ → ${text.replace(/\s+/g, " ")}`);
       const id = await sendText(cfg!, chat.phone, text);
       chat.ourIds = [...chat.ourIds, id].slice(-20);
       chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
       chat.botReplies += 1;
-      noteForManager(chat, d);
+      noteForManager(chat, note);
       writes.push(botChatWrite(chat, found[0].rowNumber));
       console.log("   отправлено");
     } catch (err) {

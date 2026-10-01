@@ -77,9 +77,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "temporary" }, { status: 500 });
   }
 
-  // Бот отвечает клиенту, а заказ из сообщения становится черновиком заявки
-  // для менеджера (`waOrder.ts`). Друг друга не ждут; оба ничего не бросают.
+  // Бот отвечает клиенту и сам оформляет заказ (`botOrderRunner.ts`). Если бот
+  // промолчал (выключен, в чате пишет менеджер), заказ из сообщения становится
+  // черновиком заявки для менеджера (`waOrder.ts`) — иначе вышло бы две заявки.
+  // Оба ничего не бросают.
   const incoming = botIncomingOf(body, message);
-  await Promise.all([incoming ? runBot([incoming]) : Promise.resolve(), draftFromIncoming(message)]);
+  const botAnswered = incoming ? await runBot([incoming]) : false;
+  if (!botAnswered) await draftFromIncoming(message);
   return NextResponse.json({ ok: true });
 }

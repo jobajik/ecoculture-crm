@@ -11,12 +11,15 @@
  * («rop») хуже, чем честный адрес, — по адресу хотя бы понятно, кого искать в
  * таблице сотрудников.
  */
+import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "./botIdentity";
+
 export type NameByEmail = Record<string, string>;
 
 export function nameIndex(
   users: { email: string; name: string }[]
 ): NameByEmail {
-  const index: NameByEmail = {};
+  // Заявки бота оформлены на служебную почту — её нет в Users, а звать её надо по-человечески.
+  const index: NameByEmail = { [BOT_MANAGER_EMAIL]: BOT_MANAGER_NAME };
   for (const u of users) {
     const key = (u.email || "").trim().toLowerCase();
     const name = (u.name || "").trim();

@@ -15,6 +15,7 @@ import Section from "@/components/Section";
 import Icon from "@/components/Icon";
 import { orderCode } from "@/lib/paymentStage";
 import { canSeeShop, isOwnShop, isRetailRole, retailLabel } from "@/lib/retail";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     listOrdersWithItems(),
     listUsers(),
   ]);
-  const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
 
   const stats = buildClientStats({
     clients,

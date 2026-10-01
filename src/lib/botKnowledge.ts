@@ -24,9 +24,13 @@ export function roughStems(n: number): string {
 /**
  * Что сейчас можно продать: остаток партий без просроченных (`critical` —
  * дольше срока хранения, клиенту его не предлагают), сложенный по цветку,
- * сорту и длине/категории. Строка на позицию, количество округлено вниз.
+ * сорту и длине/категории. Ключ — «цветок|сорт|градация».
  */
-export function stockForBot(batches: Batch[], settings: Settings, now: Date): string {
+export function stockMap(
+  batches: Batch[],
+  settings: Settings,
+  now: Date
+): Map<string, { flower: string; variety: string; grade: string; qty: number }> {
   const sums = new Map<string, { flower: string; variety: string; grade: string; qty: number }>();
   for (const b of batches) {
     if (!(b.quantityRemaining > 0)) continue;
@@ -37,6 +41,12 @@ export function stockForBot(batches: Batch[], settings: Settings, now: Date): st
     cur.qty += b.quantityRemaining;
     sums.set(key, cur);
   }
+  return sums;
+}
+
+/** Склад для подсказки модели: строка на позицию, количество округлено вниз. */
+export function stockForBot(batches: Batch[], settings: Settings, now: Date): string {
+  const sums = stockMap(batches, settings, now);
   const fi = (f: string) => {
     const i = FLOWER_ORDER.indexOf(f);
     return i < 0 ? 99 : i;

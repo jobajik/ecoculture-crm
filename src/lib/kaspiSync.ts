@@ -7,6 +7,7 @@ import { ORDER_STATUSES } from "./constants";
 import { localDayKey } from "./timezone";
 import { isKaspiSessionError } from "./kaspiHealth";
 import { noteKaspiSessionLost } from "./kaspiHealthCheck";
+import { onBotInvoiceUpdate } from "./botFollowUp";
 
 /** Кем подписан платёж, проведённый по оплате счёта Kaspi. */
 export const KASPI_ACTOR = "kaspi-pay@apipay";
@@ -40,6 +41,8 @@ export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" 
     if (Object.keys(changes).length === 0) return "same";
     changes.UpdatedAt = new Date().toISOString();
     await updateKaspiInvoiceRow(rowNumber, changes);
+    // Заявка бота: счёт не дошёл — бот сам попросит у клиента номер Kaspi.
+    if (plan.changed) await onBotInvoiceUpdate(row, status, String(inv.error_code || ""), String(inv.error_message || ""));
     return "updated";
   }
 
@@ -74,5 +77,7 @@ export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" 
     PaymentID: result?.paymentId ?? "",
     UpdatedAt: new Date().toISOString(),
   });
+  // Заявка бота: бот сам скажет клиенту, что оплата пришла и заказ ушёл на сборку.
+  await onBotInvoiceUpdate({ ...row, amount }, status, "", "");
   return isPaidKaspiStatus(status) ? "paid" : "updated";
 }

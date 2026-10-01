@@ -16,6 +16,7 @@ import Section from "@/components/Section";
 import CallDesk from "@/components/CallDesk";
 import CallReport from "@/components/CallReport";
 import { clientsTabsFor } from "../../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,7 +42,7 @@ export default async function CallsPage({ searchParams }: { searchParams?: { c?:
   await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.LEAD_TOUCHES, SHEET_TABS.USERS]);
   const [leads, touches, users] = await Promise.all([listLeads(), listLeadTouches(), listUsers()]);
   const today = localDayKey();
-  const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
   const managers = users
     .filter((u) => u.active && (u.role === ROLES.MANAGER || u.role === ROLES.SALES_HEAD))
     .map((u) => ({ email: u.email.toLowerCase(), name: u.name || u.email }))

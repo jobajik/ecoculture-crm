@@ -7,6 +7,7 @@ import { buildTalkReport, talkInfoByLead } from "@/lib/talkAnalysis";
 import { runStaleAnalyses } from "@/lib/talkRunner";
 import { openAiConfigured } from "@/lib/openai";
 import { runStaleBroadcastAnalyses } from "@/lib/broadcastAnalysisRunner";
+import { remindBotInvoices } from "@/lib/botFollowUp";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -23,7 +24,9 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Недостаточно прав", { status: 403 });
   }
-  if (!openAiConfigured()) return Response.json({ ok: true, skipped: "openai not configured" });
+  // Вечером бот напоминает об оплате по своим заявкам — до разбора, он короче.
+  const reminders = await remindBotInvoices();
+  if (!openAiConfigured()) return Response.json({ ok: true, skipped: "openai not configured", reminders });
   const started = Date.now();
   let broadcasts: { analyzed: number; errors: number } = { analyzed: 0, errors: 0 };
   try {
@@ -40,7 +43,7 @@ export async function GET(request: Request) {
       limit: 20,
       budgetMs: Math.max(5000, 45000 - (Date.now() - started)),
     });
-    return Response.json({ ok: true, ...result, broadcasts });
+    return Response.json({ ok: true, ...result, broadcasts, reminders });
   } catch (err) {
     return Response.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

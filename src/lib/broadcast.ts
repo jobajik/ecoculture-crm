@@ -1,5 +1,6 @@
 import { phoneKey } from "./leads";
 import type { WaMessage } from "./types";
+import { EMPTY_BOT_ORDER, parseBotOrder, type BotOrderDraft } from "./botOrder";
 
 // ---------------------------------------------------------------------------
 // Рассылки WhatsApp через Green API и бот-автоответчик — чистые правила.
@@ -429,18 +430,28 @@ export function pushContext(
 
 /**
  * Ответ модели → то, что бот сделает. Менеджеру бот НЕ передаёт (владелец,
- * 01.10.2026: «бот не должен переключать на менеджеров, он должен продать»):
- * собранный заказ и тревога (жалоба, просят человека) только записываются для
- * менеджера, а разговор бот ведёт дальше сам. Пустой или странный ответ — не
- * отправлять ничего.
+ * 01.10.2026: «бот не должен переключать на менеджеров, он должен продать»).
+ * Подтверждённый заказ (`order.confirmed`) бот оформляет сам — заявка, счёт
+ * Kaspi (`botOrderRunner.ts`); новый номер Kaspi (`kaspiPhone`) — счёт заново;
+ * тревога (жалоба, просят человека) — записка менеджеру. Пустой или странный
+ * ответ без заказа — не отправлять ничего.
  */
-export function botDecision(raw: unknown): { reply: string; order: string; alert: string; silent: boolean } {
+export function botDecision(raw: unknown): {
+  reply: string;
+  order: BotOrderDraft;
+  kaspiPhone: string;
+  alert: string;
+  silent: boolean;
+} {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
   const reply = text(o.reply, 1500);
+  const order = parseBotOrder(o.order);
+  const kaspiPhone = text(o.kaspiPhone, 30).replace(/\D/g, "");
+  const act = order.confirmed || kaspiPhone.length >= 10;
   // Молчать — автоответ магазина, «👍», разговор о доставке: модель так решила или ответа нет.
-  if (o.silent === true || !reply) return { reply: "", order: "", alert: "", silent: true };
-  return { reply, order: text(o.order, 300), alert: text(o.alert, 200), silent: false };
+  if (!act && (o.silent === true || !reply)) return { reply: "", order: EMPTY_BOT_ORDER, kaspiPhone: "", alert: "", silent: true };
+  return { reply, order, kaspiPhone, alert: text(o.alert, 200), silent: false };
 }
 
 /**

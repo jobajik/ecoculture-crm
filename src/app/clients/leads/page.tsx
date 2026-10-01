@@ -23,6 +23,7 @@ import { buildInbox, minutesSince } from "@/lib/whatsapp";
 import { isClosedStage, phoneKey } from "@/lib/leads";
 import { CLIENT_SOURCES } from "@/lib/constants";
 import { clientsTabsFor } from "../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -62,7 +63,7 @@ export default async function LeadsPage({
     listLeadAnalyses(),
     listClients(),
   ]);
-  const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
   const today = localDayKey();
 
   // Менеджеру — свои и ничьи; РОПу и админу — все (`canSeeLead`).

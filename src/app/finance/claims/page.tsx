@@ -10,6 +10,7 @@ import PageHeader from "@/components/PageHeader";
 import ClaimsBoard, { type ClaimView } from "@/components/ClaimsBoard";
 import { financeTabsFor } from "../tabs";
 import { canEditFinance } from "@/lib/financeAccess";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,7 +34,7 @@ export default async function ClaimsPage() {
   ]);
 
   const orderById = new Map(orders.map((o) => [o.orderId, o]));
-  const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
 
   const views: ClaimView[] = claims
     .filter((c) => orderById.has(c.orderId))

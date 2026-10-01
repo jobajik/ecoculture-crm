@@ -18,6 +18,7 @@ import Hint from "@/components/Hint";
 import Change from "@/components/Change";
 import FinanceBreakdown from "@/components/FinanceBreakdown";
 import { financeTabsFor } from "../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,7 +55,7 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
     SHEET_TABS.PAYMENTS,
   ]);
   const [orders, payments, users] = await Promise.all([listOrdersWithItems(), listPayments(), listUsers()]);
-  const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
   const today = localDayKey();
   const a = buildFinanceAnalytics({ orders, payments, nameByEmail, period, today });
   const c = a.current;

@@ -25,6 +25,7 @@ import Hint from "@/components/Hint";
 import Change from "@/components/Change";
 import FlowerSalesBreakdown from "@/components/FlowerSalesBreakdown";
 import { salesTabsFor } from "../tabs";
+import { withBotName } from "@/lib/botIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -48,7 +49,7 @@ export default async function FlowerSalesPage({ searchParams }: { searchParams?:
   // Три вкладки — одним запросом к Google (грабли 1.17).
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.USERS]);
   const [orders, users] = await Promise.all([listOrdersWithItems(), listUsers()]);
-  const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email]));
+  const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
 
   const r = buildFlowerSales({ orders, period, flower, nameByEmail });
   const t = r.totals;

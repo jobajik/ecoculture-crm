@@ -892,6 +892,43 @@ Wazzup, всё было сделано под него (задание 110), п�
 - **фильтр «Клиенты: брали розу / хризантему / эустому»** — `flowers` у `AudienceCandidate`
   (`loadAudience`: цветы из позиций всех неотменённых продаж клиента, без `isNotASale`).
 
+**Бот продаёт в полный цикл** (01.10.2026, владелец: «бот продаёт в полный цикл: отработал клиента, взял
+заказ, отправил заявку на склад, выставил счёт, удостоверился, что счёт оплачен»; правила — `src/lib/botOrder.ts`,
+запись и счёт — `src/lib/botOrderRunner.ts`, оплата и напоминания — `src/lib/botFollowUp.ts`, проверка
+`check-bot-order`). Решения владельца: заявки бота — на отдельного «менеджера» **«Бот WhatsApp»**
+(`BOT_MANAGER_EMAIL` в `src/lib/botIdentity.ts`, в `Users` его нет), **без бонуса** (ставка ноль в
+`leaderboard.ts`, имя — `nameIndex` / `withBotName`); новый клиент — карточка заводится сама; счёт —
+**сразу всем**, и с отсрочкой (отгрузка по условиям, как раньше); касса Rose Farm — владелец подключит ключ
+(`kaspi-key-rose.bat`, не в репозитории), до тех пор счёт за розу и эустому — записка «выставить вручную».
+
+- **заказ**: модель возвращает `order` (`BOT_ORDER_SCHEMA`: позиции, дата, город, точка, адрес) только когда
+  клиент ЯВНО согласился с повторённым заказом. Модели не верим (грабли 1.11): `planBotOrder` сверяет цветок,
+  сорт и градацию со складом (`stockMap`, без просроченного; «3 категория» → «Третья», «60 см» → «60» —
+  `normalizeGrade`), количество — не больше склада, цена — из прайса (`priceFor`, ноль — не оформлять), дата —
+  от сегодня до +14 дней. Не сходится — клиенту уходит вопрос, а не заявка;
+- **карточка**: по номеру (`clientForPhone`: телефон или Kaspi-номер), иначе лид → `ensureClientForLead`,
+  иначе новая (`createClient`, источник «Написали в WhatsApp», менеджер — бот; без названия и города бот их
+  спросит). Наш магазин боту заявку не оформляет;
+- **заявка**: `createOrder` — подтверждена сразу, способ «Каспи», направление по городу (`directionForCity`),
+  телефон заявки — номер WhatsApp (по нему бот потом пишет), в заметке «Заказ принял бот WhatsApp». Тот же
+  заказ за 30 минут второй раз не заводится (двойное «да»). Склад видит её как обычную: оплачена или клиент в
+  отсрочке — можно отгружать;
+- **счёт**: `issueKaspiInvoice` на неоплаченную часть каждой компании с подключённой кассой, на номер
+  WhatsApp (или `kaspiPhone`, если клиент назвал другой). Текст клиенту собирает КОД (`botOrderText`:
+  номер заказа, позиции, сумма, доставка, куда ушёл счёт), а не модель — цифры не выдумываются;
+- **оплата**: вебхук ApiPay (`applyApiPayInvoice`) проводит платёж как раньше и зовёт `onBotInvoiceUpdate`:
+  оплачено — «оплата получена, заказ передан на сборку»; счёт не дошёл (`error`) — «напишите номер Kaspi»;
+  клиент присылает номер → `reissueBotInvoices` выставляет заново. Только для заявок бота;
+- **напоминания**: `remindBotInvoices` из утренней сводки и вечернего разбора — счёт ждёт дольше 3 ч →
+  напомнить; истёк или отменён → выставить заново и сказать; не чаще раза в 20 ч на заявку (журнал —
+  `DebtReminders` с почтой бота);
+- **черновик для менеджера** (`draftFromIncoming`) делается, только если бот НЕ ответил (выключен, в чате
+  пишет менеджер) — иначе было бы две заявки на один заказ;
+- модель знает о клиенте (`botClientContext`): есть ли он в базе, его заказы через бота за 14 дней и что со
+  счетами; сегодняшнюю дату — для «завтра»;
+- оформление на выдуманном разговоре без записи — в конце `scripts/diag-bot-reply.ts`; ответить в ждущих
+  чатах вручную — `scripts/bot-answer-waiting.ts` (без `--send` только показ, с ним бот правда оформляет).
+
 **Что дала рассылка** (сентябрь 2026, владелец: «анализ чатов по рассылке… и постоянно такую фичу»;
 правила — `src/lib/broadcastAnalysis.ts`, разбор — `src/lib/broadcastAnalysisRunner.ts`, вкладка
 `BroadcastAnalyses`). На странице рассылки два блока, и они намеренно разные:
@@ -2510,7 +2547,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

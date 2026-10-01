@@ -53,7 +53,7 @@ check(
 );
 check("незнакомая почта показывается как есть", personName("kto@to.kz", names), "kto@to.kz");
 check("пустая почта — прочерк", personName("", names), "—");
-check("пустая строка в Users в список не попадает", Object.keys(names), ["rop@ecoculture.kz"]);
+check("пустая строка в Users в список не попадает (бот — свой, служебный)", Object.keys(names), ["bot@ecoculture.kz", "rop@ecoculture.kz"]);
 
 console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);
