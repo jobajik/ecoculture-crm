@@ -7,6 +7,8 @@ import { createBroadcastAction, sendTestAction, uploadFilePartAction } from "@/a
 import { unwrapValue } from "@/lib/actionResult";
 import { OPT_OUT_LINE, greetingName, personalize, type AudienceRow } from "@/lib/broadcast";
 import { LEAD_STAGES } from "@/lib/leads";
+import { FLOWER_TYPE_LABELS } from "@/lib/constants";
+import { fillPrices, priceBlock } from "@/lib/broadcastPrices";
 
 /**
  * Новая рассылка: кому (клиенты, лиды, фильтры, галочки), что (текст с {имя},
@@ -16,7 +18,7 @@ import { LEAD_STAGES } from "@/lib/leads";
 
 type Row = Pick<
   AudienceRow,
-  "kind" | "refId" | "name" | "contactPerson" | "city" | "managerEmail" | "clientType" | "stage" | "campaign" | "segment" | "daysSinceOrder" | "waPhone" | "excluded"
+  "kind" | "refId" | "name" | "contactPerson" | "city" | "managerEmail" | "clientType" | "stage" | "campaign" | "segment" | "daysSinceOrder" | "flowers" | "waPhone" | "excluded"
 >;
 
 const ORDER_FILTERS = [
@@ -25,6 +27,20 @@ const ORDER_FILTERS = [
   { key: "30", label: "не заказывали 30+ дней" },
   { key: "60", label: "не заказывали 60+ дней" },
   { key: "never", label: "ни разу не заказывали" },
+];
+
+const BOUGHT_FILTERS = [
+  { key: "", label: "любой цветок" },
+  { key: "rose", label: "брали розу" },
+  { key: "chrysanthemum", label: "брали хризантему" },
+  { key: "eustoma", label: "брали эустому" },
+];
+
+/** Метки цен в тексте — по цветку, именительный падеж для метки. */
+const PRICE_TAGS: { flower: string; tag: string }[] = [
+  { flower: "chrysanthemum", tag: "{цены хризантема}" },
+  { flower: "rose", tag: "{цены роза}" },
+  { flower: "eustoma", tag: "{цены эустома}" },
 ];
 
 const PART_CHARS = 600_000;
@@ -71,6 +87,7 @@ export default function BroadcastComposer({
   campaigns,
   segments,
   clientTypes,
+  prices,
 }: {
   rows: Row[];
   managers: { email: string; name: string }[];
@@ -80,6 +97,8 @@ export default function BroadcastComposer({
   campaigns: string[];
   segments: string[];
   clientTypes: string[];
+  /** Действующий клиентский прайс «цветок|сорт|длина» → цена — для предпросмотра меток {цены …}. */
+  prices: Record<string, number>;
 }) {
   const router = useRouter();
   const [useClients, setUseClients] = useState(true);
@@ -88,6 +107,7 @@ export default function BroadcastComposer({
   const [manager, setManager] = useState("");
   const [clientType, setClientType] = useState("");
   const [orders, setOrders] = useState("");
+  const [bought, setBought] = useState("");
   const [stage, setStage] = useState("");
   const [campaign, setCampaign] = useState("");
   const [segment, setSegment] = useState("");
@@ -113,6 +133,7 @@ export default function BroadcastComposer({
       if (city && r.city.trim().toLowerCase() !== city.toLowerCase()) return false;
       if (manager === "none" ? !!r.managerEmail : manager && r.managerEmail !== manager) return false;
       if (clientType && r.clientType !== clientType) return false;
+      if (r.kind === "client" && bought && !r.flowers.includes(bought)) return false;
       if (r.kind === "client" && orders) {
         if (orders === "never" ? r.daysSinceOrder !== null : r.daysSinceOrder === null || r.daysSinceOrder < Number(orders)) return false;
       }
@@ -124,7 +145,7 @@ export default function BroadcastComposer({
       if (q && !`${r.name} ${r.contactPerson} ${r.waPhone} ${r.city}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, useClients, useLeads, city, manager, clientType, orders, stage, campaign, segment, search]);
+  }, [rows, useClients, useLeads, city, manager, clientType, orders, bought, stage, campaign, segment, search]);
 
   const key = (r: Row) => `${r.kind}:${r.refId}`;
   const sendable = filtered.filter((r) => !r.excluded);
@@ -233,7 +254,7 @@ export default function BroadcastComposer({
   }
 
   const sample = chosen[0] ?? sendable[0];
-  const preview = personalize(text, sample ? greetingName(sample.contactPerson, sample.name) : "Айгуль", withOptOut);
+  const preview = personalize(fillPrices(text, prices), sample ? greetingName(sample.contactPerson, sample.name) : "Айгуль", withOptOut);
   const select = "input !w-auto !py-1.5 text-sm";
 
   return (
@@ -276,6 +297,15 @@ export default function BroadcastComposer({
               </option>
             ))}
           </select>
+          {useClients && (
+            <select className={select} value={bought} onChange={(e) => setBought(e.target.value)}>
+              {BOUGHT_FILTERS.map((o) => (
+                <option key={o.key} value={o.key}>
+                  Клиенты: {o.label}
+                </option>
+              ))}
+            </select>
+          )}
           {useClients && (
             <select className={select} value={orders} onChange={(e) => setOrders(e.target.value)}>
               {ORDER_FILTERS.map((o) => (
@@ -383,6 +413,14 @@ export default function BroadcastComposer({
                 + {"{имя}"}
               </button>
               <span className="text-ink-muted">подставится имя клиента; нет имени — слово уберётся</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              {PRICE_TAGS.filter((p) => priceBlock(p.flower, prices)).map((p) => (
+                <button key={p.tag} type="button" className="btn-secondary !py-1" onClick={() => setText((t) => `${t}${p.tag}`)}>
+                  + цены: {FLOWER_TYPE_LABELS[p.flower].toLowerCase()}
+                </button>
+              ))}
+              <span className="text-ink-muted">встанет действующий прайс на день создания рассылки</span>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={withOptOut} onChange={(e) => setWithOptOut(e.target.checked)} />

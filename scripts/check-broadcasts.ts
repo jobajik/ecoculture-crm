@@ -15,6 +15,7 @@
  */
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret-for-checks";
 
+import { fillPrices, priceBlock, priceTagFlowers, priceTagsRefusal } from "../src/lib/broadcastPrices";
 import {
   BOT_HANDOFF_TEXT,
   OPT_OUT_LINE,
@@ -111,6 +112,7 @@ const base: Omit<AudienceCandidate, "kind" | "refId" | "phone"> = {
   campaign: "",
   segment: "",
   daysSinceOrder: null,
+  flowers: [],
 };
 const aud = prepareAudience(
   [
@@ -346,6 +348,30 @@ console.log("\nИтог рассылки");
   check("незнакомый вид — «другое»", parseBroadcastAnalysis({ people: [{ phone: "77010000001", kind: "wow" }] }, ["77010000001"]).people[0].kind, "other");
   check("мусор — пустой разбор", parseBroadcastAnalysis(null, []), { summary: "", people: [], questions: [], objections: [], advice: [] });
   check("разбор устарел", [analysisIsStale(5, null), analysisIsStale(5, 5), analysisIsStale(6, 5), analysisIsStale(0, null)], [true, false, true, false]);
+}
+
+console.log("\nЦены в тексте рассылки");
+{
+  // Как живой прайс хризантемы: 9 сортов одной ценой, Altaj — своя, общей «Все сорта» нет.
+  const pr: Record<string, number> = {};
+  const grades = ["Высшая", "Первая", "Вторая", "Третья", "Четвёртая", "Мини-микс"];
+  const common = [490, 460, 430, 220, 120, 90];
+  for (const v of ["Bacardy", "Топспин", "Ассортимент"]) grades.forEach((g, i) => (pr[`chrysanthemum|${v}|${g}`] = common[i]));
+  [580, 530, 400, 300, 200, 180].forEach((p, i) => (pr[`chrysanthemum|Altaj|${grades[i]}`] = p));
+  const block = priceBlock("chrysanthemum", pr).replace(/[\u00a0\u202f]/g, " ");
+  check("основная цена — строкой на категорию, по порядку", block.split("\n").slice(0, 3), ["• Высшая — 490 ₸", "• Первая — 460 ₸", "• Вторая — 430 ₸"]);
+  check("особый сорт — своей строкой", block.split("\n").pop(), "• Altaj: Высшая 580 · Первая 530 · Вторая 400 · Третья 300 · Четвёртая 200 · Мини-микс 180 ₸");
+  // Эустома живёт по общей цене «Все сорта»; сорт без своей цены — в общей строке.
+  const eu: Record<string, number> = { "eustoma||Стандарт": 400, "eustoma||50": 150 };
+  check("общая цена «Все сорта»", priceBlock("eustoma", eu).replace(/[\u00a0\u202f]/g, " "), "• Стандарт — 400 ₸\n• 50 см — 150 ₸");
+  check("нет цен — пустой блок", priceBlock("rose", pr), "");
+  check("метка заменяется, регистр и форма слова не важны", fillPrices("Цены:\n{Цены хризантемы}\nЖдём!", pr).includes("{"), false);
+  check("метка эустомы подставилась", fillPrices("{цены эустома}", eu).replace(/[\u00a0\u202f]/g, " "), "• Стандарт — 400 ₸\n• 50 см — 150 ₸");
+  check("какие цветы в метках", priceTagFlowers("{цены хризантема} и {цены роза} и {цены тюльпан}"), ["chrysanthemum", "rose", "?тюльпан"]);
+  check("отказ: незнакомая метка", priceTagsRefusal("{цены тюльпан}", pr).startsWith("Не понял метку"), true);
+  check("отказ: в прайсе нет розы", priceTagsRefusal("{цены роза}", pr), "В прайсе нет цен на розу — заполните прайс или уберите метку");
+  check("без меток — без отказа", priceTagsRefusal("Здравствуйте, {имя}!", {}), "");
+  check("{имя} метки цен не трогают", fillPrices("Здравствуйте, {имя}!", pr), "Здравствуйте, {имя}!");
 }
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);

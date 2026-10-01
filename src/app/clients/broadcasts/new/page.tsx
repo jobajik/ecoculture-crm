@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { ROLES } from "@/lib/constants";
 import { loadAudience } from "@/lib/broadcastAudience";
 import { listUsers } from "@/lib/repo/users";
+import { getCurrentPrices } from "@/lib/repo/prices";
+import { priceMapForClient } from "@/lib/priceList";
+import { localDayKey } from "@/lib/timezone";
 import PageHeader from "@/components/PageHeader";
 import BroadcastComposer from "@/components/BroadcastComposer";
 import { clientsTabsFor } from "../../tabs";
@@ -26,7 +29,7 @@ export default async function NewBroadcastPage() {
   const role = session?.user?.role;
   if (role !== ROLES.ADMIN && role !== ROLES.SALES_HEAD) redirect("/clients");
 
-  const [audience, users] = await Promise.all([loadAudience({ withOrders: true }), listUsers()]);
+  const [audience, users, prices] = await Promise.all([loadAudience({ withOrders: true }), listUsers(), getCurrentPrices(localDayKey())]);
   const rows = audience.map((a) => ({
     kind: a.kind,
     refId: a.refId,
@@ -39,6 +42,7 @@ export default async function NewBroadcastPage() {
     campaign: a.campaign,
     segment: a.segment,
     daysSinceOrder: a.daysSinceOrder,
+    flowers: a.flowers,
     waPhone: a.waPhone,
     excluded: a.excluded,
   }));
@@ -58,6 +62,7 @@ export default async function NewBroadcastPage() {
         campaigns={distinct(rows.filter((r) => r.kind === "lead").map((r) => r.campaign))}
         segments={distinct(rows.filter((r) => r.kind === "lead").map((r) => r.segment))}
         clientTypes={distinct(rows.map((r) => r.clientType))}
+        prices={priceMapForClient(prices)}
       />
     </div>
   );

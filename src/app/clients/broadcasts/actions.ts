@@ -41,6 +41,26 @@ import { MAX_CAPTION, greenFailureKind, greenFileName } from "@/lib/greenOut";
 import { publicFileUrl, safeFileName } from "@/lib/waFileSign";
 import { phoneKey } from "@/lib/leads";
 import { analyzeBroadcastNow } from "@/lib/broadcastAnalysisRunner";
+import { getCurrentPrices } from "@/lib/repo/prices";
+import { priceMapForClient } from "@/lib/priceList";
+import { fillPrices, priceTagFlowers, priceTagsRefusal } from "@/lib/broadcastPrices";
+
+/**
+ * Метки {цены хризантема} → действующий прайс. Подставляется ОДИН раз — при
+ * создании рассылки (и в проверочном сообщении): всем получателям уходит одна и
+ * та же цена, а в отчёте хранится ровно то, что ушло. Прайс читается, только если
+ * метка в тексте есть.
+ */
+async function withPrices(text: string): Promise<string> {
+  if (priceTagFlowers(text).length === 0) return text;
+  const prices = priceMapForClient(await getCurrentPrices(localDayKey()));
+  const refusal = priceTagsRefusal(text, prices);
+  if (refusal) throw new Error(refusal);
+  const filled = fillPrices(text, prices);
+  const tooLong = broadcastTextRefusal(filled, true);
+  if (tooLong) throw new Error(`${tooLong} (вместе с ценами)`);
+  return filled;
+}
 
 /**
  * Рассылки WhatsApp через Green API — только админ и РОП (решение владельца):
@@ -127,7 +147,7 @@ async function sendTestActionInner(input: { text: string; fileId: string; fileNa
   const refusal = broadcastTextRefusal(input.text, !!input.fileId);
   if (refusal) throw new Error(refusal);
   const cfg = await channelOrThrow();
-  const text = personalize(input.text, "Тест", input.withOptOut);
+  const text = personalize(await withPrices(input.text), "Тест", input.withOptOut);
   try {
     await deliver(cfg, phone, text, input.fileId ? { id: input.fileId, name: input.fileName, mime: mimeOf(input.fileName) } : null);
   } catch (err) {
@@ -168,7 +188,7 @@ async function createBroadcastActionInner(input: {
   if (recipients.length === 0) throw new Error("Среди выбранных нет ни одного мобильного номера, которому можно писать");
 
   // Текст хранится уже с «ответьте СТОП»: так в отчёте видно ровно то, что ушло.
-  const raw = String(input.text || "").replace(/\r/g, "").trim();
+  const raw = (await withPrices(String(input.text || "").replace(/\r/g, ""))).trim();
   const text = input.withOptOut && !/стоп/i.test(raw) ? `${raw}\n\n${OPT_OUT_LINE}`.trim() : raw;
   const id = await createBroadcast({
     createdByEmail: email,

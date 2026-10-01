@@ -4,6 +4,7 @@ import { listOrdersWithItems } from "./repo/orders";
 import { optedOutKeys } from "./repo/broadcasts";
 import { prefetchTables, SHEET_TABS } from "./sheets";
 import { ORDER_STATUSES } from "./constants";
+import { isNotASale } from "./orderKind";
 import { prepareAudience, type AudienceCandidate, type AudienceRow } from "./broadcast";
 
 /**
@@ -27,8 +28,14 @@ export async function loadAudience(options: { withOrders?: boolean } = {}): Prom
   ]);
 
   const lastOrder = new Map<string, string>();
+  const boughtFlowers = new Map<string, Set<string>>();
   for (const o of orders) {
     if (!o.clientId || o.status === ORDER_STATUSES.CANCELLED) continue;
+    if (!isNotASale(o)) {
+      const set = boughtFlowers.get(o.clientId) ?? new Set<string>();
+      for (const it of o.items) if (it.quantity > 0) set.add(it.flowerType);
+      boughtFlowers.set(o.clientId, set);
+    }
     const day = (o.createdAt || "").slice(0, 10);
     if (day > (lastOrder.get(o.clientId) ?? "")) lastOrder.set(o.clientId, day);
   }
@@ -52,6 +59,7 @@ export async function loadAudience(options: { withOrders?: boolean } = {}): Prom
         campaign: "",
         segment: "",
         daysSinceOrder: options.withOrders ? daysSince(lastOrder.get(c.clientId)) : null,
+        flowers: Array.from(boughtFlowers.get(c.clientId) ?? []),
       })),
     ...leads
       .filter((l) => l.stage !== "lost" && !l.clientId)
@@ -68,6 +76,7 @@ export async function loadAudience(options: { withOrders?: boolean } = {}): Prom
         campaign: l.campaign,
         segment: l.segment,
         daysSinceOrder: null,
+        flowers: [],
       })),
   ];
   return prepareAudience(candidates, optedOut);

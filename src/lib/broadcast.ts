@@ -137,6 +137,8 @@ export interface AudienceCandidate {
   campaign: string;
   segment: string;
   daysSinceOrder: number | null;
+  /** Какие цветы клиент брал хоть раз (коды) — для фильтра «брали хризантему». У лида пусто. */
+  flowers: string[];
 }
 
 export interface AudienceRow extends AudienceCandidate {
