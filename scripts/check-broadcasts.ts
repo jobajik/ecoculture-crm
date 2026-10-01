@@ -17,7 +17,6 @@ process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret-for-ch
 
 import { fillPrices, insertTag, priceBlock, priceTagFlowers, priceTagOptions, priceTagsRefusal } from "../src/lib/broadcastPrices";
 import {
-  BOT_HANDOFF_TEXT,
   OPT_OUT_LINE,
   botDecision,
   botSettingsFrom,
@@ -209,16 +208,15 @@ check("не из рассылки — молчит", ask(on, null), "не из �
 check("режим «всем» — отвечает и незнакомым", ask({ ...on, scope: "all" }, null), "");
 check("менеджер писал 2 ч назад — молчит", ask(on, chat({ humanAt: "2026-09-28T12:00:00Z" })), "в чате пишет менеджер");
 check("менеджер писал вчера — отвечает", ask(on, chat({ humanAt: "2026-09-27T01:00:00Z" })), "");
-check("передано менеджеру 20 мин назад — молчит", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T13:40:00Z" })), "передано менеджеру");
-check("передано 4 ч назад, менеджер не ответил — бот снова отвечает", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T10:00:00Z" })), "");
-check("передано, менеджер ответил — молчит", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T10:00:00Z", humanAt: "2026-09-28T10:30:00Z" })), "в чате пишет менеджер");
+check("старый чат «передано менеджеру» — бот всё равно продаёт", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T13:40:00Z" })), "");
+check("менеджер писал 4 ч назад — бот снова отвечает", ask(on, chat({ humanAt: "2026-09-28T10:00:00Z" })), "");
 check("передано 2 дня назад — снова отвечает", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-26T10:00:00Z" })), "");
 check("отписался — молчит", ask(on, chat({ mode: "optout" })), "клиент отписался");
 check("повтор уведомления — молчит", ask(on, chat({ lastInMessageId: "wz-9" })), "повтор уведомления");
 check("нерабочее время: днём молчит", ask({ ...on, hours: "offhours" }, chat({}), 11), "рабочее время — отвечают менеджеры");
 check("нерабочее время: вечером отвечает", ask({ ...on, hours: "offhours" }, chat({}), 21), "");
 check("8 ответов — ещё отвечает (заказ — это много реплик)", ask(on, chat({ botReplies: 8, updatedAt: "2026-09-28T13:00:00Z" })), "");
-check("много ответов подряд — молчит", ask(on, chat({ botReplies: 20, updatedAt: "2026-09-28T13:00:00Z" })), "бот уже ответил много раз");
+check("много ответов подряд — молчит", ask(on, chat({ botReplies: 40, updatedAt: "2026-09-28T13:00:00Z" })), "бот уже ответил много раз");
 check("настройки из таблицы", botSettingsFrom({ BotEnabled: "TRUE", BotScope: "all", BotHours: "offhours", BotWorkFrom: "8", BotWorkTo: "20" }), {
   enabled: true,
   scope: "all",
@@ -232,14 +230,23 @@ const long = Array.from({ length: 30 }, (_, i) => ({ role: "client" as const, te
 const ctx = long.reduce((acc, item) => pushContext(acc, item), [] as BotChat["context"]);
 check("память бота короткая", ctx.length <= 12 && JSON.stringify(ctx).length <= 3000, true);
 check("последнее сообщение в памяти", ctx[ctx.length - 1].text.startsWith("сообщение 29"), true);
-check("ответ модели", botDecision({ reply: "Роза 60 см — 180 ₸.", handoff: false, reason: "" }), { reply: "Роза 60 см — 180 ₸.", handoff: false, reason: "", silent: false });
-check("автоответ магазина — молчим", botDecision({ reply: "", handoff: false, reason: "", silent: true }).silent, true);
-check("молчать нельзя, если зовёт человека", botDecision({ reply: "", handoff: true, reason: "заказ", silent: true }).silent, false);
+check("ответ модели", botDecision({ reply: "Роза 60 см — 180 ₸. Сколько поставить?", order: "", alert: "" }), {
+  reply: "Роза 60 см — 180 ₸. Сколько поставить?",
+  order: "",
+  alert: "",
+  silent: false,
+});
+check("автоответ магазина — молчим", botDecision({ reply: "", order: "", alert: "", silent: true }).silent, true);
+check("заказ записывается, разговор продолжается", botDecision({ reply: "Записал. Добавить эустому?", order: "Altaj высшая 100 шт", alert: "" }), {
+  reply: "Записал. Добавить эустому?",
+  order: "Altaj высшая 100 шт",
+  alert: "",
+  silent: false,
+});
 check("кивки — не отвечаем", ["👍", "Спасибо!", "ок", "рахмет 🙏", "Спасибо большое"].map(isAckOnly), [true, true, true, true, true]);
 check("вопрос и «да» — отвечаем", ["Да", "Сколько?", "Хочу 300 роз", "Хорошо, пришлите"].map(isAckOnly), [false, false, false, false]);
-check("пустой ответ — передать человеку", botDecision({ reply: "", handoff: false }).handoff, true);
-check("мусор — передать человеку", botDecision(null).handoff, true);
-check("текст передачи есть", BOT_HANDOFF_TEXT.length > 10, true);
+check("пустой ответ — ничего не шлём", botDecision({ reply: "" }).silent, true);
+check("мусор — ничего не шлём", botDecision(null).silent, true);
 
 console.log("\nУведомления Green API");
 const st = (status: string, extra: Record<string, unknown> = {}) =>

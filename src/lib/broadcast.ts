@@ -330,18 +330,15 @@ export function sentOnDay(rows: RecipientRow[], day: string, dayOf: (iso: string
 
 export const BOT_MODES = { BOT: "bot", HANDOFF: "handoff", OPT_OUT: "optout" } as const;
 
-/** После сообщения живого человека бот молчит в этом чате столько часов. */
-export const BOT_HUMAN_QUIET_HOURS = 12;
+/**
+ * После сообщения живого человека бот молчит в этом чате столько часов — чтобы
+ * не влезать в разговор менеджера. Было 12; владелец: «бот должен продать».
+ */
+export const BOT_HUMAN_QUIET_HOURS = 3;
 /** Окно для предела ответов: столько часов после последнего сообщения бота. */
 export const BOT_HANDOFF_QUIET_HOURS = 24;
-/**
- * После передачи менеджеру бот ждёт его столько часов. Ответил человек — бот
- * молчит `BOT_HUMAN_QUIET_HOURS`; не ответил — бот снова ведёт разговор сам.
- * Было 24 ч: клиент писал «Почему не отвечаешь?», а менеджер так и не пришёл.
- */
-export const BOT_HANDOFF_WAIT_HOURS = 1;
-/** Больше стольких ответов подряд бот не даёт — дальше человек. Принять заказ — это 5–8 реплик. */
-export const BOT_MAX_REPLIES = 20;
+/** Больше стольких ответов в сутки бот не даёт — защита от кольца с другим ботом. Продажа с заказом — 10–15 реплик. */
+export const BOT_MAX_REPLIES = 40;
 
 export interface BotSettings {
   enabled: boolean;
@@ -396,9 +393,6 @@ export function botSilenceReason(input: {
     return "рабочее время — отвечают менеджеры";
   }
   if (chat && hoursSince(chat.humanAt, now) < BOT_HUMAN_QUIET_HOURS) return "в чате пишет менеджер";
-  if (chat?.mode === BOT_MODES.HANDOFF && hoursSince(chat.handoffAt, now) < BOT_HANDOFF_WAIT_HOURS) {
-    return "передано менеджеру";
-  }
   if (chat && chat.botReplies >= BOT_MAX_REPLIES && hoursSince(chat.updatedAt, now) < BOT_HANDOFF_QUIET_HOURS) {
     return "бот уже ответил много раз";
   }
@@ -433,17 +427,20 @@ export function pushContext(
   return next;
 }
 
-/** Ответ модели → то, что бот сделает. Пустой или странный ответ — передать человеку. */
-export function botDecision(raw: unknown): { reply: string; handoff: boolean; reason: string; silent: boolean } {
+/**
+ * Ответ модели → то, что бот сделает. Менеджеру бот НЕ передаёт (владелец,
+ * 01.10.2026: «бот не должен переключать на менеджеров, он должен продать»):
+ * собранный заказ и тревога (жалоба, просят человека) только записываются для
+ * менеджера, а разговор бот ведёт дальше сам. Пустой или странный ответ — не
+ * отправлять ничего.
+ */
+export function botDecision(raw: unknown): { reply: string; order: string; alert: string; silent: boolean } {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  // Молчать можно, только если модель прямо так решила и не зовёт человека:
-  // автоответ магазина, «👍», «спасибо». Первая рассылка показала — бот трижды
-  // отвечал на «👍» и заводил разговор с автоответчиками магазинов.
-  if (o.silent === true && o.handoff !== true) return { reply: "", handoff: false, reason: "", silent: true };
-  const reply = typeof o.reply === "string" ? o.reply.trim().slice(0, 1500) : "";
-  const reason = typeof o.reason === "string" ? o.reason.trim().slice(0, 200) : "";
-  const handoff = o.handoff === true || !reply;
-  return { reply, handoff, reason: reason || (reply ? "" : "бот не нашёл ответа"), silent: false };
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const reply = text(o.reply, 1500);
+  // Молчать — автоответ магазина, «👍», разговор о доставке: модель так решила или ответа нет.
+  if (o.silent === true || !reply) return { reply: "", order: "", alert: "", silent: true };
+  return { reply, order: text(o.order, 300), alert: text(o.alert, 200), silent: false };
 }
 
 /**
@@ -460,5 +457,4 @@ export function isAckOnly(text: string): boolean {
   return /^(ок|окей|ok|спасибо|рахмет|благодарю|понял|поняла|ясно|спс|👍)( (спасибо|рахмет|большое))?$/.test(t);
 }
 
-export const BOT_HANDOFF_TEXT = "Спасибо! Передаю ваш вопрос менеджеру — он скоро ответит.";
 export const BOT_OPT_OUT_TEXT = "Хорошо, больше не будем присылать рассылки. Если понадобимся — просто напишите.";

@@ -12,8 +12,8 @@ dotenv.config();
  */
 import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "../src/lib/sheets";
 import { botChatWrite, listBotChats, settingsMap } from "../src/lib/repo/broadcasts";
-import { BOT_HANDOFF_TEXT, BOT_MODES, botSettingsFrom, botSilenceReason, pushContext } from "../src/lib/broadcast";
-import { botReply } from "../src/lib/botEngine";
+import { botSettingsFrom, botSilenceReason, pushContext } from "../src/lib/broadcast";
+import { botReply, noteForManager } from "../src/lib/botEngine";
 import { greenConfig, sendText } from "../src/lib/greenApi";
 
 const mask = (phone: string) => `…${String(phone).replace(/\D/g, "").slice(-4)}`;
@@ -54,22 +54,16 @@ async function main() {
       console.log(`${mask(chat.phone)}: бот решил промолчать`);
       continue;
     }
-    const text = d.handoff ? d.reply || BOT_HANDOFF_TEXT : d.reply;
+    const text = d.reply;
     console.log(`\n${mask(chat.phone)} · клиент: ${last.text.replace(/\s+/g, " ").slice(0, 120)}`);
-    console.log(`   БОТ → ${text.replace(/\s+/g, " ")}${d.handoff ? `  [менеджеру: ${d.reason || "—"}]` : ""}`);
+    console.log(`   БОТ → ${text.replace(/\s+/g, " ")}${d.order ? `  [заказ: ${d.order}]` : ""}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
     if (!send) continue;
     try {
       const id = await sendText(cfg!, chat.phone, text);
       chat.ourIds = [...chat.ourIds, id].slice(-20);
       chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
       chat.botReplies += 1;
-      if (d.handoff) {
-        chat.mode = BOT_MODES.HANDOFF;
-        chat.handoffAt = new Date().toISOString();
-        chat.handoffReason = d.reason || "нужен менеджер";
-      } else {
-        chat.mode = BOT_MODES.BOT;
-      }
+      noteForManager(chat, d);
       writes.push(botChatWrite(chat, found[0].rowNumber));
       console.log("   отправлено");
     } catch (err) {

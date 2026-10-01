@@ -63,7 +63,7 @@ async function main() {
     try {
       const d = await botReply(c, bot.instructions);
       if (d.silent) console.log("   БОТ → молчит (автоответ/нечего отвечать)");
-      else console.log(`   БОТ → ${d.reply.replace(/\s+/g, " ")}${d.handoff ? `  [менеджеру: ${d.reason || "—"}]` : ""}`);
+      else console.log(`   БОТ → ${d.reply.replace(/\s+/g, " ")}${d.order ? `  [заказ: ${d.order}]` : ""}${d.alert ? `  [внимание: ${d.alert}]` : ""}`);
     } catch (err) {
       console.log(`   БОТ → ошибка: ${err instanceof Error ? err.message : err}`);
     }

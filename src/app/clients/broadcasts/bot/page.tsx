@@ -42,7 +42,11 @@ export default async function BotPage() {
     const k = phoneKey(c.phone);
     if (k) owner.set(k, { href: `/clients/${c.clientId}`, name: c.name, manager: c.managerEmail });
   }
-  const handoffs = chats.filter((c) => c.mode === "handoff").sort((a, b) => (a.handoffAt < b.handoffAt ? 1 : -1));
+  // Бот менеджеру не передаёт — он оставляет записку: собранный заказ или тревогу (за 3 дня).
+  const since = Date.now() - 3 * 24 * 3600000;
+  const handoffs = chats
+    .filter((c) => c.mode !== "optout" && c.handoffReason && Date.parse(c.handoffAt || "") >= since)
+    .sort((a, b) => (a.handoffAt < b.handoffAt ? 1 : -1));
   const recent = chats
     .filter((c) => c.botReplies > 0 || c.mode === "optout")
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
@@ -86,7 +90,7 @@ export default async function BotPage() {
         <BotSettingsForm initial={settings} dailyLimit={dailyLimitOf(map.BroadcastDailyLimit)} />
       </Section>
 
-      <Section tone="warn" icon="alert" title={`Передано менеджеру: ${handoffs.length}`} flush>
+      <Section tone="warn" icon="alert" title={`Заказы и тревоги от бота: ${handoffs.length}`} flush>
         {handoffs.length === 0 ? (
           <p className="px-4 py-4 text-sm text-ink-muted">Сейчас ничего не ждёт.</p>
         ) : (
@@ -96,7 +100,7 @@ export default async function BotPage() {
                 <div>
                   {who(c.phone)} <span className="text-xs text-ink-muted">· {formatMoment(c.handoffAt)}</span>
                 </div>
-                {c.handoffReason && <div className="text-ink-secondary">Почему: {c.handoffReason}</div>}
+                {c.handoffReason && <div className="text-ink-secondary">{c.handoffReason}</div>}
                 {c.context.length > 0 && (
                   <div className="text-xs text-ink-muted line-clamp-2">
                     Последнее от клиента: {[...c.context].reverse().find((m) => m.role === "client")?.text ?? "—"}
