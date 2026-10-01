@@ -74,7 +74,7 @@ export default function BotSettingsForm({ initial, dailyLimit }: { initial: BotS
           value={s.instructions}
           onChange={(e) => set({ instructions: e.target.value })}
         />
-        <span className="text-xs text-ink-muted">Цены бот берёт из прайса CRM сам. Чего здесь нет — он не выдумывает, а передаёт менеджеру.</span>
+        <span className="text-xs text-ink-muted">Цены, наличие на складе и текст последней рассылки бот знает сам. Здесь — скидки, доставка, условия оплаты. Собранный заказ, жалобу и просьбу позвать человека он передаёт менеджеру; не ответил за час — бот продолжает сам.</span>
       </label>
 
       <label className="block space-y-1 text-sm">

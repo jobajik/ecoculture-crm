@@ -53,6 +53,7 @@ import {
   parseGreenStatus,
 } from "../src/lib/greenOut";
 import { parseGreenWebhook } from "../src/lib/whatsapp";
+import { lastBroadcastForBot, roughStems, stockForBot } from "../src/lib/botKnowledge";
 import {
   analysisIsStale,
   broadcastTranscript,
@@ -208,13 +209,16 @@ check("не из рассылки — молчит", ask(on, null), "не из �
 check("режим «всем» — отвечает и незнакомым", ask({ ...on, scope: "all" }, null), "");
 check("менеджер писал 2 ч назад — молчит", ask(on, chat({ humanAt: "2026-09-28T12:00:00Z" })), "в чате пишет менеджер");
 check("менеджер писал вчера — отвечает", ask(on, chat({ humanAt: "2026-09-27T01:00:00Z" })), "");
-check("передано менеджеру — молчит", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T10:00:00Z" })), "передано менеджеру");
+check("передано менеджеру 20 мин назад — молчит", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T13:40:00Z" })), "передано менеджеру");
+check("передано 4 ч назад, менеджер не ответил — бот снова отвечает", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T10:00:00Z" })), "");
+check("передано, менеджер ответил — молчит", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-28T10:00:00Z", humanAt: "2026-09-28T10:30:00Z" })), "в чате пишет менеджер");
 check("передано 2 дня назад — снова отвечает", ask(on, chat({ mode: "handoff", handoffAt: "2026-09-26T10:00:00Z" })), "");
 check("отписался — молчит", ask(on, chat({ mode: "optout" })), "клиент отписался");
 check("повтор уведомления — молчит", ask(on, chat({ lastInMessageId: "wz-9" })), "повтор уведомления");
 check("нерабочее время: днём молчит", ask({ ...on, hours: "offhours" }, chat({}), 11), "рабочее время — отвечают менеджеры");
 check("нерабочее время: вечером отвечает", ask({ ...on, hours: "offhours" }, chat({}), 21), "");
-check("много ответов подряд — молчит", ask(on, chat({ botReplies: 8, updatedAt: "2026-09-28T13:00:00Z" })), "бот уже ответил много раз");
+check("8 ответов — ещё отвечает (заказ — это много реплик)", ask(on, chat({ botReplies: 8, updatedAt: "2026-09-28T13:00:00Z" })), "");
+check("много ответов подряд — молчит", ask(on, chat({ botReplies: 20, updatedAt: "2026-09-28T13:00:00Z" })), "бот уже ответил много раз");
 check("настройки из таблицы", botSettingsFrom({ BotEnabled: "TRUE", BotScope: "all", BotHours: "offhours", BotWorkFrom: "8", BotWorkTo: "20" }), {
   enabled: true,
   scope: "all",
@@ -385,6 +389,50 @@ console.log("\nЦены в тексте рассылки");
   check("список вставки: цветка без цен нет", opts.some((o) => o.flower === "rose"), false);
   check("вставка — с новой строки", insertTag("Здравствуйте, {имя}! ", "{цены хризантема Altaj}"), "Здравствуйте, {имя}!\n{цены хризантема Altaj}\n");
   check("вставка после переноса строки — без лишней пустой", insertTag("Цены:\n", "{цены роза}"), "Цены:\n{цены роза}\n");
+}
+
+
+{
+  console.log("\nЧто бот знает сам: склад и последняя рассылка");
+  const settings = { shelfLifeDays: { rose: 7, chrysanthemum: 18, eustoma: 10 }, warningThreshold: 0.7 };
+  const now = new Date("2026-10-01T06:00:00Z");
+  const batch = (id: string, flowerType: string, variety: string, grade: string, qty: number, harvestDate: string) => ({
+    batchId: id, receivedAt: harvestDate, harvestDate, flowerType: flowerType as "rose", variety, grade,
+    quantityIn: qty, quantityRemaining: qty, location: "", receivedByEmail: "",
+  });
+  const stock = stockForBot(
+    [
+      batch("b1", "chrysanthemum", "Altaj", "Высшая", 1200, "2026-09-29"),
+      batch("b2", "chrysanthemum", "Altaj", "Высшая", 450, "2026-09-30"),
+      batch("b3", "rose", "Red Naomi", "60", 800, "2026-09-30"),
+      batch("b4", "rose", "Red Naomi", "60", 5000, "2026-09-10"),
+      batch("b5", "eustoma", "Mix", "Стандарт", 40, "2026-09-30"),
+      batch("b6", "rose", "Avalanche", "50", 0, "2026-09-30"),
+    ],
+    settings,
+    now
+  );
+  check("склад: просроченное и пустое не предлагаем, партии складываются", stock.split("\n"), [
+    "Роза · Red Naomi · 60 см — около 800 шт.",
+    "Хризантема · Altaj · Высшая — около 1 500 шт.",
+    "Эустома · Mix · Стандарт — мало, до 100 шт.",
+  ]);
+  check("округление вниз", [roughStems(99), roughStems(150), roughStems(1999), roughStems(12345)], [
+    "мало, до 100 шт.",
+    "около 100 шт.",
+    "около 1 500 шт.",
+    "около 12 000 шт.",
+  ]);
+  check(
+    "последняя рассылка — по дню запуска, без {имя}",
+    lastBroadcastForBot([
+      { title: "Акция хризантемы", text: "Здравствуйте, {имя}! Старое", startedAt: "2026-09-28T10:00:00Z", createdAt: "" },
+      { title: "Хризантема Алтай", text: "Здравствуйте, {имя}!\nАлтай высшая 580 ₸", startedAt: "2026-10-01T05:00:00Z", createdAt: "" },
+      { title: "Черновик", text: "не ушла", startedAt: "", createdAt: "2026-10-01T06:00:00Z" },
+    ]),
+    "«Хризантема Алтай», отправлена 2026-10-01:\nЗдравствуйте, !\nАлтай высшая 580 ₸"
+  );
+  check("рассылок не было — пусто", lastBroadcastForBot([]), "");
 }
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);

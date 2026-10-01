@@ -2,7 +2,10 @@ import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets
 import { localDayKey } from "./timezone";
 import { FLOWER_TYPE_LABELS, formatGrade, compareGrades } from "./constants";
 import { getCurrentPrices } from "./repo/prices";
-import { botChatWrite, emptyBotChat, listBotChats, settingsMap } from "./repo/broadcasts";
+import { listBatches } from "./repo/batches";
+import { getSettings } from "./repo/settings";
+import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, settingsMap } from "./repo/broadcasts";
+import { lastBroadcastForBot, stockForBot } from "./botKnowledge";
 import {
   BOT_HANDOFF_TEXT,
   BOT_MODES,
@@ -35,7 +38,10 @@ const BOT_SCHEMA = {
   required: ["reply", "handoff", "reason", "silent"],
   properties: {
     reply: { type: "string", description: "Ответ клиенту: коротко, вежливо, на его языке. Пусто — если сразу передаёшь человеку." },
-    handoff: { type: "boolean", description: "true — вопрос должен решать менеджер (заказ, наличие, сроки, жалоба, непонятно)." },
+    handoff: {
+      type: "boolean",
+      description: "true — дальше нужен человек: заказ собран целиком, жалоба, клиент просит человека, вопрос о его заявке, счёте или долге.",
+    },
     reason: { type: "string", description: "Почему передаёшь менеджеру — одной фразой. Пусто, если не передаёшь." },
     silent: {
       type: "boolean",
@@ -69,20 +75,59 @@ async function priceText(): Promise<string> {
   }
 }
 
-function systemPrompt(instructions: string, prices: string): string {
+/** Что сейчас есть на складе — для подсказки модели. Сбой — пусто, бот тогда о наличии не говорит. */
+async function stockText(): Promise<string> {
+  try {
+    const [batches, settings] = await Promise.all([listBatches(), getSettings()]);
+    return stockForBot(batches, settings, new Date());
+  } catch {
+    return "";
+  }
+}
+
+async function broadcastText(): Promise<string> {
+  try {
+    return lastBroadcastForBot(await listBroadcasts());
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Бот ведёт разговор САМ (владелец, 01.10.2026): цены, наличие, «пришлите
+ * каталог», скидки, доставка, приём заказа. Менеджер нужен, когда заказ собран,
+ * при жалобе, просьбе позвать человека и вопросах о уже сделанной заявке.
+ */
+function systemPrompt(instructions: string, prices: string, stock: string, broadcast: string): string {
   return [
-    "Ты — помощник оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома).",
-    "Продаём оптом салонам, магазинам и цветочникам. Отвечаешь клиентам в WhatsApp от имени компании.",
-    "Пиши коротко (1–3 предложения), вежливо, на языке клиента (русский или казахский), без разметки и без эмодзи.",
-    "Цены бери ТОЛЬКО из прайса ниже — это тенге за стебель. Если позиции нет в прайсе — не придумывай, передай менеджеру.",
-    "Не обещай наличие, сроки и стоимость доставки, скидки и условия оплаты. Хочет заказать, спрашивает о наличии,",
-    "доставке, счёте, жалуется или вопрос непонятен — handoff=true и напиши, что менеджер скоро ответит.",
+    "Ты — менеджер по продажам оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома).",
+    "Продаём оптом салонам, магазинам и цветочникам. Отвечаешь клиентам в WhatsApp от имени компании и ведёшь разговор САМ, до заказа.",
+    "Пиши коротко (1–4 предложения), вежливо, на языке клиента (русский или казахский), без разметки и без эмодзи.",
+    "Не говори, что ты бот, и не представляйся заново, если в переписке уже представился.",
+    "",
+    "Что ты делаешь сам, без менеджера:",
+    "- ЦЕНЫ: бери ТОЛЬКО из прайса ниже (тенге за стебель). Нет позиции в прайсе — скажи, что уточнишь цену, и передай менеджеру.",
+    "- НАЛИЧИЕ: отвечай по складу ниже — какие сорта и длины/категории есть сейчас. Точное число стеблей не называй;",
+    "  если клиент называет объём, скажи, есть ли такой (по складу), или предложи то, что есть. Нет позиции на складе — так и скажи и предложи похожее.",
+    "- КАТАЛОГ / ПРАЙС: файлы и фото ты отправить не можешь и не обещай их. Вместо этого сразу напиши цены текстом по тому цветку,",
+    "  который интересует клиента (не больше 10 строк), и спроси, что подобрать. Хочет «всё» — дай коротко по каждому цветку.",
+    "- СКИДКИ: только те, что есть в указаниях владельца. Иначе: цена в прайсе — оптовая, на крупный объём менеджер может",
+    "  обсудить условия при подтверждении заказа. Не передавай менеджеру только из-за вопроса о скидке.",
+    "- ДОСТАВКА И ОПЛАТА: по указаниям владельца; если там ничего нет — скажи, что менеджер подтвердит их вместе с заказом, и продолжай.",
+    "- ЗАКАЗ: собери по шагам цветок, сорт, длину или категорию, количество, дату и город доставки. Когда всё есть — повтори заказ",
+    "  одним сообщением с ценой за стебель из прайса и суммой, напиши, что менеджер подтвердит его и выставит счёт, и поставь handoff=true",
+    "  (в reason — заказ одной строкой).",
+    "",
+    "handoff=true ТОЛЬКО если: заказ собран целиком; жалоба или претензия; клиент просит живого человека; вопрос о его уже",
+    "оформленной заявке, счёте, оплате или долге. Во всех остальных случаях отвечай сам и handoff=false.",
+    "Если переписка уже передавалась менеджеру, а клиент пишет снова — отвечай сам, что можешь; если вопрос всё ещё к менеджеру,",
+    "скажи, что менеджер уже получил его и скоро свяжется.",
     "Никогда не проси номера карт, пароли и коды из SMS. Не спорь и не обсуждай посторонние темы.",
-    "Ты НЕ можешь отправлять файлы, каталог, фото и прайс-файл — не обещай их; нужен каталог — handoff=true.",
-    "Если сообщение — автоответ магазина или бота (приветствие-шаблон, «спасибо за обращение», часы работы, адрес,",
-    "условия доставки) — silent=true: с автоответчиком не разговаривают. Не представляйся заново, если в переписке уже представился.",
-    instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены):\n${instructions}` : "",
-    prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — о ценах отвечает менеджер (handoff=true).",
+    "Если сообщение — автоответ магазина или бота (приветствие-шаблон, «спасибо за обращение», часы работы, адрес) — silent=true.",
+    instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены и наличие):\n${instructions}` : "",
+    broadcast ? `\nПоследняя рассылка клиентам (на неё чаще всего и отвечают):\n${broadcast}` : "",
+    prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — цену уточнит менеджер (handoff=true).",
+    stock ? `\nСклад сейчас (можно продать):\n${stock}` : "\nДанных склада сейчас нет — о наличии скажи, что уточнишь, и продолжай разговор.",
   ].join("\n");
 }
 
@@ -165,6 +210,23 @@ async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<bool
   }
 }
 
+/**
+ * Что бот ответил бы на последнее сообщение клиента — без отправки и записи.
+ * Им же пользуется `scripts/diag-bot-reply.ts`, чтобы посмотреть ответы на живых чатах.
+ */
+export async function botReply(chat: BotChat, instructions: string): Promise<ReturnType<typeof botDecision>> {
+  // Прайс, склад и рассылка — одним запросом и только когда бот правда отвечает (грабли 1.17).
+  await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.BROADCASTS, SHEET_TABS.PRICE_HISTORY]).catch(() => undefined);
+  const { data } = await chatJson(
+    systemPrompt(instructions, ...(await Promise.all([priceText(), stockText(), broadcastText()]))),
+    `Переписка (последние сообщения):\n${transcript(chat)}\n\nОтветь на последнее сообщение клиента.`,
+    "bot_reply",
+    BOT_SCHEMA,
+    { fast: true }
+  );
+  return botDecision(data);
+}
+
 async function answer(chat: BotChat, last: BotIncoming, instructions: string): Promise<void> {
   const now = new Date().toISOString();
   if (!openAiConfigured()) {
@@ -175,14 +237,7 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
   }
   let decision: ReturnType<typeof botDecision>;
   try {
-    const { data } = await chatJson(
-      systemPrompt(instructions, await priceText()),
-      `Переписка (последние сообщения):\n${transcript(chat)}\n\nОтветь на последнее сообщение клиента.`,
-      "bot_reply",
-      BOT_SCHEMA,
-      { fast: true }
-    );
-    decision = botDecision(data);
+    decision = await botReply(chat, instructions);
   } catch (err) {
     console.error("whatsapp bot ai:", err instanceof Error ? err.message : err);
     chat.mode = BOT_MODES.HANDOFF;

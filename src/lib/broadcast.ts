@@ -332,10 +332,16 @@ export const BOT_MODES = { BOT: "bot", HANDOFF: "handoff", OPT_OUT: "optout" } a
 
 /** После сообщения живого человека бот молчит в этом чате столько часов. */
 export const BOT_HUMAN_QUIET_HOURS = 12;
-/** После передачи менеджеру бот молчит столько часов. */
+/** Окно для предела ответов: столько часов после последнего сообщения бота. */
 export const BOT_HANDOFF_QUIET_HOURS = 24;
-/** Больше стольких ответов подряд бот не даёт — дальше человек. */
-export const BOT_MAX_REPLIES = 8;
+/**
+ * После передачи менеджеру бот ждёт его столько часов. Ответил человек — бот
+ * молчит `BOT_HUMAN_QUIET_HOURS`; не ответил — бот снова ведёт разговор сам.
+ * Было 24 ч: клиент писал «Почему не отвечаешь?», а менеджер так и не пришёл.
+ */
+export const BOT_HANDOFF_WAIT_HOURS = 1;
+/** Больше стольких ответов подряд бот не даёт — дальше человек. Принять заказ — это 5–8 реплик. */
+export const BOT_MAX_REPLIES = 20;
 
 export interface BotSettings {
   enabled: boolean;
@@ -390,7 +396,7 @@ export function botSilenceReason(input: {
     return "рабочее время — отвечают менеджеры";
   }
   if (chat && hoursSince(chat.humanAt, now) < BOT_HUMAN_QUIET_HOURS) return "в чате пишет менеджер";
-  if (chat?.mode === BOT_MODES.HANDOFF && hoursSince(chat.handoffAt, now) < BOT_HANDOFF_QUIET_HOURS) {
+  if (chat?.mode === BOT_MODES.HANDOFF && hoursSince(chat.handoffAt, now) < BOT_HANDOFF_WAIT_HOURS) {
     return "передано менеджеру";
   }
   if (chat && chat.botReplies >= BOT_MAX_REPLIES && hoursSince(chat.updatedAt, now) < BOT_HANDOFF_QUIET_HOURS) {
