@@ -11,20 +11,28 @@
 
 /**
  * Номер к виду «+7XXXXXXXXXX». «8 701 555 20 30», «+7 (701) 555-20-30»,
- * «7015552030» → «+77015552030». Не похоже на номер с +7 (иностранный,
- * неполный, «нет») — без изменений, только по краям обрезаны пробелы.
+ * «7015552030» → «+77015552030». Иностранный («+996 508 005 999») — тоже без
+ * пробелов. Не похоже на номер (неполный, «нет») — как есть, без пробелов по краям.
  */
 export function formatPhone(raw: string | null | undefined): string {
   const text = String(raw ?? "").trim();
   const d = text.replace(/\D/g, "");
   if (d.length === 11 && (d[0] === "7" || d[0] === "8")) return `+7${d.slice(1)}`;
   if (d.length === 10 && !text.startsWith("+")) return `+7${d}`;
+  // Иностранный номер с кодом страны («+996 508 005 999», Киргизия) — тоже без пробелов.
+  if (isForeign(text) && d.length >= 11 && d.length <= 15) return `+${d}`;
   return text;
 }
 
-/** Номер полный: +7 и десять цифр. */
+/** Номер другой страны: «+» и код не 7. */
+function isForeign(text: string): boolean {
+  return /^\+\s*[0-69]/.test(text.trim());
+}
+
+/** Номер полный: +7 и десять цифр (или иностранный: + и 11–15 цифр). */
 export function phoneComplete(value: string | null | undefined): boolean {
-  return /^\+7\d{10}$/.test(String(value ?? ""));
+  const v = String(value ?? "");
+  return /^\+7\d{10}$/.test(v) || (isForeign(v) && /^\+\d{11,15}$/.test(v));
 }
 
 /**
@@ -34,7 +42,11 @@ export function phoneComplete(value: string | null | undefined): boolean {
  * разбирается так же.
  */
 export function maskPhoneInput(next: string, prev = ""): string {
-  let d = String(next ?? "").replace(/\D/g, "");
+  const raw = String(next ?? "").trim();
+  // Иностранный номер набирают с «+» и своим кодом (стёрли «+7», набрали «+996…»).
+  if (raw === "+") return "+";
+  if (isForeign(raw)) return `+${raw.replace(/\D/g, "").slice(0, 15)}`;
+  let d = raw.replace(/\D/g, "");
   if (!d) return "";
   const pasted = d.length - String(prev ?? "").replace(/\D/g, "").length > 1;
   // Вставили «+7 701 …» в поле, где уже стояло «+7», — лишнее спереди.

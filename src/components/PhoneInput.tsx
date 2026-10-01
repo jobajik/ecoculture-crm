@@ -43,7 +43,7 @@ export function PhoneInput({
         }}
         onBlur={(e) => {
           setFocused(false);
-          if (value === "+7") onChange("");
+          if (value === "+7" || value === "+") onChange("");
           rest.onBlur?.(e);
         }}
         onChange={(e) => onChange(maskPhoneInput(e.target.value, value))}
