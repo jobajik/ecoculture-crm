@@ -8,7 +8,7 @@ import { ROLES } from "@/lib/constants";
 import { saveSettings } from "@/lib/repo/settings";
 import { waPhone } from "@/lib/broadcast";
 import { DIGEST_SETTING, digestPhones } from "@/lib/morningDigest";
-import { buildMorningDigest, sendMorningDigest } from "@/lib/morningDigestRunner";
+import { buildMorningDigest, digestResultText, recordDigestRun, sendMorningDigest } from "@/lib/morningDigestRunner";
 
 /** Утренняя сводка в WhatsApp — настраивает только администратор. */
 async function requireAdmin() {
@@ -35,6 +35,8 @@ async function previewDigestActionInner() {
 async function sendDigestNowActionInner() {
   await requireAdmin();
   const r = await sendMorningDigest();
+  await recordDigestRun("кнопка", digestResultText(r));
+  revalidatePath("/admin");
   if (r.sent.length === 0) throw new Error(r.note || "Не отправилось");
   return { sent: r.sent.length, note: r.note };
 }

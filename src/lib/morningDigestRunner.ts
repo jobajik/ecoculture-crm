@@ -9,6 +9,7 @@ import { listPointDays } from "./repo/point";
 import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
 import { settingsMap } from "./repo/broadcasts";
+import { saveSettings } from "./repo/settings";
 import { listUsers } from "./repo/users";
 import { computeBatchStorageInfo } from "./shelfLife";
 import { homeFocus } from "./homeFocus";
@@ -108,4 +109,27 @@ export async function sendMorningDigest(phonesOverride?: string[]): Promise<{ se
     }
   }
   return { sent, failed, note: failed.length ? "не на все номера ушло" : "" };
+}
+
+/** Настройка с последним запуском сводки: «когда · откуда · что вышло». */
+export const DIGEST_LAST_RUN = "DigestLastRun";
+
+/**
+ * Записать, что сводка запускалась, — иначе на вопрос «почему не пришла в 9:00»
+ * ответить нечем: расписание Vercel следов в таблице не оставляет (01.10 так и
+ * было). Запись не должна ронять отправку.
+ */
+export async function recordDigestRun(source: "расписание" | "вручную" | "кнопка", result: string): Promise<void> {
+  try {
+    const when = new Date().toLocaleString("ru-RU", { timeZone: "Asia/Almaty" });
+    await saveSettings({ [DIGEST_LAST_RUN]: `${when} · ${source} · ${result}`.slice(0, 300) });
+  } catch (err) {
+    console.error("digest last run:", err instanceof Error ? err.message : err);
+  }
+}
+
+export function digestResultText(r: { sent: string[]; failed: string[]; note: string }): string {
+  if (r.sent.length && !r.failed.length) return `ушло на ${r.sent.length} ном.`;
+  if (r.sent.length) return `ушло на ${r.sent.length}, не ушло на ${r.failed.length}`;
+  return `не ушло: ${r.note || "ошибка"}`;
 }

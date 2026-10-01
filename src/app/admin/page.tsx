@@ -11,6 +11,7 @@ import DigestForm from "@/components/DigestForm";
 import Hint from "@/components/Hint";
 import { settingsMap } from "@/lib/repo/broadcasts";
 import { DIGEST_SETTING } from "@/lib/morningDigest";
+import { DIGEST_LAST_RUN } from "@/lib/morningDigestRunner";
 import {
   FARM_ORDER,
   FLOWER_TYPE_LABELS,
@@ -181,6 +182,9 @@ export default async function AdminPage() {
         className="!mb-0"
       >
         <DigestForm initial={map[DIGEST_SETTING] ?? ""} />
+        <p className="text-xs text-ink-muted mt-3">
+          Последняя отправка: {map[DIGEST_LAST_RUN] || "ещё не было"}
+        </p>
       </Section>
     </div>
   );
