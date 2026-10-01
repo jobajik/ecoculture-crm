@@ -17,6 +17,8 @@ export const NUDGE_GAPS_HOURS = [1, 3, 20];
 /** Дожимаем только днём по Алматы: [с, до). */
 export const NUDGE_FROM_HOUR = 9;
 export const NUDGE_TO_HOUR = 20;
+/** Менеджер писал в чате за столько дней — чат его, бот не дожимает. */
+export const NUDGE_MANAGER_CHAT_DAYS = 14;
 /** Разговор, где клиент молчит дольше, — уже не разговор: не дожимаем. */
 export const NUDGE_MAX_SILENCE_DAYS = 3;
 
@@ -36,6 +38,10 @@ export function nudgeDue(input: { settings: BotSettings; chat: BotChat; now: Dat
   if (settings.scope === "broadcast" && chat.ourIds.length === 0) return 0;
   if (hour < NUDGE_FROM_HOUR || hour >= NUDGE_TO_HOUR) return 0;
   if (hoursSince(chat.humanAt, now) < BOT_HUMAN_QUIET_HOURS) return 0;
+  // Менеджер сам писал в этом чате за две недели — это его клиент и его разговор (доставка, «как в
+  // прошлый раз»): бот туда с «пробной партией» не лезет. Первая проверка на живых чатах показала
+  // именно это — «Ок», «Как в прошлый раз с доставкой в ГРЭС», «Я у Ильяса беру».
+  if (hoursSince(chat.humanAt, now) < NUDGE_MANAGER_CHAT_DAYS * 24) return 0;
   const nudge = chat.nudge ?? { count: 0, at: "", done: false };
   if (nudge.done || nudge.count >= NUDGE_GAPS_HOURS.length) return 0;
   const ctx = chat.context;
@@ -57,7 +63,9 @@ export function nudgeTask(attempt: number, silentHours: number): string {
     "заканчивается на складе, доставка завтра, пробная партия 50 шт.), конкретное предложение с ценой и простой вопрос,",
     "на который легко ответить «да». Не повторяй прошлые сообщения, не упрекай за молчание, не дави.",
     attempt >= NUDGE_GAPS_HOURS.length ? "Это последнее касание: мягко — «если понадобится, просто напишите»." : "",
-    "Если клиент отказался, заказ уже оформлен и оплачен, разговор служебный (доставка, курьер) или писать неуместно — silent=true.",
+    "Назови не больше двух позиций, и цену каждой бери ТОЛЬКО из прайса: найди строку сорта и нужную длину/категорию в ней.",
+    "silent=true, если: клиент отказался или сказал, что берёт у нашего менеджера (Ильяс, Эмиль, Бауыржан и др.) или у",
+    "другого поставщика; он уже заказал и ждёт доставку; заказ оплачен; разговор служебный (доставка, курьер); писать неуместно.",
     "Оформлять заказ сейчас нельзя: order.confirmed=false, kaspiPhone пусто.",
   ]
     .filter(Boolean)

@@ -206,6 +206,8 @@ async function main() {
   check("рано утром — нет", due(talk(), 8), 0);
   check("отписался — нет", due(talk({ mode: "optout" })), 0);
   check("менеджер писал 2 ч назад — нет", due(talk({ humanAt: t(-2) })), 0);
+  check("менеджер писал в чате 5 дней назад — чат его, нет", due(talk({ humanAt: t(-120) })), 0);
+  check("менеджер писал месяц назад — можно", due(talk({ humanAt: t(-24 * 30) })), 1);
   check("бот выключен — нет", nudgeDue({ settings: { ...on, enabled: false }, chat: talk(), now: nowN, hour: 11 }), 0);
   check("модель закрыла дожим — нет", due(talk({ nudge: { count: 1, at: t(-5), done: true } })), 0);
   check("после первого касания 2 ч — рано для второго", due(talk({ nudge: { count: 1, at: t(-2), done: false } })), 0);
