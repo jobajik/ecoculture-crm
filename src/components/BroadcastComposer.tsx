@@ -8,7 +8,7 @@ import { unwrapValue } from "@/lib/actionResult";
 import { OPT_OUT_LINE, greetingName, personalize, type AudienceRow } from "@/lib/broadcast";
 import { LEAD_STAGES } from "@/lib/leads";
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
-import { fillPrices, priceBlock } from "@/lib/broadcastPrices";
+import { fillPrices, insertTag, priceTagOptions } from "@/lib/broadcastPrices";
 
 /**
  * Новая рассылка: кому (клиенты, лиды, фильтры, галочки), что (текст с {имя},
@@ -36,12 +36,7 @@ const BOUGHT_FILTERS = [
   { key: "eustoma", label: "брали эустому" },
 ];
 
-/** Метки цен в тексте — по цветку, именительный падеж для метки. */
-const PRICE_TAGS: { flower: string; tag: string }[] = [
-  { flower: "chrysanthemum", tag: "{цены хризантема}" },
-  { flower: "rose", tag: "{цены роза}" },
-  { flower: "eustoma", tag: "{цены эустома}" },
-];
+const FLOWER_ORDER = ["chrysanthemum", "rose", "eustoma"];
 
 const PART_CHARS = 600_000;
 
@@ -108,6 +103,7 @@ export default function BroadcastComposer({
   const [clientType, setClientType] = useState("");
   const [orders, setOrders] = useState("");
   const [bought, setBought] = useState("");
+  const tagOptions = useMemo(() => priceTagOptions(prices), [prices]);
   const [stage, setStage] = useState("");
   const [campaign, setCampaign] = useState("");
   const [segment, setSegment] = useState("");
@@ -415,12 +411,30 @@ export default function BroadcastComposer({
               <span className="text-ink-muted">подставится имя клиента; нет имени — слово уберётся</span>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm">
-              {PRICE_TAGS.filter((p) => priceBlock(p.flower, prices)).map((p) => (
-                <button key={p.tag} type="button" className="btn-secondary !py-1" onClick={() => setText((t) => `${t}${p.tag}`)}>
-                  + цены: {FLOWER_TYPE_LABELS[p.flower].toLowerCase()}
-                </button>
-              ))}
-              <span className="text-ink-muted">встанет действующий прайс на день создания рассылки; один сорт — допишите его в метку: {"{цены хризантема Altaj}"}</span>
+              {tagOptions.length > 0 && (
+                <select
+                  className="input !w-auto !py-1.5 text-sm"
+                  value=""
+                  onChange={(e) => {
+                    const tag = e.target.value;
+                    if (tag) setText((t) => insertTag(t, tag));
+                  }}
+                >
+                  <option value="">+ Вставить цены из прайса…</option>
+                  {FLOWER_ORDER.filter((f) => tagOptions.some((o) => o.flower === f)).map((f) => (
+                    <optgroup key={f} label={FLOWER_TYPE_LABELS[f]}>
+                      {tagOptions
+                        .filter((o) => o.flower === f)
+                        .map((o) => (
+                          <option key={o.tag} value={o.tag}>
+                            {o.label}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
+              )}
+              <span className="text-ink-muted">цены встанут из прайса на день создания рассылки</span>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={withOptOut} onChange={(e) => setWithOptOut(e.target.checked)} />

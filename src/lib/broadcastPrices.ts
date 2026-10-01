@@ -137,3 +137,37 @@ export function priceTagsRefusal(text: string, prices: Record<string, number>): 
   }
   return "";
 }
+
+const TAG_WORD: Record<string, string> = { chrysanthemum: "хризантема", rose: "роза", eustoma: "эустома" };
+
+/**
+ * Что можно вставить в текст — для выпадающего списка: на каждый цветок с ценами
+ * «все сорта» и каждый сорт со своей ценой. Владелец нажимал кнопку цветка и
+ * получал весь прайс, хотя хотел один сорт: дописывать сорт в метку руками никто
+ * не станет, поэтому сорт выбирается из списка.
+ */
+export function priceTagOptions(prices: Record<string, number>): { flower: string; label: string; tag: string }[] {
+  const out: { flower: string; label: string; tag: string }[] = [];
+  for (const flower of ["chrysanthemum", "rose", "eustoma"]) {
+    if (!priceBlock(flower, prices)) continue;
+    const name = FLOWER_TYPE_LABELS[flower] ?? flower;
+    out.push({ flower, label: `${name} — все сорта`, tag: `{цены ${TAG_WORD[flower]}}` });
+    const varieties = new Set<string>();
+    for (const [key, price] of Object.entries(prices)) {
+      const [f, v] = key.split("|");
+      if (f === flower && v && price > 0) varieties.add(v);
+    }
+    for (const v of Array.from(varieties).sort((a, b) => a.localeCompare(b, "ru"))) {
+      out.push({ flower, label: `${name} — ${v}`, tag: `{цены ${TAG_WORD[flower]} ${v}}` });
+    }
+  }
+  return out;
+}
+
+/** Вставка метки отдельной строкой: «Здравствуйте, Абу! • Высшая…» в одну строку читается плохо. */
+export function insertTag(text: string, tag: string): string {
+  const t = String(text || "").replace(/[ \t]+$/, "");
+  if (!t) return `${tag}\n`;
+  return `${t}${t.endsWith("\n") ? "" : "\n"}${tag}\n`;
+}
+

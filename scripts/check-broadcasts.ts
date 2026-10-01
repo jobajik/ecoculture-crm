@@ -15,7 +15,7 @@
  */
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret-for-checks";
 
-import { fillPrices, priceBlock, priceTagFlowers, priceTagsRefusal } from "../src/lib/broadcastPrices";
+import { fillPrices, insertTag, priceBlock, priceTagFlowers, priceTagOptions, priceTagsRefusal } from "../src/lib/broadcastPrices";
 import {
   BOT_HANDOFF_TEXT,
   OPT_OUT_LINE,
@@ -380,6 +380,11 @@ console.log("\nЦены в тексте рассылки");
   check("сорт без своей цены берёт общую", fillPrices("{цены эустома Alissa}", { ...eu, "eustoma|Alissa|50": 170 }).replace(/[\u00a0\u202f]/g, " "), "• Стандарт — 400 ₸\n• 50 см — 170 ₸");
   check("отказ: сорта нет в прайсе", priceTagsRefusal("{цены хризантема Алтай}", pr), "В прайсе нет цен на сорт «Алтай» — проверьте написание, как в прайсе");
   check("с сортом — без отказа", priceTagsRefusal("{цены хризантема Altaj}", pr), "");
+  const opts = priceTagOptions(pr);
+  check("список вставки: сначала весь цветок, Altaj есть", [opts[0].tag, opts.some((o) => o.tag === "{цены хризантема Altaj}")], ["{цены хризантема}", true]);
+  check("список вставки: цветка без цен нет", opts.some((o) => o.flower === "rose"), false);
+  check("вставка — с новой строки", insertTag("Здравствуйте, {имя}! ", "{цены хризантема Altaj}"), "Здравствуйте, {имя}!\n{цены хризантема Altaj}\n");
+  check("вставка после переноса строки — без лишней пустой", insertTag("Цены:\n", "{цены роза}"), "Цены:\n{цены роза}\n");
 }
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
