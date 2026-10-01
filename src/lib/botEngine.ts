@@ -10,6 +10,7 @@ import { botClientContext, placeBotOrder, reissueBotInvoices } from "./botOrderR
 import {
   BOT_MODES,
   BOT_OPT_OUT_TEXT,
+  EMPTY_NUDGE,
   botDecision,
   botSettingsFrom,
   botSilenceReason,
@@ -204,6 +205,8 @@ export async function runBot(all: BotIncoming[]): Promise<boolean> {
       const last = incoming[incoming.length - 1];
       if (last) {
         for (const m of incoming) chat.context = pushContext(chat.context, { role: "client", text: m.text || `[${m.type}]`, at: m.at });
+        // Клиент ответил — дожим этого разговора начинается заново.
+        chat.nudge = { ...EMPTY_NUDGE };
         if (last.senderName) chat.name = last.senderName;
         changed = true;
         const now = new Date();
@@ -245,7 +248,12 @@ async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<bool
  * Что бот ответил бы на последнее сообщение клиента — решение модели, без
  * отправки и записи. Им же пользуется `scripts/diag-bot-reply.ts`.
  */
-export async function botReply(chat: BotChat, instructions: string): Promise<ReturnType<typeof botDecision>> {
+export async function botReply(
+  chat: BotChat,
+  instructions: string,
+  /** Своё задание вместо «ответь на последнее сообщение» — дожим молчащего (`botNudge.ts`). */
+  task = "Ответь на последнее сообщение клиента."
+): Promise<ReturnType<typeof botDecision>> {
   // Прайс, склад, рассылка и заказы — одним запросом и только когда бот правда отвечает (грабли 1.17).
   await prefetchTables([
     SHEET_TABS.BATCHES,
@@ -266,7 +274,7 @@ export async function botReply(chat: BotChat, instructions: string): Promise<Ret
   ]);
   const { data } = await chatJson(
     systemPrompt({ instructions, prices, stock, broadcast, client, today: localDayKey() }),
-    `Переписка (последние сообщения):\n${transcript(chat)}\n\nОтветь на последнее сообщение клиента.`,
+    `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
     "bot_reply",
     BOT_SCHEMA,
     { fast: true }

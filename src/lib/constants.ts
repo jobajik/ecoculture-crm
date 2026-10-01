@@ -510,6 +510,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Context",
     "Name",
     "BotReplies",
+    // Дожим молчащего клиента (botNudge.ts): {"count","at","done"} JSON. Последней — грабли 1.1.
+    "Nudge",
   ],
   [SHEET_TABS.LEAD_ANALYSES]: [
     "AnalysisID",

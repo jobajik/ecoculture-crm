@@ -367,7 +367,17 @@ export interface BotChat {
   context: { role: "client" | "us"; text: string; at: string }[];
   name: string;
   botReplies: number;
+  /** Дожим молчащего клиента: сколько раз, когда последний, закрыт ли (`botNudge.ts`). */
+  nudge: BotNudgeState;
 }
+
+export interface BotNudgeState {
+  count: number;
+  at: string;
+  done: boolean;
+}
+
+export const EMPTY_NUDGE: BotNudgeState = { count: 0, at: "", done: false };
 
 function hoursSince(iso: string, now: Date): number {
   const t = Date.parse(iso || "");

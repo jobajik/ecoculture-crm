@@ -11,6 +11,50 @@
     {
       "path": "/api/digest",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=10",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=11",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=12",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=13",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=14",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=15",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=16",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=17",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=18",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=19",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/bot/followup?h=20",
+      "schedule": "0 15 * * *"
     }
   ]
 }

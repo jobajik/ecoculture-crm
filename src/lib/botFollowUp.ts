@@ -1,11 +1,14 @@
 import { commitAtomic, prefetchTables, SHEET_TABS } from "./sheets";
 import { getOrderById, listOrdersWithItems } from "./repo/orders";
 import { listKaspiInvoices } from "./repo/kaspiInvoices";
-import { botChatWrite, emptyBotChat, listBotChats } from "./repo/broadcasts";
+import { botChatWrite, emptyBotChat, listBotChats, settingsMap } from "./repo/broadcasts";
 import { appendDebtReminder, listDebtReminders } from "./repo/debtReminders";
 import { greenConfig, sendText } from "./greenApi";
 import { phoneKey } from "./leads";
-import { pushContext } from "./broadcast";
+import { botSettingsFrom, pushContext } from "./broadcast";
+import { nudgeDue, nudgeTask } from "./botNudge";
+import { botReply } from "./botEngine";
+import { openAiConfigured } from "./openai";
 import { orderCode } from "./paymentStage";
 import { ORDER_STATUSES } from "./constants";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText } from "./kaspiInvoice";
@@ -127,4 +130,64 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
     errors += 1;
   }
   return { sent, errors };
+}
+
+const almatyHour = (d: Date) =>
+  Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Almaty", hour: "numeric", hour12: false }).format(d)) % 24;
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Дожим молчащих клиентов (`botNudge.ts`): раз в час расписание зовёт
+ * `/api/bot/followup`, бот пишет тем, кому пора, — не больше `limit` за раз и
+ * с паузой между сообщениями (WhatsApp не любит очередь от «робота»).
+ */
+export async function runBotNudges(options: { limit?: number; budgetMs?: number } = {}): Promise<{ sent: number; closed: number; errors: number }> {
+  const limit = options.limit ?? 8;
+  const started = Date.now();
+  const budget = options.budgetMs ?? 40000;
+  let sent = 0;
+  let closed = 0;
+  let errors = 0;
+  try {
+    if (!openAiConfigured() || !greenConfig()) return { sent, closed, errors };
+    await prefetchTables([SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]);
+    const [chats, map] = await Promise.all([listBotChats(true), settingsMap()]);
+    const settings = botSettingsFrom(map);
+    const now = new Date();
+    const hour = almatyHour(now);
+    const due = chats
+      .map((chat) => ({ chat, attempt: nudgeDue({ settings, chat, now, hour }) }))
+      .filter((x) => x.attempt > 0)
+      .sort((a, b) => a.attempt - b.attempt)
+      .slice(0, limit);
+    for (const { chat: found, attempt } of due) {
+      if (Date.now() - started > budget) break;
+      const chat = { ...found, context: [...found.context], ourIds: [...found.ourIds], nudge: { ...found.nudge } };
+      try {
+        const last = chat.context[chat.context.length - 1];
+        const silentHours = (now.getTime() - Date.parse(last?.at || "")) / 3600000;
+        const d = await botReply(chat, settings.instructions, nudgeTask(attempt, Number.isFinite(silentHours) ? silentHours : 1));
+        if (d.silent || !d.reply) {
+          // Модель решила, что дожимать нечего: больше этот разговор не трогаем, пока клиент не напишет.
+          chat.nudge = { ...chat.nudge, done: true };
+          closed += 1;
+        } else {
+          if (sent > 0) await pause(3000 + Math.floor(Math.random() * 4000));
+          const id = await sendText(greenConfig()!, chat.phone, d.reply);
+          chat.ourIds = [...chat.ourIds, id].slice(-20);
+          chat.context = pushContext(chat.context, { role: "us", text: d.reply, at: new Date().toISOString() });
+          chat.nudge = { count: attempt, at: new Date().toISOString(), done: false };
+          sent += 1;
+        }
+        await commitAtomic([botChatWrite(chat, found.rowNumber)]);
+      } catch (err) {
+        console.error("bot nudge:", err instanceof Error ? err.message : err);
+        errors += 1;
+      }
+    }
+  } catch (err) {
+    console.error("bot nudges:", err instanceof Error ? err.message : err);
+    errors += 1;
+  }
+  return { sent, closed, errors };
 }

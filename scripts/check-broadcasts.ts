@@ -198,6 +198,7 @@ const chat = (patch: Partial<BotChat>): BotChat => ({
   context: [],
   name: "",
   botReplies: 0,
+  nudge: { count: 0, at: "", done: false },
   ...patch,
 });
 const t0 = new Date("2026-09-28T14:00:00Z");

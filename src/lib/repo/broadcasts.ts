@@ -2,7 +2,7 @@ import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import { phoneKey } from "../leads";
-import type { BotChat, RecipientRow, WaStatusRow } from "../broadcast";
+import { EMPTY_NUDGE, type BotChat, type RecipientRow, type WaStatusRow } from "../broadcast";
 import { parseBroadcastAnalysis, type BroadcastAnalysis } from "../broadcastAnalysis";
 
 /**
@@ -258,7 +258,17 @@ function toBotChat(r: Record<string, string>): BotChat {
     context,
     name: r.Name || "",
     botReplies: Number(r.BotReplies) || 0,
+    nudge: parseNudge(r.Nudge),
   };
+}
+
+function parseNudge(raw: string | undefined): BotChat["nudge"] {
+  try {
+    const o = JSON.parse(raw || "{}");
+    return { count: Math.max(0, Number(o.count) || 0), at: typeof o.at === "string" ? o.at : "", done: o.done === true };
+  } catch {
+    return { ...EMPTY_NUDGE };
+  }
 }
 
 export async function listBotChats(fresh = false): Promise<(BotChat & { rowNumber: number })[]> {
@@ -285,6 +295,7 @@ export function botChatRecord(chat: BotChat): Record<string, unknown> {
     Context: JSON.stringify(chat.context),
     Name: chat.name,
     BotReplies: chat.botReplies,
+    Nudge: JSON.stringify(chat.nudge ?? EMPTY_NUDGE),
   };
 }
 
@@ -308,6 +319,7 @@ export function emptyBotChat(phone: string): BotChat {
     context: [],
     name: "",
     botReplies: 0,
+    nudge: { ...EMPTY_NUDGE },
   };
 }
 
