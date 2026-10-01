@@ -5,6 +5,7 @@ import type { FinancePeriod } from "@/lib/finance";
 import Leaderboard from "@/components/Leaderboard";
 import PageHeader from "@/components/PageHeader";
 import { salesTabsFor } from "./tabs";
+import { localDayKey } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -26,7 +27,7 @@ export default async function SalesPage({
     <div className="space-y-5">
       <PageHeader area="sales" title="Рейтинг менеджеров" icon="trophy" tabs={salesTabsFor(role)} />
 
-      <Leaderboard snapshot={snapshot} currentEmail={session?.user?.email?.toLowerCase() ?? ""} />
+      <Leaderboard snapshot={snapshot} currentEmail={session?.user?.email?.toLowerCase() ?? ""} today={localDayKey()} />
     </div>
   );
 }

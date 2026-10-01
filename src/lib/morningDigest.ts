@@ -238,16 +238,19 @@ export function digestParts(input: DigestInput): string[] {
   }
   const first = lines.splice(0, lines.length).join("\n");
   if (input.stock && input.stock.length) {
+    // Каждый цветок — своим абзацем (владелец, 01.10: одной строкой на компанию
+    // «роза …, из них …; эустома …» читалось тяжело).
     lines.push("*Склад сейчас:*");
     for (const farm of FARM_ORDER) {
       const rows = input.stock.filter((x) => getFarmFor(x.flowerType) === farm && x.stems > 0);
       if (!rows.length) continue;
-      const parts = rows.map(
-        (x) =>
-          `${(FLOWER_TYPE_LABELS[x.flowerType] ?? x.flowerType).toLowerCase()} ${num(x.stems)} шт.` +
-          (x.expired > 0 ? ` (дольше срока ${num(x.expired)})` : "")
-      );
-      lines.push(`• ${FARM_LABELS[farm] ?? farm}: ${parts.join(", ")}`);
+      lines.push("");
+      lines.push(`*${FARM_LABELS[farm] ?? farm}*`);
+      rows.forEach((x, i) => {
+        if (i > 0) lines.push("");
+        lines.push(`${FLOWER_TYPE_LABELS[x.flowerType] ?? x.flowerType}: *${num(x.stems)} шт.*`);
+        if (x.expired > 0) lines.push(`дольше срока: ${num(x.expired)} шт.`);
+      });
     }
   }
   lines.push("");

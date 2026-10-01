@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot, type FinancePeriod } from "@/lib/finance";
 import { farmLabel } from "@/lib/constants";
+import { localDayKey } from "@/lib/timezone";
 import FinanceReport from "@/components/FinanceReport";
 import PageHeader from "@/components/PageHeader";
 import { financeTabsFor } from "../tabs";
@@ -30,7 +31,7 @@ export default async function FinanceReportPage({
     <div className="space-y-5">
       <PageHeader area="money" title="Отчёт по продажам и оплатам" icon="chart" tabs={financeTabsFor(role)} />
 
-      <FinanceReport snapshot={snapshot} farms={farms} />
+      <FinanceReport snapshot={snapshot} farms={farms} today={localDayKey()} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { LeaderboardSnapshot } from "@/lib/leaderboard";
 import type { FinancePeriod } from "@/lib/finance";
+import PeriodStepper from "@/components/PeriodStepper";
 
 const PERIODS: { key: FinancePeriod; label: string }[] = [
   { key: "day", label: "День" },
@@ -21,9 +22,12 @@ function money(value: number): string {
 export default function Leaderboard({
   snapshot,
   currentEmail,
+  today,
 }: {
   snapshot: LeaderboardSnapshot;
   currentEmail: string;
+  /** Сегодня по Алматы — для листания периода. */
+  today: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -54,8 +58,15 @@ export default function Leaderboard({
               {p.label}
             </button>
           ))}
-          <span className="ml-3 self-center text-sm text-ink-secondary">{snapshot.periodLabel}</span>
         </div>
+        <PeriodStepper
+          basePath="/sales"
+          period={snapshot.period}
+          from={snapshot.from}
+          to={snapshot.to}
+          label={snapshot.periodLabel}
+          today={today}
+        />
         <div className="text-sm text-ink-muted">
           Бонус: роза и эустома <b className="text-ink-secondary">1,5%</b>, хризантема{" "}
           <b className="text-ink-secondary">2%</b> — с оплаченных заявок

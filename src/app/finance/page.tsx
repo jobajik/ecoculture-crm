@@ -6,6 +6,8 @@ import FinanceBoard from "@/components/FinanceBoard";
 import PageHeader from "@/components/PageHeader";
 import { financeTabsFor } from "./tabs";
 import { canEditFinance } from "@/lib/financeAccess";
+import { localDayKey } from "@/lib/timezone";
+import PeriodStepper from "@/components/PeriodStepper";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,7 +41,8 @@ export default async function FinancePage({
     ? (searchParams.period as FinancePeriod)
     : "month";
 
-  const snapshot = await getFinanceSnapshot(period, searchParams.date);
+  const anchor = searchParams.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : "";
+  const snapshot = await getFinanceSnapshot(period, anchor || undefined);
 
   return (
     <div className="space-y-5">
@@ -53,7 +56,8 @@ export default async function FinancePage({
             {PERIODS.map((p) => (
               <Link
                 key={p.key}
-                href={`/finance?period=${p.key}`}
+                // Выбранный день сохраняется: со «сентября» на «неделю» — неделя сентября.
+                href={`/finance?period=${p.key}${anchor ? `&date=${anchor}` : ""}`}
                 className={
                   period === p.key
                     ? "px-3 py-1.5 rounded-lg text-sm bg-accent text-white"
@@ -67,7 +71,16 @@ export default async function FinancePage({
         }
       />
 
-      <p className="text-sm text-ink-muted">{snapshot.periodLabel}</p>
+      {/* Листать назад: первого числа текущий месяц пуст, а несобранные деньги
+          прошлого месяца бухгалтеру нужны каждый день. */}
+      <PeriodStepper
+        basePath="/finance"
+        period={period}
+        from={snapshot.from}
+        to={snapshot.to}
+        label={snapshot.periodLabel}
+        today={localDayKey()}
+      />
 
       {/* Человеку, у которого нет кнопок, надо сказать ПОЧЕМУ. Иначе он решит,
           что сайт сломался, — ровно так и вышло у бухгалтера, когда права

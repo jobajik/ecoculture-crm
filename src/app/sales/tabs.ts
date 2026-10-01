@@ -2,6 +2,7 @@
 export const SALES_TABS = [
   { href: "/sales", label: "Рейтинг и бонусы" },
   { href: "/sales/plan", label: "План и факт" },
+  { href: "/sales/flowers", label: "По цветам" },
   { href: "/sales/day", label: "Продажи за день" },
   { href: "/prices", label: "Прайс-лист" },
 ];

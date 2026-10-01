@@ -253,8 +253,8 @@ check("итог компании", [farms[0].amount, farms[1].stems], [25000, 65
 const sText = digestText({ ...fInput, stock: [{ flowerType: "rose", stems: 5000, expired: 300 }, { flowerType: "chrysanthemum", stems: 8000, expired: 0 }] }).replace(/[\u00a0\u202f]/g, " ");
 check(
   "текст: блоки компаний и склада",
-  [sText.includes("*Rose Farm:*"), sText.includes("• Пожарка: 200 шт. — *50 000 ₸*"), sText.includes("*Склад сейчас:*"), sText.includes("роза 5 000 шт. (дольше срока 300)")],
-  [true, true, true, true]
+  [sText.includes("*Rose Farm:*"), sText.includes("• Пожарка: 200 шт. — *50 000 ₸*"), sText.includes("*Склад сейчас:*"), sText.includes("*Rose Farm*\nРоза: *5 000 шт.*\nдольше срока: 300 шт."), sText.includes("*Есентай Агро Хим*\nХризантема: *8 000 шт.*\n\n*Сегодня к отгрузке")],
+  [true, true, true, true, true]
 );
 
 // Два сообщения, чтобы WhatsApp не сворачивал «Далее»: вчера и компании — в первом, остальное — во втором.

@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import ChartCard, { CHART_COLORS } from "@/components/charts/ChartCard";
 import type { FinanceSnapshot, FinancePeriod } from "@/lib/finance";
+import PeriodStepper from "@/components/PeriodStepper";
 
 // Оплачено / не оплачено — две части одной суммы, поэтому столбик составной.
 // Цвета взяты из проверенной палитры приложения (series3/series4): при протанопии
@@ -41,9 +42,12 @@ function shortMoney(value: number): string {
 export default function FinanceReport({
   snapshot,
   farms,
+  today,
 }: {
   snapshot: FinanceSnapshot;
   farms: { farm: string; amount: number; label: string }[];
+  /** Сегодня по Алматы — для листания периода. */
+  today: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -78,10 +82,17 @@ export default function FinanceReport({
               {p.label}
             </button>
           ))}
-          <span className="ml-3 self-center text-sm text-ink-secondary">{snapshot.periodLabel}</span>
         </div>
+        <PeriodStepper
+          basePath="/finance/report"
+          period={snapshot.period}
+          from={snapshot.from}
+          to={snapshot.to}
+          label={snapshot.periodLabel}
+          today={today}
+        />
         <a
-          href={`/api/finance/report?period=${snapshot.period}`}
+          href={`/api/finance/report?period=${snapshot.period}&date=${snapshot.from}`}
           className="btn-primary !py-1.5"
           download
         >
