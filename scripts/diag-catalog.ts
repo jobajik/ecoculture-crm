@@ -19,7 +19,7 @@ import { listBotPhotos } from "../src/lib/repo/botPhotos";
 import { stockMap } from "../src/lib/botKnowledge";
 import { catalogFlowers, catalogPage } from "../src/lib/catalog";
 import { loadCatalogFonts, renderCatalogJpeg } from "../src/lib/catalogImage";
-import { catalogFileName, siteUrl } from "../src/lib/catalogFiles";
+import { catalogFileName } from "../src/lib/catalogFiles";
 import { publicCatalogUrl } from "../src/lib/waFileSign";
 import { localDayKey } from "../src/lib/timezone";
 
@@ -68,7 +68,8 @@ async function main() {
       console.log(`   нарисовано здесь: ${Math.round(jpg.length / 1024)} КБ`);
     }
     if (process.argv.includes("--live")) {
-      const url = publicCatalogUrl(siteUrl(), f, now);
+      // Боевой адрес: в .env.local на компьютере NEXTAUTH_URL — это localhost.
+      const url = publicCatalogUrl("https://www.crm-ecoculture.kz", f, now);
       const t = Date.now();
       const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
       const body = Buffer.from(await res.arrayBuffer());
