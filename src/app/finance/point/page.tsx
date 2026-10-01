@@ -9,13 +9,14 @@ import { formatDay } from "@/lib/formatDate";
 import { canSeeFinance } from "@/lib/financeAccess";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listPointDays, listPointWriteoffs } from "@/lib/repo/point";
-import { POINT_NAME, canEditPoint, pointReport, pointTransfers, transferDay, transferLines } from "@/lib/point";
+import { POINT_NAME, canEditPoint, pointOrdersWithMoney, pointReport, pointTransfers, transferDay, transferLines } from "@/lib/point";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import Hint from "@/components/Hint";
 import PointDayForm from "@/components/PointDayForm";
 import PointWriteoffForm from "@/components/PointWriteoffForm";
 import PointWriteoffRemove from "@/components/PointWriteoffRemove";
+import PointOrderMoneyClear from "@/components/PointOrderMoneyClear";
 import { financeTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,9 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
   const transfers = pointTransfers(orders)
     .filter((o) => transferDay(o).slice(0, 7) === month)
     .sort((a, b) => (transferDay(a) < transferDay(b) ? 1 : -1));
+  // Деньги, внесённые прямо в заявки-перемещения (до отчёта за день), — за всё время.
+  const withMoney = pointOrdersWithMoney(orders);
+  const withMoneyTotal = withMoney.reduce((s, o) => s + o.paidAmount, 0);
   const monthWriteoffs = writeoffs.filter((w) => w.date.slice(0, 7) === month).sort((a, b) => (a.date < b.date ? 1 : -1));
 
   const months: string[] = [];
@@ -230,6 +234,54 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
           </ul>
         )}
       </Section>
+
+      {withMoney.length > 0 && (
+        <Section
+          tone="money"
+          icon="wallet"
+          flush
+          title={
+            <>
+              Деньги, внесённые на перемещения: {money(withMoneyTotal)}
+              <span className="normal-case tracking-normal">
+                <Hint>
+                  Раньше оплату точки вносили прямо в заявку-перемещение. Такие суммы считаются выручкой точки «по
+                  заявкам» в день оплаты. Если вы вносите выручку по дням, снимите их здесь — иначе деньги посчитаются
+                  дважды. Снятие пишется в журнал.
+                </Hint>
+              </span>
+            </>
+          }
+          aside={
+            editable && withMoney.length > 1 ? (
+              <PointOrderMoneyClear
+                orderIds={withMoney.map((o) => o.orderId)}
+                label={`снять все (${withMoney.length})`}
+                confirmText={`Снять ${money(withMoneyTotal)} со всех ${withMoney.length} заявок?`}
+              />
+            ) : null
+          }
+        >
+          <ul className="divide-y divide-line-hairline text-sm">
+            {withMoney.map((o) => (
+              <li key={o.orderId} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2">
+                <Link href={`/orders/${o.orderId}`} className="text-series-1">
+                  {formatDay(transferDay(o))} · {o.clientName}
+                </Link>
+                <span className="flex flex-wrap items-baseline gap-3">
+                  <span className="tabular-nums">
+                    {money(o.paidAmount)}
+                    <span className="ml-1 text-xs text-ink-muted">оплата {formatDay(o.paidAt.slice(0, 10))}</span>
+                  </span>
+                  {editable && (
+                    <PointOrderMoneyClear orderIds={[o.orderId]} label="снять" confirmText={`Снять ${money(o.paidAmount)}?`} />
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Section tone="order" icon="truck" title={`Перемещения за месяц: ${transfers.length}`} flush>
         {transfers.length === 0 ? (

@@ -17,6 +17,8 @@ import {
   canEditPoint,
   pointBonusShares,
   pointDayRefusal,
+  pointMoneyClearRefusal,
+  pointOrdersWithMoney,
   pointReport,
   pointWriteoffRefusal,
   type TransferOrder,
@@ -70,6 +72,22 @@ const orders = [
   t("OLD", "2026-09-01", "emil@x", [["rose", 10, 500, 10]], { paidAmount: 5000, paidAt: "2026-09-02" }), // старый платёж на заявку
   { ...t("SALE", "2026-09-05", "emil@x", [["rose", 100, 400, 100]]), direction: "" }, // обычная продажа — не точка
 ];
+
+// Деньги, внесённые прямо на перемещения: бухгалтер снимает их и вносит по дням.
+{
+  const withMoney = [
+    ...orders,
+    t("OLD2", "2026-09-03", "emil@x", [["rose", 10, 500, 10]], { paidAmount: 3000, paidAt: "2026-09-05" }),
+    t("CANC", "2026-09-03", "emil@x", [["rose", 10, 500, 10]], { paidAmount: 999, paidAt: "2026-09-05", status: "cancelled" }),
+    t("SALE", "2026-09-03", "emil@x", [["rose", 10, 500, 10]], { paidAmount: 5000, paidAt: "2026-09-05", direction: "" }),
+  ];
+  check("с деньгами: только перемещения, без отменённых, свежая оплата сверху", pointOrdersWithMoney(withMoney).map((o) => o.orderId), ["OLD2", "OLD"]);
+  check("снять может бухгалтер", pointMoneyClearRefusal(ROLES.ACCOUNTANT, ["OLD", "OLD2"], withMoney), "");
+  check("РОП не может", refused(pointMoneyClearRefusal(ROLES.SALES_HEAD, ["OLD"], withMoney)), true);
+  check("обычную продажу так не снять", refused(pointMoneyClearRefusal(ROLES.ACCOUNTANT, ["SALE"], withMoney)), true);
+  check("пустой выбор — отказ", refused(pointMoneyClearRefusal(ROLES.ADMIN, [], withMoney)), true);
+}
+
 const days = [
   { date: "2026-09-06", kaspi: 30000, cash: 10000, note: "", accountantEmail: "", updatedAt: "" },
   { date: "2026-09-13", kaspi: 20000, cash: 0, note: "дождь", accountantEmail: "", updatedAt: "" },

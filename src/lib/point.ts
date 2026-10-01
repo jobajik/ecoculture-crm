@@ -63,6 +63,32 @@ const FLOWERS = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUS
 const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 const dayOf = (iso: string) => (iso || "").slice(0, 10);
 
+/**
+ * Перемещения, на которые деньги внесены ПРЯМО В ЗАЯВКУ (так делали до отчёта
+ * за день). Они считаются выручкой точки «по заявкам» по дню оплаты. Бухгалтер
+ * снимает их отсюда (`clearOrdersPaid`) и вносит заново по дням — 01.10.2026.
+ */
+export function pointOrdersWithMoney<T extends TransferOrder>(orders: T[]): T[] {
+  return pointTransfers(orders)
+    .filter((o) => o.paidAmount > MONEY_EPSILON)
+    .sort((a, b) => (dayOf(a.paidAt) < dayOf(b.paidAt) ? 1 : -1));
+}
+
+/** Можно ли снять деньги с этих заявок: бухгалтер или админ, и только перемещения на точку с деньгами. */
+export function pointMoneyClearRefusal<T extends TransferOrder & { orderId: string }>(
+  role: string | null | undefined,
+  orderIds: string[],
+  orders: T[]
+): string {
+  if (!canEditPoint(role)) return "Деньги точки правит бухгалтер";
+  if (orderIds.length === 0) return "Выберите, с каких заявок снять деньги";
+  const allowed = new Set(pointOrdersWithMoney(orders).map((o) => o.orderId));
+  if (orderIds.some((id) => !allowed.has(id))) {
+    return "Снять можно только деньги, внесённые на перемещения точки, — список обновился, откройте страницу заново";
+  }
+  return "";
+}
+
 /** Заявки-перемещения на точку (не отменённые). */
 export function pointTransfers<T extends TransferOrder>(orders: T[]): T[] {
   return orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && isConsignment(o));

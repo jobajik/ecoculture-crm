@@ -683,7 +683,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               {loaded.paidAmount > 0 && (
                 <p className="text-ink-secondary">
                   По этой заявке раньше внесено {Math.round(loaded.paidAmount).toLocaleString("ru-RU")} ₸ — эти
-                  деньги учтены в выручке точки.
+                  деньги учтены в выручке точки. Если вы вносите выручку по дням, снимите их на странице точки — блок
+                  «Деньги, внесённые на перемещения».
                 </p>
               )}
               <Link href="/finance/point" className="text-accent hover:underline">

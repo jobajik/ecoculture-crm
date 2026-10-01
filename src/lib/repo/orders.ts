@@ -751,3 +751,45 @@ export async function setOrderRealization(orderId: string, value: string): Promi
     () => ({ Realization1C: value })
   );
 }
+
+/**
+ * Снять деньги, внесённые прямо на заявки-перемещения точки на базаре
+ * (`clearPointOrderMoneyAction`, октябрь 2026, бухгалтер: «удалить оплаченные
+ * суммы из перемещения» — она вносит их заново отчётом за день). Одним
+ * атомарным запросом (грабли 1.16): итог, части по компаниям, флаг и день
+ * оплаты у заявок обнуляются, строки журнала платежей этих заявок удаляются.
+ * Какие заявки можно трогать, решает вызывающий (`pointMoneyClearRefusal`).
+ */
+export async function clearOrdersPaid(orderIds: string[], accountantEmail: string): Promise<number> {
+  const ids = new Set(orderIds);
+  await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.PAYMENTS]);
+  const [orders, payments] = await Promise.all([
+    readTable(SHEET_TABS.ORDERS, { fresh: true }),
+    readTable(SHEET_TABS.PAYMENTS, { fresh: true }),
+  ]);
+  const ops: WriteOp[] = [];
+  let touched = 0;
+  orders.rows.forEach((row, i) => {
+    const record = rowToRecord(SHEET_TABS.ORDERS, row);
+    if (!ids.has(record.OrderID)) return;
+    const changes = changedCells(record, {
+      PaidAmount: 0,
+      PaidRoseFarm: 0,
+      PaidEsentai: 0,
+      Paid: "FALSE",
+      PaidAt: "",
+      AccountantEmail: accountantEmail,
+    });
+    if (Object.keys(changes).length > 0) {
+      ops.push({ kind: "update", tab: SHEET_TABS.ORDERS, rowNumber: orders.rowNumbers[i], changes });
+      touched++;
+    }
+  });
+  const paymentRows: number[] = [];
+  payments.rows.forEach((row, i) => {
+    if (ids.has(rowToRecord(SHEET_TABS.PAYMENTS, row).OrderID)) paymentRows.push(payments.rowNumbers[i]);
+  });
+  if (paymentRows.length > 0) ops.push({ kind: "delete", tab: SHEET_TABS.PAYMENTS, rowNumbers: paymentRows });
+  if (ops.length > 0) await commitAtomic(ops);
+  return touched;
+}
