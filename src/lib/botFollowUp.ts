@@ -6,9 +6,15 @@ import { appendDebtReminder, listDebtReminders } from "./repo/debtReminders";
 import { greenConfig, sendText } from "./greenApi";
 import { phoneKey } from "./leads";
 import { botSettingsFrom, pushContext } from "./broadcast";
-import { nudgeDue, nudgeTask } from "./botNudge";
-import { botReply } from "./botEngine";
-import { openAiConfigured } from "./openai";
+import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
+import { chatJson, openAiConfigured } from "./openai";
+import { listBatches } from "./repo/batches";
+import { getSettings } from "./repo/settings";
+import { getCurrentPrices } from "./repo/prices";
+import { listBroadcasts, listRecipients } from "./repo/broadcasts";
+import { priceFor } from "./priceList";
+import { stockMap, lastBroadcastForBot } from "./botKnowledge";
+import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade } from "./constants";
 import { orderCode } from "./paymentStage";
 import { ORDER_STATUSES } from "./constants";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText } from "./kaspiInvoice";
@@ -150,7 +156,14 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
   let errors = 0;
   try {
     if (!openAiConfigured() || !greenConfig()) return { sent, closed, errors };
-    await prefetchTables([SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]);
+    await prefetchTables([
+      SHEET_TABS.BOT_CHATS,
+      SHEET_TABS.SETTINGS,
+      SHEET_TABS.BATCHES,
+      SHEET_TABS.PRICE_HISTORY,
+      SHEET_TABS.BROADCASTS,
+      SHEET_TABS.BROADCAST_RECIPIENTS,
+    ]);
     const [chats, map] = await Promise.all([listBotChats(true), settingsMap()]);
     const settings = botSettingsFrom(map);
     const now = new Date();
@@ -160,22 +173,41 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
       .filter((x) => x.attempt > 0)
       .sort((a, b) => a.attempt - b.attempt)
       .slice(0, limit);
+    if (due.length === 0) return { sent, closed, errors };
+    const [batches, shelf, prices, broadcasts, recipients] = await Promise.all([
+      listBatches(),
+      getSettings(),
+      getCurrentPrices(),
+      listBroadcasts(),
+      listRecipients(),
+    ]);
+    const stock = Array.from(stockMap(batches, shelf, now).values());
+    const label = (o: { flowerType: string; variety: string; grade: string }) =>
+      `${FLOWER_TYPE_LABELS[o.flowerType] ?? o.flowerType} ${o.variety}, ${formatGrade(o.grade)}`;
     for (const { chat: found, attempt } of due) {
       if (Date.now() - started > budget) break;
       const chat = { ...found, context: [...found.context], ourIds: [...found.ourIds], nudge: { ...found.nudge } };
       try {
-        const last = chat.context[chat.context.length - 1];
-        const silentHours = (now.getTime() - Date.parse(last?.at || "")) / 3600000;
-        const d = await botReply(chat, settings.instructions, nudgeTask(attempt, Number.isFinite(silentHours) ? silentHours : 1));
-        if (d.silent || !d.reply) {
-          // Модель решила, что дожимать нечего: больше этот разговор не трогаем, пока клиент не напишет.
+        // Писать ли — решает модель узким вопросом; по умолчанию — нет.
+        const transcriptText = chat.context.map((c) => `${c.role === "client" ? "Клиент" : "Мы"}: ${c.text}`).join("\n");
+        const { data } = await chatJson(nudgeDecisionPrompt(), `Переписка:\n${transcriptText}`, "nudge_decision", NUDGE_DECISION_SCHEMA as unknown as Record<string, unknown>, { fast: true });
+        const decision = parseNudgeDecision(data);
+        if (!decision.nudge) {
           chat.nudge = { ...chat.nudge, done: true };
           closed += 1;
         } else {
+          // Текст и цены — кодом, из склада и прайса.
+          const offers = pickNudgeOffers({
+            stock,
+            priceOf: (f, v, g) => priceFor(prices, f, v, g),
+            mentioned: `${transcriptText}\n${lastBroadcastForBot(broadcasts, recipients, chat.phone)}`,
+            isLiquid: isLiquidGrade,
+          });
+          const text = nudgeText(attempt, offers, label);
           if (sent > 0) await pause(3000 + Math.floor(Math.random() * 4000));
-          const id = await sendText(greenConfig()!, chat.phone, d.reply);
+          const id = await sendText(greenConfig()!, chat.phone, text);
           chat.ourIds = [...chat.ourIds, id].slice(-20);
-          chat.context = pushContext(chat.context, { role: "us", text: d.reply, at: new Date().toISOString() });
+          chat.context = pushContext(chat.context, { role: "us", text, at: new Date().toISOString() });
           chat.nudge = { count: attempt, at: new Date().toISOString(), done: false };
           sent += 1;
         }

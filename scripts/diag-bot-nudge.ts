@@ -8,18 +8,34 @@ dotenv.config();
  * посмотреть дневной расклад ночью: `npx tsx scripts/diag-bot-nudge.ts 5 12`.
  */
 import { prefetchTables, SHEET_TABS } from "../src/lib/sheets";
-import { listBotChats, settingsMap } from "../src/lib/repo/broadcasts";
+import { listBotChats, listBroadcasts, listRecipients, settingsMap } from "../src/lib/repo/broadcasts";
 import { botSettingsFrom } from "../src/lib/broadcast";
-import { nudgeDue, nudgeTask } from "../src/lib/botNudge";
-import { botReply } from "../src/lib/botEngine";
+import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
+import { chatJson } from "../src/lib/openai";
+import { listBatches } from "../src/lib/repo/batches";
+import { getSettings } from "../src/lib/repo/settings";
+import { getCurrentPrices } from "../src/lib/repo/prices";
+import { priceFor } from "../src/lib/priceList";
+import { lastBroadcastForBot, stockMap } from "../src/lib/botKnowledge";
+import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade } from "../src/lib/constants";
 
 const mask = (phone: string) => `…${String(phone).replace(/\D/g, "").slice(-4)}`;
 
 async function main() {
   const limit = Math.max(1, Number(process.argv[2]) || 5);
   const forcedHour = process.argv[3] !== undefined ? Number(process.argv[3]) : NaN;
-  await prefetchTables([SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]);
-  const [chats, map] = await Promise.all([listBotChats(true), settingsMap()]);
+  await prefetchTables([SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS, SHEET_TABS.BATCHES, SHEET_TABS.PRICE_HISTORY, SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS]);
+  const [chats, map, batches, shelf, prices, broadcasts, recipients] = await Promise.all([
+    listBotChats(true),
+    settingsMap(),
+    listBatches(),
+    getSettings(),
+    getCurrentPrices(),
+    listBroadcasts(),
+    listRecipients(),
+  ]);
+  const stock = Array.from(stockMap(batches, shelf, new Date()).values());
+  const label = (o: { flowerType: string; variety: string; grade: string }) => `${FLOWER_TYPE_LABELS[o.flowerType] ?? o.flowerType} ${o.variety}, ${formatGrade(o.grade)}`;
   const settings = botSettingsFrom(map);
   const now = new Date();
   const realHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Almaty", hour: "numeric", hour12: false }).format(now)) % 24;
@@ -32,8 +48,15 @@ async function main() {
     console.log(`\n${mask(c.phone)} · касание №${attempt} · молчит ${Math.round(silent)} ч`);
     for (const line of c.context.slice(-3)) console.log(`   ${line.role === "client" ? "КЛ" : "МЫ"}  ${line.text.replace(/\s+/g, " ").slice(0, 140)}`);
     try {
-      const d = await botReply(c, settings.instructions, nudgeTask(attempt, silent));
-      console.log(d.silent || !d.reply ? "   БОТ → не дожимать (закроет разговор)" : `   БОТ → ${d.reply.replace(/\s+/g, " ")}`);
+      const transcript = c.context.map((x) => `${x.role === "client" ? "Клиент" : "Мы"}: ${x.text}`).join("\n");
+      const { data } = await chatJson(nudgeDecisionPrompt(), `Переписка:\n${transcript}`, "nudge_decision", NUDGE_DECISION_SCHEMA as unknown as Record<string, unknown>, { fast: true });
+      const d = parseNudgeDecision(data);
+      if (!d.nudge) {
+        console.log(`   БОТ → не дожимать (${d.reason || "—"})`);
+      } else {
+        const offers = pickNudgeOffers({ stock, priceOf: (f, v, g) => priceFor(prices, f, v, g), mentioned: `${transcript}\n${lastBroadcastForBot(broadcasts, recipients, c.phone)}`, isLiquid: isLiquidGrade });
+        console.log(`   БОТ → ${nudgeText(attempt, offers, label)}  [${d.reason}]`);
+      }
     } catch (err) {
       console.log(`   ошибка: ${err instanceof Error ? err.message : err}`);
     }

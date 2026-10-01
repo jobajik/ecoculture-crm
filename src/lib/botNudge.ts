@@ -71,3 +71,90 @@ export function nudgeTask(attempt: number, silentHours: number): string {
     .filter(Boolean)
     .join("\n");
 }
+
+// --- Решение «писать ли» и сам текст -------------------------------------------
+//
+// Первая версия просила модель и решить, и написать — на живых чатах она дожимала
+// «Я у Ильяса беру», «Я не занимаюсь цветами», автоответ детского магазина и
+// путала цены (Jumilia 60 см — 410 вместо 220). Теперь: модель только РЕШАЕТ,
+// узким вопросом с ответом «да/нет» (по умолчанию — нет), а текст с ценами
+// собирает код из склада и прайса — цифру выдумать негде.
+
+export const NUDGE_DECISION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["nudge", "reason"],
+  properties: {
+    nudge: { type: "boolean", description: "true — клиент интересовался покупкой и замолчал; написать ещё раз уместно." },
+    reason: { type: "string", description: "Почему — одной короткой фразой." },
+  },
+} as const;
+
+export function nudgeDecisionPrompt(): string {
+  return [
+    "Ты проверяешь переписку оптовой цветочной компании с клиентом в WhatsApp. Последним писали мы, клиент молчит.",
+    "Реши: уместно ли сейчас написать клиенту ещё раз с предложением купить цветы.",
+    "nudge=true ТОЛЬКО если клиент проявлял интерес к покупке (спрашивал цену, наличие, условия, говорил «да»,",
+    "«интересно», обсуждал заказ) и после этого замолчал.",
+    "nudge=false, если хоть одно: отказался или «сейчас не нужно», «товар уже привезли»; берёт у нашего менеджера",
+    "(называет имя: Ильяс, Эмиль, Бауыржан и др.) или у другого поставщика; не занимается цветами, ошиблись номером;",
+    "это автоответ магазина или бота, а не человек; уже заказал и ждёт доставку или заказ оформлен; разговор о доставке,",
+    "курьере, оплате уже сделанного заказа; просил не писать; жалоба; клиент ни разу не проявил интереса.",
+    "Сомневаешься — nudge=false.",
+  ].join("\n");
+}
+
+/** Ответ модели о дожиме; странный — «не писать». */
+export function parseNudgeDecision(raw: unknown): { nudge: boolean; reason: string } {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  return { nudge: o.nudge === true, reason: typeof o.reason === "string" ? o.reason.trim().slice(0, 200) : "" };
+}
+
+export interface NudgeOffer {
+  flowerType: string;
+  variety: string;
+  grade: string;
+  price: number;
+  qty: number;
+}
+
+const normWord = (s: string) => s.toLowerCase().replace(/ё/g, "е");
+
+/**
+ * Что предложить: позиции со склада с ценой из прайса. Сначала то, о чём шла
+ * речь (сорт назван в переписке или в рассылке клиенту), потом самые большие
+ * остатки ходовых позиций. Не больше двух.
+ */
+export function pickNudgeOffers(input: {
+  stock: { flower: string; variety: string; grade: string; qty: number }[];
+  priceOf: (flowerType: string, variety: string, grade: string) => number;
+  mentioned: string;
+  isLiquid: (flowerType: string, grade: string) => boolean;
+}): NudgeOffer[] {
+  const text = normWord(input.mentioned);
+  const rows = input.stock
+    .filter((s) => s.qty >= 100 && s.variety && input.isLiquid(s.flower, s.grade))
+    .map((s) => ({ flowerType: s.flower, variety: s.variety, grade: s.grade, qty: s.qty, price: input.priceOf(s.flower, s.variety, s.grade) }))
+    .filter((s) => s.price > 0);
+  const named = rows.filter((r) => text.includes(normWord(r.variety)) || (normWord(r.variety) === "altaj" && text.includes("алтай")));
+  const byQty = (a: NudgeOffer, b: NudgeOffer) => b.qty - a.qty;
+  const out: NudgeOffer[] = [];
+  for (const r of [...named.sort(byQty), ...rows.sort(byQty)]) {
+    if (out.length >= 2) break;
+    if (out.some((o) => o.flowerType === r.flowerType && o.variety === r.variety)) continue;
+    out.push(r);
+  }
+  return out;
+}
+
+/** Текст касания. Цены — из `pickNudgeOffers`, то есть из прайса. */
+export function nudgeText(attempt: number, offers: NudgeOffer[], labels: (o: NudgeOffer) => string): string {
+  const list = offers.map((o) => `${labels(o)} — ${Math.round(o.price).toLocaleString("ru-RU").replace(/\s/g, " ")} ₸`);
+  if (attempt >= NUDGE_GAPS_HOURS.length || list.length === 0) {
+    return "Если цветы понадобятся — просто напишите сюда: подберём по наличию и привезём. Хорошего дня!";
+  }
+  if (attempt === 1) {
+    return `Здравствуйте! Сегодня свежий срез: ${list.join("; ")}. Поставить вам на завтра? Для пробы можно от 50 шт.`;
+  }
+  return `${list[0]} — сейчас хорошо в наличии, разбирают быстро. Отложить для вас 50–100 шт. на завтра?`;
+}

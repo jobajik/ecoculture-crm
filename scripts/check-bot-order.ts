@@ -12,7 +12,7 @@ import {
 import { getLeaderboard } from "../src/lib/leaderboard";
 import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "../src/lib/botIdentity";
 import { nameIndex, personName } from "../src/lib/personName";
-import { nudgeDue, nudgeTask } from "../src/lib/botNudge";
+import { nudgeDue, nudgeTask, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
 import type { BotChat, BotSettings } from "../src/lib/broadcast";
 
 let failed = 0;
@@ -221,6 +221,24 @@ async function main() {
     0
   );
   check("последнее касание — мягкое", nudgeTask(3, 20).includes("последнее касание"), true);
+  check("решение модели: мусор — не писать", parseNudgeDecision(null).nudge, false);
+  const nstock = [
+    { flower: "rose", variety: "Jumilia", grade: "60", qty: 900 },
+    { flower: "chrysanthemum", variety: "Altaj", grade: "Высшая", qty: 300 },
+    { flower: "rose", variety: "Jumilia", grade: "Уценка", qty: 5000 },
+    { flower: "eustoma", variety: "Alissa White", grade: "Стандарт", qty: 50 },
+  ];
+  const nprices: Record<string, number> = { "rose|Jumilia|60": 220, "chrysanthemum|Altaj|Высшая": 580, "rose|Jumilia|Уценка": 90, "eustoma|Alissa White|Стандарт": 400 };
+  const offers = pickNudgeOffers({
+    stock: nstock,
+    priceOf: (f, v, g) => nprices[`${f}|${v}|${g}`] ?? 0,
+    mentioned: "Клиент: а Алтай есть?",
+    isLiquid: (f, g) => g !== "Уценка",
+  });
+  check("предложение: сначала то, о чём спрашивали, цена из прайса, без уценки и мелких остатков", offers.map((o) => `${o.variety} ${o.grade} ${o.price}`), ["Altaj Высшая 580", "Jumilia 60 220"]);
+  const lbl = (o: { variety: string; grade: string }) => `${o.variety}, ${o.grade}`;
+  check("касание 1 — с ценами", nudgeText(1, offers, lbl), "Здравствуйте! Сегодня свежий срез: Altaj, Высшая — 580 ₸; Jumilia, 60 — 220 ₸. Поставить вам на завтра? Для пробы можно от 50 шт.");
+  check("касание 3 — мягкое без цен", nudgeText(3, offers, lbl).startsWith("Если цветы понадобятся"), true);
   check("в касании заказ не оформляется", nudgeTask(1, 1).includes("order.confirmed=false"), true);
 
   console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
