@@ -420,7 +420,7 @@ export default function BroadcastComposer({
                   + цены: {FLOWER_TYPE_LABELS[p.flower].toLowerCase()}
                 </button>
               ))}
-              <span className="text-ink-muted">встанет действующий прайс на день создания рассылки</span>
+              <span className="text-ink-muted">встанет действующий прайс на день создания рассылки; один сорт — допишите его в метку: {"{цены хризантема Altaj}"}</span>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={withOptOut} onChange={(e) => setWithOptOut(e.target.checked)} />

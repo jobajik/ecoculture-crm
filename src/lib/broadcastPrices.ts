@@ -16,7 +16,12 @@ import { BASE_VARIETY, priceKey } from "./priceList";
 
 const ACCUSATIVE: Record<string, string> = { rose: "розу", chrysanthemum: "хризантему", eustoma: "эустому" };
 
-export const PRICE_TAG_RE = /\{\s*цены\s+([а-яё]+)\s*\}/gi;
+/**
+ * `{цены хризантема}` — весь прайс цветка; `{цены хризантема Altaj}` — только один
+ * сорт (владелец, 01.10: «слишком громоздко, оставь только цены на Алтай»).
+ * Сорт пишется как в прайсе, регистр не важен.
+ */
+export const PRICE_TAG_RE = /\{\s*цены\s+([а-яё]+)(?:\s+([^{}]+?))?\s*\}/gi;
 
 /** «хризантема», «хризантемы», «Розы» → код цветка; незнакомое — пусто. */
 export function flowerOfTag(word: string): string {
@@ -35,6 +40,33 @@ export function priceTagFlowers(text: string): string[] {
 }
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₸`;
+
+/**
+ * Цены одного сорта строкой на категорию: «• Высшая — 580 ₸». Своей цены нет —
+ * берётся общая «Все сорта». Сорт ищется без учёта регистра; не нашёлся — пусто.
+ */
+export function varietyPriceBlock(flowerType: string, variety: string, prices: Record<string, number>): string {
+  const want = variety.trim().toLowerCase().replace(/ё/g, "е");
+  const prefix = `${flowerType}|`;
+  let name = "";
+  const grades = new Set<string>();
+  for (const [key, price] of Object.entries(prices)) {
+    if (!key.startsWith(prefix) || !(price > 0)) continue;
+    const [, v, g] = key.split("|");
+    grades.add(g);
+    if (v && v.toLowerCase().replace(/ё/g, "е") === want) name = v;
+  }
+  if (!name) return "";
+  return Array.from(grades)
+    .sort((a, b) => compareGrades(flowerType, a, b))
+    .map((g) => {
+      const own = prices[priceKey(flowerType, name, g)] ?? 0;
+      const p = own > 0 ? own : prices[priceKey(flowerType, BASE_VARIETY, g)] ?? 0;
+      return p > 0 ? `• ${formatGrade(g)} — ${money(p)}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
 
 /**
  * Блок цен цветка из действующего прайса. `prices` — позиции «цветок|сорт|длина»
@@ -83,15 +115,22 @@ export function priceBlock(flowerType: string, prices: Record<string, number>): 
 
 /** Подставляет блоки цен вместо меток. Метка без цен остаётся как есть — её поймает `priceTagsRefusal`. */
 export function fillPrices(text: string, prices: Record<string, number>): string {
-  return String(text || "").replace(PRICE_TAG_RE, (whole, word: string) => {
+  return String(text || "").replace(PRICE_TAG_RE, (whole, word: string, variety?: string) => {
     const flower = flowerOfTag(word);
-    const block = flower ? priceBlock(flower, prices) : "";
+    const block = !flower ? "" : variety ? varietyPriceBlock(flower, variety, prices) : priceBlock(flower, prices);
     return block || whole;
   });
 }
 
 /** Отказ до создания рассылки: метка незнакомого цветка или цветка без цен в прайсе. */
 export function priceTagsRefusal(text: string, prices: Record<string, number>): string {
+  for (const m of String(text || "").matchAll(PRICE_TAG_RE)) {
+    const f = flowerOfTag(m[1]);
+    const variety = (m[2] || "").trim();
+    if (f && variety && !varietyPriceBlock(f, variety, prices)) {
+      return `В прайсе нет цен на сорт «${variety}» — проверьте написание, как в прайсе`;
+    }
+  }
   for (const f of priceTagFlowers(text)) {
     if (f.startsWith("?")) return `Не понял метку {цены ${f.slice(1)}} — пишите {цены роза}, {цены хризантема} или {цены эустома}`;
     if (!priceBlock(f, prices)) return `В прайсе нет цен на ${ACCUSATIVE[f] ?? (FLOWER_TYPE_LABELS[f] ?? f).toLowerCase()} — заполните прайс или уберите метку`;
