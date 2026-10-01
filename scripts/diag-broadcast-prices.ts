@@ -2,6 +2,10 @@
  * Только чтение: как выглядит блок {цены …} по живому прайсу и скольким клиентам
  * уйдёт рассылка «брали хризантему». Запуск: npx tsx scripts/diag-broadcast-prices.ts [chrysanthemum]
  */
+import * as dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config();
+
 import "../src/lib/timezone";
 import { getCurrentPrices } from "../src/lib/repo/prices";
 import { priceMapForClient } from "../src/lib/priceList";
