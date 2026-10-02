@@ -47,6 +47,8 @@ import { listShipments } from "../src/lib/repo/shipments";
 import { listClaims } from "../src/lib/repo/claims";
 import { logMoney } from "../src/lib/repo/moneyLog";
 import { createBackup } from "../src/lib/backup";
+import { readTable, rowToRecord, SHEET_TABS } from "../src/lib/sheets";
+import { isOpenKaspiStatus } from "../src/lib/kaspiInvoice";
 import { deleteOrderRefusal, describeDeletedOrder } from "../src/lib/orderDelete";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_STATUSES, ROLES } from "../src/lib/constants";
 
@@ -100,11 +102,15 @@ async function main() {
   log(`Названо заявок: ${ids.length}`);
   log("");
 
-  const [orders, shipments, claims] = await Promise.all([
+  const [orders, shipments, claims, kaspiRows] = await Promise.all([
     listOrdersWithItems(),
     listShipments(),
     listClaims(),
+    readTable(SHEET_TABS.KASPI_INVOICES).then((t) => t.rows.map((r) => rowToRecord(SHEET_TABS.KASPI_INVOICES, r))).catch(() => []),
   ]);
+  // Висящий счёт Kaspi: удалим заявку — клиент оплатит то, чего нет (02.10.2026 так
+  // и вышло: удалённая заявка оставила открытый счёт; хвосты — cleanup-deleted-order.ts).
+  const openInvoice = (id: string) => kaspiRows.some((r) => r.OrderID === id && isOpenKaspiStatus(r.Status));
   const byId = new Map(orders.map((o) => [o.orderId, o]));
 
   type Plan = {
@@ -150,6 +156,9 @@ async function main() {
     const c = claims.filter((x) => x.orderId === id).length;
     // Роль подставляем админскую: скрипт запускает владелец со своего
     // компьютера, а проверка роли нужна сайту, а не здесь.
+    if (openInvoice(id)) {
+      return { id, reason: "висит неоплаченный счёт Kaspi — сначала отмените его в «Оплатах»", order, shipments: s, claims: c };
+    }
     const refusal = deleteOrderRefusal({
       order,
       role: ROLES.ADMIN,
@@ -170,7 +179,8 @@ async function main() {
       p.claims === 0 &&
       p.order.items.every((i) => i.shippedQuantity === 0) &&
       p.order.status !== ORDER_STATUSES.SHIPPED &&
-      p.order.paidAmount > MONEY_EPSILON
+      p.order.paidAmount > MONEY_EPSILON &&
+      !openInvoice(p.id)
   );
   const blocked = plans.filter((p) => !clean.includes(p) && !paidOnly.includes(p));
 
