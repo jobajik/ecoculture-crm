@@ -26,7 +26,7 @@ import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKi
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isCreditTerms, isReadyToShip, notReadyReason } from "@/lib/orderReady";
-import { cancelRefusal } from "@/lib/orderRules";
+import { cancelRefusal, confirmRefusal } from "@/lib/orderRules";
 import { canEditOrder } from "@/lib/orderEdit";
 import WarehouseItemsEdit from "@/components/WarehouseItemsEdit";
 import { adjustOrderByWarehouseAction, returnOrderItemsAction } from "../actions";
@@ -421,14 +421,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         consignment={isConsignment(order)}
         creditTerms={isCreditTerms(order.clientPaymentTerms) ? order.clientPaymentTerms : ""}
         invoiceSentAt={order.invoiceSentAt}
-        canConfirm={
-          role === "admin" ||
-          (((role === "manager" && !region) ||
-            isRetailRole(role) ||
-            (retail && canFillRegions(role)) ||
-            (region && canFillRegionOrders(role))) &&
-            order.managerEmail === myEmail)
-        }
+        // Та же функция, что проверяет сервер: своя копия условия здесь отстала
+        // и не пустила РОПа (02.10.2026, «не могу подтверждение сделать»).
+        canConfirm={confirmRefusal(order, role, myEmail, !order.managerConfirmed) === ""}
       />
 
       {shipBlockedReason && (

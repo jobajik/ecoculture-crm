@@ -134,6 +134,9 @@ export function confirmRefusal(
         : "";
 
   if (role === ROLES.ADMIN) return closed;
+  // РОП подтверждает любую клиентскую заявку (02.10.2026, владелец: «сделай это
+  // для РОПа» — РОП оформила заявку и не смогла её подтвердить).
+  if (role === ROLES.SALES_HEAD && !isRetailOrder(order) && !isRegionOrder(order)) return closed;
 
   const mine = order.managerEmail === (email || "").trim().toLowerCase();
   // Кому вообще положено подтверждать заявку такого рода.

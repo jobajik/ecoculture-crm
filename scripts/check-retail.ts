@@ -200,6 +200,11 @@ check("свою заявку в регион зав. складом подтве
 check("чужую — нет", confirmRefusal(REGION_ORDER, ROLES.WAREHOUSE, "diana@x.kz", true) !== "", true);
 check("оптовый менеджер розничную не подтверждает", confirmRefusal(REGION_ORDER, ROLES.MANAGER, "razia@x.kz", true) !== "", true);
 check("бухгалтер тем более", confirmRefusal(REGION_ORDER, ROLES.ACCOUNTANT, "razia@x.kz", true) !== "", true);
+const CLIENT_ORDER = { status: "new", managerEmail: "emil@x.kz", retail: "", kind: "" };
+check("РОП подтверждает клиентскую заявку менеджера", confirmRefusal(CLIENT_ORDER, ROLES.SALES_HEAD, "nina@x.kz", true), "");
+check("РОП — и свою", confirmRefusal({ ...CLIENT_ORDER, managerEmail: "nina@x.kz" }, ROLES.SALES_HEAD, "nina@x.kz", true), "");
+check("РОП розничную (магазин) не подтверждает", confirmRefusal(REGION_ORDER, ROLES.SALES_HEAD, "nina@x.kz", true) !== "", true);
+check("отменённую РОП не подтверждает", confirmRefusal({ ...CLIENT_ORDER, status: "cancelled" }, ROLES.SALES_HEAD, "nina@x.kz", true) !== "", true);
 check("админ может", confirmRefusal(REGION_ORDER, ROLES.ADMIN, "admin@x.kz", true), "");
 check(
   "снять подтверждение с отгруженной нельзя даже админу",
