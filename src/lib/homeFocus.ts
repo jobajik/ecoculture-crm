@@ -367,6 +367,48 @@ export function homeFocus(input: {
     };
   }
 
+  // Склад офиса: очередь офисных заявок (страница отгрузки та же, что у склада).
+  if (role === ROLES.OFFICE) {
+    const open = withStage.filter(({ st }) => isOpenStage(st));
+    const canShip = open.filter(({ st }) => isShippable(st));
+    const late = canShip.filter(({ st }) => st.lateDays > 0);
+    return {
+      title: "Офис: к отгрузке",
+      subtitle: "Заявки офиса — в основном бот после 12:00. Доставка такси за счёт клиента.",
+      action: { href: "/office/ship", label: "Очередь офиса" },
+      aboveStock: true,
+      showStock: true,
+      stats: [
+        {
+          label: "Можно отгружать",
+          value: num(canShip.length),
+          hint: canShip.length ? "подтверждены и оплачены" : "готовых нет",
+          href: "/office/ship",
+          tone: canShip.length ? "good" : "default",
+        },
+        {
+          label: "Опаздывают",
+          value: num(late.length),
+          hint: late.length ? "доставка прошла — отгрузите" : "опозданий нет",
+          href: "/office/ship",
+          tone: late.length ? "critical" : "default",
+        },
+        {
+          label: "Ждут",
+          value: num(open.length - canShip.length),
+          hint: "подтверждения или денег",
+          href: "/office/ship",
+        },
+        {
+          label: "В офисе",
+          value: num(extras.stockStems ?? 0),
+          hint: "стеблей сейчас",
+          href: "/office",
+        },
+      ],
+    };
+  }
+
   if (role === ROLES.WAREHOUSE) {
     const open = withStage.filter(({ st }) => isOpenStage(st));
     const canShip = open.filter(({ st }) => isShippable(st));

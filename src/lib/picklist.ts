@@ -112,8 +112,9 @@ export async function getPicklist(
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
 
+  // Лист — для основного склада: заявки офиса собирает склад офиса (`officeStore.ts`).
   const active = orders.filter(
-    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.status !== ORDER_STATUSES.SHIPPED
+    (o) => o.status !== ORDER_STATUSES.CANCELLED && o.status !== ORDER_STATUSES.SHIPPED && !o.store
   );
 
   const forDate = active.filter((o) => toDateKey(o.deliveryDate) === date);
@@ -122,7 +123,7 @@ export async function getPicklist(
   // Остатки на складе по каждой позиции.
   const stockByKey = new Map<string, number>();
   for (const b of batches) {
-    if (b.quantityRemaining <= 0) continue;
+    if (b.quantityRemaining <= 0 || b.store) continue;
     const key = `${b.flowerType}|${b.variety.trim().toLowerCase()}|${b.grade.trim().toLowerCase()}`;
     stockByKey.set(key, (stockByKey.get(key) ?? 0) + b.quantityRemaining);
   }

@@ -17,6 +17,8 @@ import {
   getFarmFor,
 } from "@/lib/constants";
 import OrderStageBadge from "@/components/OrderStageBadge";
+import OrderStoreSwitch from "@/components/OrderStoreSwitch";
+import { shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
 import { orderStage } from "@/lib/orderStage";
 import { localDayKey } from "@/lib/timezone";
 import { nameIndex, personName } from "@/lib/personName";
@@ -180,7 +182,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const isWarehouse = role === "warehouse" || role === "admin";
   const openOrder = order.status !== "shipped" && order.status !== "cancelled";
   const ready = isReadyToShip(order);
-  const canShip = isWarehouse && openOrder && ready;
+  // Офисную заявку отгружает склад офиса (`officeStore.ts`) — у основного склада кнопки нет.
+  const canShip = isWarehouse && openOrder && ready && shipStoreRefusal(role, loaded.store) === "";
   const shipBlockedReason = isWarehouse && openOrder && !ready ? notReadyReason(order) : "";
   // Этап и «чей ход» — та же функция, что в списках (`orderStage`).
   const stage = orderStage(order, localDayKey());
@@ -241,6 +244,17 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // «пусть менеджер сам заявку по Киргизии делает, без РОПа»). Правило то же,
   // что проверит сервер, и считается по ПОЛНОЙ заявке: зав. складом видит её
   // урезанной до своего цветка, и трогать направление оттуда незачем.
+  // Склад отгрузки (подсклад «Офис») — показываем у клиентских заявок; менять
+  // можно, пока ничего не отгружено (`storeChangeRefusal` — то же, что на сервере).
+  const showStore = !loaded.kind && !loaded.retail;
+  const canChangeStore =
+    showStore &&
+    storeChangeRefusal({
+      role: role ?? "",
+      isOwner: loaded.managerEmail.toLowerCase() === myEmail,
+      order: loaded,
+      to: loaded.store ? "" : "office",
+    }) === "";
   const canSetOrderDirection =
     !farm &&
     directionEditRefusal({
@@ -487,6 +501,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                   suggested={suggestedDirection}
                   hint={directionHint}
                 />
+              </div>
+            </div>
+          )}
+          {showStore && (loaded.store || canChangeStore) && (
+            <div className="flex gap-3 min-w-0">
+              <span className="mt-0.5 w-8 h-8 rounded-full grid place-items-center flex-none bg-surface-plane text-ink-muted">
+                <Icon name="store" className="w-4 h-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <OrderStoreSwitch orderId={order.orderId} store={loaded.store} editable={canChangeStore} />
               </div>
             </div>
           )}

@@ -2,6 +2,7 @@ import { prefetchTables, SHEET_TABS } from "./sheets";
 import { localDayKey } from "./timezone";
 import { FARM_LABELS, MONEY_LOG_ACTIONS, ORDER_STATUSES, ROLES } from "./constants";
 import { listBatches } from "./repo/batches";
+import { almatyHourOf, botOrderStore, inStore } from "./officeStore";
 import { getSettings } from "./repo/settings";
 import { getCurrentPrices } from "./repo/prices";
 import { priceFor } from "./priceList";
@@ -101,7 +102,17 @@ export async function placeBotOrder(input: {
       SHEET_TABS.ORDER_ITEMS,
     ]);
     const today = localDayKey();
-    const [batches, settings, prices] = await Promise.all([listBatches(), getSettings(), getCurrentPrices(today)]);
+    const [allBatches, settings, prices] = await Promise.all([listBatches(), getSettings(), getCurrentPrices(today)]);
+    // После 12:00 заказ НА СЕГОДНЯ — из подсклада «Офис», остальное — основной
+    // склад (`officeStore.ts`): то же деление, что бот видел в подсказке.
+    const now = new Date();
+    const store = botOrderStore({
+      almatyHour: almatyHourOf(now),
+      deliveryDate: draft.deliveryDate,
+      today,
+      officeHasStock: stockMap(inStore(allBatches, "office"), settings, now).size > 0,
+    });
+    const batches = inStore(allBatches, store);
     const plan = planBotOrder({
       draft,
       stock: Array.from(stockMap(batches, settings, new Date()).values()),
@@ -186,6 +197,7 @@ export async function placeBotOrder(input: {
       deliveryDate: plan.deliveryDate,
       direction: directionForCity(city),
       notes,
+      store,
       items: plan.items.map((i) => ({ ...i, flowerType: i.flowerType as never })),
     });
     await logMoney({
@@ -203,7 +215,7 @@ export async function placeBotOrder(input: {
       for (const part of dueParts(order)) invoices.push(await invoicePart(order, part.farm, part.due, input.kaspiPhone || phone));
     }
     const code = orderCode(orderId);
-    let text = botOrderText({ code, items: plan.items, deliveryDate: plan.deliveryDate, city, invoices });
+    let text = botOrderText({ code, items: plan.items, deliveryDate: plan.deliveryDate, city, invoices, office: store === "office" });
     if (invoices.some((i) => i.result === "failed" && !i.phone)) {
       text += "\nНапишите номер, к которому привязан ваш Kaspi, — выставлю счёт на него.";
     }

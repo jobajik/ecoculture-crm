@@ -78,6 +78,8 @@ export default async function StaffTakeoutsPage({
   const priceMap = priceMapForClient(prices);
   const options: TakeoutBatchOption[] = batches
     .filter((b) => b.quantityRemaining > 0)
+    // Только основной склад: офис отдаёт цветок клиентам (`officeStore.ts`).
+    .filter((b) => !b.store)
     .filter((b) => !farm || getFarmFor(b.flowerType) === farm)
     .map((b) => ({
       batchId: b.batchId,

@@ -6,6 +6,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { getStockSnapshot } from "@/lib/stock";
+import { canChooseOrderStore } from "@/lib/officeStore";
 import { buildClientStats } from "@/lib/clientStats";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
@@ -132,7 +133,7 @@ export default async function NewOrderPage({
     // продаёт, а перекладывает, и заказывать 500 стеблей, когда есть 40, —
     // просто испорченная заявка. Считаем по всем производствам: у розницы нет
     // привязки к одному, она возит и розу, и хризантему.
-    const stock = await getStockSnapshot();
+    const stock = await getStockSnapshot(new Date(), undefined, null, { store: "" });
     const stockMap: Record<string, number> = {};
     for (const card of stock.varieties) {
       for (const grade of card.grades) {
@@ -236,13 +237,21 @@ export default async function NewOrderPage({
   // обещает клиенту то, что лежит в холодильнике, и узнать об этом он должен
   // до разговора, а не от зав. складом на следующее утро. Считаем по всем
   // производствам: заявка бывает смешанной.
-  const clientStock = await getStockSnapshot();
-  const clientStockMap: Record<string, number> = {};
-  for (const card of clientStock.varieties) {
-    for (const grade of card.grades) {
-      clientStockMap[`${card.flowerType}|${card.variety}|${grade.grade}`] = grade.quantity;
+  // Склад заявки бывает основной или «Офис» (`officeStore.ts`) — подсказка
+  // остатка показывает тот, что выбран в форме.
+  const [clientStock, officeStock] = await Promise.all([
+    getStockSnapshot(new Date(), undefined, null, { store: "" }),
+    getStockSnapshot(new Date(), undefined, null, { store: "office" }),
+  ]);
+  const toMap = (snap: typeof clientStock) => {
+    const map: Record<string, number> = {};
+    for (const card of snap.varieties) {
+      for (const grade of card.grades) map[`${card.flowerType}|${card.variety}|${grade.grade}`] = grade.quantity;
     }
-  }
+    return map;
+  };
+  const clientStockMap = toMap(clientStock);
+  const officeStockMap = toMap(officeStock);
 
   return (
     <div>
@@ -273,6 +282,7 @@ export default async function NewOrderPage({
           showDirection={canSetDirection(role)}
           initialDirection={presetDirection}
           stock={clientStockMap}
+          officeStock={canChooseOrderStore(role) ? officeStockMap : undefined}
           managers={
             role === ROLES.SALES_HEAD
               ? [

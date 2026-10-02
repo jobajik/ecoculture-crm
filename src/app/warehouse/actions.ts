@@ -29,27 +29,41 @@ import {
 } from "@/lib/repo/staffTakeouts";
 import { cleanStaffName, isCompanyUse, takeoutPriceRefusal, takeoutRefusal } from "@/lib/staffTakeout";
 import { guard } from "@/lib/actionResult";
+import { inStore, normalizeStore, shipStoreRefusal, storeOfRole, type StoreCode } from "@/lib/officeStore";
 
 async function requireWarehouse() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
-  if (session.user.role !== "warehouse" && session.user.role !== "admin") {
+  const role = session.user.role ?? "";
+  if (role !== "warehouse" && role !== "admin" && role !== "office") {
     throw new Error("Недостаточно прав: действие доступно только зав. складом");
   }
-  const isAdmin = session.user.role === "admin";
-  const farm = isAdmin ? null : session.user.farm ?? null;
+  const isAdmin = role === "admin";
+  // Склад офиса работает со всеми цветами, но только в офисе (`officeStore.ts`).
+  const farm = isAdmin || role === "office" ? null : session.user.farm ?? null;
   // Пустая колонка Farm у зав. складом раньше означала «все производства»:
   // `assertOwnFlowerType` выходил на `if (!farm) return`. То есть строка в
   // Users, где Farm просто забыли дописать, открывала человеку чужой склад —
   // принимать, отгружать и СПИСЫВАТЬ чужой цветок. Забыть последнюю колонку
   // легко, и заметить это по поведению нельзя. Теперь такой доступ закрыт.
-  if (!isAdmin && !farm) {
+  if (role === "warehouse" && !farm) {
     throw new Error(
       "У вас не указано производство. Попросите администратора заполнить колонку Farm " +
         "на вкладке Users — без неё работать со складом нельзя."
     );
   }
-  return { email: session.user.email, farm };
+  return { email: session.user.email, farm, role, own: storeOfRole(role) };
+}
+
+/** Приёмка — только на основном складе: в офис цветок попадает перемещением. */
+function assertNotOffice(role: string) {
+  if (role === "office") throw new Error("Приёмка — на основном складе. В офис цветок попадает перемещением от РОПа.");
+}
+
+/** На каком складе действует человек: свой; админ — какой попросил. */
+function actingStore(own: StoreCode | "any" | null, requested: unknown): StoreCode {
+  if (own === "any") return normalizeStore(requested);
+  return own ?? "";
 }
 
 /** Зав. складом не может принимать, отгружать и списывать чужой цветок. */
@@ -64,7 +78,8 @@ function assertOwnFlowerType(farm: string | null, flowerType: string) {
 }
 
 async function createBatchActionInner(input: Omit<NewBatchInput, "receivedByEmail">) {
-  const { email, farm } = await requireWarehouse();
+  const { email, farm, role } = await requireWarehouse();
+  assertNotOffice(role);
   assertOwnFlowerType(farm, input.flowerType);
   if (!input.variety.trim()) throw new Error("Укажите сорт");
   if (!input.quantityIn || input.quantityIn <= 0) throw new Error("Укажите количество");
@@ -83,7 +98,8 @@ async function createBatchActionInner(input: Omit<NewBatchInput, "receivedByEmai
  * что распозналось, и только потом подтверждает загрузку.
  */
 async function parseBatchesFileActionInner(formData: FormData): Promise<ParseResult> {
-  const { farm } = await requireWarehouse();
+  const { farm, role } = await requireWarehouse();
+  assertNotOffice(role);
 
   const file = formData.get("file");
   if (!file || typeof file === "string") {
@@ -114,7 +130,8 @@ async function parseBatchesFileActionInner(formData: FormData): Promise<ParseRes
 
 /** Записывает на склад строки, которые кладовщик подтвердил после проверки файла. */
 async function importBatchesActionInner(rows: ParsedBatchRow[]) {
-  const { email, farm } = await requireWarehouse();
+  const { email, farm, role } = await requireWarehouse();
+  assertNotOffice(role);
 
   const valid = rows.filter((r) => !r.error && r.quantity > 0 && r.variety && r.grade && r.harvestDate);
   if (valid.length === 0) throw new Error("Нет ни одной корректной строки для загрузки");
@@ -144,13 +161,15 @@ async function createShipmentActionInner(input: {
   itemId: string;
   parts: ShipmentPart[];
 }) {
-  const { email, farm } = await requireWarehouse();
+  const { email, farm, role } = await requireWarehouse();
 
   // Цветок не уезжает раньше денег. Проверка стоит именно здесь, а не только
   // в интерфейсе: кнопку можно не показать, а вот прямую ссылку на страницу
   // отгрузки никто не отменял.
   const order = await getOrderById(input.orderId);
   if (!order) throw new Error("Заявка не найдена");
+  const storeRefusal = shipStoreRefusal(role, order.store);
+  if (storeRefusal) throw new Error(storeRefusal);
   if (!isReadyToShip(order)) {
     throw new Error(
       `Отгружать пока нельзя: ${notReadyReason(order).toLowerCase()}. ` +
@@ -166,6 +185,8 @@ async function createShipmentActionInner(input: {
   assertOwnFlowerType(farm, item.flowerType);
 
   const shipmentIds = await createShipments({ ...input, warehouseEmail: email });
+  revalidatePath("/office");
+  revalidatePath("/office/ship");
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
   revalidatePath(`/orders/${input.orderId}`);
@@ -175,12 +196,15 @@ async function createShipmentActionInner(input: {
 }
 
 async function createWriteoffActionInner(input: Omit<NewWriteoffInput, "warehouseEmail">) {
-  const { email, farm } = await requireWarehouse();
+  const { email, farm, own } = await requireWarehouse();
   if (!input.quantity || input.quantity <= 0) throw new Error("Укажите количество к списанию");
 
   const writeoffBatch = await getBatchById(input.batchId);
   if (!writeoffBatch) throw new Error("Партия не найдена");
   assertOwnFlowerType(farm, writeoffBatch.flowerType);
+  if (own !== "any" && normalizeStore(writeoffBatch.store) !== own) {
+    throw new Error(own === "office" ? "Эта партия на основном складе" : "Эта партия в офисе — её списывает склад офиса");
+  }
   if (!input.reason.trim()) throw new Error("Укажите причину списания");
 
   const writeoffId = await createWriteoff({ ...input, warehouseEmail: email });
@@ -214,21 +238,24 @@ async function parseWriteoffFileActionInner(formData: FormData): Promise<Writeof
   return parseWriteoffWorkbook(await (file as File).arrayBuffer());
 }
 
-async function previewWriteoffsActionInner(lines: WriteoffLine[], note: string): Promise<WriteoffPlan> {
-  const { farm } = await requireWarehouse();
-  return planWriteoffsFromSheet({ lines: cleanWriteoffLines(lines), farm, note });
+async function previewWriteoffsActionInner(lines: WriteoffLine[], note: string, store?: string): Promise<WriteoffPlan> {
+  const { farm, own } = await requireWarehouse();
+  return planWriteoffsFromSheet({ lines: cleanWriteoffLines(lines), farm, store: actingStore(own, store), note });
 }
 
-async function applyWriteoffsActionInner(lines: WriteoffLine[], note: string) {
-  const { email, farm } = await requireWarehouse();
+async function applyWriteoffsActionInner(lines: WriteoffLine[], note: string, store?: string) {
+  const { email, farm, own } = await requireWarehouse();
   const { plan } = await createWriteoffsByPlan({
     lines: cleanWriteoffLines(lines),
     farm,
+    store: actingStore(own, store),
     note,
     warehouseEmail: email,
   });
   revalidatePath("/warehouse/batches");
   revalidatePath("/warehouse/writeoff");
+  revalidatePath("/office");
+  revalidatePath("/office/writeoff");
   revalidatePath("/analytics");
   revalidatePath("/");
   return { total: plan.total, batches: plan.parts.length };
@@ -251,6 +278,7 @@ async function createStaffTakeoutActionInner(
   const farm = role === "warehouse" ? session.user.farm ?? null : null;
 
   const batch = await getBatchById(input.batchId);
+  if (batch && batch.store) throw new Error("Выдача сотрудникам и нужды компании — с основного склада");
   const refusal = takeoutRefusal({
     role,
     farm,
@@ -334,15 +362,18 @@ export async function createBatchAction(...args: Parameters<typeof createBatchAc
  * запросом (`createOrderShipments`).
  */
 async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal: number }) {
-  const { email, farm } = await requireWarehouse();
+  const { email, farm, role } = await requireWarehouse();
   forgetReads();
   const order = await getOrderById(input.orderId);
   if (!order) throw new Error("Заявка не найдена");
+  const storeRefusal = shipStoreRefusal(role, order.store);
+  if (storeRefusal) throw new Error(storeRefusal);
   if (!isReadyToShip(order)) {
     throw new Error(`Отгружать пока нельзя: ${notReadyReason(order).toLowerCase()}.`);
   }
   const own = order.items.filter((i) => !farm || getFarmFor(i.flowerType) === farm);
-  const plan = planWholeOrderShipment(own, await listBatches());
+  // Только партии склада заявки (подсклад «Офис» — `officeStore.ts`).
+  const plan = planWholeOrderShipment(own, inStore(await listBatches(), normalizeStore(order.store)));
   if (plan.total === 0) throw new Error("На складе нет ни одной партии под эту заявку — сначала приёмка");
   if (plan.total !== Math.round(Number(input.expectedTotal))) {
     throw new Error(
@@ -354,6 +385,8 @@ async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
   revalidatePath("/warehouse/picklist");
+  revalidatePath("/office");
+  revalidatePath("/office/ship");
   revalidatePath(`/orders/${order.orderId}`);
   revalidatePath("/orders");
   revalidatePath("/");

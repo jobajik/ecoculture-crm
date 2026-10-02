@@ -268,6 +268,8 @@ export function buildCalendarMonth(input: {
 
   // --- Срез (приёмка) ------------------------------------------------------
   for (const batch of input.batches) {
+    // Офисная партия — перемещение, а не срез (приход у неё ноль, `officeStore.ts`).
+    if (batch.store) continue;
     const date = isoOf(batch.receivedAt || batch.harvestDate);
     const day = byDate.get(date);
     if (!day) continue;

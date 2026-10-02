@@ -523,7 +523,7 @@ Google считает лимит по этому доступу. Значит, 6
 Вкладки: `Users`, `Orders`, `OrderItems`, `Batches`, `Shipments`, `Writeoffs`, `PriceHistory`,
 `Varieties`, `Plans`, `ShipmentPlans`, `HarvestForecast`, `HarvestMix`, `Claims`, `MoneyLog`,
 `Clients`, `Settings`, `StaffTakeouts`, `Payments`, `Leads`, `LeadTouches`, `KaspiInvoices`, `WaMessages`,
-`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`, `PointSales`, `PointWriteoffs`, `WaOrderDrafts`, `DebtReminders`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
+`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`, `PointSales`, `PointWriteoffs`, `WaOrderDrafts`, `DebtReminders`, `BotPhotos`, `StockMoves`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
 истины (см. грабли 1.1).
 
 Новые вкладки создаёт `npm run setup-sheet`: он дописывает недостающие листы и проставляет
@@ -563,6 +563,7 @@ Google считает лимит по этому доступу. Значит, 6
 | `accountant` | бухгалтер | оплаты (в т.ч. частичные), долги и звонки, рекламации, цветы в счёт зп, журнал, отчёт | не нужна |
 | `retail_almaty` | менеджер розницы, Алматы | заявки на НАШИ магазины Алматы | не нужна |
 | `retail_regions` | менеджер розницы, регионы | то же по нашим магазинам в регионах | не нужна |
+| `office` | склад офиса (Руслан) | подсклад «Офис»: остатки, отгрузка офисных заявок, списание — все цветы | не нужна |
 
 Роль `retail_regions` заведена, но людей в ней пока нет: заявки по Астане, Семею и
 Усть-Каменогорску заводят сами зав. складом производства — так решил владелец. Когда в городах
@@ -2540,6 +2541,47 @@ Farm должно быть разделение, что по розе, а что
 
 Проверка — `scripts/check-writeoff-bulk.ts` (в том числе файл «по кругу»).
 
+**Подсклад «Офис»** (02.10.2026, раздел «Офис» `/office`; правила — `src/lib/officeStore.ts`, перемещение —
+`src/lib/repo/stockMoves.ts`, проверка `check-office`). Владелец: «подсклад „Офис“, куда РОП перемещает цветы, и
+оттуда реализует; в основном оттуда продаёт бот, когда заявки после 12:00 — у нас заявки только до 12:00. Руслан,
+зав. складом, фактически отгружает клиентам с подсклада». Решения владельца: у Руслана роль **«Склад офиса»**
+(`office`) — все цветы, но только офис; из офиса отгружаются заявки бота после 12:00 и те, где менеджер/РОП выбрал
+«Склад: Офис»; доставка — такси/inDriver за счёт клиента; РОП возвращает цветок обратно на основной склад.
+
+- **партия знает свой склад**: колонки `Store` («office» или пусто) и `SourceBatchID` в конце `Batches` (грабли 1.1).
+  Перемещение в офис ОТРЕЗАЕТ стебли от основной партии в офисную партию той же срезки (`moveWrites`: есть офисная
+  партия от этой основной — прибавляем, нет — заводим). **У офисной партии приход НОЛЬ** (`QuantityIn = 0`): стебли
+  уже приняты один раз, и вся аналитика прихода, движение склада и календарь остались верными без правок. Возврат
+  кладёт стебли обратно в ту же основную партию. Раскладка — от старых срезок к свежим, всё или ничего
+  (`planStockMove` = `planWriteoffs`). Запись — одним `commitAtomic`, журнал — вкладка `StockMoves`;
+- **заявка знает свой склад**: `Store` в конце `Orders`. В форме заявки поле «Склад» у менеджера, РОПа и админа
+  (`canChooseOrderStore`), подсказка остатка — с выбранного склада. Поменять склад можно, пока ничего не отгружено
+  (`storeChangeRefusal`): на странице заявки, а Руслан — на странице отгрузки («отдать на основной склад», если в офисе
+  не хватило). В списке заявок у офисной — «· офис»;
+- **кто что отгружает** (`shipStoreRefusal`, сервер — `warehouse/actions.ts`): зав. складом — только основные заявки,
+  склад офиса — только офисные, админ — любые; партии — только со склада заявки (`batchStoreRefusal`, проверка ещё и
+  в `createOrderShipments`). Страница отгрузки общая — `/warehouse/ship/<id>` (доступ склада офиса — отдельное правило
+  в `access.ts` выше «/warehouse»), раскладка «всей заявки» и выбор партий берут партии склада заявки;
+- **основной склад офиса не видит**: очередь, лист сборки, партии, списание, выдачи и нужды компании — только `Store`
+  пусто; на главной зав. складом видит основной, склад офиса — офис (`stockStoreOfRole`), остальные — оба вместе.
+  Приёмки у офиса нет — цветок приходит только перемещением;
+- **раздел «Офис»**: «Склад офиса» (остатки и, у РОПа и админа, перемещение «Склад → Офис / Офис → Склад» —
+  `StockMoveForm`), «Отгрузка» (очередь офисных заявок с телефоном клиента), «Списание» (тот же `WriteoffBulkForm` с
+  `store="office"`), «Перемещения» (журнал за 30 дней);
+- **бот** (`botOrderStore`, `botStoreNote`): до 12:00 по Алматы видит и продаёт только основной склад; с 12:00 у
+  модели два списка — «Сегодня, из офиса» (отправка такси/inDriver за счёт клиента, строка в `botOrderText`) и «На
+  завтра и позже» с основного. Заказ на сегодня после 12:00 — заявка `Store=office`, на завтра — основной склад. В офисе
+  нет живого (не просроченного, `stockMap`) цветка — всё как до 12:00, на завтра. Дожим предлагает то, что продаётся
+  сейчас;
+- **РОП** перемещает и видит офис, но не отгружает и не списывает (вкладки — `officeTabsFor`); склад офиса может
+  только ОТДАТЬ свою заявку на основной склад, забрать себе основную — нет (`storeChangeRefusal`); «В магазин — сразу
+  списать» при возврате берёт только основные партии;
+- **сетка вкладки**: у Orders стало 27 колонок, а новая вкладка Google — 26 (A–Z); строку шире сетки Google не
+  допишет. `scripts/ensure-columns.ts` (`ensureGridColumns`) добавляет недостающие колонки — запускать перед
+  `setup-sheet`, когда заголовков становится больше 26;
+- диагностика «партия опустела без журнала» (`diag-shipped`) покажет основные партии, из которых перемещали в офис, —
+  это не потеря: их стебли лежат в офисных партиях с тем же `SourceBatchID`.
+
 **«Склад → Аналитика»** (`/warehouse/analytics`, расчёт — `buildStockAnalytics()` в
 `src/lib/stockAnalytics.ts`, проверка `check-stock-analytics`). Владелец: «аналитика по складу —
 сколько приход, сколько продали и другая, как с клиентами». Месяц и сравнение с прошлым:
@@ -2648,7 +2690,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

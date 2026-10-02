@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { listBatches } from "@/lib/repo/batches";
 import { farmLabel } from "@/lib/constants";
 import { stockPositions } from "@/lib/writeoffPlan";
+import { inStore } from "@/lib/officeStore";
 import PageHeader from "@/components/PageHeader";
 import WriteoffBulkForm from "@/components/WriteoffBulkForm";
 import { WAREHOUSE_TABS } from "../tabs";
@@ -17,7 +18,8 @@ export const dynamic = "force-dynamic";
 export default async function WriteoffPage({ searchParams }: { searchParams?: { mode?: string } }) {
   const session = await getServerSession(authOptions);
   const farm = session?.user?.role === "warehouse" ? session.user.farm ?? null : null;
-  const positions = stockPositions(await listBatches(), farm);
+  // Основной склад; офис списывает в своём разделе (`/office/writeoff`).
+  const positions = stockPositions(inStore(await listBatches(), ""), farm);
 
   return (
     <div className="max-w-4xl">

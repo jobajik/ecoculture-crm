@@ -2,9 +2,10 @@ import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets
 import { localDayKey } from "./timezone";
 import { getCurrentPrices } from "./repo/prices";
 import { listBatches } from "./repo/batches";
+import { almatyHourOf, botStoreFor, botStoreNote, inStore } from "./officeStore";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
-import { lastBroadcastForBot, pricesForBot, stockForBot } from "./botKnowledge";
+import { lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "./botKnowledge";
 import { BOT_ORDER_SCHEMA, toWhatsApp } from "./botOrder";
 import { botClientContext, cancelBotOrder, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
 import {
@@ -99,13 +100,26 @@ async function priceText(): Promise<string> {
   }
 }
 
-/** Что сейчас есть на складе — для подсказки модели. Сбой — пусто, бот тогда о наличии не говорит. */
-async function stockText(): Promise<string> {
+/**
+ * Что сейчас есть на складе — для подсказки модели. До 12:00 — основной склад;
+ * после — два списка: «сегодня из офиса» и «на завтра» с основного (подсклад
+ * «Офис», `officeStore.ts`). Сбой — пусто, бот тогда о наличии не говорит.
+ */
+async function stockText(): Promise<{ text: string; storeNote: string }> {
   try {
+    const now = new Date();
+    const hour = almatyHourOf(now);
     const [batches, settings] = await Promise.all([listBatches(), getSettings()]);
-    return stockForBot(batches, settings, new Date());
+    const office = inStore(batches, "office");
+    const main = inStore(batches, "");
+    const officeToday = botStoreFor(hour, stockMap(office, settings, now).size > 0) === "office";
+    if (!officeToday) return { text: stockForBot(main, settings, now), storeNote: botStoreNote(false, hour) };
+    return {
+      text: `Сегодня, из офиса:\n${stockForBot(office, settings, now)}\n\nНа завтра и позже (основной склад):\n${stockForBot(main, settings, now)}`,
+      storeNote: botStoreNote(true, hour),
+    };
   } catch {
-    return "";
+    return { text: "", storeNote: "" };
   }
 }
 
@@ -127,6 +141,8 @@ function systemPrompt(p: {
   instructions: string;
   prices: string;
   stock: string;
+  /** С какого склада сейчас продаём и когда доставка (`botStoreNote`). */
+  storeNote?: string;
   broadcast: string;
   client: string;
   today: string;
@@ -202,7 +218,7 @@ function systemPrompt(p: {
     "   передумал, не нужно — cancelOrder=номер заказа и вежливо попрощайся, предложив написать, когда понадобятся цветы.",
     "6) Оплатил — поблагодари: оплата придёт в систему сама, и ты напишешь, когда заказ уйдёт на сборку. Не подтверждай оплату сам.",
     "   Хочет платить наличными или по реквизитам — согласись, заполни alert («оплата наличными/по реквизитам»), заказ всё равно оформляй.",
-    "Доставка — завтра и позже обычно; сегодня — только если клиент просит, не обещай время, «уточним при сборке».",
+    "Доставка — завтра и позже обычно; сегодня — только если клиент просит (после 12:00 из офиса — сегодня, см. ниже), не обещай время.",
     "Жалоба или клиент прямо просит живого человека — извинись или согласись, скажи, что разберёмся, задай уточняющий",
     "вопрос и заполни alert. Разговор продолжаешь ты.",
     "",
@@ -210,6 +226,7 @@ function systemPrompt(p: {
     "уже оформленного заказа («келди», «пришли», «выезжаю», «буду через 5 минут»). Не обещай позвонить, приехать или прислать файл.",
     "Никогда не проси номера карт, пароли и коды из SMS. Не обсуждай посторонние темы.",
     `\nСегодня ${today}, ${weekday} (Алматы). «Завтра», «в пятницу» переводи в дату сам.`,
+    ...(p.storeNote ? [p.storeNote] : []),
     client ? `\nО клиенте:\n${client}` : "",
     instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены и наличие):\n${instructions}` : "",
     broadcast ? `\nРассылка, которую получил этот клиент (на неё он, скорее всего, и отвечает):\n${broadcast}` : "",
@@ -323,14 +340,14 @@ export async function botReply(
     SHEET_TABS.ORDER_ITEMS,
     SHEET_TABS.KASPI_INVOICES,
   ]).catch(() => undefined);
-  const [prices, stock, broadcast, client] = await Promise.all([
+  const [prices, stockInfo, broadcast, client] = await Promise.all([
     priceText(),
     stockText(),
     broadcastText(chat.phone),
     botClientContext(chat.phone),
   ]);
   const { data } = await chatJson(
-    systemPrompt({ instructions, prices, stock, broadcast, client, today: localDayKey() }),
+    systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey() }),
     `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
     "bot_reply",
     BOT_SCHEMA,

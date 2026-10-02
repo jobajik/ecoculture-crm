@@ -19,6 +19,7 @@ export default function OrderForm({
   showDirection = false,
   initialDirection = "",
   stock,
+  officeStock,
   initialItems,
   initialNotes = "",
   draftId = "",
@@ -56,6 +57,11 @@ export default function OrderForm({
    * день, и продавать вперёд нормально) — поэтому цифра, а не запрет.
    */
   stock?: Record<string, number>;
+  /**
+   * Остаток подсклада «Офис». Есть — в форме появляется выбор склада (менеджер,
+   * РОП, админ; `officeStore.ts`), и подсказка остатка берётся с выбранного.
+   */
+  officeStock?: Record<string, number>;
   /** Позиции из заказа WhatsApp (`waOrder.ts`) — менеджер проверяет и сохраняет. */
   initialItems?: DraftItem[];
   initialNotes?: string;
@@ -94,6 +100,8 @@ export default function OrderForm({
   // базе менеджер жал отдельную галочку в ту же минуту, то есть это был лишний
   // шаг на каждую заявку. Снять — если состав ещё обсуждается.
   const [confirmed, setConfirmed] = useState(true);
+  // Склад отгрузки: основной или «Офис» (заказы после 12:00 — `officeStore.ts`).
+  const [store, setStore] = useState("");
   const managerOf = (c: ClientOption | null) =>
     managers?.find((m) => m.email === (c?.managerEmail ?? "") && m !== managers[0])?.email ?? managers?.[0]?.email ?? "";
   const [assignTo, setAssignTo] = useState(managerOf(initialClient));
@@ -127,6 +135,7 @@ export default function OrderForm({
         direction,
         paymentMethod,
         confirmed,
+        store: officeStock ? store : "",
         draftId: draftId || undefined,
         assignTo: managers ? assignTo : undefined,
         items: items.map((it) => ({
@@ -221,6 +230,15 @@ export default function OrderForm({
             )}
           </div>
         )}
+        {officeStock && (
+          <div>
+            <label className="label">Склад</label>
+            <select className="input" value={store} onChange={(e) => setStore(e.target.value)}>
+              <option value="">Основной склад</option>
+              <option value="office">Офис (после 12:00)</option>
+            </select>
+          </div>
+        )}
         <div>
           <label className="label">Вид оплаты</label>
           <select
@@ -250,7 +268,7 @@ export default function OrderForm({
         prices={prices}
         items={items}
         onChange={setItems}
-        stock={stock}
+        stock={officeStock && store === "office" ? officeStock : stock}
       />
 
       {error && (

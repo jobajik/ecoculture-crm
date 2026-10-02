@@ -7,22 +7,23 @@ import { computeBatchStorageInfo } from "@/lib/shelfLife";
 import OrderStageBadge from "@/components/OrderStageBadge";
 import { byUrgency, orderStage } from "@/lib/orderStage";
 import { localDayKey } from "@/lib/timezone";
-import { FLOWER_TYPE_LABELS, farmLabel, getFarmFor } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
-import { WAREHOUSE_TABS } from "./tabs";
+import { officeTabsFor } from "../tabs";
 import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip } from "@/lib/orderReady";
-import { isOffice } from "@/lib/officeStore";
+import { inStore } from "@/lib/officeStore";
 
 export const dynamic = "force-dynamic";
 
-export default async function WarehousePage() {
+/** Очередь офиса: заявки «Склад: Офис» — в основном бот после 12:00 (`officeStore.ts`). */
+export default async function OfficeShipPage() {
   const session = await getServerSession(authOptions);
-  const farm = session?.user?.role === "warehouse" ? session.user.farm ?? null : null;
+  const role = session?.user?.role ?? "";
 
   const [orders, batches, settings] = await Promise.all([
     listOrdersWithItems(),
@@ -30,15 +31,7 @@ export default async function WarehousePage() {
     getSettings(),
   ]);
 
-  // Зав. складом видит только заявки со своим цветком и только эти позиции.
-  // Заявки офиса собирает склад офиса — здесь их нет (`officeStore.ts`).
-  const scoped = orders
-    .filter((o) => !isOffice(o))
-    .map((o) => ({
-      ...o,
-      items: farm ? o.items.filter((i) => getFarmFor(i.flowerType) === farm) : o.items,
-    }))
-    .filter((o) => o.items.length > 0);
+  const scoped = inStore(orders, "office").filter((o) => o.items.length > 0);
 
   // В очереди — то, что ещё есть отгружать СВОИМ цветком: заявка, по которой
   // своё уже уехало целиком, здесь только мешает (раньше она висела с кнопкой
@@ -58,9 +51,8 @@ export default async function WarehousePage() {
   const readyToShip = pending.filter((o) => isReadyToShip(o));
   const waiting = pending.filter((o) => !isReadyToShip(o));
 
-  const alerts = batches
-    .filter((b) => b.quantityRemaining > 0 && !b.store)
-    .filter((b) => !farm || getFarmFor(b.flowerType) === farm)
+  const alerts = inStore(batches, "office")
+    .filter((b) => b.quantityRemaining > 0)
     .map((b) => computeBatchStorageInfo(b, settings))
     .filter((s) => s.status === "warning" || s.status === "critical")
     .sort((a, b) => b.percentUsed - a.percentUsed)
@@ -70,20 +62,10 @@ export default async function WarehousePage() {
     <div>
       <PageHeader
         area="stock"
-        title="Очередь на отгрузку"
-        subtitle={farm ? `Производство: ${farmLabel(farm)}` : undefined}
+        title="Отгрузка из офиса"
+        subtitle="Доставка — такси или inDriver за счёт клиента"
         icon="truck"
-        tabs={WAREHOUSE_TABS}
-        actions={
-          <div className="flex gap-2">
-            <Link href="/orders/new?region=1" className="btn-secondary">
-              + Опт в регион
-            </Link>
-            <Link href="/warehouse/receive" className="btn-primary">
-              + Приёмка
-            </Link>
-          </div>
-        }
+        tabs={officeTabsFor(role)}
       />
 
       {alerts.length > 0 && (
@@ -106,11 +88,8 @@ export default async function WarehousePage() {
             ))}
           </ul>
           <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm">
-            <Link href="/warehouse/batches" className="text-series-1">
-              Все партии →
-            </Link>
-            <Link href="/warehouse/writeoff?mode=recount" className="text-series-1">
-              Сверить остаток →
+            <Link href="/office/writeoff" className="text-series-1">
+              Списание →
             </Link>
           </div>
         </Section>
@@ -149,6 +128,7 @@ export default async function WarehousePage() {
                     <div className="truncate max-w-[200px]" title={o.clientName}>
                       {o.clientName}
                     </div>
+                    {o.clientPhone && <div className="text-xs text-ink-muted whitespace-nowrap">{o.clientPhone}</div>}
                   </td>
                   <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">
                     {formatDay(o.deliveryDate)}
@@ -166,16 +146,22 @@ export default async function WarehousePage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
-                      Отгрузить
-                    </Link>
+                    {role === "office" || role === "admin" ? (
+                      <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
+                        Отгрузить
+                      </Link>
+                    ) : (
+                      <Link href={`/orders/${o.orderId}`} className="text-series-1 hover:underline">
+                        Открыть
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}
               {readyToShip.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
-                    {waiting.length > 0 ? "Готовых заявок нет" : "Отгружать нечего"}
+                    {waiting.length > 0 ? "Готовых заявок нет" : "Заявок офиса нет"}
                   </td>
                 </tr>
               )}
@@ -204,9 +190,13 @@ export default async function WarehousePage() {
                     className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
                   >
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
-                      <Link href={`/orders/${o.orderId}`} className="hover:underline">
-                        {o.orderId}
-                      </Link>
+                      {role === "office" ? (
+                        o.orderId
+                      ) : (
+                        <Link href={`/orders/${o.orderId}`} className="hover:underline">
+                          {o.orderId}
+                        </Link>
+                      )}
                     </td>
                     <td className="px-4 py-3" data-label="Клиент">
                       <div className="truncate max-w-[200px]" title={o.clientName}>

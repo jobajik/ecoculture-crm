@@ -406,7 +406,7 @@ console.log("\nЦены в тексте рассылки");
   const now = new Date("2026-10-01T06:00:00Z");
   const batch = (id: string, flowerType: string, variety: string, grade: string, qty: number, harvestDate: string) => ({
     batchId: id, receivedAt: harvestDate, harvestDate, flowerType: flowerType as "rose", variety, grade,
-    quantityIn: qty, quantityRemaining: qty, location: "", receivedByEmail: "",
+    quantityIn: qty, quantityRemaining: qty, location: "", receivedByEmail: "", store: "", sourceBatchId: "",
   });
   const stock = stockForBot(
     [

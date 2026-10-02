@@ -17,6 +17,8 @@ export default async function BatchesPage() {
 
   const [batches, settings] = await Promise.all([listBatches(), getSettings()]);
   const infos = batches
+    // Офисные партии — в разделе «Офис» (`officeStore.ts`).
+    .filter((b) => !b.store)
     .filter((b) => !farm || getFarmFor(b.flowerType) === farm)
     .map((b) => computeBatchStorageInfo(b, settings));
 

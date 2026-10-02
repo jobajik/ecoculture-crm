@@ -1,4 +1,5 @@
 import { listBatches } from "./repo/batches";
+import { normalizeStore, type StoreCode } from "./officeStore";
 import { getSettings } from "./repo/settings";
 import { computeBatchStorageInfo, type StorageStatus } from "./shelfLife";
 import { FARM_ORDER, compareGrades, getFarmFor, isLiquidGrade } from "./constants";
@@ -186,15 +187,22 @@ export async function getStockSnapshot(
   injected?: { batches: Batch[]; settings: Settings },
   /** Ограничение по производству — зав. складом видит только свой цветок. */
   farmFilter?: string | null,
-  extras?: { prices?: Map<string, PriceRow>; shipments?: Shipment[] }
+  extras?: {
+    prices?: Map<string, PriceRow>;
+    shipments?: Shipment[];
+    /** Только один склад: пусто — основной, «office» — офис; не задан — оба вместе. */
+    store?: StoreCode;
+  }
 ): Promise<StockSnapshot> {
   const [batches, settings] = injected
     ? [injected.batches, injected.settings]
     : await Promise.all([listBatches(), getSettings()]);
 
+  const inStoreScope = (b: Batch) => extras?.store === undefined || normalizeStore(b.store) === extras.store;
   const active = batches
     .filter((b) => b.quantityRemaining > 0)
     .filter((b) => !farmFilter || getFarmFor(b.flowerType) === farmFilter)
+    .filter(inStoreScope)
     .map((b) => computeBatchStorageInfo(b, settings, now));
 
   const totalStems = active.reduce((sum, i) => sum + i.batch.quantityRemaining, 0);
@@ -363,7 +371,7 @@ export async function getStockSnapshot(
   // --- По компаниям -----------------------------------------------------------
   const weekAgo = localDayKey(new Date(now.getTime() - 6 * 86_400_000));
   const batchById = new Map(batches.map((b) => [b.batchId, b]));
-  const inScope = (b: Batch) => !farmFilter || getFarmFor(b.flowerType) === farmFilter;
+  const inScope = (b: Batch) => (!farmFilter || getFarmFor(b.flowerType) === farmFilter) && inStoreScope(b);
   function companyRow(farm: string, match: (b: Batch) => boolean): StockCompanyRow {
     const rows = active.filter((i) => match(i.batch));
     const stems = rows.reduce((s, i) => s + i.batch.quantityRemaining, 0);

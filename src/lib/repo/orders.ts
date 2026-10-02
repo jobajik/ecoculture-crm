@@ -71,6 +71,7 @@ export function toOrder(record: Record<string, string>): Order {
     invoiceSentAt: toIsoDateTime(record.InvoiceSentAt),
     invoiceNote: (record.InvoiceNote || "").trim(),
     realization1c: (record.Realization1C || "").trim(),
+    store: (record.Store || "").trim().toLowerCase() === "office" ? "office" : "",
   };
 }
 
@@ -134,6 +135,8 @@ export interface NewOrderInput {
   clientPhone: string;
   deliveryDate: string;
   notes?: string;
+  /** Склад отгрузки: пусто — основной, «office» — подсклад «Офис». */
+  store?: string;
   items: NewOrderItemInput[];
 }
 
@@ -247,6 +250,7 @@ export function buildNewOrder(
     Kind: input.kind || "",
     InvoiceSentAt: "",
     InvoiceNote: "",
+    Store: input.store === "office" ? "office" : "",
   };
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -793,4 +797,13 @@ export async function clearOrdersPaid(orderIds: string[], accountantEmail: strin
   if (paymentRows.length > 0) ops.push({ kind: "delete", tab: SHEET_TABS.PAYMENTS, rowNumbers: paymentRows });
   if (ops.length > 0) await commitAtomic(ops);
   return touched;
+}
+
+/** Склад отгрузки заявки: пусто — основной, «office» — подсклад «Офис». */
+export async function setOrderStore(orderId: string, store: string): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () => ({ Store: store === "office" ? "office" : "" })
+  );
 }

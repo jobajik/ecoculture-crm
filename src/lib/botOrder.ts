@@ -214,6 +214,8 @@ export function botOrderText(input: {
   deliveryDate: string;
   city: string;
   invoices: InvoiceOutcome[];
+  /** Из подсклада «Офис» — отправляем такси/inDriver за счёт клиента (`officeStore.ts`). */
+  office?: boolean;
 }): string {
   const lines = input.items.map(
     (i) =>
@@ -228,6 +230,7 @@ export function botOrderText(input: {
     "",
     `Итого: *${money(total)}*`,
     `Доставка: ${dayText(input.deliveryDate)}${input.city ? `, ${input.city}` : ""}`,
+    ...(input.office ? ["Отправим такси или inDriver — доставку оплачиваете вы."] : []),
     "",
   ];
   const many = input.invoices.length > 1;

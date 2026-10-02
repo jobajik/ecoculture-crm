@@ -16,15 +16,22 @@ import { planWholeOrderShipment } from "@/lib/shipRules";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { inStore, normalizeStore, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
+import OrderStoreSwitch from "@/components/OrderStoreSwitch";
 
 export const dynamic = "force-dynamic";
 
 export default async function ShipOrderPage({ params }: { params: { orderId: string } }) {
   const session = await getServerSession(authOptions);
-  const farm = session?.user?.role === "warehouse" ? session.user.farm ?? null : null;
+  const role = session?.user?.role ?? "";
+  const farm = role === "warehouse" ? session?.user?.farm ?? null : null;
 
   const order = await getOrderById(params.orderId);
   if (!order) notFound();
+  // Заявку офиса отгружает склад офиса, основную — основной склад (`officeStore.ts`).
+  const storeRefusal = shipStoreRefusal(role, order.store);
+  const store = normalizeStore(order.store);
+  const office = store === "office";
 
   // Зав. складом отгружает только позиции своего производства.
   const ownItems = order.items.filter((i) => !farm || getFarmFor(i.flowerType) === farm);
@@ -32,7 +39,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
   // Склад читается ОДИН раз на всю страницу, а не по разу на позицию: заявка
   // из восьми позиций стоила восьми чтений, и вместе с отгрузками это упиралось
   // в лимит Google (см. `readTable` в src/lib/sheets.ts).
-  const allBatches = await listBatches();
+  const allBatches = inStore(await listBatches(), store);
   // Раскладка «всей заявки сразу» — та же функция, что пересчитает её на сервере.
   const whole = planWholeOrderShipment(ownItems, allBatches);
   const batchById = new Map(allBatches.map((b) => [b.batchId, b]));
@@ -54,19 +61,39 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
         icon="truck"
         subtitle={
           <>
+            {office && <>Офис · </>}
             {farm && <>{farmLabel(farm)} · </>}
             {order.clientName}
+            {office && order.clientPhone && ` · ${order.clientPhone}`}
             {order.deliveryDate && ` · доставка ${formatDay(order.deliveryDate)}`}
           </>
         }
         actions={<OrderStageBadge stage={orderStage(order, localDayKey())} />}
       />
-      {isReadyToShip(order) && creditNote(order) && (
+      {role === "office" && office && (
+        <div className="card mb-4 text-sm">
+          <OrderStoreSwitch
+            orderId={order.orderId}
+            store={order.store}
+            editable={storeChangeRefusal({ role, isOwner: false, order, to: "" }) === ""}
+          />
+          <p className="text-xs text-ink-muted mt-1">Не хватает в офисе — отдайте заявку на основной склад.</p>
+        </div>
+      )}
+      {office && order.notes && (
+        <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2 mb-4">{order.notes}</p>
+      )}
+      {storeRefusal ? (
+        <Section tone="warn" icon="alert" title="Не ваш склад">
+          <p className="text-sm text-ink-secondary">{storeRefusal}.</p>
+        </Section>
+      ) : null}
+      {!storeRefusal && isReadyToShip(order) && creditNote(order) && (
         <p className="text-sm text-[#8a5a00] bg-[#8a5a00]/10 rounded-lg px-3 py-2 mb-4">
           Отгрузка в долг: у клиента «{order.clientPaymentTerms}».
         </p>
       )}
-      {isReadyToShip(order) ? (
+      {storeRefusal ? null : isReadyToShip(order) ? (
         <>
           <WholeOrderShip
             orderId={order.orderId}
@@ -105,9 +132,11 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
         >
           <div className="space-y-2">
             <p className="text-sm text-ink-secondary">{notReadyReason(order)}</p>
-            <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
-              Открыть заявку
-            </Link>
+            {role !== "office" && (
+              <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
+                Открыть заявку
+              </Link>
+            )}
           </div>
         </Section>
       )}

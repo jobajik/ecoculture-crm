@@ -660,3 +660,29 @@ export async function clearDataRows(tabName: string): Promise<number> {
 }
 
 export { SHEET_TABS };
+
+/**
+ * Сетка вкладки должна вмещать все колонки заголовков. У новой вкладки Google
+ * даёт 26 колонок (A–Z), а у Orders их стало 27 (Store, подсклад «Офис») —
+ * дописывание строки шире сетки Google отвергает. Добавляет недостающие колонки
+ * в конец; ничего не удаляет и не двигает. Возвращает, где что добавлено.
+ */
+export async function ensureGridColumns(): Promise<{ tab: string; before: number; after: number }[]> {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: getSpreadsheetId(), fields: "sheets.properties" });
+  const requests: sheets_v4.Schema$Request[] = [];
+  const changed: { tab: string; before: number; after: number }[] = [];
+  for (const s of meta.data.sheets ?? []) {
+    const title = s.properties?.title ?? "";
+    const need = (SHEET_HEADERS[title] ?? []).length;
+    const have = s.properties?.gridProperties?.columnCount ?? 0;
+    if (need > have && s.properties?.sheetId !== undefined && s.properties?.sheetId !== null) {
+      requests.push({ appendDimension: { sheetId: s.properties.sheetId, dimension: "COLUMNS", length: need - have } });
+      changed.push({ tab: title, before: have, after: need });
+    }
+  }
+  if (requests.length) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: getSpreadsheetId(), requestBody: { requests } });
+  }
+  return changed;
+}

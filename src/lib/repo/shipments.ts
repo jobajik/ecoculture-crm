@@ -4,6 +4,7 @@ import { generateId } from "../id";
 import type { Shipment } from "../types";
 import { toBatch } from "./batches";
 import { shipmentPartsRefusal, statusAfterShipping } from "../shipRules";
+import { batchStoreRefusal } from "../officeStore";
 import { toOrderItem } from "./orders";
 
 function toShipment(record: Record<string, string>): Shipment {
@@ -96,6 +97,17 @@ export async function createOrderShipments(input: {
     record: rowToRecord(SHEET_TABS.ORDER_ITEMS, row),
     rowNumber: itemTable.rowNumbers[i],
   }));
+
+  // Склад заявки: отгружается она только партиями того же склада (подсклад «Офис»).
+  const orderStore =
+    orderTable.rows.map((row) => rowToRecord(SHEET_TABS.ORDERS, row)).find((r) => r.OrderID === input.orderId)?.Store ?? "";
+  for (const line of lines) {
+    for (const p of line.parts) {
+      const b = batches.get(p.batchId);
+      const refusal = b ? batchStoreRefusal(b.store, orderStore) : "";
+      if (refusal) throw new Error(`Партия ${p.batchId}: ${refusal}`);
+    }
+  }
 
   const ops: WriteOp[] = [];
   const shippedNow = new Map<string, number>();

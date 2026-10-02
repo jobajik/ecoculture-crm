@@ -35,8 +35,11 @@ const REASONS = [DEFAULT_WRITEOFF_REASON, "Брак", "Сломан при сб�
 export default function WriteoffBulkForm({
   positions,
   initialMode = "writeoff",
+  store = "",
 }: {
   positions: StockPosition[];
+  /** Склад: пусто — основной, «office» — подсклад «Офис». */
+  store?: string;
   /** «recount» — пересчёт: вписывают, сколько лежит на самом деле. */
   initialMode?: "writeoff" | "recount";
 }) {
@@ -121,7 +124,7 @@ export default function WriteoffBulkForm({
     if (lines.length === 0) return setError("Впишите, сколько списать, хотя бы в одну строку");
     setBusy(true);
     try {
-      const result = unwrapValue(await previewWriteoffsAction(lines, note));
+      const result = unwrapValue(await previewWriteoffsAction(lines, note, store));
       setPlan({ lines, result });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось проверить");
@@ -135,7 +138,7 @@ export default function WriteoffBulkForm({
     setError(null);
     setBusy(true);
     try {
-      const r = unwrapValue(await applyWriteoffsAction(plan.lines, note));
+      const r = unwrapValue(await applyWriteoffsAction(plan.lines, note, store));
       setDone(`Списано ${nf(r.total)} шт. — ${batchWord(r.batches)}.`);
       setPlan(null);
       setQty({});
@@ -200,7 +203,7 @@ export default function WriteoffBulkForm({
               Впишите «Списать, шт» напротив нужных строк.
             </p>
           </div>
-          <a href="/api/warehouse/writeoff-template" className="btn-secondary !py-1.5">
+          <a href={`/api/warehouse/writeoff-template${store ? `?store=${store}` : ""}`} className="btn-secondary !py-1.5">
             ↓ Шаблон
           </a>
         </div>

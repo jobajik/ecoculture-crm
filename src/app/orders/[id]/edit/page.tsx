@@ -82,7 +82,7 @@ export default async function EditOrderPage({ params }: { params: { id: string }
   // создании заявки в магазин: человек перекладывает цветок, а не продаёт.
   let stock: Record<string, number> | undefined;
   if (retail) {
-    const snapshot = await getStockSnapshot();
+    const snapshot = await getStockSnapshot(new Date(), undefined, null, { store: "" });
     stock = {};
     for (const card of snapshot.varieties) {
       for (const grade of card.grades) {

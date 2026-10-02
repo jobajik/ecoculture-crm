@@ -68,6 +68,11 @@ const ROLE_GUIDE: { code: string; does: string; farm: string }[] = [
     does: "Заявки на наши магазины в регионах",
     farm: "не нужна",
   },
+  {
+    code: "office",
+    does: "Подсклад «Офис»: остатки, отгрузка офисных заявок, списание — все цветы",
+    farm: "не нужна",
+  },
 ];
 
 export default async function AdminPage() {

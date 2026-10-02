@@ -82,6 +82,8 @@ export interface Order {
   invoiceNote: string;
   /** Номер документа реализации в 1С; вписывает бухгалтер. */
   realization1c: string;
+  /** С какого склада отгружается: пусто — основной, «office» — подсклад «Офис». */
+  store: string;
   /**
    * Условия оплаты из карточки клиента («Отсрочка 7 дней», «По факту»…).
    * НЕ колонка заявки: подтягивается при чтении (`listOrdersWithItems`), потому
@@ -211,6 +213,10 @@ export interface Batch {
   quantityRemaining: number;
   location: string;
   receivedByEmail: string;
+  /** Склад: пусто — основной, «office» — подсклад «Офис» (`officeStore.ts`). */
+  store: string;
+  /** У офисной партии — основная партия, от которой её отрезали. */
+  sourceBatchId: string;
 }
 
 export interface Shipment {

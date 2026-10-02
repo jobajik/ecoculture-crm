@@ -153,7 +153,10 @@ export default function OrdersTable({
                     >
                       {o.orderId}
                     </Link>
-                    <div className="text-xs text-ink-muted">{formatDay(o.createdAt)}</div>
+                    <div className="text-xs text-ink-muted whitespace-nowrap">
+                      {formatDay(o.createdAt)}
+                      {o.store === "office" && <span className="ml-1.5 text-section-stock font-medium">· офис</span>}
+                    </div>
                     {/* Действия админа — под номером, а не отдельной колонкой:
                         восьмая колонка вылезала за край (боковой прокрутки в
                         таблицах нет — см. CLAUDE.md). */}

@@ -19,6 +19,8 @@ export function toBatch(record: Record<string, string>): Batch {
     quantityRemaining: Number(record.QuantityRemaining) || 0,
     location: record.Location || "",
     receivedByEmail: (record.ReceivedByEmail || "").toLowerCase(),
+    store: (record.Store || "").trim().toLowerCase() === "office" ? "office" : "",
+    sourceBatchId: (record.SourceBatchID || "").trim(),
   };
 }
 

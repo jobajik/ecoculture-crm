@@ -62,6 +62,9 @@ export const SHEET_TABS = {
   WA_ORDER_DRAFTS: "WaOrderDrafts",
   DEBT_REMINDERS: "DebtReminders",
   BOT_PHOTOS: "BotPhotos",
+  // Перемещения между основным складом и подскладом «Офис» (`officeStore.ts`):
+  // строка на партию, только дописывается.
+  STOCK_MOVES: "StockMoves",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -156,6 +159,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     //
     // Колонка последняя (грабли 1.1).
     "Realization1C",
+    // С какого склада отгружается: пусто — основной, «office» — подсклад «Офис».
+    "Store",
   ],
   // Клиентская база. Заводит менеджер, правит свой менеджер, РОП и админ.
   [SHEET_TABS.CLIENTS]: [
@@ -206,6 +211,11 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "QuantityRemaining",
     "Location",
     "ReceivedByEmail",
+    // Подсклад «Офис» (02.10.2026): пусто — основной склад, «office» — офис.
+    // Офисная партия — отрезок основной (SourceBatchID), её приход ноль: стебли
+    // уже приняты один раз. Обе колонки последние (грабли 1.1).
+    "Store",
+    "SourceBatchID",
   ],
   [SHEET_TABS.SHIPMENTS]: [
     "ShipmentID",
@@ -502,6 +512,21 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "SentCount",
     "LastSentAt",
   ],
+  // Перемещение основной склад ⇄ офис: строка на партию. Direction — «to_office»
+  // или «to_main»; FromBatchID → ToBatchID — откуда и куда ушли стебли.
+  [SHEET_TABS.STOCK_MOVES]: [
+    "MoveID",
+    "CreatedAt",
+    "Direction",
+    "FlowerType",
+    "Variety",
+    "Grade",
+    "Quantity",
+    "FromBatchID",
+    "ToBatchID",
+    "ByEmail",
+    "Note",
+  ],
   [SHEET_TABS.DEBT_REMINDERS]: [
     "ReminderID",
     "SentAt",
@@ -595,6 +620,9 @@ export const ROLES = {
   // регионам и наоборот.
   RETAIL_ALMATY: "retail_almaty",
   RETAIL_REGIONS: "retail_regions",
+  // Зав. подскладом «Офис»: все цветы, но только офисные партии и офисные
+  // заявки (`officeStore.ts`). Производства у роли нет.
+  OFFICE: "office",
 } as const;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
@@ -607,6 +635,7 @@ export const ROLE_LABELS: Record<string, string> = {
   agronomist: "Агроном",
   retail_almaty: "Менеджер розницы (Алматы)",
   retail_regions: "Менеджер розницы (регионы)",
+  office: "Склад офиса",
 };
 
 // ---------------------------------------------------------------------------

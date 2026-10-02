@@ -69,9 +69,11 @@ import {
   warehouseEditedRefusal,
   type WarehouseEditedItem,
 } from "@/lib/warehouseOrderEdit";
-import { setOrderDirection } from "@/lib/repo/orders";
+import { setOrderDirection, setOrderStore } from "@/lib/repo/orders";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ORDER_PAYMENT_METHODS, ROLES } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
+import { forgetReads } from "@/lib/sheets";
+import { canChooseOrderStore, normalizeStore, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
 import { listUsers } from "@/lib/repo/users";
 import { commitReturn } from "@/lib/repo/orderReturn";
 import type { ReturnLineInput } from "@/lib/orderReturn";
@@ -164,6 +166,9 @@ async function createOrderActionInner(
     retail: shop ? client.retail : "",
     direction,
     paymentMethod: shop ? "" : paymentMethod,
+    // Склад отгрузки — только у клиентской заявки и только у тех, кто его выбирает
+    // (подсклад «Офис», `officeStore.ts`); чужое значение — основной склад.
+    store: !shop && canChooseOrderStore(role) ? normalizeStore(input.store) : "",
     managerEmail,
   });
   if (input.confirmed === true) {
@@ -866,4 +871,35 @@ async function returnOrderItemsActionInner(
 
 export async function returnOrderItemsAction(...args: Parameters<typeof returnOrderItemsActionInner>) {
   return guard(() => returnOrderItemsActionInner(...args));
+}
+
+/**
+ * Склад заявки: основной ⇄ «Офис» (`officeStore.ts`). Пока ничего не отгружено:
+ * в офисе не хватило — склад офиса отдаёт заявку на основной, и наоборот.
+ */
+async function setOrderStoreActionInner(orderId: string, to: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  // Свежее чтение: отгрузка секунду назад обязана запретить смену склада.
+  forgetReads();
+  const order = await getOrderById(String(orderId || ""));
+  if (!order) throw new Error("Заявка не найдена");
+  const refusal = storeChangeRefusal({
+    role: session.user.role ?? "",
+    isOwner: order.managerEmail.toLowerCase() === session.user.email.toLowerCase(),
+    order,
+    to,
+  });
+  if (refusal) throw new Error(refusal);
+  await setOrderStore(order.orderId, normalizeStore(to));
+  revalidatePath(`/orders/${order.orderId}`);
+  revalidatePath("/orders");
+  revalidatePath("/warehouse");
+  revalidatePath("/warehouse/picklist");
+  revalidatePath("/office/ship");
+  return storeLabel(to);
+}
+
+export async function setOrderStoreAction(...args: Parameters<typeof setOrderStoreActionInner>) {
+  return guard(() => setOrderStoreActionInner(...args));
 }

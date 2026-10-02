@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Image from "next/image";
 import { authOptions } from "@/lib/auth";
 import { getStockSnapshot, loadStockExtras } from "@/lib/stock";
+import { inStore, normalizeStore, stockStoreOfRole } from "@/lib/officeStore";
 import { CLAIM_STATUSES, farmLabel, flowerTypesForFarm, getFarmFor, isFarmBoundRole, ROLES } from "@/lib/constants";
 import StockBoard from "@/components/StockBoard";
 import PageHeader from "@/components/PageHeader";
@@ -67,7 +68,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
   const now = new Date();
   const [snapshot, orders, batches, settings, claims] = await Promise.all([
     (showStockExtras ? loadStockExtras() : Promise.resolve(undefined)).then((extras) =>
-      getStockSnapshot(now, undefined, farm, extras)
+      getStockSnapshot(now, undefined, farm, { ...extras, store: stockStoreOfRole(role) })
     ),
     listOrdersWithItems(),
     listBatches(),
@@ -75,7 +76,13 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
     withClaims ? listClaims().catch(() => []) : Promise.resolve([]),
   ]);
 
-  const inStock = batches.filter((b) => b.quantityRemaining > 0 && (!farm || getFarmFor(b.flowerType) === farm));
+  const ownStore = stockStoreOfRole(role);
+  const inStock = batches.filter(
+    (b) =>
+      b.quantityRemaining > 0 &&
+      (!farm || getFarmFor(b.flowerType) === farm) &&
+      (ownStore === undefined || normalizeStore(b.store) === ownStore)
+  );
   const expiredStems = inStock
     .map((b) => computeBatchStorageInfo(b, settings, now))
     // «Просрочено» — то же правило, что у сводки склада ниже (`computeBatchStorageInfo`):
@@ -86,7 +93,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
   const focus = homeFocus({
     role,
     email: session.user?.email ?? "",
-    orders,
+    // Склад и склад офиса видят очередь своего склада (`officeStore.ts`).
+    orders: ownStore === undefined ? orders : inStore(orders, ownStore),
     todayKey: localDayKey(now),
     extras: {
       expiredStems,

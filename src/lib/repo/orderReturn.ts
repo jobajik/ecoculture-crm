@@ -164,10 +164,11 @@ export async function commitReturn(input: {
         quantity: Number(r.Quantity),
         shippedQuantity: 0,
       }));
-      const stock = Array.from(batchRows.values()).map((b) => {
-        const batch = toBatch(b.record);
-        return { ...batch, quantityRemaining: remaining.get(batch.batchId) ?? batch.quantityRemaining };
-      });
+      // Заявка магазину — с основного склада: офисные партии сюда не берём (`officeStore.ts`).
+      const stock = Array.from(batchRows.values())
+        .map((b) => toBatch(b.record))
+        .filter((batch) => !batch.store)
+        .map((batch) => ({ ...batch, quantityRemaining: remaining.get(batch.batchId) ?? batch.quantityRemaining }));
       const ship = planWholeOrderShipment(shipItems, stock);
       if (ship.shortages.length > 0) {
         throw new Error(

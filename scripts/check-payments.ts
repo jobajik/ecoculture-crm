@@ -47,8 +47,9 @@ const refused = (s: string) => s !== "";
 
 // --- Схема: новая колонка в конце, новая вкладка на месте ------------------
 
-check("Realization1C — последняя колонка Orders", SHEET_HEADERS[SHEET_TABS.ORDERS].slice(-1), [
+check("Realization1C, за ней склад (подсклад «Офис») — в конце Orders", SHEET_HEADERS[SHEET_TABS.ORDERS].slice(-2), [
   "Realization1C",
+  "Store",
 ]);
 check(
   "у журнала платежей есть сумма, день и компания",

@@ -11,6 +11,7 @@ import { botSettingsFrom, EMPTY_NUDGE, pushContext } from "./broadcast";
 import { NUDGE_DECISION_SCHEMA, NUDGE_GAPS_HOURS, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
 import { chatJson, openAiConfigured } from "./openai";
 import { listBatches } from "./repo/batches";
+import { almatyHourOf, botStoreFor, inStore } from "./officeStore";
 import { getSettings } from "./repo/settings";
 import { getCurrentPrices } from "./repo/prices";
 import { listBroadcasts, listRecipients } from "./repo/broadcasts";
@@ -214,7 +215,12 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
       listBroadcasts(),
       listRecipients(),
     ]);
-    const stock = Array.from(stockMap(batches, shelf, now).values());
+    // Предлагаем то, что продадим сейчас: до 12:00 — основной склад, после — офис
+    // (если там есть живой цветок, иначе основной — на завтра).
+    const officeLive = stockMap(inStore(batches, "office"), shelf, now);
+    const stock = Array.from(
+      (botStoreFor(almatyHourOf(now), officeLive.size > 0) === "office" ? officeLive : stockMap(inStore(batches, ""), shelf, now)).values()
+    );
     const label = (o: { flowerType: string; variety: string; grade: string }) =>
       `${FLOWER_TYPE_LABELS[o.flowerType] ?? o.flowerType} ${o.variety}, ${formatGrade(o.grade)}`;
     let photoCtx: PhotoContext | null = null;

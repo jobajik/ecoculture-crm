@@ -1,3 +1,4 @@
+import { inStore, type StoreCode } from "../officeStore";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
@@ -62,16 +63,19 @@ export async function createWriteoff(input: NewWriteoffInput): Promise<string> {
 export async function planWriteoffsFromSheet(input: {
   lines: WriteoffLine[];
   farm: string | null;
+  /** Склад: пусто — основной, «office» — подсклад «Офис». */
+  store: StoreCode;
   note?: string;
 }): Promise<WriteoffPlan> {
   const table = await readTable(SHEET_TABS.BATCHES, { fresh: true });
-  const batches = table.rows.map((row) => toBatch(rowToRecord(SHEET_TABS.BATCHES, row)));
-  return planWriteoffs({ ...input, batches });
+  const batches = inStore(table.rows.map((row) => toBatch(rowToRecord(SHEET_TABS.BATCHES, row))), input.store);
+  return planWriteoffs({ lines: input.lines, farm: input.farm, note: input.note, batches });
 }
 
 export async function createWriteoffsByPlan(input: {
   lines: WriteoffLine[];
   farm: string | null;
+  store: StoreCode;
   note?: string;
   warehouseEmail: string;
 }): Promise<{ plan: WriteoffPlan; ids: string[] }> {
@@ -84,7 +88,7 @@ export async function createWriteoffsByPlan(input: {
     lines: input.lines,
     farm: input.farm,
     note: input.note,
-    batches: rows.map((r) => toBatch(r.record)),
+    batches: inStore(rows.map((r) => toBatch(r.record)), input.store),
   });
   const firstError = plan.errors.findIndex(Boolean);
   if (firstError >= 0) {

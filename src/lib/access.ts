@@ -27,7 +27,12 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
     prefix: "/orders/new",
     roles: ["manager", "retail_almaty", "retail_regions", "admin", "warehouse", "sales_head"],
   },
+  // Подсклад «Офис»: склад офиса отгружает свои заявки той же страницей
+  // отгрузки, что и основной склад; чья заявка — проверяет `shipStoreRefusal`.
+  // Правила стоят ВЫШЕ общего «/warehouse».
+  { prefix: "/warehouse/ship", roles: ["warehouse", "admin", "office"] },
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
+  { prefix: "/office", roles: ["office", "sales_head", "admin"] },
   // Рекламацию заводит менеджер, а решение по ней видит у бухгалтера. Раньше
   // весь /finance был закрыт от менеджера, и он не мог узнать, чем кончилась
   // его же жалоба, хотя страница /finance/claims его пускала.

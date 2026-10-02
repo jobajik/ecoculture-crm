@@ -188,7 +188,7 @@ export function areaForPath(pathname: string): Area {
   if (p.startsWith("/orders")) return AREAS.orders;
   if (p.startsWith("/clients")) return AREAS.clients;
   if (p.startsWith("/retail")) return AREAS.retail;
-  if (p.startsWith("/warehouse")) return AREAS.stock;
+  if (p.startsWith("/warehouse") || p.startsWith("/office")) return AREAS.stock;
   if (p.startsWith("/sales")) return AREAS.sales;
   if (p.startsWith("/finance")) return AREAS.money;
   if (p.startsWith("/plans") || p.startsWith("/prices")) return AREAS.plans;

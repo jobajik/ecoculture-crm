@@ -69,8 +69,8 @@ const headers = SHEET_HEADERS[SHEET_TABS.ORDERS];
 // чтение всей вкладки (грабли 1.1).
 check(
   "последние колонки Orders идут в том порядке, в каком их дописывали",
-  headers.slice(-4),
-  ["Kind", "InvoiceSentAt", "InvoiceNote", "Realization1C"]
+  headers.slice(-5),
+  ["Kind", "InvoiceSentAt", "InvoiceNote", "Realization1C", "Store"]
 );
 
 // --- Стадии ----------------------------------------------------------------
