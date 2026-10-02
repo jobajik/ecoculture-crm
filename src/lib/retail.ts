@@ -58,7 +58,8 @@ export function isRetailRole(role: string | null | undefined): boolean {
  * оплата), видна ей как менеджеру, а в рознице не участвует.
  */
 export function canSellToClients(role: string | null | undefined): boolean {
-  return role === ROLES.MANAGER || isRetailRole(role);
+  // РОП тоже (02.10.2026): заводит заявку клиенту и ведёт её, если записал на себя.
+  return role === ROLES.MANAGER || role === ROLES.SALES_HEAD || isRetailRole(role);
 }
 
 /**

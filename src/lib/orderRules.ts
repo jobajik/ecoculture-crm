@@ -56,6 +56,8 @@ export function cancelRefusal(
   const ownRole =
     role === ROLES.MANAGER ||
     isRetailRole(role) ||
+    // РОП заводит и клиентские заявки — свою (записанную на себя) отменяет сам.
+    (role === ROLES.SALES_HEAD && !isRetailOrder(order) && !isRegionOrder(order)) ||
     (isRetailOrder(order) && canFillRegions(role)) ||
     // Городскую заявку заводит РОП — он же её и отменяет.
     (isRegionOrder(order) && canFillRegionOrders(role));

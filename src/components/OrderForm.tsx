@@ -22,6 +22,7 @@ export default function OrderForm({
   initialItems,
   initialNotes = "",
   draftId = "",
+  managers,
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -60,6 +61,11 @@ export default function OrderForm({
   initialNotes?: string;
   /** Черновик из WhatsApp: после сохранения он помечается оформленным. */
   draftId?: string;
+  /**
+   * РОП: на кого записать заявку (продажи и бонус — этому менеджеру). Первым —
+   * сам РОП. Подставляется менеджер карточки клиента, пока не выбрали руками.
+   */
+  managers?: { email: string; name: string }[];
 }) {
   const router = useRouter();
   const [client, setClient] = useState<ClientOption | null>(initialClient);
@@ -88,6 +94,10 @@ export default function OrderForm({
   // базе менеджер жал отдельную галочку в ту же минуту, то есть это был лишний
   // шаг на каждую заявку. Снять — если состав ещё обсуждается.
   const [confirmed, setConfirmed] = useState(true);
+  const managerOf = (c: ClientOption | null) =>
+    managers?.find((m) => m.email === (c?.managerEmail ?? "") && m !== managers[0])?.email ?? managers?.[0]?.email ?? "";
+  const [assignTo, setAssignTo] = useState(managerOf(initialClient));
+  const [assignTouched, setAssignTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -118,6 +128,7 @@ export default function OrderForm({
         paymentMethod,
         confirmed,
         draftId: draftId || undefined,
+        assignTo: managers ? assignTo : undefined,
         items: items.map((it) => ({
           flowerType: it.flowerType,
           variety: it.variety.trim(),
@@ -146,9 +157,30 @@ export default function OrderForm({
               setClient(next);
               if (!directionTouched) setDirection(directionForCity(next?.city));
               if (!methodTouched) setPaymentMethod(methodOf(next));
+              if (!assignTouched) setAssignTo(managerOf(next));
             }}
           />
         </div>
+        {managers && (
+          <div>
+            <label className="label">Менеджер заявки</label>
+            <select
+              className="input"
+              value={assignTo}
+              onChange={(e) => {
+                setAssignTo(e.target.value);
+                setAssignTouched(true);
+              }}
+            >
+              {managers.map((m) => (
+                <option key={m.email} value={m.email}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-ink-muted mt-1">Продажа и бонус — ему; вести заявку дальше будет он.</p>
+          </div>
+        )}
         <div>
           <label className="label">Телефон для этой доставки</label>
           <PhoneInput

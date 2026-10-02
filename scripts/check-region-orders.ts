@@ -20,7 +20,7 @@
  *
  * Запуск: npx tsx scripts/check-region-orders.ts
  */
-import { newOrderLinkFor } from "../src/lib/newOrder";
+import { newOrderLinkFor, newOrderLinksFor } from "../src/lib/newOrder";
 import {
   buildRegionIncome,
   canFillRegionOrders,
@@ -342,16 +342,17 @@ moneyChecks()
 // ничем не отличается от отсутствующей.
 
 check("у РОПа кнопка есть", newOrderLinkFor(ROLES.SALES_HEAD) !== null, true);
+// 02.10.2026, РОП: «добавь мне возможность забивать заявки не только на регион».
+check("у РОПа основная — заявка клиенту", newOrderLinkFor(ROLES.SALES_HEAD)?.href, "/orders/new");
 check(
-  "и ведёт сразу на форму объёма, а не на клиентскую",
-  newOrderLinkFor(ROLES.SALES_HEAD)?.href,
-  "/orders/new?region=1"
+  "и второй кнопкой — объём в регион",
+  newOrderLinksFor(ROLES.SALES_HEAD).map((l) => [l.href, l.label]),
+  [
+    ["/orders/new", "+ Новая заявка"],
+    ["/orders/new?region=1", "+ Объём в регион"],
+  ]
 );
-check(
-  "подписана честно — это объём, а не заявка клиенту",
-  /Объём в регион/.test(newOrderLinkFor(ROLES.SALES_HEAD)?.label ?? ""),
-  true
-);
+check("у менеджера одна кнопка", newOrderLinksFor(ROLES.MANAGER).length, 1);
 check("у менеджера обычная заявка", newOrderLinkFor(ROLES.MANAGER)?.href, "/orders/new");
 check("у администратора тоже", newOrderLinkFor(ROLES.ADMIN)?.href, "/orders/new");
 check("у менеджера розницы тоже", newOrderLinkFor(ROLES.RETAIL_ALMATY)?.href, "/orders/new");

@@ -54,7 +54,8 @@ check(
 check("бухгалтер НЕ отменяет", refused(cancelRefusal(order(), ROLES.ACCOUNTANT, MINE)), true);
 check("зав. складом НЕ отменяет", refused(cancelRefusal(order(), ROLES.WAREHOUSE, MINE)), true);
 check("агроном НЕ отменяет", refused(cancelRefusal(order(), ROLES.AGRONOMIST, MINE)), true);
-check("РОП НЕ отменяет", refused(cancelRefusal(order(), ROLES.SALES_HEAD, MINE)), true);
+check("РОП отменяет свою клиентскую заявку (записанную на себя)", refused(cancelRefusal(order(), ROLES.SALES_HEAD, MINE)), false);
+check("РОП НЕ отменяет заявку менеджера", refused(cancelRefusal(order(), ROLES.SALES_HEAD, OTHER)), true);
 check("без роли НЕ отменяет", refused(cancelRefusal(order(), "", MINE)), true);
 check("пустая роль из таблицы НЕ отменяет", refused(cancelRefusal(order(), null, MINE)), true);
 

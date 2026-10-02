@@ -11,7 +11,7 @@ import {
   retailTerritoryFor,
 } from "@/lib/retail";
 import { isRegionOrder } from "@/lib/orderKind";
-import { newOrderLinkFor } from "@/lib/newOrder";
+import { newOrderLinkFor, newOrderLinksFor } from "@/lib/newOrder";
 import OrdersTable from "@/components/OrdersTable";
 import PageHeader from "@/components/PageHeader";
 import { listUsers } from "@/lib/repo/users";
@@ -116,6 +116,14 @@ export default async function OrdersPage({
                 {isRetailRole(role) ? "+ Заявка магазину" : newOrderLink.label}
               </Link>
             )}
+            {/* У РОПа вторая кнопка — объём на город. */}
+            {newOrderLinksFor(role)
+              .slice(1)
+              .map((l) => (
+                <Link key={l.href} href={l.href} className="btn-secondary">
+                  {l.label}
+                </Link>
+              ))}
           </div>
         }
       />

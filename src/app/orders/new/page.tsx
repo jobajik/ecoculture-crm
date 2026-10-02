@@ -74,9 +74,9 @@ export default async function NewOrderPage({
   const preselectedDate =
     searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : "";
 
-  // Оптовый объём на город — своя форма: регион, дата, количество. У РОПа
-  // других заявок не бывает вовсе, поэтому его сюда пускаем всегда.
-  const regionForm = canFillRegionOrders(role) && (searchParams?.region === "1" || role === ROLES.SALES_HEAD);
+  // Оптовый объём на город — своя форма: регион, дата, количество (`region=1`).
+  // РОП с 02.10.2026 заводит и обычную заявку клиенту — без `region=1` он на ней.
+  const regionForm = canFillRegionOrders(role) && searchParams?.region === "1";
 
   // Зав. складом заводит только заявки в регионы: в наши магазины (retail=1) и
   // опт на город (region=1). Без этой строки она попадала бы на клиентскую
@@ -206,6 +206,7 @@ export default async function NewOrderPage({
       shopName: c.shopName,
       phone: c.phone,
       managerName: nameByEmail.get(c.managerEmail) ?? c.managerEmail,
+      managerEmail: (c.managerEmail || "").toLowerCase(),
       mine: c.managerEmail === myEmail,
       orders: statByClient.get(c.clientId)?.orders ?? 0,
       daysSinceLast: statByClient.get(c.clientId)?.daysSinceLast ?? -1,
@@ -272,6 +273,17 @@ export default async function NewOrderPage({
           showDirection={canSetDirection(role)}
           initialDirection={presetDirection}
           stock={clientStockMap}
+          managers={
+            role === ROLES.SALES_HEAD
+              ? [
+                  { email: myEmail, name: "Я (РОП)" },
+                  ...users
+                    .filter((u) => u.active && u.role === ROLES.MANAGER)
+                    .map((u) => ({ email: u.email.toLowerCase(), name: u.name || u.email }))
+                    .sort((a, b) => a.name.localeCompare(b.name, "ru")),
+                ]
+              : undefined
+          }
         />
       </div>
     </div>

@@ -22,6 +22,8 @@ export interface ClientOption {
   shopName: string;
   phone: string;
   managerName: string;
+  /** Почта менеджера карточки — РОП по ней подставляет, на кого записать заявку. */
+  managerEmail?: string;
   /** Свой ли это клиент — своих показываем первыми. */
   mine: boolean;
   /** Сколько заявок было. Ноль — карточка заведена, но ещё ничего не покупал. */

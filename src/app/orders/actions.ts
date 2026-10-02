@@ -72,15 +72,16 @@ import {
 import { setOrderDirection } from "@/lib/repo/orders";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ORDER_PAYMENT_METHODS, ROLES } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
+import { listUsers } from "@/lib/repo/users";
 import { commitReturn } from "@/lib/repo/orderReturn";
 import type { ReturnLineInput } from "@/lib/orderReturn";
 import { getCurrentPrices } from "@/lib/repo/prices";
 import { PRICE_KINDS } from "@/lib/priceList";
 
 async function createOrderActionInner(
-  withDraft: Omit<NewOrderInput, "managerEmail"> & { draftId?: string }
+  withDraft: Omit<NewOrderInput, "managerEmail"> & { draftId?: string; assignTo?: string }
 ) {
-  const { draftId, ...input } = withDraft;
+  const { draftId, assignTo, ...input } = withDraft;
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role;
@@ -141,15 +142,11 @@ async function createOrderActionInner(
   const refusal = directionRefusal({ role, direction, isShop: shop });
   if (refusal) throw new Error(refusal);
 
-  // РОП клиентских заявок не оформляет вовсе: его работа — объём на город,
-  // и для неё есть своя форма (`createRegionOrderAction`). Раньше здесь стояла
-  // проверка «РОПу можно, если выбрал направление» — это была моя попытка
-  // приделать региональный опт к клиентской форме, и владелец её забраковал.
-  if (role === ROLES.SALES_HEAD) {
-    throw new Error(
-      "Заявки на клиентов оформляют менеджеры. Объём в регион заводится в разделе «Регионы»."
-    );
-  }
+  // РОП оформляет и клиентские заявки (02.10.2026, РОП: «добавь мне возможность
+  // забивать заявки не только на регион»). На кого записать — выбирает в форме:
+  // на себя или на менеджера (тогда продажа и бонус — менеджеру, и ведёт её он).
+  // Почта проверяется по списку сотрудников: чужую подставить нельзя (грабли 1.11).
+  const managerEmail = await orderOwnerEmail(role, session.user.email, assignTo);
 
   // Вид оплаты — из закрытого списка; чужое значение молча становится пустым
   // («не знаю»), как и прочие закрытые списки: отказывать из-за подсказки
@@ -167,7 +164,7 @@ async function createOrderActionInner(
     retail: shop ? client.retail : "",
     direction,
     paymentMethod: shop ? "" : paymentMethod,
-    managerEmail: session.user.email,
+    managerEmail,
   });
   if (input.confirmed === true) {
     // Подтверждение при оформлении — такое же событие, как отдельная галочка,
@@ -194,6 +191,19 @@ async function createOrderActionInner(
   revalidatePath("/retail");
   revalidatePath("/plans/regions");
   return orderId;
+}
+
+/**
+ * На кого записать новую заявку. Обычно — на того, кто её оформил. РОП может
+ * записать на активного менеджера: тот её дальше и ведёт, ему продажа и бонус.
+ */
+async function orderOwnerEmail(role: string | null | undefined, me: string, assignTo?: string): Promise<string> {
+  const mine = me.toLowerCase();
+  const wanted = String(assignTo || "").trim().toLowerCase();
+  if (role !== ROLES.SALES_HEAD || !wanted || wanted === mine) return me;
+  const user = (await listUsers()).find((u) => u.email.toLowerCase() === wanted);
+  if (!user || !user.active || user.role !== ROLES.MANAGER) throw new Error("Выберите менеджера из списка");
+  return user.email.toLowerCase();
 }
 
 /**

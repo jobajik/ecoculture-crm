@@ -118,7 +118,7 @@ check("обычному менеджеру sale ничего не меняет",
 check("менеджер розницы продаёт клиентам", canSellToClients(ROLES.RETAIL_ALMATY), true);
 check("менеджер — тоже", canSellToClients(ROLES.MANAGER), true);
 check("склад — нет", canSellToClients(ROLES.WAREHOUSE), false);
-check("РОП — нет", canSellToClients(ROLES.SALES_HEAD), false);
+check("РОП — тоже (с 02.10.2026)", canSellToClients(ROLES.SALES_HEAD), true);
 check(
   "своя клиентская заявка розницы",
   isOwnClientOrder({ managerEmail: "asem@x.kz", retail: "", kind: "" }, "ASEM@x.kz"),
