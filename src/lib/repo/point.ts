@@ -1,4 +1,4 @@
-import { appendRow, deleteWhere, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
+import { appendRow, commitAtomic, deleteWhere, readTable, rowToRecord, SHEET_TABS, updateWhere, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
 import type { PointDay, PointWriteoff } from "../point";
@@ -21,6 +21,7 @@ export async function listPointDays(options: { fresh?: boolean } = {}): Promise<
       .map((row) => rowToRecord(SHEET_TABS.POINT_SALES, row))
       .map((r) => ({
         date: toIsoDate(r.Date),
+        farm: (r.Farm || "").trim().toLowerCase(),
         kaspi: num(r.Kaspi),
         cash: num(r.Cash),
         note: r.Note || "",
@@ -55,6 +56,34 @@ export async function savePointDay(input: { date: string; kaspi: number; cash: n
   const updated = await updateWhere(SHEET_TABS.POINT_SALES, same, () => record);
   if (!updated) await appendRow(SHEET_TABS.POINT_SALES, record);
   return "saved";
+}
+
+/**
+ * Выручка за день ПО КОМПАНИЯМ (Есентай — хризантема, Rose Farm — роза и
+ * эустома). День переписывается целиком одной атомарной записью: прежние строки
+ * дня — и по компаниям, и внесённая одной суммой — удаляются, ненулевые
+ * компании дописываются. Так день не посчитается дважды.
+ */
+export async function savePointDayByFarm(input: {
+  date: string;
+  parts: { farm: string; kaspi: number; cash: number }[];
+  note: string;
+  email: string;
+}): Promise<"saved" | "removed"> {
+  const table = await readTable(SHEET_TABS.POINT_SALES, { fresh: true });
+  const rowNumbers = table.rows
+    .map((row, i) => ({ r: rowToRecord(SHEET_TABS.POINT_SALES, row), n: table.rowNumbers[i] }))
+    .filter((x) => toIsoDate(x.r.Date) === input.date)
+    .map((x) => x.n);
+  const now = new Date().toISOString();
+  const records = input.parts
+    .filter((p) => p.kaspi > 0 || p.cash > 0)
+    .map((p) => ({ Date: input.date, Kaspi: p.kaspi, Cash: p.cash, Note: input.note, AccountantEmail: input.email, UpdatedAt: now, Farm: p.farm }));
+  const ops: WriteOp[] = [];
+  if (records.length) ops.push({ kind: "append", tab: SHEET_TABS.POINT_SALES, records });
+  if (rowNumbers.length) ops.push({ kind: "delete", tab: SHEET_TABS.POINT_SALES, rowNumbers });
+  if (ops.length) await commitAtomic(ops);
+  return records.length ? "saved" : "removed";
 }
 
 export async function listPointWriteoffs(options: { fresh?: boolean } = {}): Promise<PointWriteoff[]> {

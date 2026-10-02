@@ -480,7 +480,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_TABS.WA_STATUSES]: ["MessageID", "At", "Status", "Error", "CreatedAt"],
   [SHEET_TABS.WA_FILES]: ["FileID", "CreatedAt", "CreatedByEmail", "Name", "Mime", "Size", "Part", "Data"],
   [SHEET_TABS.BROADCAST_ANALYSES]: ["BroadcastID", "CreatedAt", "CreatedBy", "Model", "Replies", "Data"],
-  [SHEET_TABS.POINT_SALES]: ["Date", "Kaspi", "Cash", "Note", "AccountantEmail", "UpdatedAt"],
+  // Farm — последняя (грабли 1.1): строка на день И компанию; пусто — день внесён одной суммой.
+  [SHEET_TABS.POINT_SALES]: ["Date", "Kaspi", "Cash", "Note", "AccountantEmail", "UpdatedAt", "Farm"],
   [SHEET_TABS.POINT_WRITEOFFS]: ["WriteoffID", "Date", "FlowerType", "Quantity", "Amount", "Reason", "CreatedByEmail", "CreatedAt"],
   [SHEET_TABS.WA_ORDER_DRAFTS]: [
     "DraftID",

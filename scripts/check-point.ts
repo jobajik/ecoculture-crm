@@ -110,6 +110,30 @@ check("по цветкам: порядок и стебли", r.flowers.map((f) =
 ]);
 check("дни — от новых к старым", r.days.map((d) => d.date), ["2026-09-14", "2026-09-13", "2026-09-12", "2026-09-06", "2026-09-05", "2026-09-02", "2026-09-01"]);
 
+// По компаниям (бухгалтер, 02.10.2026: «сделайте Есентай и розы по деньгам»).
+{
+  const split = [
+    ...days,
+    { date: "2026-09-20", farm: "esentai", kaspi: 12000, cash: 3000, note: "", accountantEmail: "", updatedAt: "" },
+    { date: "2026-09-20", farm: "rose_farm", kaspi: 4000, cash: 1000, note: "", accountantEmail: "", updatedAt: "" },
+  ];
+  const rs = pointReport({ orders, days: split, writeoffs, month: "2026-09", today: "2026-09-29" });
+  const by = Object.fromEntries(rs.farms.map((f) => [f.farm, f]));
+  check("компании: отвезли по цветку", [by.esentai.transferred, by.rose_farm.transferred], [95000, 25000]);
+  check("компании: Kaspi и наличные — как внесены", [by.esentai.kaspi, by.esentai.cash, by.rose_farm.kaspi, by.rose_farm.cash], [12000, 3000, 4000, 1000]);
+  check("компании: списание хризантемы — Есентаю", [by.esentai.writeoffs, by.rose_farm.writeoffs], [6000, 0]);
+  check("одной суммой за месяц — отдельно (отчёты + старый платёж без разбивки)", rs.unsplit, 65000);
+  check("день: по компаниям и итог", [rs.days.find((d) => d.date === "2026-09-20")?.byFarm, rs.days.find((d) => d.date === "2026-09-20")?.kaspi], [
+    { esentai: { kaspi: 12000, cash: 3000 }, rose_farm: { kaspi: 4000, cash: 1000 } },
+    16000,
+  ]);
+  check("итог выручки не изменился от разделения", rs.revenue.total, 65000 + 20000);
+  check("на точке по компаниям в сумме = общему", Math.round(rs.farms.reduce((s, f) => s + f.onPoint, 0)), Math.round(rs.onPoint));
+  const paidSplit = [...orders, t("OLD3", "2026-09-04", "emil@x", [["rose", 10, 500, 10]], { paidAmount: 5000, paidAt: "2026-09-04", paidRoseFarm: 5000, paidEsentai: 0 })];
+  const rp = pointReport({ orders: paidSplit, days: [], writeoffs: [], month: "2026-09", today: "2026-09-29" });
+  check("старый платёж с разбивкой по компаниям — в свою компанию", rp.farms.find((f) => f.farm === "rose_farm")!.fromOrders, 5000);
+}
+
 check("цена списания — средняя отвезённого", avgTransferPrice(orders, "chrysanthemum", "2026-09-14"), Math.round((30000 + 60000 + 35000) / 400 * 100) / 100);
 check("цены нет — ноль", avgTransferPrice(orders, "eustoma", "2026-09-14"), 0);
 

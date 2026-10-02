@@ -7,9 +7,9 @@ import { guard } from "@/lib/actionResult";
 import { localDayKey } from "@/lib/timezone";
 import { clearOrdersPaid, listOrdersWithItems } from "@/lib/repo/orders";
 import { forgetReads } from "@/lib/sheets";
-import { appendPointWriteoff, deletePointWriteoff, listPointWriteoffs, savePointDay } from "@/lib/repo/point";
+import { appendPointWriteoff, deletePointWriteoff, listPointWriteoffs, savePointDayByFarm } from "@/lib/repo/point";
 import { logMoney } from "@/lib/repo/moneyLog";
-import { FLOWER_TYPE_LABELS, MONEY_LOG_ACTIONS } from "@/lib/constants";
+import { FARM_LABELS, FARM_ORDER, FLOWER_TYPE_LABELS, MONEY_LOG_ACTIONS } from "@/lib/constants";
 import {
   avgTransferPrice,
   canEditPoint,
@@ -33,27 +33,43 @@ async function who() {
 const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 const num = (v: unknown) => Math.round((Number(v) || 0) * 100) / 100;
 
-async function savePointDayActionInner(input: { date: string; kaspi: number; cash: number; note: string }) {
+/** Выручка точки за день — по компаниям: Есентай (хризантема) и Rose Farm (роза, эустома). */
+async function savePointDayActionInner(input: {
+  date: string;
+  parts: { farm: string; kaspi: number; cash: number }[];
+  note: string;
+}) {
   const { email, role } = await who();
   const date = String(input.date || "");
-  const kaspi = num(input.kaspi);
-  const cash = num(input.cash);
-  const refusal = pointDayRefusal({ role, date, today: localDayKey(), kaspi, cash });
-  if (refusal) throw new Error(refusal);
-  const result = await savePointDay({ date, kaspi, cash, note: String(input.note || "").trim().slice(0, 200), email });
+  const parts = FARM_ORDER.map((farm) => {
+    const p = (input.parts || []).find((x) => x.farm === farm);
+    return { farm, kaspi: num(p?.kaspi), cash: num(p?.cash) };
+  });
+  const kaspi = parts.reduce((s, p) => s + p.kaspi, 0);
+  const cash = parts.reduce((s, p) => s + p.cash, 0);
+  for (const p of parts) {
+    const refusal = pointDayRefusal({ role, date, today: localDayKey(), kaspi: p.kaspi, cash: p.cash });
+    if (refusal) throw new Error(refusal);
+  }
+  const result = await savePointDayByFarm({ date, parts, note: String(input.note || "").trim().slice(0, 200), email });
+  const day = date.split("-").reverse().join(".");
   await logMoney({
     actorEmail: email,
     orderId: "",
     action: MONEY_LOG_ACTIONS.POINT_DAY,
     details:
       result === "removed"
-        ? `${POINT_NAME}: выручка за ${date.split("-").reverse().join(".")} удалена`
-        : `${POINT_NAME}: выручка за ${date.split("-").reverse().join(".")} — Kaspi ${money(kaspi)}, наличные ${money(cash)}`,
+        ? `${POINT_NAME}: выручка за ${day} удалена`
+        : `${POINT_NAME}: выручка за ${day} — ` +
+          parts
+            .filter((p) => p.kaspi + p.cash > 0)
+            .map((p) => `${FARM_LABELS[p.farm]}: Kaspi ${money(p.kaspi)}, наличные ${money(p.cash)}`)
+            .join("; "),
     amountBefore: 0,
     amountAfter: kaspi + cash,
   });
   revalidatePath("/finance/point");
-  return { ok: true, result };
+  return { ok: true, result, total: kaspi + cash };
 }
 
 async function addPointWriteoffActionInner(input: { date: string; flowerType: string; quantity: number; reason: string }) {

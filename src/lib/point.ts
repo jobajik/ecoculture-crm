@@ -1,4 +1,4 @@
-import { FLOWER_TYPES, FLOWER_TYPE_LABELS, MONEY_EPSILON, ORDER_STATUSES, ROLES, bonusRateFor } from "./constants";
+import { FARM_LABELS, FARM_ORDER, FLOWER_TYPES, FLOWER_TYPE_LABELS, MONEY_EPSILON, ORDER_STATUSES, ROLES, bonusRateFor, getFarmFor } from "./constants";
 import { isConsignment } from "./orderKind";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,12 @@ export const POINT_NAME = "Точка на базаре";
 
 export interface PointDay {
   date: string;
+  /**
+   * Компания: «esentai» (хризантема), «rose_farm» (роза и эустома) или пусто —
+   * день внесён одной суммой, до разделения (бухгалтер, 02.10.2026: «сделайте
+   * Есентай и розы по деньгам»). Строка на день и компанию.
+   */
+  farm?: string;
   kaspi: number;
   cash: number;
   note: string;
@@ -56,6 +62,8 @@ export interface TransferOrder {
   kind?: string;
   paidAmount: number;
   paidAt: string;
+  paidRoseFarm?: number;
+  paidEsentai?: number;
   items: { flowerType: string; quantity: number; unitPrice: number; shippedQuantity: number }[];
 }
 
@@ -165,8 +173,11 @@ export function avgTransferPrice(orders: TransferOrder[], flowerType: string, up
 export interface PointDayRow {
   date: string;
   transferred: number;
+  /** Всего за день — сумма по компаниям и внесённого одной суммой. */
   kaspi: number;
   cash: number;
+  /** По компаниям: farm → Kaspi и наличные. Пусто — день внесён одной суммой. */
+  byFarm: Record<string, { kaspi: number; cash: number }>;
   /** Деньги, внесённые раньше платежом прямо на заявку-перемещение. */
   fromOrders: number;
   writeoff: number;
@@ -182,8 +193,27 @@ export interface PointFlowerRow {
   writeoffAmount: number;
 }
 
+/** Компания на точке за месяц: что отвезли её цветком, сколько она получила, что списано. */
+export interface PointFarmRow {
+  farm: string;
+  label: string;
+  transferred: number;
+  kaspi: number;
+  cash: number;
+  /** Прежние платежи прямо на заявки-перемещения — по счёту этой компании. */
+  fromOrders: number;
+  revenue: number;
+  writeoffs: number;
+  /** Остаток на точке примерно (всё время), с долей денег, внесённых одной суммой. */
+  onPoint: number;
+}
+
 export interface PointReport {
   month: string;
+  /** По компаниям — Есентай (хризантема) и Rose Farm (роза, эустома). */
+  farms: PointFarmRow[];
+  /** Выручка за месяц, внесённая одной суммой без разделения на компании. */
+  unsplit: number;
   transferred: { stems: number; amount: number };
   revenue: { kaspi: number; cash: number; fromOrders: number; total: number };
   writeoffs: { stems: number; amount: number };
@@ -220,7 +250,7 @@ export function pointReport(input: {
   const row = (d: string) => {
     let r = dayRows.get(d);
     if (!r) {
-      r = { date: d, transferred: 0, kaspi: 0, cash: 0, fromOrders: 0, writeoff: 0, note: "" };
+      r = { date: d, transferred: 0, kaspi: 0, cash: 0, byFarm: {}, fromOrders: 0, writeoff: 0, note: "" };
       dayRows.set(d, r);
     }
     return r;
@@ -238,8 +268,20 @@ export function pointReport(input: {
   let allTransferred = 0;
   let allRevenue = 0;
   let allWriteoffs = 0;
+  // По компаниям: месяц и «всё время до конца месяца» (для остатка на точке).
+  const farmOf = (f: string) => getFarmFor(f) ?? "";
+  const fm = new Map<string, PointFarmRow>(
+    FARM_ORDER.map((f) => [f, { farm: f, label: FARM_LABELS[f] ?? f, transferred: 0, kaspi: 0, cash: 0, fromOrders: 0, revenue: 0, writeoffs: 0, onPoint: 0 }])
+  );
+  const allByFarm = new Map<string, { transferred: number; revenue: number; writeoffs: number }>(
+    FARM_ORDER.map((f) => [f, { transferred: 0, revenue: 0, writeoffs: 0 }])
+  );
+  let allUnsplit = 0;
+  let unsplit = 0;
   const out: PointReport = {
     month,
+    farms: [],
+    unsplit: 0,
     transferred: { stems: 0, amount: 0 },
     revenue: { kaspi: 0, cash: 0, fromOrders: 0, total: 0 },
     writeoffs: { stems: 0, amount: 0 },
@@ -254,6 +296,11 @@ export function pointReport(input: {
     const lines = transferLines(o);
     const amount = lines.reduce((s, l) => s + l.amount, 0);
     if (d && d <= endDay) allTransferred += amount;
+    for (const l of lines) {
+      const f = farmOf(l.flowerType);
+      if (d && d <= endDay && allByFarm.has(f)) allByFarm.get(f)!.transferred += l.amount;
+      if (inMonth(d) && fm.has(f)) fm.get(f)!.transferred += l.amount;
+    }
     if (inMonth(d) && amount > 0) {
       row(d).transferred += amount;
       for (const l of lines) {
@@ -267,27 +314,54 @@ export function pointReport(input: {
     const paidDay = dayOf(o.paidAt);
     if (o.paidAmount > MONEY_EPSILON && paidDay) {
       if (paidDay <= endDay) allRevenue += o.paidAmount;
+      // Счёт по компаниям у заявки есть (`PaidRoseFarm` / `PaidEsentai`); не сходится — в «одной суммой».
+      const parts = [
+        ["rose_farm", Number(o.paidRoseFarm) || 0],
+        ["esentai", Number(o.paidEsentai) || 0],
+      ] as const;
+      const split = Math.abs(parts[0][1] + parts[1][1] - o.paidAmount) <= MONEY_EPSILON;
+      if (paidDay <= endDay) {
+        if (split) for (const [f, v] of parts) allByFarm.get(f)!.revenue += v;
+        else allUnsplit += o.paidAmount;
+      }
       if (inMonth(paidDay)) {
         row(paidDay).fromOrders += o.paidAmount;
         out.revenue.fromOrders += o.paidAmount;
+        if (split) for (const [f, v] of parts) fm.get(f)!.fromOrders += v;
+        else unsplit += o.paidAmount;
       }
     }
   }
 
   for (const day of input.days) {
     const total = (Number(day.kaspi) || 0) + (Number(day.cash) || 0);
-    if (day.date <= endDay) allRevenue += total;
+    const farm = fm.has(day.farm ?? "") ? (day.farm as string) : "";
+    if (day.date <= endDay) {
+      allRevenue += total;
+      if (farm) allByFarm.get(farm)!.revenue += total;
+      else allUnsplit += total;
+    }
     if (!inMonth(day.date)) continue;
     const r = row(day.date);
     r.kaspi += Number(day.kaspi) || 0;
     r.cash += Number(day.cash) || 0;
-    r.note = day.note;
+    if (farm) {
+      const b = (r.byFarm[farm] ??= { kaspi: 0, cash: 0 });
+      b.kaspi += Number(day.kaspi) || 0;
+      b.cash += Number(day.cash) || 0;
+      fm.get(farm)!.kaspi += Number(day.kaspi) || 0;
+      fm.get(farm)!.cash += Number(day.cash) || 0;
+    } else unsplit += total;
+    if (day.note) r.note = r.note && r.note !== day.note ? `${r.note}; ${day.note}` : day.note;
     out.revenue.kaspi += Number(day.kaspi) || 0;
     out.revenue.cash += Number(day.cash) || 0;
   }
 
   for (const w of input.writeoffs) {
     if (w.date <= endDay) allWriteoffs += Number(w.amount) || 0;
+    const wf = farmOf(w.flowerType);
+    if (w.date <= endDay && allByFarm.has(wf)) allByFarm.get(wf)!.writeoffs += Number(w.amount) || 0;
+    if (inMonth(w.date) && fm.has(wf)) fm.get(wf)!.writeoffs += Number(w.amount) || 0;
     if (!inMonth(w.date)) continue;
     row(w.date).writeoff += Number(w.amount) || 0;
     const f = flower(w.flowerType);
@@ -298,6 +372,24 @@ export function pointReport(input: {
   }
 
   out.revenue.total = round2(out.revenue.kaspi + out.revenue.cash + out.revenue.fromOrders);
+  // Остаток по компаниям: деньги, внесённые одной суммой, делятся по доле отвезённого.
+  const allT = [...allByFarm.values()].reduce((s, v) => s + v.transferred, 0);
+  out.unsplit = round2(unsplit);
+  out.farms = FARM_ORDER.map((f) => {
+    const r = fm.get(f)!;
+    const a = allByFarm.get(f)!;
+    const share = allT > 0 ? a.transferred / allT : 0;
+    return {
+      ...r,
+      transferred: round2(r.transferred),
+      kaspi: round2(r.kaspi),
+      cash: round2(r.cash),
+      fromOrders: round2(r.fromOrders),
+      revenue: round2(r.kaspi + r.cash + r.fromOrders),
+      writeoffs: round2(r.writeoffs),
+      onPoint: round2(a.transferred - a.revenue - a.writeoffs - allUnsplit * share),
+    };
+  });
   out.transferred.amount = round2(out.transferred.amount);
   out.writeoffs.amount = round2(out.writeoffs.amount);
   out.onPoint = round2(allTransferred - allRevenue - allWriteoffs);
