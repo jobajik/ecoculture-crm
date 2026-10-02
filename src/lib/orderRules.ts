@@ -1,6 +1,7 @@
 import { ORDER_STATUSES, ROLES } from "./constants";
 import { canFillRegions, canSellToClients, isRetailOrder, isRetailRole } from "./retail";
 import { canFillRegionOrders, hasNoClientInvoice, isRegionOrder } from "./orderKind";
+import { isOfficeRole } from "./officeStore";
 
 /**
  * Правила жизненного цикла заявки — в одном месте и без обращений к таблице,
@@ -119,7 +120,7 @@ export function ownerRoleFor(
  * пересчитались бы задним числом.
  */
 export function confirmRefusal(
-  order: { status: string; managerEmail: string; retail?: string; kind?: string },
+  order: { status: string; managerEmail: string; retail?: string; kind?: string; store?: string },
   role: string | null | undefined,
   email: string | null | undefined,
   confirmed: boolean
@@ -137,6 +138,9 @@ export function confirmRefusal(
   // РОП подтверждает любую клиентскую заявку (02.10.2026, владелец: «сделай это
   // для РОПа» — РОП оформила заявку и не смогла её подтвердить).
   if (role === ROLES.SALES_HEAD && !isRetailOrder(order) && !isRegionOrder(order)) return closed;
+  // Склад офиса подтверждает офисные заявки (02.10.2026, владелец: «Руслан не может
+  // провалиться в заявку и сделать подтверждение») — он с клиентом и говорит.
+  if (isOfficeRole(role) && order.store === "office" && !isRetailOrder(order) && !isRegionOrder(order)) return closed;
 
   const mine = order.managerEmail === (email || "").trim().toLowerCase();
   // Кому вообще положено подтверждать заявку такого рода.

@@ -18,6 +18,8 @@ import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
 import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
+import ConfirmOrderButton from "@/components/ConfirmOrderButton";
+import { confirmRefusal } from "@/lib/orderRules";
 
 export const dynamic = "force-dynamic";
 
@@ -132,7 +134,10 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
         >
           <div className="space-y-2">
             <p className="text-sm text-ink-secondary">{notReadyReason(order)}</p>
-            {!isOfficeRole(role) && (
+            {!order.managerConfirmed && confirmRefusal(order, role, session?.user?.email?.toLowerCase() ?? "", true) === "" && (
+              <ConfirmOrderButton orderId={order.orderId} />
+            )}
+            {role !== "office" && (
               <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
                 Открыть заявку
               </Link>

@@ -23,6 +23,7 @@ import {
   type MoveBatchRow,
 } from "../src/lib/officeStore";
 import { canOpen } from "../src/lib/access";
+import { confirmRefusal } from "../src/lib/orderRules";
 import { isRetailRole, retailTerritoryFor } from "../src/lib/retail";
 import { getPicklist } from "../src/lib/picklist";
 import { getStockSnapshot } from "../src/lib/stock";
@@ -155,6 +156,16 @@ async function main() {
     storeChangeRefusal({ role: "admin", isOwner: false, order: { ...order, retail: "almaty" }, to: "office" }) !== "",
     storeChangeRefusal({ role: "admin", isOwner: false, order: { ...order, kind: "region" }, to: "office" }) !== "",
   ], [true, true]);
+
+  console.log("\nПодтверждение офисной заявки");
+  const offOrder = { status: "new", managerEmail: "bot@x", retail: "", kind: "", store: "office" };
+  check("склад офиса (и Руслан) подтверждает офисную заявку", [
+    confirmRefusal(offOrder, "office", "r@x", true),
+    confirmRefusal(offOrder, "office_retail", "r@x", true),
+  ], ["", ""]);
+  check("…но не заявку основного склада", confirmRefusal({ ...offOrder, store: "" }, "office_retail", "r@x", true) !== "", true);
+  check("…и не отменённую", confirmRefusal({ ...offOrder, status: "cancelled" }, "office", "r@x", true) !== "", true);
+  check("зав. складом офисную не подтверждает", confirmRefusal(offOrder, "warehouse", "w@x", true) !== "", true);
 
   console.log("\nСклад и лист сборки делят партии");
   const b = (id: string, qty: number, store = ""): Batch => ({

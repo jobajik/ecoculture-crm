@@ -17,6 +17,8 @@ import { officeTabsFor } from "../tabs";
 import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip } from "@/lib/orderReady";
 import { inStore, isOfficeRole } from "@/lib/officeStore";
+import { confirmRefusal } from "@/lib/orderRules";
+import ConfirmOrderButton from "@/components/ConfirmOrderButton";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,7 @@ export const dynamic = "force-dynamic";
 export default async function OfficeShipPage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
+  const myEmail = session?.user?.email?.toLowerCase() ?? "";
 
   const [orders, batches, settings] = await Promise.all([
     listOrdersWithItems(),
@@ -190,7 +193,7 @@ export default async function OfficeShipPage() {
                     className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
                   >
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
-                      {isOfficeRole(role) ? (
+                      {role === "office" ? (
                         o.orderId
                       ) : (
                         <Link href={`/orders/${o.orderId}`} className="hover:underline">
@@ -212,6 +215,11 @@ export default async function OfficeShipPage() {
                     </td>
                     <td className="px-4 py-3" data-label="Чего ждём">
                       <OrderStageBadge stage={stageOf(o)} compact showActor />
+                      {!o.managerConfirmed && confirmRefusal(o, role, myEmail, true) === "" && (
+                        <div className="mt-2">
+                          <ConfirmOrderButton orderId={o.orderId} />
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

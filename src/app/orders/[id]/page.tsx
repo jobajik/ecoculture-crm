@@ -18,7 +18,7 @@ import {
 } from "@/lib/constants";
 import OrderStageBadge from "@/components/OrderStageBadge";
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
-import { shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
+import { isOfficeRole, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
 import { orderStage } from "@/lib/orderStage";
 import { localDayKey } from "@/lib/timezone";
 import { nameIndex, personName } from "@/lib/personName";
@@ -96,7 +96,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // бухгалтер отдельной суммой.
   const region = isRegionOrder(loaded);
   // Своя клиентская заявка менеджера розницы (мелкий заказ) — открывается.
-  if (territory && !isOwnClientOrder(loaded, myEmail) && (!retail || loaded.retail !== territory)) {
+  // Склад офиса (Руслан — он же розница Алматы) открывает офисные заявки целиком.
+  const officeOrder = isOfficeRole(role) && loaded.store === "office";
+  if (!officeOrder && territory && !isOwnClientOrder(loaded, myEmail) && (!retail || loaded.retail !== territory)) {
     notFound();
   }
   if (retail && (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT)) notFound();
