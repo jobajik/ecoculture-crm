@@ -27,7 +27,7 @@ async function main() {
   const trimmed = { ...found, context: found.context.slice(0, lastClient + 1) };
   const d = await botReply(trimmed, botSettingsFrom(map).instructions);
   console.log(`клиент: ${found.context[lastClient].text}`);
-  console.log(`модель: ${d.reply}${d.order.confirmed ? "  [ЗАКАЗ]" : ""}${d.catalog ? `  [каталог ${d.catalog}]` : ""}`);
+  console.log(`модель: ${d.reply}${d.order.confirmed ? "  [ЗАКАЗ]" : ""}${d.catalog ? `  [каталог ${d.catalog}]` : ""}${d.photo.flowerType ? `  [фото: ${[d.photo.flowerType, d.photo.variety, d.photo.grade].filter(Boolean).join(" ")}]` : ""}`);
   if (!send) return console.log("Только показ.");
   // После неудачного ответа должно быть ровно одно наше сообщение: клиент уже написал снова — бот ответил сам.
   if (found.context.length - 1 !== lastClient + 1) return console.log("После нашего ответа уже была переписка — не отправляю.");

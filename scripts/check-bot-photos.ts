@@ -5,7 +5,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { catalogFlowerOf, catalogFlowers, catalogPage, catalogPageHeight } from "../src/lib/catalog";
-import { catalogPhotos, nudgePhotoQuestion, parseCaption, photoLabel, photoMessage, photoRefusal, pickRotationPhoto, ROTATION_FILE, type BotPhoto } from "../src/lib/botPhotos";
+import { catalogPhotos, nudgePhotoQuestion, parseCaption, photoLabel, photoMessage, photoRefusal, pickItemPhoto, pickRotationPhoto, ROTATION_FILE, type BotPhoto } from "../src/lib/botPhotos";
 import { photoPrices } from "../src/lib/botPhotoSend";
 import { botDecision } from "../src/lib/broadcast";
 import { loadCatalogFonts, renderCatalogJpeg } from "../src/lib/catalogImage";
@@ -88,6 +88,29 @@ async function main() {
   check("ИИ вписал цену — убираем", parseCaption({ caption: "Altaj всего 620 ₸ — крупный бутон." }), "Altaj всего — крупный бутон.");
   check("без цветка не сохраняем", photoRefusal({ flowerType: "", caption: "", fileId: "F1" }), "Выберите цветок");
   check("ротация вместо файла — это не фото", photoRefusal({ flowerType: "rose", caption: "", fileId: ROTATION_FILE }) !== "", true);
+
+  console.log("\nФото позиции к ответу бота");
+  const lib = [
+    ph("altaj", { variety: "Altaj", caption: "Altaj с крупными плотными соцветиями", lastSentAt: "2026-10-01T09:00:00Z" }),
+    ph("altaj2", { variety: "Altaj", grade: "Вторая", caption: "Altaj второй категории — ровный стебель" }),
+    ph("bacardy", { variety: "Bacardy", caption: "Bacardy с крупным бутоном" }),
+    ph("common", { caption: "Хризантемы из нашей теплицы" }),
+    ph("eu", { flowerType: "eustoma", variety: "Corelli Pink", grade: "Стандарт", caption: "Эустома Corelli Pink" }),
+  ];
+  const item = (flowerType: string, variety = "", grade = "") => ({ flowerType, variety, grade });
+  check("сорт и категория совпали — это фото первым", pickItemPhoto(lib, item("chrysanthemum", "Altaj", "Вторая"))?.photoId, "altaj2");
+  check("сорт без категории — фото сорта, давнее отправленное", pickItemPhoto(lib, item("chrysanthemum", "Altaj"))?.photoId, "altaj2");
+  check("регистр и «ё» не мешают", pickItemPhoto(lib, item("chrysanthemum", "altaj", "вторая"))?.photoId, "altaj2");
+  check("чужой сорт не подставляем — общее фото цветка", pickItemPhoto(lib, item("chrysanthemum", "Momoko"))?.photoId, "common");
+  check("другая категория того же сорта — не её фото", pickItemPhoto(lib, item("chrysanthemum", "Altaj", "Третья"))?.photoId, "altaj");
+  check("уже было в переписке — второй раз не шлём", pickItemPhoto(lib, item("chrysanthemum", "Altaj", "Вторая"), "[фото: Altaj второй категории — ровный стебель]")?.photoId, "altaj");
+  check("все подходящие уже были — без фото", pickItemPhoto([lib[1]], item("chrysanthemum", "Altaj"), "Altaj второй категории — ровный стебель"), null);
+  check("фото другого цветка не берём", pickItemPhoto(lib, item("rose")), null);
+  check("выключенное не уходит", pickItemPhoto([ph("x", { active: false })], item("chrysanthemum")), null);
+  check("эустома по сорту", pickItemPhoto(lib, item("eustoma", "Corelli Pink", "Стандарт"))?.photoId, "eu");
+  check("бот: позиция для фото разбирается", botDecision({ reply: "Есть", photo: { flowerType: "chrysanthemum", variety: " Altaj ", grade: "Вторая" } }).photo, { flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая" });
+  check("бот: мусор вместо цветка — без фото", botDecision({ reply: "Есть", photo: { flowerType: "тюльпан", variety: "X", grade: "" } }).photo.flowerType, "");
+  check("бот: поля нет — без фото", botDecision({ reply: "Есть" }).photo, { flowerType: "", variety: "", grade: "" });
 
   console.log("\nБот: «пришлите каталог»");
   check("каталог хризантемы — не молчим", [botDecision({ reply: "", catalog: "chrysanthemum" }).silent, botDecision({ reply: "", catalog: "chrysanthemum" }).catalog], [false, "chrysanthemum"]);

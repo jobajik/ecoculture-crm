@@ -23,7 +23,9 @@ import { chatJson, openAiConfigured } from "./openai";
 import { greenConfig, sendFileByUrl, sendText } from "./greenApi";
 import { catalogFiles } from "./catalogFiles";
 import { loadPhotoContext, rotationPhoto } from "./botPhotoSend";
-import { photoLabel } from "./botPhotos";
+import { photoLabel, pickItemPhoto, type BotPhoto } from "./botPhotos";
+import { botPhotoSentWrite, listBotPhotos } from "./repo/botPhotos";
+import { photoFileUrl } from "./catalogFiles";
 import { FLOWER_TYPE_LABELS } from "./constants";
 import type { BotIncoming } from "./greenOut";
 import { phoneKey } from "./leads";
@@ -40,7 +42,7 @@ import { phoneKey } from "./leads";
 const BOT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "order", "kaspiPhone", "invoiceAgain", "cancelOrder", "catalog", "alert", "silent"],
+  required: ["reply", "order", "kaspiPhone", "invoiceAgain", "cancelOrder", "photo", "catalog", "alert", "silent"],
   properties: {
     reply: { type: "string", description: "Ответ клиенту: коротко, по делу, на его языке, с вопросом, который ведёт к заказу." },
     order: BOT_ORDER_SCHEMA,
@@ -56,6 +58,18 @@ const BOT_SCHEMA = {
       type: "string",
       description:
         "Номер заказа (из «О клиенте»), который клиент просит отменить, или который заменяется новым заказом (поменять количество, сорт, дату). Иначе пусто.",
+    },
+    photo: {
+      type: "object",
+      additionalProperties: false,
+      required: ["flowerType", "variety", "grade"],
+      description:
+        "О какой позиции твой ответ (предлагаешь её или клиент о ней спрашивает) — система приложит её фото из теплицы, ответ уйдёт подписью к фото. Нет конкретной позиции — пустые строки.",
+      properties: {
+        flowerType: { type: "string", enum: ["", "rose", "chrysanthemum", "eustoma"] },
+        variety: { type: "string" },
+        grade: { type: "string" },
+      },
     },
     catalog: {
       type: "string",
@@ -125,15 +139,17 @@ function systemPrompt(p: {
     "довести разговор до подтверждённого заказа. Ты НИКОГДА не передаёшь разговор менеджеру и не пишешь «передам менеджеру»,",
     "«менеджер свяжется», «менеджер ответит» — ты сам и есть менеджер в этом чате.",
     "",
-    "Стиль: коротко, живо и уверенно, на языке клиента (русский или казахский), без эмодзи.",
+    "Стиль: как живой человек в WhatsApp — коротко, тепло, по-разному, на языке клиента (русский или казахский).",
+    "Начинай естественно («Да, есть!», «Конечно», «Смотрите», «Отлично») и НИКОГДА не повторяй уже сказанное в переписке:",
+    "ни приветствие, ни цены, ни состав заказа, ни ту же фразу — если это уже было, просто двигайся дальше.",
     "Оформление WhatsApp — НЕ стеной текста: 1–3 коротких блока через пустую строку; две и больше позиции или цены —",
     "списком, каждая с новой строки «• Хризантема Altaj, Третья — 270 ₸»; сумму заказа и номер заказа выделяй *звёздочками*",
     "(жирный WhatsApp, не больше двух выделений); вопрос к клиенту — последней строкой отдельно. Не используй # и **.",
     "Не повторяй состав заказа в каждом сообщении: повторил один раз — дальше спрашивай только то, чего не хватает.",
     "НЕ обращайся к клиенту по имени — имя в WhatsApp часто чужое (магазин, муж, сотрудник). Только «Здравствуйте» или без обращения.",
     "Не говори, что ты бот. Не здоровайся заново, если уже здоровался в переписке.",
-    "КАЖДЫЙ ответ заканчивай вопросом, который двигает к заказу: «Сколько штук поставить?», «На какой день доставка?»,",
-    "«Берёте высшую или первую?», «Оформляем?». Никогда не заканчивай разговор без следующего шага.",
+    "Вопросов — минимум (владелец, 02.10: «не нравится, что задаёшь много вопросов и пишешь одинаковые сообщения»): не больше",
+    "одного и только если без ответа клиента не двинуться дальше. Ответил клиент — действуй, а не переспрашивай.",
     "",
     "Как продавать:",
     "- ГЛАВНОЕ: клиент сам назвал, что хочет (цветок, категорию или сорт и количество или «коробку») — НЕ задавай уточняющих",
@@ -153,8 +169,12 @@ function systemPrompt(p: {
     "- «Скидка» — только то, что есть в указаниях владельца; иначе: цена уже оптовая, на крупный объём посчитаем при оформлении",
     "  счёта, — и сразу спроси объём.",
     "- Явный отказ («не надо», «не интересно», «не пишите») — вежливо попрощайся одной фразой без давления.",
-    "- Просят каталог, фото, прайс картинкой — заполни catalog (цветок или all): система сама пришлёт каталог JPEG с ценами",
-    "  и фото из теплицы. В reply тогда только короткая фраза после картинок с вопросом к заказу, цены текстом не дублируй.",
+    "- Отвечаешь про конкретную позицию (клиент о ней спросил или ты её предлагаешь) — заполни photo: цветок, сорт и категорию.",
+    "  Система приложит живое фото этой позиции из теплицы, а твой reply уйдёт ПОДПИСЬЮ к фото — пиши его как подпись:",
+    "  коротко, что за позиция, цена и одна живая деталь. Спрашивают «есть фото хризантемы второго сорта?» — это photo,",
+    "  а не catalog. Не пиши «отправляю фото» и не обещай фото — оно придёт само, если есть.",
+    "- Просят каталог, прайс картинкой или фото «всего, что есть» — заполни catalog (цветок или all): система сама пришлёт",
+    "  каталог JPEG с ценами и фото из теплицы. В reply тогда только короткая фраза после картинок, цены текстом не дублируй.",
     "- Условия доставки — по указаниям владельца; чего там нет, не выдумывай: «уточним при сборке» — и дальше к заказу.",
     "",
     "Цены — ТОЛЬКО из прайса ниже (тенге за стебель): строка «Цветок Сорт: категория цена · …», «остальные сорта» — для сортов без",
@@ -345,7 +365,16 @@ export async function botAct(
     if (again) text = again;
   }
   const files = decision.catalog ? await catalogForChat(decision.catalog) : [];
-  return { text: toWhatsApp(text), note: notes.join("; "), files };
+  let out = toWhatsApp(text);
+  // Ответ про конкретную позицию — с её фото из теплицы, ответ подписью (как сделал бы человек).
+  if (!files.length && out && !decision.order.confirmed && decision.photo.flowerType && out.length <= 1024) {
+    const pic = await itemPhotoFor(chat, decision.photo, out);
+    if (pic) {
+      files.push(pic);
+      out = "";
+    }
+  }
+  return { text: out, note: notes.join("; "), files };
 }
 
 /** Картинка от бота: ссылка для Green API, имя файла, подпись и что записать в память чата. */
@@ -380,6 +409,22 @@ async function catalogForChat(which: string): Promise<BotFile[]> {
   } catch (err) {
     console.error("bot catalog:", err instanceof Error ? err.message : err);
     return [];
+  }
+}
+
+/** Фото позиции с ответом в подписи; отмечает отправку для ротации. Нет фото или сбой — null. */
+async function itemPhotoFor(chat: BotChat, item: { flowerType: string; variety: string; grade: string }, caption: string): Promise<BotFile | null> {
+  try {
+    const photos = await listBotPhotos();
+    const recent = chat.context.map((m) => m.text).join("\n");
+    const photo = pickItemPhoto(photos, item, recent) as (BotPhoto & { rowNumber: number }) | null;
+    if (!photo) return null;
+    await commitAtomic([botPhotoSentWrite(photo)]).catch(() => undefined);
+    // В память чата — и подпись фото, чтобы этому человеку то же фото второй раз не ушло.
+    return { url: photoFileUrl(photo), name: photo.fileName || "photo.jpg", caption, memo: `[фото: ${photoLabel(photo)} — ${photo.caption.slice(0, 40)}] ${caption}` };
+  } catch (err) {
+    console.error("bot item photo:", err instanceof Error ? err.message : err);
+    return null;
   }
 }
 

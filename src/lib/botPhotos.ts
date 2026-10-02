@@ -129,3 +129,35 @@ export function parseCaption(raw: unknown): string {
     .trim()
     .slice(0, MAX_PHOTO_CAPTION);
 }
+
+/**
+ * Фото к ответу бота про конкретную позицию (владелец, 02.10.2026: «почему не
+ * отправляешь фото категории? Будь человечнее и отправляй фотку»). Подходит
+ * фото того же цветка, у которого сорт и категория либо совпадают, либо не
+ * указаны (общее фото цветка). Точнее совпало — лучше; при равенстве — давнее
+ * отправленное. Фото, чья подпись уже есть в переписке (`recent`), второй раз
+ * этому человеку не шлём. Нет подходящего — null.
+ */
+export function pickItemPhoto(
+  photos: BotPhoto[],
+  item: { flowerType: string; variety: string; grade: string },
+  recent = ""
+): BotPhoto | null {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/ё/g, "е");
+  const v = norm(item.variety);
+  const g = norm(item.grade);
+  const scored = photos
+    .filter((p) => p.active && p.fileId && p.flowerType === item.flowerType)
+    .filter((p) => !(p.caption && recent.includes(p.caption.slice(0, 40))))
+    .map((p) => {
+      const pv = norm(p.variety);
+      const pg = norm(p.grade);
+      if ((pv && v && pv !== v) || (pg && g && pg !== g)) return null;
+      return { p, score: (pv && pv === v ? 2 : 0) + (pg && pg === g ? 1 : 0) };
+    })
+    .filter((x): x is { p: BotPhoto; score: number } => !!x);
+  if (scored.length === 0) return null;
+  const t = (iso: string) => Date.parse(iso || "") || 0;
+  scored.sort((a, b) => b.score - a.score || t(a.p.lastSentAt) - t(b.p.lastSentAt) || a.p.sentCount - b.p.sentCount);
+  return scored[0].p;
+}

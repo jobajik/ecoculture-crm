@@ -440,6 +440,8 @@ export function pushContext(
   return next;
 }
 
+const NO_PHOTO = { flowerType: "", variety: "", grade: "" };
+
 /**
  * Ответ модели → то, что бот сделает. Менеджеру бот НЕ передаёт (владелец,
  * 01.10.2026: «бот не должен переключать на менеджеров, он должен продать»).
@@ -458,6 +460,8 @@ export function botDecision(raw: unknown): {
   cancelOrder: string;
   /** Клиент просит каталог или фото: код цветка, «all» — все. Пусто — не слать. */
   catalog: string;
+  /** О какой позиции ответ — к нему приложится её фото (`botPhotos.ts`). Пустой цветок — без фото. */
+  photo: { flowerType: string; variety: string; grade: string };
   alert: string;
   silent: boolean;
 } {
@@ -472,8 +476,11 @@ export function botDecision(raw: unknown): {
   const act = order.confirmed || kaspiPhone.length >= 10 || invoiceAgain || !!cancelOrder || !!catalog;
   // Молчать — автоответ магазина, «👍», разговор о доставке: модель так решила или ответа нет.
   if (!act && (o.silent === true || !reply))
-    return { reply: "", order: EMPTY_BOT_ORDER, kaspiPhone: "", invoiceAgain: false, cancelOrder: "", catalog: "", alert: "", silent: true };
-  return { reply, order, kaspiPhone, invoiceAgain, cancelOrder, catalog, alert: text(o.alert, 200), silent: false };
+    return { reply: "", order: EMPTY_BOT_ORDER, kaspiPhone: "", invoiceAgain: false, cancelOrder: "", catalog: "", photo: NO_PHOTO, alert: "", silent: true };
+  const ph = (o.photo && typeof o.photo === "object" ? o.photo : {}) as Record<string, unknown>;
+  const photoFlower = /^(rose|chrysanthemum|eustoma)$/.test(text(ph.flowerType, 20)) ? text(ph.flowerType, 20) : "";
+  const photo = photoFlower ? { flowerType: photoFlower, variety: text(ph.variety, 60), grade: text(ph.grade, 40) } : NO_PHOTO;
+  return { reply, order, kaspiPhone, invoiceAgain, cancelOrder, catalog, photo, alert: text(o.alert, 200), silent: false };
 }
 
 /**
