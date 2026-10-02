@@ -23,6 +23,7 @@ import {
   type MoveBatchRow,
 } from "../src/lib/officeStore";
 import { canOpen } from "../src/lib/access";
+import { isRetailRole, retailTerritoryFor } from "../src/lib/retail";
 import { getPicklist } from "../src/lib/picklist";
 import { getStockSnapshot } from "../src/lib/stock";
 import type { Batch } from "../src/lib/types";
@@ -51,6 +52,19 @@ async function main() {
     canOpen("manager", "/office"),
     canOpen("warehouse", "/office"),
   ], [true, true, false, false, true, false, false]);
+
+  check("Руслан (склад офиса + розница Алматы): офис, розница и отгрузка — да, основной склад — нет", [
+    storeOfRole("office_retail"),
+    canSeeOffice("office_retail"),
+    canOpen("office_retail", "/office"),
+    canOpen("office_retail", "/retail"),
+    canOpen("office_retail", "/orders/new"),
+    canOpen("office_retail", "/warehouse/ship/ORD-1"),
+    canOpen("office_retail", "/warehouse"),
+    shipStoreRefusal("office_retail", "office"),
+    shipStoreRefusal("office_retail", "") !== "",
+  ], ["office", true, true, true, true, true, false, "", true]);
+  check("…и у него розница Алматы", [isRetailRole("office_retail"), retailTerritoryFor("office_retail")], [true, "almaty"]);
 
   console.log("\nОтгрузка");
   check("склад основной заявки отгружает", shipStoreRefusal("warehouse", ""), "");

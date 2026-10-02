@@ -29,18 +29,18 @@ import {
 } from "@/lib/repo/staffTakeouts";
 import { cleanStaffName, isCompanyUse, takeoutPriceRefusal, takeoutRefusal } from "@/lib/staffTakeout";
 import { guard } from "@/lib/actionResult";
-import { inStore, normalizeStore, shipStoreRefusal, storeOfRole, type StoreCode } from "@/lib/officeStore";
+import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeOfRole, type StoreCode } from "@/lib/officeStore";
 
 async function requireWarehouse() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role ?? "";
-  if (role !== "warehouse" && role !== "admin" && role !== "office") {
+  if (role !== "warehouse" && role !== "admin" && !isOfficeRole(role)) {
     throw new Error("Недостаточно прав: действие доступно только зав. складом");
   }
   const isAdmin = role === "admin";
   // Склад офиса работает со всеми цветами, но только в офисе (`officeStore.ts`).
-  const farm = isAdmin || role === "office" ? null : session.user.farm ?? null;
+  const farm = isAdmin || isOfficeRole(role) ? null : session.user.farm ?? null;
   // Пустая колонка Farm у зав. складом раньше означала «все производства»:
   // `assertOwnFlowerType` выходил на `if (!farm) return`. То есть строка в
   // Users, где Farm просто забыли дописать, открывала человеку чужой склад —
@@ -57,7 +57,7 @@ async function requireWarehouse() {
 
 /** Приёмка — только на основном складе: в офис цветок попадает перемещением. */
 function assertNotOffice(role: string) {
-  if (role === "office") throw new Error("Приёмка — на основном складе. В офис цветок попадает перемещением от РОПа.");
+  if (isOfficeRole(role)) throw new Error("Приёмка — на основном складе. В офис цветок попадает перемещением от РОПа.");
 }
 
 /** На каком складе действует человек: свой; админ — какой попросил. */

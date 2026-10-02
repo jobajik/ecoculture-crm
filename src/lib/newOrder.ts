@@ -38,6 +38,7 @@ export function newOrderLinkFor(role: string | null | undefined): NewOrderLink |
     case ROLES.ADMIN:
     case ROLES.RETAIL_ALMATY:
     case ROLES.RETAIL_REGIONS:
+    case ROLES.OFFICE_RETAIL:
       return { href: "/orders/new", label: "+ Новая заявка" };
     case ROLES.SALES_HEAD:
       return { href: "/orders/new", label: "+ Новая заявка" };

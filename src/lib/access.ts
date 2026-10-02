@@ -18,21 +18,21 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // видно внутри раздела, решают вкладки (`retailTabsFor`) и сами страницы.
   {
     prefix: "/retail",
-    roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse"],
+    roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse", "office_retail"],
   },
   // РОП заводит оптовые заявки в регионы — так решил владелец. Заявки по
   // Алматы остаются у менеджеров, и это проверяется не здесь, а в самом
   // действии: у региональной заявки обязано быть направление.
   {
     prefix: "/orders/new",
-    roles: ["manager", "retail_almaty", "retail_regions", "admin", "warehouse", "sales_head"],
+    roles: ["manager", "retail_almaty", "retail_regions", "admin", "warehouse", "sales_head", "office_retail"],
   },
   // Подсклад «Офис»: склад офиса отгружает свои заявки той же страницей
   // отгрузки, что и основной склад; чья заявка — проверяет `shipStoreRefusal`.
   // Правила стоят ВЫШЕ общего «/warehouse».
-  { prefix: "/warehouse/ship", roles: ["warehouse", "admin", "office"] },
+  { prefix: "/warehouse/ship", roles: ["warehouse", "admin", "office", "office_retail"] },
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
-  { prefix: "/office", roles: ["office", "sales_head", "admin"] },
+  { prefix: "/office", roles: ["office", "office_retail", "sales_head", "admin"] },
   // Рекламацию заводит менеджер, а решение по ней видит у бухгалтера. Раньше
   // весь /finance был закрыт от менеджера, и он не мог узнать, чем кончилась
   // его же жалоба, хотя страница /finance/claims его пускала.
@@ -63,6 +63,7 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
       "sales_head",
       "admin",
       "retail_almaty",
+      "office_retail",
       "retail_regions",
     ],
   },
@@ -78,6 +79,7 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
       "accountant",
       "admin",
       "retail_almaty",
+      "office_retail",
       "retail_regions",
     ],
   },

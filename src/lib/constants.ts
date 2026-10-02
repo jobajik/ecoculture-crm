@@ -623,6 +623,9 @@ export const ROLES = {
   // Зав. подскладом «Офис»: все цветы, но только офисные партии и офисные
   // заявки (`officeStore.ts`). Производства у роли нет.
   OFFICE: "office",
+  // То же плюс заявки на наши магазины Алматы (Руслан, 02.10.2026: он и менеджер
+  // розницы Алматы, и склад офиса). У сотрудника одна роль — поэтому составная.
+  OFFICE_RETAIL: "office_retail",
 } as const;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
@@ -636,6 +639,7 @@ export const ROLE_LABELS: Record<string, string> = {
   retail_almaty: "Менеджер розницы (Алматы)",
   retail_regions: "Менеджер розницы (регионы)",
   office: "Склад офиса",
+  office_retail: "Склад офиса + розница Алматы",
 };
 
 // ---------------------------------------------------------------------------
@@ -675,9 +679,10 @@ export const RETAIL_SHORT_LABELS: Record<string, string> = {
 export const RETAIL_TERRITORY_BY_ROLE: Record<string, RetailTerritory> = {
   [ROLES.RETAIL_ALMATY]: RETAIL_TERRITORIES.ALMATY,
   [ROLES.RETAIL_REGIONS]: RETAIL_TERRITORIES.REGIONS,
+  [ROLES.OFFICE_RETAIL]: RETAIL_TERRITORIES.ALMATY,
 };
 
-export const RETAIL_ROLES: string[] = [ROLES.RETAIL_ALMATY, ROLES.RETAIL_REGIONS];
+export const RETAIL_ROLES: string[] = [ROLES.RETAIL_ALMATY, ROLES.RETAIL_REGIONS, ROLES.OFFICE_RETAIL];
 
 export const RETAIL_ORDER: string[] = [RETAIL_TERRITORIES.ALMATY, RETAIL_TERRITORIES.REGIONS];
 

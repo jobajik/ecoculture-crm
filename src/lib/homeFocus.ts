@@ -368,7 +368,7 @@ export function homeFocus(input: {
   }
 
   // Склад офиса: очередь офисных заявок (страница отгрузки та же, что у склада).
-  if (role === ROLES.OFFICE) {
+  if (role === ROLES.OFFICE || role === ROLES.OFFICE_RETAIL) {
     const open = withStage.filter(({ st }) => isOpenStage(st));
     const canShip = open.filter(({ st }) => isShippable(st));
     const late = canShip.filter(({ st }) => st.lateDays > 0);

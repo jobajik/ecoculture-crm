@@ -39,12 +39,12 @@ export const NAV_LINKS: NavLink[] = [
   {
     href: "/retail",
     label: "Розница",
-    roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse"],
+    roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse", "office_retail"],
     match: "/retail",
   },
   { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
   // Подсклад «Офис»: склад офиса там работает, РОП перемещает цветок (`officeStore.ts`).
-  { href: "/office", label: "Офис", roles: ["office", "sales_head", "admin"] },
+  { href: "/office", label: "Офис", roles: ["office", "office_retail", "sales_head", "admin"] },
   { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
   // РОП заходит сюда смотреть, а не работать: долги по его заявкам — часть
   // разговора о продажах. Менять он ничего не может (financeAccess.ts).
@@ -105,6 +105,7 @@ const FIRST_BY_ROLE: Record<string, string[]> = {
   accountant: ["/", "/finance", "/orders", "/clients"],
   sales_head: ["/", "/orders", "/sales", "/finance"],
   office: ["/office", "/"],
+  office_retail: ["/office", "/retail", "/orders", "/"],
 };
 
 export function navLinksFor(role: string): NavLink[] {

@@ -16,7 +16,7 @@ import Section from "@/components/Section";
 import { officeTabsFor } from "../tabs";
 import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip } from "@/lib/orderReady";
-import { inStore } from "@/lib/officeStore";
+import { inStore, isOfficeRole } from "@/lib/officeStore";
 
 export const dynamic = "force-dynamic";
 
@@ -146,7 +146,7 @@ export default async function OfficeShipPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {role === "office" || role === "admin" ? (
+                    {isOfficeRole(role) || role === "admin" ? (
                       <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
                         Отгрузить
                       </Link>
@@ -190,7 +190,7 @@ export default async function OfficeShipPage() {
                     className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
                   >
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
-                      {role === "office" ? (
+                      {isOfficeRole(role) ? (
                         o.orderId
                       ) : (
                         <Link href={`/orders/${o.orderId}`} className="hover:underline">

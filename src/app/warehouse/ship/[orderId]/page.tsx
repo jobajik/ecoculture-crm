@@ -16,7 +16,7 @@ import { planWholeOrderShipment } from "@/lib/shipRules";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
 import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
-import { inStore, normalizeStore, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
+import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +70,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
         }
         actions={<OrderStageBadge stage={orderStage(order, localDayKey())} />}
       />
-      {role === "office" && office && (
+      {isOfficeRole(role) && office && (
         <div className="card mb-4 text-sm">
           <OrderStoreSwitch
             orderId={order.orderId}
@@ -132,7 +132,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
         >
           <div className="space-y-2">
             <p className="text-sm text-ink-secondary">{notReadyReason(order)}</p>
-            {role !== "office" && (
+            {!isOfficeRole(role) && (
               <Link href={`/orders/${order.orderId}`} className="btn-secondary inline-flex !py-1.5">
                 Открыть заявку
               </Link>

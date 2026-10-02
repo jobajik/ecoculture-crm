@@ -42,9 +42,12 @@ export function inStore<T extends { store?: string | null }>(list: T[], store: S
   return list.filter((x) => normalizeStore(x.store) === store);
 }
 
+/** Склад офиса — и в чистом виде, и вместе с розницей Алматы (Руслан). */
+export const isOfficeRole = (role: string | null | undefined) => role === "office" || role === "office_retail";
+
 /** Чей склад: зав. складом — основной, склад офиса — офис, админ — оба, остальные — никакой. */
 export function storeOfRole(role: string | null | undefined): StoreCode | "any" | null {
-  if (role === "office") return OFFICE_STORE;
+  if (isOfficeRole(role)) return OFFICE_STORE;
   if (role === "warehouse") return "";
   if (role === "admin") return "any";
   return null;
@@ -61,7 +64,7 @@ export const canMoveStock = (role: string | null | undefined) => role === "sales
 
 /** Раздел «Офис» видят склад офиса, РОП и админ. */
 export const canSeeOffice = (role: string | null | undefined) =>
-  role === "office" || role === "sales_head" || role === "admin";
+  isOfficeRole(role) || role === "sales_head" || role === "admin";
 
 /** Кто выбирает склад в клиентской заявке. */
 export const canChooseOrderStore = (role: string | null | undefined) =>
@@ -141,12 +144,12 @@ export function storeChangeRefusal(input: {
   const { role, isOwner, order } = input;
   const to = normalizeStore(input.to);
   if (normalizeStore(order.store) === to) return "Заявка уже на этом складе";
-  if (!(role === "admin" || role === "sales_head" || role === "office" || (role === "manager" && isOwner))) {
+  if (!(role === "admin" || role === "sales_head" || isOfficeRole(role) || (role === "manager" && isOwner))) {
     return "Склад заявки меняет её менеджер, РОП или склад офиса";
   }
   // Склад офиса только ОТДАЁТ свою заявку на основной (в офисе не хватило) —
   // забрать себе чужую основную заявку он не может.
-  if (role === "office" && !(normalizeStore(order.store) === OFFICE_STORE && to === "")) {
+  if (isOfficeRole(role) && !(normalizeStore(order.store) === OFFICE_STORE && to === "")) {
     return "Склад офиса может только отдать офисную заявку на основной склад";
   }
   if (order.kind || order.retail) return "Склад выбирается только у заявки клиенту";
