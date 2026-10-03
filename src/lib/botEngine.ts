@@ -3,6 +3,7 @@ import { localDayKey } from "./timezone";
 import { getCurrentPrices } from "./repo/prices";
 import { listBatches } from "./repo/batches";
 import { almatyHourOf, botStoreFor, botStoreNote, inStore } from "./officeStore";
+import { staffPhoneKeys } from "./botSalesAlert";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
 import { lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "./botKnowledge";
@@ -255,7 +256,9 @@ export async function runBot(all: BotIncoming[]): Promise<boolean> {
     const settings = botSettingsFrom(map);
     const byKey = new Map(chats.map((c) => [phoneKey(c.phone), c]));
 
-    const phones = Array.from(new Set(messages.map((m) => phoneKey(m.phone)).filter(Boolean)));
+    // Сотрудникам (сводка, продажи бота) бот не отвечает.
+    const staff = staffPhoneKeys(map);
+    const phones = Array.from(new Set(messages.map((m) => phoneKey(m.phone)).filter(Boolean))).filter((k) => !staff.has(k));
     const writes: WriteOp[] = [];
     for (const key of phones) {
       const mine = messages.filter((m) => phoneKey(m.phone) === key).sort((a, b) => (a.at < b.at ? -1 : 1));

@@ -19,10 +19,11 @@ import { priceFor } from "./priceList";
 import { stockMap, lastBroadcastForBot } from "./botKnowledge";
 import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade } from "./constants";
 import { orderCode } from "./paymentStage";
-import { ORDER_STATUSES } from "./constants";
+import { FARM_LABELS, ORDER_STATUSES } from "./constants";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText } from "./kaspiInvoice";
 import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
-import { botDeclinedReminderText, botDeclinedText, botInvoiceErrorText, botPaidText, botReminderText } from "./botOrder";
+import { botDeclinedReminderText, botDeclinedText, botInvoiceErrorText, botPaidAlertText, botPaidText, botReminderText } from "./botOrder";
+import { notifyBotSale } from "./botSalesAlert";
 import { dueParts, invoicePart, lastInvoice } from "./botOrderRunner";
 import type { KaspiInvoice } from "./types";
 
@@ -91,6 +92,21 @@ export async function onBotInvoiceUpdate(invoice: KaspiInvoice, status: string, 
       ? botPaidText({ code, amount: invoice.amount, fullyPaid: order.paid, deliveryDate: order.deliveryDate })
       : botInvoiceErrorText({ code, phone: invoice.phone, reason: kaspiErrorText(errorCode, errorMessage) });
     await sendBotMessage(order.clientPhone, text);
+    if (paid) {
+      // Команде — «оплачено, можно собирать» (настройка BotSalesPhones).
+      await notifyBotSale(
+        botPaidAlertText({
+          code,
+          clientName: order.clientName,
+          amount: invoice.amount,
+          fullyPaid: order.paid,
+          farmLabel: FARM_LABELS[invoice.farm] ?? "",
+          items: order.items,
+          deliveryDate: order.deliveryDate,
+          store: order.store,
+        })
+      );
+    }
   } catch (err) {
     console.error("bot invoice follow-up:", err instanceof Error ? err.message : err);
   }

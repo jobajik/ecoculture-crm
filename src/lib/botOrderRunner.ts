@@ -22,7 +22,8 @@ import { issueKaspiInvoice } from "./kaspiIssue";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText, kaspiPhone, prettyKaspiPhone } from "./kaspiInvoice";
 import { stockMap } from "./botKnowledge";
 import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
-import { botCancelledText, botOrderText, planBotOrder, type BotOrderDraft, type InvoiceOutcome } from "./botOrder";
+import { botCancelledText, botOrderText, botSaleAlertText, planBotOrder, type BotOrderDraft, type InvoiceOutcome } from "./botOrder";
+import { notifyBotSale } from "./botSalesAlert";
 import type { KaspiInvoice, OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -219,6 +220,19 @@ export async function placeBotOrder(input: {
     if (invoices.some((i) => i.result === "failed" && !i.phone)) {
       text += "\nНапишите номер, к которому привязан ваш Kaspi, — выставлю счёт на него.";
     }
+    // Команде — «бот продал» (Руслан, владелец, Данияр: настройка BotSalesPhones).
+    await notifyBotSale(
+      botSaleAlertText({
+        code,
+        clientName,
+        phone: waPhoneText(phone),
+        city,
+        items: plan.items,
+        deliveryDate: plan.deliveryDate,
+        store,
+        invoices,
+      })
+    );
     const total = plan.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
     const problems = invoices
       .filter((i) => i.result !== "sent")

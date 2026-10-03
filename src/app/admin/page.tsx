@@ -8,6 +8,8 @@ import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import { saveShelfLifeAction, saveStaffAction } from "./actions";
 import DigestForm from "@/components/DigestForm";
+import BotSalesPhonesForm from "@/components/BotSalesPhonesForm";
+import { BOT_SALES_SETTING } from "@/lib/botSalesAlert";
 import Hint from "@/components/Hint";
 import { settingsMap } from "@/lib/repo/broadcasts";
 import { DIGEST_SETTING } from "@/lib/morningDigest";
@@ -195,6 +197,24 @@ export default async function AdminPage() {
         <p className="text-xs text-ink-muted mt-3">
           Последняя отправка: {map[DIGEST_LAST_RUN] || "ещё не было"}
         </p>
+      </Section>
+
+      <Section
+        tone="admin"
+        icon="message"
+        title={
+          <>
+            Продажи бота в WhatsApp{" "}
+            <Hint>
+              Когда бот оформил заказ — приходит сообщение: клиент, позиции, сумма, доставка, склад и что со счётом
+              Kaspi. Когда клиент оплатил — второе: «оплачено, можно собирать». Бот этим номерам не отвечает. Пустое
+              поле — сообщения не приходят.
+            </Hint>
+          </>
+        }
+        className="!mb-0 mt-5"
+      >
+        <BotSalesPhonesForm initial={map[BOT_SALES_SETTING] ?? ""} />
       </Section>
     </div>
   );

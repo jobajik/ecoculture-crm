@@ -312,3 +312,64 @@ export function toWhatsApp(text: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+// --- Сообщения команде о продажах бота -------------------------------------------
+// Владелец, 03.10.2026: «все продажи бота скидывай Руслану (зав. складом), мне и
+// Данияру сообщением». Решение: два сообщения — «бот оформил заказ» и «оплачено,
+// можно собирать». Номера — настройка `BotSalesPhones` («Настройки»).
+
+const storeText = (store: string) => (store === "office" ? "Офис — отправка такси за счёт клиента" : "основной склад");
+
+/** «Бот оформил заказ»: кто, что, сумма, когда, откуда и что со счётом. */
+export function botSaleAlertText(input: {
+  code: string;
+  clientName: string;
+  phone: string;
+  city: string;
+  items: { flowerType: string; variety: string; grade: string; quantity: number; unitPrice: number }[];
+  deliveryDate: string;
+  store: string;
+  invoices: InvoiceOutcome[];
+}): string {
+  const total = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const sent = input.invoices.filter((i) => i.result === "sent");
+  const notSent = input.invoices.filter((i) => i.result !== "sent");
+  return [
+    `*Бот оформил заказ №${input.code}*`,
+    "",
+    `Клиент: ${[input.clientName, input.phone, input.city].filter(Boolean).join(", ")}`,
+    ...input.items.map((i) => `• ${itemName(i.flowerType, i.variety, i.grade)} — ${i.quantity} шт. × ${money(i.unitPrice)}`),
+    `Итого: *${money(total)}*`,
+    `Доставка: ${dayText(input.deliveryDate)} · ${storeText(input.store)}`,
+    "",
+    sent.length ? `Счёт Kaspi отправлен${sent.length > 1 ? " (" + sent.map((i) => i.farmLabel).join(", ") + ")" : ""} — ждём оплату.` : "",
+    ...notSent.map((i) => (i.result === "manual" ? `Счёт ${i.farmLabel}: выставить вручную.` : `Счёт ${i.farmLabel} не ушёл: ${i.error}`)),
+  ]
+    .filter((l, idx, all) => l !== "" || (idx > 0 && all[idx - 1] !== ""))
+    .join("\n")
+    .trim();
+}
+
+/** «Оплачено — можно собирать» (или оплачена часть, если компаний две). */
+export function botPaidAlertText(input: {
+  code: string;
+  clientName: string;
+  amount: number;
+  fullyPaid: boolean;
+  farmLabel: string;
+  items: { flowerType: string; variety: string; grade: string; quantity: number }[];
+  deliveryDate: string;
+  store: string;
+}): string {
+  return [
+    input.fullyPaid ? `*Оплачено — заказ №${input.code}*` : `*Оплачена часть — заказ №${input.code}*`,
+    "",
+    `Клиент: ${input.clientName}`,
+    `Пришло: *${money(input.amount)}*${input.farmLabel ? ` (${input.farmLabel})` : ""}`,
+    ...input.items.map((i) => `• ${itemName(i.flowerType, i.variety, i.grade)} — ${i.quantity} шт.`),
+    "",
+    input.fullyPaid
+      ? `Можно собирать: ${storeText(input.store)}, доставка ${dayText(input.deliveryDate)}.`
+      : "Ждём оплату второго счёта — собирать после неё.",
+  ].join("\n");
+}

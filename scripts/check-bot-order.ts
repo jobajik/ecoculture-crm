@@ -14,6 +14,8 @@ import {
   type BotOrderDraft,
 } from "../src/lib/botOrder";
 import { getLeaderboard } from "../src/lib/leaderboard";
+import { botPaidAlertText, botSaleAlertText } from "../src/lib/botOrder";
+import { staffPhoneKeys } from "../src/lib/botSalesAlert";
 import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "../src/lib/botIdentity";
 import { nameIndex, personName } from "../src/lib/personName";
 import { followupRunDue, followupRunText } from "../src/lib/botFollowUpRun";
@@ -271,6 +273,32 @@ async function main() {
   check("через 10 минут — рано", followupRunDue(lastRun, new Date(runAt.getTime() + 10 * 60000)), false);
   check("через 25 минут — пора", followupRunDue(lastRun, new Date(runAt.getTime() + 25 * 60000)), true);
   check("запусков не было — пора", followupRunDue("", runAt), true);
+
+  console.log("\nПродажи бота — сообщение команде");
+  const sale = botSaleAlertText({
+    code: "AB12C",
+    clientName: "Цветы Достык",
+    phone: "+77011234567",
+    city: "Алматы",
+    items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая", quantity: 100, unitPrice: 350 }],
+    deliveryDate: "2026-10-03",
+    store: "office",
+    invoices: [{ farm: "esentai", farmLabel: "Есентай Агро Хим", amount: 35000, phone: "87011234567", result: "sent", error: "" } as never],
+  });
+  check("заказ: номер, клиент, сумма, офис, счёт", [
+    sale.includes("заказ №AB12C"),
+    sale.includes("Цветы Достык, +77011234567, Алматы"),
+    sale.includes("*35 000 ₸*"),
+    sale.includes("Офис — отправка такси"),
+    sale.includes("ждём оплату"),
+  ], [true, true, true, true, true]);
+  const paidAlert = botPaidAlertText({
+    code: "AB12C", clientName: "Цветы Достык", amount: 35000, fullyPaid: true, farmLabel: "Есентай Агро Хим",
+    items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая", quantity: 100 }], deliveryDate: "2026-10-03", store: "",
+  });
+  check("оплата: можно собирать с основного склада", [paidAlert.startsWith("*Оплачено — заказ №AB12C*"), paidAlert.includes("Можно собирать: основной склад")], [true, true]);
+  check("оплата частями — ждём второй счёт", botPaidAlertText({ code: "X", clientName: "К", amount: 1, fullyPaid: false, farmLabel: "Rose Farm", items: [], deliveryDate: "", store: "" }).includes("второго счёта"), true);
+  check("сотрудникам бот не отвечает: номера сводки и продаж", Array.from(staffPhoneKeys({ DigestPhones: "+77011112233", BotSalesPhones: "+7 702 444 55 66, 87011112233" })).sort(), ["7011112233", "7024445566"]);
 
   console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
   process.exit(failed === 0 ? 0 : 1);
