@@ -17,6 +17,7 @@ process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "test-secret-for-ch
 
 import { fillPrices, insertTag, priceBlock, priceTagFlowers, priceTagOptions, priceTagsRefusal } from "../src/lib/broadcastPrices";
 import {
+  chatTranscript,
   OPT_OUT_LINE,
   botDecision,
   botSettingsFrom,
@@ -481,5 +482,25 @@ console.log("\nЦены в тексте рассылки");
   );
 }
 
+{
+  // Перерыв в переписке виден модели (04.10.2026: бот ответил на трёхдневный вопрос).
+  const t = chatTranscript([
+    { role: "us", text: "Вам эустому коробку сегодня отправить?", at: "2026-09-30T05:00:00Z" },
+    { role: "client", text: "Здравствуйте", at: "2026-10-03T12:10:00Z" },
+    { role: "us", text: "Здравствуйте!", at: "2026-10-03T12:11:00Z" },
+    { role: "client", text: "А розы?", at: "2026-10-03T14:30:00Z" },
+  ]).split("\n");
+  check("переписка: перерыв в днях отмечен, короткий — нет", t, [
+    "Мы: Вам эустому коробку сегодня отправить?",
+    "— перерыв 3 дн. —",
+    "Клиент: Здравствуйте",
+    "Мы: Здравствуйте!",
+    "Клиент: А розы?",
+  ]);
+  check("перерыв в часах", chatTranscript([
+    { role: "us", text: "a", at: "2026-10-03T00:00:00Z" },
+    { role: "client", text: "b", at: "2026-10-03T13:00:00Z" },
+  ]).split("\n")[1], "— перерыв 13 ч —");
+}
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

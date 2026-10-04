@@ -498,3 +498,25 @@ export function isAckOnly(text: string): boolean {
 }
 
 export const BOT_OPT_OUT_TEXT = "Хорошо, больше не будем присылать рассылки. Если понадобимся — просто напишите.";
+
+/**
+ * Переписка для модели — с отметками больших перерывов (04.10.2026: клиентка
+ * написала «Здравствуйте» через три дня после нашего «эустому коробку сегодня
+ * отправить?», и бот ответил на старый вопрос — «эустомы нет на складе»).
+ * Перерыв от 12 часов виден модели строкой «— перерыв N … —».
+ */
+export function chatTranscript(context: { role: "client" | "us"; text: string; at: string }[]): string {
+  const lines: string[] = [];
+  let prev = 0;
+  for (const c of context) {
+    const t = Date.parse(c.at) || 0;
+    const gapH = prev && t ? (t - prev) / 3_600_000 : 0;
+    if (gapH >= 12) {
+      const days = Math.floor(gapH / 24);
+      lines.push(days >= 1 ? `— перерыв ${days} дн. —` : `— перерыв ${Math.round(gapH)} ч —`);
+    }
+    if (t) prev = t;
+    lines.push(`${c.role === "client" ? "Клиент" : "Мы"}: ${c.text}`);
+  }
+  return lines.join("\n");
+}
