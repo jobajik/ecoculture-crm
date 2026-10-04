@@ -6,6 +6,8 @@ import {
   GRADE_LABELS,
   formatGrade,
   getGradesFor,
+  gradeForVariety,
+  isMiniMixVariety,
   type FlowerType,
 } from "@/lib/constants";
 import { priceFromMap } from "@/lib/priceList";
@@ -99,6 +101,12 @@ export default function OrderItemsEditor({
       items.map((it, i) => {
         if (i !== idx) return it;
         const next = { ...it, ...patch };
+        // «Мини-микс одноголовые» — без длины: градация всегда «Мини-микс».
+        // Сменили сорт обратно на обычный — возвращаем первую длину.
+        if (patch.variety !== undefined) {
+          if (isMiniMixVariety(next.variety)) next.grade = gradeForVariety(next.flowerType, next.variety, next.grade);
+          else if (isMiniMixVariety(it.variety) && next.grade === "Мини-микс") next.grade = getGradesFor(next.flowerType)[0] ?? "";
+        }
         const wasSuggested =
           !it.unitPrice ||
           Number(it.unitPrice) === priceFromMap(prices, it.flowerType, it.variety, it.grade);
@@ -189,7 +197,9 @@ export default function OrderItemsEditor({
                   onChange={(e) => updatePosition(idx, { grade: e.target.value })}
                 >
                   {!it.grade && <option value="">— выберите —</option>}
-                  {getGradesFor(it.flowerType).map((grade) => (
+                  {getGradesFor(it.flowerType)
+                    .filter((grade) => !isMiniMixVariety(it.variety) || grade === "Мини-микс")
+                    .map((grade) => (
                     <option key={grade} value={grade}>
                       {formatGrade(grade)}
                     </option>

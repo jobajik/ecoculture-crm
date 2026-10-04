@@ -42,7 +42,7 @@ import {
   type EditedItem,
 } from "../src/lib/orderEdit";
 import { ownerRoleFor } from "../src/lib/orderRules";
-import { ORDER_KINDS, ORDER_STATUSES, ROLES } from "../src/lib/constants";
+import { ORDER_KINDS, ORDER_STATUSES, ROLES, gradeForVariety } from "../src/lib/constants";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -362,6 +362,11 @@ checkSome(
   clientEditRefusal({ ...clientOrder, status: ORDER_STATUSES.CANCELLED }, ROLES.ADMIN, { retail: "" }),
   false
 );
+
+// Мини-микс — без длины (04.10.2026: «Мини-микс одноголовые, 40 см» не отгружался).
+check("мини-микс розы: градация всегда «Мини-микс»", gradeForVariety("rose", "Мини-микс одноголовые", "40"), "Мини-микс");
+check("обычный сорт: длина как есть", gradeForVariety("rose", "Kamala", "60"), "60");
+check("хризантема: категория как есть", gradeForVariety("chrysanthemum", "Altaj", "Первая"), "Первая");
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

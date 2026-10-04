@@ -1043,6 +1043,21 @@ export function getGradesFor(flowerType: string): readonly string[] {
   return GRADES_BY_FLOWER_TYPE[flowerType] ?? [];
 }
 
+/** Сорт «Мини-микс …» — это сам мини-микс: длины у него нет. */
+export function isMiniMixVariety(variety: string | null | undefined): boolean {
+  return /^мини-?микс/i.test(String(variety ?? "").trim());
+}
+
+/**
+ * Градация позиции с учётом сорта: у «Мини-микс одноголовые / кустовые /
+ * пионовидные» градация всегда «Мини-микс» — партии лежат именно так. 04.10.2026
+ * заявка ушла с «Мини-микс одноголовые, 40 см», и склад не мог её отгрузить.
+ */
+export function gradeForVariety(flowerType: string, variety: string, grade: string): string {
+  if (isMiniMixVariety(variety) && getGradesFor(flowerType).includes("Мини-микс")) return "Мини-микс";
+  return grade;
+}
+
 /**
  * Место градации в «правильном» порядке цветка — 40, 50, 60… мини-микс, 2 сорт.
  *

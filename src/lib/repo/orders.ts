@@ -14,7 +14,7 @@ import {
 import { generateId } from "../id";
 import { planItemSave } from "../orderEdit";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
-import { MONEY_EPSILON, ORDER_STATUSES, type FlowerType, type OrderStatus } from "../constants";
+import { MONEY_EPSILON, ORDER_STATUSES, gradeForVariety, type FlowerType, type OrderStatus } from "../constants";
 import { spreadByInvoice, type FarmMoney } from "../orderMoney";
 import { cleanDirection } from "../direction";
 import { cleanOrderKind } from "../orderKind";
@@ -258,7 +258,7 @@ export function buildNewOrder(
     ItemID: `${orderId}-I${idx + 1}`,
     FlowerType: item.flowerType,
     Variety: item.variety,
-    Grade: item.grade,
+    Grade: gradeForVariety(item.flowerType, item.variety, item.grade),
     Quantity: item.quantity,
     UnitPrice: item.unitPrice,
     ShippedQuantity: 0,
@@ -602,7 +602,7 @@ export async function saveOrderItems(
       OrderID: orderId,
       FlowerType: item.flowerType,
       Variety: item.variety.trim(),
-      Grade: item.grade,
+      Grade: gradeForVariety(item.flowerType, item.variety, item.grade),
       Quantity: Math.max(0, Math.round(item.quantity)),
       UnitPrice: Math.max(0, Math.round(item.unitPrice * 100) / 100),
     };
