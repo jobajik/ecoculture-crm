@@ -261,7 +261,7 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
             isLiquid: isLiquidGrade,
           });
           if (sent > 0) await pause(3000 + Math.floor(Math.random() * 4000));
-          // Касания 1–3 — фото из ротации с продающей подписью и ценами (владелец: «разные фотографии в
+          // Касания, кроме последнего, — фото из ротации с продающей подписью и ценами (владелец: «разные фотографии в
           // ротации, с цветком и продающим текстом»); нет фото — текст. Последнее касание — мягкое, текстом.
           const photo =
             attempt < NUDGE_GAPS_HOURS.length

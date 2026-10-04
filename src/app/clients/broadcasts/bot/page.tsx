@@ -6,7 +6,8 @@ import { ROLES } from "@/lib/constants";
 import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
 import { formatMoment } from "@/lib/formatDate";
 import { phoneKey } from "@/lib/leads";
-import { botSettingsFrom, dailyLimitOf } from "@/lib/broadcast";
+import { botSettingsFrom, dailyLimitOf, effectiveDailyLimit, warmupDay } from "@/lib/broadcast";
+import { localDayKey } from "@/lib/timezone";
 import { listBotChats, settingsMap } from "@/lib/repo/broadcasts";
 import { listClients } from "@/lib/repo/clients";
 import { listLeads } from "@/lib/repo/leads";
@@ -87,7 +88,7 @@ export default async function BotPage() {
       )}
 
       <Section tone="leads" icon="gear" title="Настройки">
-        <BotSettingsForm initial={settings} dailyLimit={dailyLimitOf(map.BroadcastDailyLimit)} />
+        <BotSettingsForm initial={settings} dailyLimit={dailyLimitOf(map.BroadcastDailyLimit)} todayNote={todayLimitNote(map)} />
       </Section>
 
       <Section tone="warn" icon="alert" title={`Заказы и тревоги от бота: ${handoffs.length}`} flush>
@@ -143,4 +144,12 @@ export default async function BotPage() {
       </Section>
     </div>
   );
+}
+
+/** «Сегодня — 20 (разогрев номера, день 1 из 7)»: предел дня с учётом разогрева после блокировки. */
+function todayLimitNote(map: Record<string, string>): string {
+  const today = localDayKey();
+  const limit = effectiveDailyLimit(map.BroadcastDailyLimit, map.BroadcastWarmupFrom, today);
+  const day = warmupDay(map.BroadcastWarmupFrom, today);
+  return day && day <= 7 ? `Сегодня — не больше ${limit}: разогрев номера, день ${day} из 7` : `Сегодня — не больше ${limit}`;
 }

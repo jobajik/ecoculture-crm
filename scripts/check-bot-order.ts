@@ -206,8 +206,8 @@ async function main() {
     lastInMessageId: "",
     ourIds: ["wz-1"],
     context: [
-      { role: "client", text: "Какая категория есть?", at: t(-2) },
-      { role: "us", text: "Altaj высшая 580 ₸, первая 530 ₸. Сколько поставить?", at: t(-1.5) },
+      { role: "client", text: "Какая категория есть?", at: t(-3.5) },
+      { role: "us", text: "Altaj высшая 580 ₸, первая 530 ₸. Сколько поставить?", at: t(-3.1) },
     ],
     name: "",
     botReplies: 1,
@@ -215,7 +215,8 @@ async function main() {
     ...patch,
   });
   const due = (c: BotChat, hour = 11, now = nowN) => nudgeDue({ settings: on, chat: c, now, hour });
-  check("клиент молчит 1,5 ч после нашего ответа — первое касание", due(talk()), 1);
+  check("клиент молчит 3 ч после нашего ответа — первое касание", due(talk()), 1);
+  check("прошло 2 ч — рано (раньше дожимали через 1,5 ч)", due(talk({ context: [talk().context[0], { ...talk().context[1], at: t(-2) }] })), 0);
   check("прошёл час — рано", due(talk({ context: [talk().context[0], { ...talk().context[1], at: t(-1) }] })), 0);
   check("прошло полчаса — рано", due(talk({ context: [talk().context[0], { ...talk().context[1], at: t(-0.5) }] })), 0);
   check("последним писал клиент — это не молчание", due(talk({ context: [talk().context[1], talk().context[0]] })), 0);
@@ -229,17 +230,16 @@ async function main() {
   check("бот выключен — нет", nudgeDue({ settings: { ...on, enabled: false }, chat: talk(), now: nowN, hour: 11 }), 0);
   check("модель закрыла дожим — нет", due(talk({ nudge: { count: 1, at: t(-5), done: true } })), 0);
   check("после первого касания час — рано для второго", due(talk({ nudge: { count: 1, at: t(-1), done: false } })), 0);
-  check("после первого касания 1,5 ч — второе", due(talk({ nudge: { count: 1, at: t(-1.5), done: false } })), 2);
-  check("после второго 1,5 ч — третье", due(talk({ nudge: { count: 2, at: t(-1.6), done: false } })), 3);
-  check("после третьего 1,5 ч — четвёртое", due(talk({ nudge: { count: 3, at: t(-1.6), done: false } })), 4);
-  check("четыре касания были — хватит", due(talk({ nudge: { count: 4, at: t(-5), done: false } })), 0);
+  check("после первого касания 10 ч — рано для второго", due(talk({ nudge: { count: 1, at: t(-10), done: false } })), 0);
+  check("после первого касания назавтра (20 ч) — второе", due(talk({ nudge: { count: 1, at: t(-20.5), done: false } })), 2);
+  check("два касания были — хватит", due(talk({ nudge: { count: 2, at: t(-30), done: false } })), 0);
   check("причина «рано» видна", nudgeStatus({ settings: on, chat: talk({ nudge: { count: 1, at: t(-1), done: false } }), now: nowN, hour: 11 }).reason.startsWith("рано"), true);
   check(
     "клиент молчит больше трёх дней — разговор закончен",
     due(talk({ context: [{ role: "client", text: "да", at: t(-80) }, { role: "us", text: "Сколько?", at: t(-79) }] })),
     0
   );
-  check("последнее касание — мягкое", nudgeTask(4, 20).includes("последнее касание"), true);
+  check("последнее (второе) касание — мягкое", nudgeTask(2, 20).includes("последнее касание"), true);
   check("решение модели: мусор — не писать", parseNudgeDecision(null).nudge, false);
   const nstock = [
     { flower: "rose", variety: "Jumilia", grade: "60", qty: 900 },
@@ -264,8 +264,7 @@ async function main() {
     "",
     "Поставить вам на завтра? Для пробы — от 50 шт.",
   ]);
-  check("касание 3 — пробная партия с суммой", nudgeText(3, offers, lbl).includes("50 шт. × 580 ₸ = *29 000 ₸*"), true);
-  check("касание 4 — мягкое без цен", nudgeText(4, offers, lbl).startsWith("Если цветы понадобятся"), true);
+  check("касание 2 (последнее) — мягкое без цен", nudgeText(2, offers, lbl).startsWith("Если цветы понадобятся"), true);
   check("в касании заказ не оформляется", nudgeTask(1, 1).includes("order.confirmed=false"), true);
   const runAt = new Date("2026-10-01T11:00:00Z");
   const lastRun = followupRunText(runAt, "вебхук", "дожато 1");

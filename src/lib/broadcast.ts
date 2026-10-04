@@ -21,12 +21,32 @@ import { EMPTY_BOT_ORDER, parseBotOrder, type BotOrderDraft } from "./botOrder";
 // проверка `scripts/check-broadcasts.ts`. Модуль без googleapis (грабли 1.8).
 // ---------------------------------------------------------------------------
 
-/** Пауза между сообщениями рассылки, секунды: случайно в этих пределах. */
-export const SEND_GAP_MIN_SECONDS = 25;
-export const SEND_GAP_MAX_SECONDS = 50;
-/** Сколько сообщений рассылок в сутки по умолчанию (меняется в настройках). */
-export const DEFAULT_DAILY_LIMIT = 150;
-export const MAX_DAILY_LIMIT = 1000;
+// Осторожная отправка (04.10.2026: номер заблокировали после рассылок по 50 за раз; владелец: «давай
+// теперь аккуратнее»). Его выбор — разогрев номера, сначала «тёплые», дожим — два касания.
+
+/** Пауза между сообщениями рассылки, секунды: случайно в этих пределах (было 25–50). */
+export const SEND_GAP_MIN_SECONDS = 60;
+export const SEND_GAP_MAX_SECONDS = 150;
+/** После каждых стольких сообщений за день — перерыв подольше, секунды. */
+export const BREAK_EVERY = 10;
+export const BREAK_MIN_SECONDS = 600;
+export const BREAK_MAX_SECONDS = 1200;
+/** Не больше стольких сообщений рассылок за любой час. */
+export const HOURLY_LIMIT = 15;
+/** Рассылки уходят только днём по Алматы: [с, до). */
+export const SEND_FROM_HOUR = 10;
+export const SEND_TO_HOUR = 19;
+/** Тем, кто ни разу нам не писал, — не больше стольких в день: «холодные» чаще жалуются. */
+export const COLD_DAILY_LIMIT = 10;
+/** Разогрев после блокировки: до какого дня (включительно) какой предел в сутки. Дальше — настройка. */
+export const WARMUP_STEPS: { untilDay: number; limit: number }[] = [
+  { untilDay: 2, limit: 20 },
+  { untilDay: 4, limit: 35 },
+  { untilDay: 7, limit: 50 },
+];
+/** Сколько сообщений рассылок в сутки по умолчанию (меняется в настройках) и потолок настройки. */
+export const DEFAULT_DAILY_LIMIT = 80;
+export const MAX_DAILY_LIMIT = 150;
 /** Сколько получателей в одной рассылке — больше разбивайте на несколько. */
 export const MAX_RECIPIENTS = 3000;
 /** Предел текста сообщения WhatsApp держим с большим запасом. */
@@ -172,9 +192,74 @@ export function prepareAudience(candidates: AudienceCandidate[], optedOut: Set<s
 
 // --- Отправка ---------------------------------------------------------------
 
-/** Пауза до следующего сообщения, секунды. `rnd` — для проверки. */
-export function nextGapSeconds(rnd: () => number = Math.random): number {
+/**
+ * Пауза до следующего сообщения, секунды. `sentToday` — сколько уже ушло за день вместе с
+ * только что отправленным: на каждом десятом — перерыв 10–20 минут. `rnd` — для проверки.
+ */
+export function nextGapSeconds(rnd: () => number = Math.random, sentToday = 1): number {
+  if (sentToday > 0 && sentToday % BREAK_EVERY === 0) {
+    return Math.round(BREAK_MIN_SECONDS + (BREAK_MAX_SECONDS - BREAK_MIN_SECONDS) * rnd());
+  }
   return Math.round(SEND_GAP_MIN_SECONDS + (SEND_GAP_MAX_SECONDS - SEND_GAP_MIN_SECONDS) * rnd());
+}
+
+/** Какой день разогрева сегодня (1 — первый). Даты «ГГГГ-ММ-ДД». Нет даты — 0 (разогрева нет). */
+export function warmupDay(warmupFrom: string | null | undefined, today: string): number {
+  const from = Date.parse(`${String(warmupFrom || "").trim()}T00:00:00Z`);
+  const now = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(from) || !Number.isFinite(now)) return 0;
+  return Math.max(1, Math.round((now - from) / 86400000) + 1);
+}
+
+/** Предел на сегодня: настройка, а в дни разогрева — не больше ступени разогрева. */
+export function effectiveDailyLimit(raw: string | null | undefined, warmupFrom: string | null | undefined, today: string): number {
+  const base = dailyLimitOf(raw);
+  const day = warmupDay(warmupFrom, today);
+  const step = day ? WARMUP_STEPS.find((s) => day <= s.untilDay) : undefined;
+  return step ? Math.min(base, step.limit) : base;
+}
+
+/**
+ * Можно ли отправлять сейчас — по времени. `sentTimes` — моменты (мс) сообщений рассылок,
+ * ушедших сегодня по всем рассылкам; `minutes` — минуты от полуночи по Алматы.
+ * Возвращает, сколько ждать и почему, или null — можно.
+ */
+export function pacingWait(input: { now: Date; minutes: number; sentTimes: number[] }): { waitSeconds: number; note: string } | null {
+  const { now, minutes } = input;
+  const from = SEND_FROM_HOUR * 60, to = SEND_TO_HOUR * 60;
+  const hours = `Рассылка идёт с ${SEND_FROM_HOUR}:00 до ${SEND_TO_HOUR}:00 — продолжим в ${SEND_FROM_HOUR}:00`;
+  if (minutes < from) return { waitSeconds: (from - minutes) * 60, note: hours };
+  if (minutes >= to) return { waitSeconds: (24 * 60 - minutes + from) * 60, note: hours };
+  const t = now.getTime();
+  const times = [...input.sentTimes].filter((x) => Number.isFinite(x) && x <= t).sort((a, b) => a - b);
+  const last = times[times.length - 1];
+  const hourAgo = times.filter((x) => x > t - 3600000);
+  if (hourAgo.length >= HOURLY_LIMIT) {
+    const wait = Math.ceil((hourAgo[0] + 3600000 - t) / 1000) + 5;
+    return { waitSeconds: wait, note: `Не больше ${HOURLY_LIMIT} сообщений в час — продолжим через ${Math.ceil(wait / 60)} мин` };
+  }
+  if (last !== undefined) {
+    const since = (t - last) / 1000;
+    if (times.length % BREAK_EVERY === 0 && since < BREAK_MIN_SECONDS) {
+      return { waitSeconds: Math.ceil(BREAK_MIN_SECONDS - since), note: `Перерыв после каждых ${BREAK_EVERY} сообщений` };
+    }
+    if (since < SEND_GAP_MIN_SECONDS - 5) return { waitSeconds: Math.ceil(SEND_GAP_MIN_SECONDS - since), note: "" };
+  }
+  return null;
+}
+
+/**
+ * Кому следующему: сначала тем, кто уже писал нам в WhatsApp («тёплые»), потом остальным —
+ * не больше `COLD_DAILY_LIMIT` в день. `warm` — ключи номеров (`phoneKey`), писавших нам.
+ */
+export function pickNextRecipient<T extends { phone: string }>(queued: T[], warm: Set<string>, coldSentToday: number): { next: T | null; note: string } {
+  const w = queued.find((r) => warm.has(phoneKey(r.phone)));
+  if (w) return { next: w, note: "" };
+  if (queued.length === 0) return { next: null, note: "" };
+  if (coldSentToday >= COLD_DAILY_LIMIT) {
+    return { next: null, note: `Тем, кто нам ещё не писал, — не больше ${COLD_DAILY_LIMIT} в день. Продолжим завтра` };
+  }
+  return { next: queued[0], note: "" };
 }
 
 /** Можно ли отправлять сейчас: не чаще паузы (защита от двух открытых вкладок). */

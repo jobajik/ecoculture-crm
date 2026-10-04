@@ -28,13 +28,16 @@ import {
   OPT_OUT_LINE,
   broadcastTextRefusal,
   dailyLimitOf,
+  effectiveDailyLimit,
   greetingName,
   nextGapSeconds,
+  pacingWait,
   personalize,
+  pickNextRecipient,
   sendTooSoon,
-  sentOnDay,
   waPhone,
 } from "@/lib/broadcast";
+import { listWaMessages } from "@/lib/repo/talks";
 import { GreenError, sendFileByUrl, sendText, type GreenConfig } from "@/lib/greenApi";
 import { checkGreenChannel } from "@/lib/greenChannel";
 import { MAX_CAPTION, greenFailureKind, greenFileName } from "@/lib/greenOut";
@@ -251,13 +254,14 @@ async function setBroadcastStatusActionInner(broadcastId: string, status: "sendi
 
 /**
  * Отправить следующее сообщение рассылки. Зовёт открытая страница рассылки,
- * раз в 25–50 секунд (пауза случайная — так пишет человек, а не робот).
+ * раз в 1–2,5 минуты (пауза случайная — так пишет человек, а не робот), после каждых
+ * 10 — перерыв, только 10:00–19:00, не больше 15 в час, сначала «тёплым» (04.10.2026).
  * Сервер сам не торопится: слишком частый вызов (две открытые вкладки)
  * получает «подождите», а дневной предел общий на все рассылки.
  */
 async function sendNextActionInner(broadcastId: string) {
   await requireBroadcaster();
-  await prefetchTables([SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS, SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]);
+  await prefetchTables([SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS, SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS, SHEET_TABS.WA_MESSAGES]);
   const found = await findBroadcastRow(broadcastId, false);
   if (!found) throw new Error("Рассылка не найдена");
   const b = found.broadcast;
@@ -270,19 +274,31 @@ async function sendNextActionInner(broadcastId: string) {
   const now = new Date();
   if (sendTooSoon(b.lastSendAt, now)) return result({ waitSeconds: 20, note: "" });
 
-  const limit = dailyLimitOf((await settingsMap()).BroadcastDailyLimit);
+  const settings = await settingsMap();
   const today = localDayKey(now);
-  const sentToday = sentOnDay(all, today, (iso) => localDayKey(new Date(iso)));
-  if (sentToday >= limit) {
-    return result({ waitSeconds: 600, note: `На сегодня отправлено ${sentToday} из ${limit} — продолжим завтра` });
-  }
+  const limit = effectiveDailyLimit(settings.BroadcastDailyLimit, settings.BroadcastWarmupFrom, today);
+  const sentRows = all.filter((r) => r.status === "sent" && r.sentAt && localDayKey(new Date(r.sentAt)) === today);
+  const sentToday = sentRows.length;
 
-  const next = mine.find((r) => r.status === "queued");
-  if (!next) {
+  const queued = mine.filter((r) => r.status === "queued");
+  if (queued.length === 0) {
     await commitAtomic([broadcastUpdate(found.rowNumber, { Status: BROADCAST_STATUSES.DONE, FinishedAt: now.toISOString() })]);
     revalidatePath("/clients/broadcasts");
     return { status: BROADCAST_STATUSES.DONE, remaining: 0, waitSeconds: 0, note: "Рассылка закончена" };
   }
+  if (sentToday >= limit) {
+    return result({ waitSeconds: 1800, note: `На сегодня отправлено ${sentToday} из ${limit} — продолжим завтра` });
+  }
+  // Осторожно: только днём, не больше 15 в час, перерыв после каждых 10 — по ВСЕМ рассылкам сразу.
+  const wait = pacingWait({ now, minutes: now.getHours() * 60 + now.getMinutes(), sentTimes: sentRows.map((r) => Date.parse(r.sentAt)) });
+  if (wait) return result(wait);
+
+  // Сначала тем, кто уже писал нам; «холодным» — не больше 10 в день.
+  const warm = new Set((await listWaMessages()).filter((m) => m.direction === "in").map((m) => phoneKey(m.phone)));
+  const coldSentToday = sentRows.filter((r) => !warm.has(phoneKey(r.phone))).length;
+  const pick = pickNextRecipient(queued, warm, coldSentToday);
+  if (!pick.next) return result({ waitSeconds: 1800, note: pick.note });
+  const next = pick.next;
 
   const chats = await listBotChats();
   const chat = chats.find((c) => phoneKey(c.phone) === phoneKey(next.phone)) ?? null;
@@ -317,7 +333,7 @@ async function sendNextActionInner(broadcastId: string) {
     const updated = { ...c, ourIds: [...c.ourIds, ...ids].slice(-20), name: c.name || next.name };
     writes.push(botChatWrite(updated, chat?.rowNumber ?? null));
     await commitAtomic(writes);
-    return result({ waitSeconds: nextGapSeconds(), note: "", sentTo: next.name || next.phone, remaining: remaining() - 1 });
+    return result({ waitSeconds: nextGapSeconds(Math.random, sentToday + 1), note: "", sentTo: next.name || next.phone, remaining: remaining() - 1 });
   } catch (err) {
     const e = err instanceof GreenError ? err : null;
     const kind = e ? greenFailureKind(e.status) : "recipient";

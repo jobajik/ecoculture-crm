@@ -26,6 +26,10 @@ import {
   broadcastTotals,
   dailyLimitOf,
   deliveryByMessage,
+  effectiveDailyLimit,
+  pacingWait,
+  pickNextRecipient,
+  warmupDay,
   greetingName,
   isAckOnly,
   isOptOutText,
@@ -133,16 +137,47 @@ check("обычный лид — пойдёт", aud[3].excluded, "");
 check("отписавшийся — нет", aud[4].excluded, "отписался");
 
 console.log("\nОтправка");
-check("пауза не меньше 25 с", nextGapSeconds(() => 0), 25);
-check("пауза не больше 50 с", nextGapSeconds(() => 1), 50);
+check("пауза не меньше 60 с", nextGapSeconds(() => 0), 60);
+check("пауза не больше 150 с", nextGapSeconds(() => 1), 150);
+check("после 10-го за день — перерыв 10–20 мин", [nextGapSeconds(() => 0, 10), nextGapSeconds(() => 1, 20)], [600, 1200]);
+check("после 9-го — обычная пауза", nextGapSeconds(() => 0, 9), 60);
 const now = new Date("2026-09-28T10:00:00Z");
 check("через 5 с — рано", sendTooSoon("2026-09-28T09:59:55Z", now), true);
-check("через 30 с — можно", sendTooSoon("2026-09-28T09:59:30Z", now), false);
+check("через 30 с — тоже рано", sendTooSoon("2026-09-28T09:59:30Z", now), true);
+check("через 70 с — можно", sendTooSoon("2026-09-28T09:58:50Z", now), false);
 check("первое — можно", sendTooSoon("", now), false);
-check("предел по умолчанию", dailyLimitOf(""), 150);
-check("предел из настройки", dailyLimitOf("80"), 80);
-check("предел — не больше 1000", dailyLimitOf("99999"), 1000);
-check("мусор — по умолчанию", dailyLimitOf("много"), 150);
+check("предел по умолчанию", dailyLimitOf(""), 80);
+check("предел из настройки", dailyLimitOf("60"), 60);
+check("предел — не больше 150", dailyLimitOf("99999"), 150);
+check("мусор — по умолчанию", dailyLimitOf("много"), 80);
+
+console.log("\nОсторожная отправка (после блокировки номера)");
+check("день разогрева: в день старта — первый", warmupDay("2026-10-04", "2026-10-04"), 1);
+check("день разогрева: через неделю — восьмой", warmupDay("2026-10-04", "2026-10-11"), 8);
+check("нет даты — разогрева нет", warmupDay("", "2026-10-04"), 0);
+check("разогрев: 1–2 день — 20, 3–4 — 35, 5–7 — 50, дальше — настройка",
+  ["2026-10-04", "2026-10-05", "2026-10-06", "2026-10-08", "2026-10-10", "2026-10-11"].map((d) => effectiveDailyLimit("80", "2026-10-04", d)),
+  [20, 20, 35, 50, 50, 80]);
+check("разогрев не поднимает выше настройки", effectiveDailyLimit("30", "2026-10-04", "2026-10-09"), 30);
+check("без разогрева — настройка", effectiveDailyLimit("", "", "2026-10-09"), 80);
+const at = new Date("2026-10-04T06:00:00Z");
+const m = (h: number, mm = 0) => h * 60 + mm;
+check("до 10:00 — ждём до 10:00", pacingWait({ now: at, minutes: m(9, 30), sentTimes: [] })?.waitSeconds, 1800);
+check("после 19:00 — до завтра 10:00", pacingWait({ now: at, minutes: m(19, 0), sentTimes: [] })?.waitSeconds, 15 * 3600);
+check("днём, первое — можно", pacingWait({ now: at, minutes: m(11), sentTimes: [] }), null);
+const ago = (s: number) => at.getTime() - s * 1000;
+check("через 30 с после прошлого — рано", (pacingWait({ now: at, minutes: m(11), sentTimes: [ago(30)] })?.waitSeconds ?? 0) > 0, true);
+check("через 2 мин — можно", pacingWait({ now: at, minutes: m(11), sentTimes: [ago(120)] }), null);
+const ten = Array.from({ length: 10 }, (_, i) => ago(120 + i * 90));
+check("после 10 сообщений — перерыв", pacingWait({ now: at, minutes: m(11), sentTimes: ten })?.note.startsWith("Перерыв"), true);
+check("перерыв прошёл — можно", pacingWait({ now: at, minutes: m(11), sentTimes: ten.map((x) => x - 600000) }), null);
+const fifteen = Array.from({ length: 15 }, (_, i) => ago(200 + i * 200));
+check("15 за час — ждём", pacingWait({ now: at, minutes: m(11), sentTimes: fifteen })?.note.startsWith("Не больше 15"), true);
+const q = [{ phone: "77010000001" }, { phone: "77010000002" }, { phone: "77010000003" }];
+check("сначала тёплый, даже если он не первый", pickNextRecipient(q, new Set(["7010000003"]), 0).next?.phone, "77010000003");
+check("тёплых нет — холодный, пока не 10 за день", pickNextRecipient(q, new Set(), 9).next?.phone, "77010000001");
+check("10 холодных за день — ждём завтра", pickNextRecipient(q, new Set(), 10).next, null);
+check("тёплый идёт и после 10 холодных", pickNextRecipient(q, new Set(["7010000002"]), 10).next?.phone, "77010000002");
 
 console.log("\nОтчёт");
 const rows: RecipientRow[] = [

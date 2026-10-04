@@ -7,7 +7,7 @@ import { unwrap } from "@/lib/actionResult";
 import type { BotSettings } from "@/lib/broadcast";
 
 /** Настройки бота-автоответчика и дневной предел рассылок. */
-export default function BotSettingsForm({ initial, dailyLimit }: { initial: BotSettings; dailyLimit: number }) {
+export default function BotSettingsForm({ initial, dailyLimit, todayNote }: { initial: BotSettings; dailyLimit: number; todayNote?: string }) {
   const router = useRouter();
   const [s, setS] = useState(initial);
   const [limit, setLimit] = useState(String(dailyLimit));
@@ -80,7 +80,8 @@ export default function BotSettingsForm({ initial, dailyLimit }: { initial: BotS
       <label className="block space-y-1 text-sm">
         <span className="label">Рассылки: не больше сообщений в сутки</span>
         <input className="input !w-32" inputMode="numeric" value={limit} onChange={(e) => setLimit(e.target.value)} />
-        <span className="block text-xs text-ink-muted">Для обычного WhatsApp безопаснее начинать со 100–150 в день и повышать постепенно.</span>
+        {todayNote && <span className="block text-xs font-medium text-ink-secondary">{todayNote}</span>}
+        <span className="block text-xs text-ink-muted">Не больше 150. Рассылки идут 10:00–19:00, до 15 в час, перерыв после каждых 10; сначала тем, кто уже писал нам, новым — до 10 в день.</span>
       </label>
 
       {error && <p className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</p>}
