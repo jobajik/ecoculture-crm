@@ -37,6 +37,7 @@ import {
   clientEditRefusal,
   editedItemsRefusal,
   newOrderDateRefusal,
+  backdateDaysFor,
   type EditedItem,
 } from "@/lib/orderEdit";
 import { localDayKey } from "@/lib/timezone";
@@ -110,7 +111,7 @@ async function createOrderActionInner(
     region: false,
   });
   if (itemsRefusal) throw new Error(itemsRefusal);
-  const dateRefusal = newOrderDateRefusal(input.deliveryDate, localDayKey());
+  const dateRefusal = newOrderDateRefusal(input.deliveryDate, localDayKey(), backdateDaysFor(role));
   if (dateRefusal) throw new Error(dateRefusal);
 
   // На кого оформлена заявка — на клиента или на наш магазин, — решает КАРТОЧКА,

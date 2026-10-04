@@ -338,8 +338,20 @@ export function cleanDeliveryDate(value: string | null | undefined): string {
  */
 export const NEW_ORDER_BACKDATE_DAYS = 7;
 export const NEW_ORDER_AHEAD_DAYS = 62;
+/**
+ * Розница и админ вносят накладные задним числом до 45 дней (04.10.2026: Руслан не мог
+ * посадить накладные за 15 и 16 сентября — «больше недели»; владелец: «дай возможность»).
+ * Опечатку в годе это по-прежнему ловит.
+ */
+export const RETAIL_BACKDATE_DAYS = 45;
+const LONG_BACKDATE_ROLES: string[] = [ROLES.ADMIN, ROLES.RETAIL_ALMATY, ROLES.RETAIL_REGIONS, ROLES.OFFICE_RETAIL];
 
-export function newOrderDateRefusal(value: string | null | undefined, today: string): string {
+/** На сколько дней назад роль может поставить дату доставки новой заявки. */
+export function backdateDaysFor(role: string | null | undefined): number {
+  return role && LONG_BACKDATE_ROLES.includes(role) ? RETAIL_BACKDATE_DAYS : NEW_ORDER_BACKDATE_DAYS;
+}
+
+export function newOrderDateRefusal(value: string | null | undefined, today: string, backDays: number = NEW_ORDER_BACKDATE_DAYS): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
   const clean = cleanDeliveryDate(raw);
@@ -347,8 +359,8 @@ export function newOrderDateRefusal(value: string | null | undefined, today: str
   const days = Math.round(
     (new Date(`${clean}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000
   );
-  if (days < -NEW_ORDER_BACKDATE_DAYS) {
-    return `Дата доставки больше чем на ${NEW_ORDER_BACKDATE_DAYS} дней в прошлом — проверьте год и месяц`;
+  if (days < -backDays) {
+    return `Дата доставки больше чем на ${backDays} дней в прошлом — проверьте год и месяц`;
   }
   if (days > NEW_ORDER_AHEAD_DAYS) return "Дата доставки дальше двух месяцев вперёд — проверьте год и месяц";
   return "";

@@ -20,7 +20,7 @@ import { changedCells, toCellData } from "../src/lib/sheets";
 import { duplicatePaymentRefusal, DUPLICATE_PAYMENT_WINDOW_MS } from "../src/lib/payments";
 import { isReadyToShip, notReadyReason } from "../src/lib/orderReady";
 import { cancelRefusal, confirmRefusal } from "../src/lib/orderRules";
-import { newOrderDateRefusal } from "../src/lib/orderEdit";
+import { backdateDaysFor, newOrderDateRefusal } from "../src/lib/orderEdit";
 import { canOpen, missingFarm } from "../src/lib/access";
 
 let fails = 0;
@@ -99,6 +99,9 @@ check("завтра — можно", newOrderDateRefusal("2026-09-24", today), "
 check("без даты — можно (отдельное предупреждение)", newOrderDateRefusal("", today), "");
 check("неделю назад — можно (вносят задним числом)", newOrderDateRefusal("2026-09-16", today), "");
 check("месяц назад — отказ", newOrderDateRefusal("2026-08-20", today) !== "", true);
+check("розница (Руслан): накладная трёхнедельной давности — можно", newOrderDateRefusal("2026-09-01", today, backdateDaysFor("office_retail")), "");
+check("менеджер: три недели назад — отказ", newOrderDateRefusal("2026-09-01", today, backdateDaysFor("manager")) !== "", true);
+check("розница: два месяца назад — отказ", newOrderDateRefusal("2026-07-20", today, backdateDaysFor("retail_almaty")) !== "", true);
 check("опечатка в годе — отказ", newOrderDateRefusal("2062-09-24", today) !== "", true);
 check("31 февраля — отказ", newOrderDateRefusal("2026-02-31", today), "Дата доставки указана неверно");
 
