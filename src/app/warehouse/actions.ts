@@ -29,6 +29,11 @@ import {
 } from "@/lib/repo/staffTakeouts";
 import { cleanStaffName, isCompanyUse, takeoutPriceRefusal, takeoutRefusal } from "@/lib/staffTakeout";
 import { guard } from "@/lib/actionResult";
+import { batchFixRefusal, batchLine, planBatchEdit } from "@/lib/batchFix";
+import { deleteBatchRow, loadBatchForFix, updateBatchRow } from "@/lib/repo/batchFix";
+import { logMoney } from "@/lib/repo/moneyLog";
+import { MONEY_LOG_ACTIONS } from "@/lib/constants";
+import { localDayKey } from "@/lib/timezone";
 import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeOfRole, type StoreCode } from "@/lib/officeStore";
 
 async function requireWarehouse() {
@@ -327,6 +332,63 @@ async function setTakeoutPriceActionInner(takeoutId: string, unitPrice: number) 
   return price;
 }
 
+/**
+ * Исправить ошибочную приёмку — удалить нетронутую партию или поправить сорт, градацию, количество
+ * и дату срезки (`batchFix.ts`). Просьба Разии 08.10.2026: эустома от 05.10 внесена дважды.
+ * Правила проверяются по свежему чтению партии и всех журналов; в журнал действий — что было.
+ */
+async function fixBatchActionInner(input: {
+  batchId: string;
+  mode: "delete" | "edit";
+  reason: string;
+  variety?: string;
+  grade?: string;
+  quantity?: number;
+  harvestDate?: string;
+}) {
+  const { email, farm, role } = await requireWarehouse();
+  const reason = String(input.reason || "").trim();
+  if (!reason) throw new Error("Напишите, что не так с приёмкой");
+  const found = await loadBatchForFix(String(input.batchId || ""));
+  if (!found) throw new Error("Партия не найдена — возможно, её уже удалили");
+  const { batch, rowNumber, touches } = found;
+  const refusal = batchFixRefusal({ role, farm, batch, touches });
+  if (refusal) throw new Error(refusal);
+
+  let details: string;
+  if (input.mode === "delete") {
+    await deleteBatchRow(rowNumber);
+    details = `удалена партия ${batchLine(batch)} · ${reason}`;
+  } else {
+    const catalog = await listVarietiesByType();
+    const plan = planBatchEdit(
+      batch,
+      {
+        variety: String(input.variety ?? batch.variety),
+        grade: String(input.grade ?? batch.grade),
+        quantity: Number(input.quantity ?? batch.quantityIn),
+        harvestDate: String(input.harvestDate ?? batch.harvestDate),
+      },
+      { varieties: catalog[batch.flowerType] ?? [], today: localDayKey() }
+    );
+    await updateBatchRow(rowNumber, plan.changes);
+    details = `партия ${batchLine(batch)}: ${plan.summary} · ${reason}`;
+  }
+  await logMoney({
+    actorEmail: email,
+    orderId: "",
+    action: MONEY_LOG_ACTIONS.BATCH_FIXED,
+    details,
+    amountBefore: 0,
+    amountAfter: 0,
+  });
+  revalidatePath("/warehouse/batches");
+  revalidatePath("/warehouse");
+  revalidatePath("/warehouse/analytics");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 /** Сегодняшний день по местному времени — «ГГГГ-ММ-ДД». */
 function todayKey(): string {
   const d = new Date();
@@ -427,6 +489,10 @@ export async function previewWriteoffsAction(...args: Parameters<typeof previewW
 
 export async function applyWriteoffsAction(...args: Parameters<typeof applyWriteoffsActionInner>) {
   return guard(() => applyWriteoffsActionInner(...args));
+}
+
+export async function fixBatchAction(...args: Parameters<typeof fixBatchActionInner>) {
+  return guard(() => fixBatchActionInner(...args));
 }
 
 export async function setTakeoutPriceAction(...args: Parameters<typeof setTakeoutPriceActionInner>) {

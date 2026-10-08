@@ -118,9 +118,13 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
                   </td>
                   <td data-label="Кто" className="px-4 py-2.5 whitespace-nowrap">{r.actorName}</td>
                   <td data-label="Заявка" className="px-4 py-2.5">
-                    <Link href={`/orders/${r.orderId}`} className="hover:underline">
-                      {r.clientName || r.orderId}
-                    </Link>
+                    {r.orderId ? (
+                      <Link href={`/orders/${r.orderId}`} className="hover:underline">
+                        {r.clientName || r.orderId}
+                      </Link>
+                    ) : (
+                      <span className="text-ink-muted">—</span>
+                    )}
                   </td>
                   <td data-label="Что сделал" className="px-4 py-2.5">
                     <span className={clsx("font-medium", STRONG.includes(r.action) && "text-[#8a5a00]")}>

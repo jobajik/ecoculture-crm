@@ -843,7 +843,8 @@ Wazzup, всё было сделано под него (задание 110), п�
   сайт; шаг отправки один на страницу и на этот путь — `sendNextBroadcastMessage` в `src/lib/broadcastSend.ts`.
   «Тёплые» — писавшие нам в WhatsApp ИЛИ клиенты с заказами (владелец: «покупавшие — тоже тёплые»). Рассылку по базе
   заводит `scripts/broadcast-create.ts <json> [--yes]` (клиенты, кроме заказавших за 3 дня; дольше не заказывавшие —
-  первыми). На компьютере владельца — `rassylka.bat` в папке flower-crm_1: двойной щелчок продолжает отправку после
+  первыми). Текст идущей рассылки меняет `scripts/broadcast-set-text.ts <json> [--yes]` (оставшимся уйдёт новый);
+пробное сообщение владельцу — `scripts/broadcast-test-send.ts --tail <цифры>`. На компьютере владельца — `rassylka.bat` в папке flower-crm_1: двойной щелчок продолжает отправку после
   перезагрузки. Перед КАЖДЫМ сообщением
   сервер спрашивает `getStateInstance`: номер не `authorized` (QR, ограничение WhatsApp
   suspended/yellowCard) — рассылка на паузе с объяснением. Но если Green API на этот вопрос просто НЕ ОТВЕТИЛ (нет связи, 5xx, 429, номер «запускается») — рассылка не останавливается, страница проверяет снова через минуту сама (`channelProblem` в `greenOut.ts`). 30.09 разовый сбой поставил на паузу «Акцию хризантемы» с 19 оставшимися, хотя через минуту всё работало; «Продолжить» при таком сбое тоже не отказывает. Отказ Green API разбирается
@@ -2739,7 +2740,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;
@@ -3379,6 +3380,18 @@ Sheets. Зав. складом видит одну колонку, и фильт
 **Импорт приёмки из Excel** сверяет сорт со справочником `Varieties` и отклоняет неизвестные.
 Когда сортов в справочнике нет, а приёмку надо внести за зав. складом, — `scripts/receive-json.ts <json> [--yes]`
 (дописывает новые сорта в `Varieties`, заводит партии от имени зав. складом производства, повтор не задваивает).
+
+**Исправить ошибочную приёмку** (08.10.2026, Разия: «эустома от 5.10 внесена дважды — дайте доступ менять, чтобы
+исправлять самим»; правила — `src/lib/batchFix.ts`, запись — `src/lib/repo/batchFix.ts`, действие `fixBatchAction`,
+проверка `check-batch-fix`). На «Складе → Партии» у нетронутой партии кнопка «Исправить»: сорт (из справочника),
+градация, количество (пишется и в приход, и в остаток), дата срезки — или «Удалить партию». Обязательна причина, в
+журнал действий (`MoneyLog`, «Исправлена приёмка», без заявки) пишется партия целиком. **Только нетронутая**: остаток
+равен приходу и нет ни одной строки в отгрузках, списаниях, выдачах, перемещениях и офисной партии от неё
+(`batchTouches`, по свежему чтению) — иначе журналы ссылались бы на партию, которой нет; лишнее у тронутой убирают
+списанием. Правят зав. складом своего цветка и админ, склад офиса — нет. Цветок не меняется. Партии с тем же днём
+срезки, цветком, сортом, градацией и приходом помечены «похоже на повтор приёмки» (`likelyDuplicates`) — подсказка, не
+запрет. Повторы за склад убирает `scripts/batch-dedupe.ts <партии> [--yes]` (из пары удаляет нетронутую, перед этим
+копия таблицы).
 Строки чужого производства помечаются ошибкой. Шаблон скачивается уже под своё производство.
 
 ---
