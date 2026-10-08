@@ -8,7 +8,9 @@ dotenv.config();
  * несколько, берётся тот, что есть и в «Продажах бота» (`BotSalesPhones`). В отчёт рассылки не
  * пишется. Без --yes — показ.
  *
- *   npx tsx scripts/broadcast-test-send.ts (BC-… | --id-file <файл>) [--yes]
+ *   npx tsx scripts/broadcast-test-send.ts (BC-… | --id-file <файл>) [--tail 1234] [--yes]
+ *
+ * `--tail` — последние цифры номера из сводки, если номеров там несколько.
  *
  * 08.10.2026, владелец: «отправь мне сейчас с этого номера» — посмотреть, как видят клиенты.
  */
@@ -39,9 +41,12 @@ async function main() {
   const digest = split(map.DigestPhones);
   const sales = new Set(split(map.BotSalesPhones).map(phoneKey));
   const both = digest.filter((p) => sales.has(phoneKey(p)));
-  const phone = digest.length === 1 ? digest[0] : both.length === 1 ? both[0] : "";
+  const ti = args.indexOf("--tail");
+  const tail = ti >= 0 ? String(args[ti + 1] || "").replace(/\D/g, "") : "";
+  const byTail = tail ? digest.filter((p) => p.endsWith(tail)) : [];
+  const phone = tail ? (byTail.length === 1 ? byTail[0] : "") : digest.length === 1 ? digest[0] : both.length === 1 ? both[0] : "";
   console.log(`Номера сводки: ${digest.map((p) => `…${p.slice(-4)}`).join(", ") || "нет"}`);
-  if (!phone) throw new Error("Не понял, какой номер ваш — впишите его в JSON или оставьте в сводке один");
+  if (!phone) throw new Error("Не понял, какой номер ваш — укажите --tail <последние цифры>");
   console.log(`Отправляю на …${phone.slice(-4)}`);
 
   if (b.fileId) {
