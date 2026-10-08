@@ -249,15 +249,15 @@ export function pacingWait(input: { now: Date; minutes: number; sentTimes: numbe
 }
 
 /**
- * Кому следующему: сначала тем, кто уже писал нам в WhatsApp («тёплые»), потом остальным —
- * не больше `COLD_DAILY_LIMIT` в день. `warm` — ключи номеров (`phoneKey`), писавших нам.
+ * Кому следующему: сначала «тёплым» (писали нам в WhatsApp или уже покупали — решает `isWarm`),
+ * потом остальным — не больше `COLD_DAILY_LIMIT` в день.
  */
-export function pickNextRecipient<T extends { phone: string }>(queued: T[], warm: Set<string>, coldSentToday: number): { next: T | null; note: string } {
-  const w = queued.find((r) => warm.has(phoneKey(r.phone)));
+export function pickNextRecipient<T extends { phone: string }>(queued: T[], isWarm: (r: T) => boolean, coldSentToday: number): { next: T | null; note: string } {
+  const w = queued.find((r) => isWarm(r));
   if (w) return { next: w, note: "" };
   if (queued.length === 0) return { next: null, note: "" };
   if (coldSentToday >= COLD_DAILY_LIMIT) {
-    return { next: null, note: `Тем, кто нам ещё не писал, — не больше ${COLD_DAILY_LIMIT} в день. Продолжим завтра` };
+    return { next: null, note: `Тем, кто нам не писал и не покупал, — не больше ${COLD_DAILY_LIMIT} в день. Продолжим завтра` };
   }
   return { next: queued[0], note: "" };
 }

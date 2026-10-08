@@ -173,11 +173,13 @@ check("после 10 сообщений — перерыв", pacingWait({ now: a
 check("перерыв прошёл — можно", pacingWait({ now: at, minutes: m(11), sentTimes: ten.map((x) => x - 600000) }), null);
 const fifteen = Array.from({ length: 15 }, (_, i) => ago(200 + i * 200));
 check("15 за час — ждём", pacingWait({ now: at, minutes: m(11), sentTimes: fifteen })?.note.startsWith("Не больше 15"), true);
-const q = [{ phone: "77010000001" }, { phone: "77010000002" }, { phone: "77010000003" }];
-check("сначала тёплый, даже если он не первый", pickNextRecipient(q, new Set(["7010000003"]), 0).next?.phone, "77010000003");
-check("тёплых нет — холодный, пока не 10 за день", pickNextRecipient(q, new Set(), 9).next?.phone, "77010000001");
-check("10 холодных за день — ждём завтра", pickNextRecipient(q, new Set(), 10).next, null);
-check("тёплый идёт и после 10 холодных", pickNextRecipient(q, new Set(["7010000002"]), 10).next?.phone, "77010000002");
+const q = [{ phone: "77010000001", kind: "lead" }, { phone: "77010000002", kind: "lead" }, { phone: "77010000003", kind: "client" }];
+const wrote = (keys: string[]) => (r: { phone: string }) => keys.includes(r.phone.slice(-10));
+check("сначала тёплый, даже если он не первый", pickNextRecipient(q, wrote(["7010000003"]), 0).next?.phone, "77010000003");
+check("тёплых нет — холодный, пока не 10 за день", pickNextRecipient(q, wrote([]), 9).next?.phone, "77010000001");
+check("10 холодных за день — ждём завтра", pickNextRecipient(q, wrote([]), 10).next, null);
+check("тёплый идёт и после 10 холодных", pickNextRecipient(q, wrote(["7010000002"]), 10).next?.phone, "77010000002");
+check("покупавший клиент — тёплый", pickNextRecipient(q, (r) => r.kind === "client", 10).next?.phone, "77010000003");
 
 console.log("\nОтчёт");
 const rows: RecipientRow[] = [
