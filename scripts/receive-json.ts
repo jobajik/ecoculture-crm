@@ -11,6 +11,8 @@ dotenv.config();
  *   { "farm": "rose_farm", "addVarieties": true, "rows": [
  *       { "harvestDate": "2026-10-05", "flowerType": "eustoma", "variety": "…", "grade": "50", "quantity": 180, "location": "…" } ] }
  *
+ * Только завести сорта без партий: `"varieties": [ { "flowerType": "eustoma", "variety": "…" } ]`, `rows` можно не давать.
+ *
  *   npx tsx scripts/receive-json.ts <json> [--yes]
  *
  * 08.10.2026: Разия (Rose Farm) — эустома от 05.10, сортов «Arena I Pure White», «Celeb 2 Gold» и др. в CRM не было.
@@ -25,7 +27,12 @@ import { ROLES, getGradesFor, type FlowerType } from "../src/lib/constants";
 interface Row { harvestDate: string; flowerType: string; variety: string; grade: string; quantity: number; location?: string }
 
 async function main() {
-  const spec = JSON.parse(readFileSync(process.argv[2], "utf8").replace(/^﻿/, "")) as { farm: string; addVarieties?: boolean; rows: Row[] };
+  const spec = JSON.parse(readFileSync(process.argv[2], "utf8").replace(/^﻿/, "")) as {
+    farm: string;
+    addVarieties?: boolean;
+    rows?: Row[];
+    varieties?: { flowerType: string; variety: string }[];
+  };
   const apply = process.argv.includes("--yes");
   const keeper = (await listUsers()).find((u) => u.role === ROLES.WAREHOUSE && u.farm === spec.farm && u.active);
   const email = keeper?.email || "y.sadakbayev@gmail.com";
@@ -35,7 +42,17 @@ async function main() {
   const newVarieties: { FlowerType: string; Variety: string; Active: string }[] = [];
   const batches = await listBatches();
   const toCreate: Parameters<typeof createBatches>[0] = [];
-  for (const r of spec.rows) {
+  for (const v of spec.varieties ?? []) {
+    const name = v.variety.trim().replace(/\s+/g, " ");
+    if (normalizeVariety(name, v.flowerType, catalog)) {
+      console.log(`  сорт уже есть: ${name}`);
+      continue;
+    }
+    if (!newVarieties.some((x) => x.FlowerType === v.flowerType && x.Variety.toLowerCase() === name.toLowerCase())) {
+      newVarieties.push({ FlowerType: v.flowerType, Variety: name, Active: "TRUE" });
+    }
+  }
+  for (const r of spec.rows ?? []) {
     const known = normalizeVariety(r.variety, r.flowerType, catalog);
     const variety = known ?? r.variety.trim().replace(/\s+/g, " ");
     if (!known) {
@@ -73,7 +90,7 @@ async function main() {
   console.log(`Партий: ${toCreate.length}, стеблей: ${toCreate.reduce((s, b) => s + b.quantityIn, 0)}`);
   if (!apply) return console.log("Только показ. Записать: --yes");
   if (newVarieties.length) await appendRows(SHEET_TABS.VARIETIES, newVarieties);
-  const ids = await createBatches(toCreate);
+  const ids = toCreate.length ? await createBatches(toCreate) : [];
   console.log(`Записано: сортов ${newVarieties.length}, партий ${ids.length} (${ids.join(", ")})`);
 }
 
