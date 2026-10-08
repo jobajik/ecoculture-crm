@@ -71,6 +71,26 @@ async function main() {
     console.log(`lastOutgoingMessages: ${e instanceof Error ? e.message : e}`);
   }
 
+  // Для сравнения: прошлые рассылки — сколько дочитали и ответили.
+  const allStatuses = await listWaStatuses();
+  const best = new Map<string, string>();
+  const rank: Record<string, number> = { sent: 1, delivered: 2, read: 3, played: 3 };
+  for (const w of allStatuses) if ((rank[w.status] ?? 0) >= (rank[best.get(w.messageId) || ""] ?? 0)) best.set(w.messageId, w.status);
+  const allSent = (await listRecipients()).filter((r) => r.status === "sent");
+  const byBc = new Map<string, { n: number; read: number; delivered: number }>();
+  for (const r of allSent) {
+    const x = byBc.get(r.broadcastId) ?? { n: 0, read: 0, delivered: 0 };
+    x.n++;
+    const st = best.get(r.messageId) || "";
+    if (st === "read" || st === "played") x.read++;
+    else if (st === "delivered") x.delivered++;
+    byBc.set(r.broadcastId, x);
+  }
+  console.log("\nВсе рассылки: отправлено / доставлено (не прочитано) / прочитано");
+  for (const [bc, x] of byBc) console.log(`  ${bc}: ${x.n} / ${x.delivered} / ${x.read}`);
+  const readAll = [...best.values()].filter((v) => v === "read" || v === "played").length;
+  console.log(`Всего статусов «прочитано» в таблице за всё время: ${readAll} из ${best.size} сообщений`);
+
   const keys = new Set(sent.map((r) => phoneKey(r.phone)));
   const since = sent.reduce((m, r) => (r.sentAt < m ? r.sentAt : m), "9999");
   const replies = (await listWaMessages()).filter((m) => m.direction === "in" && keys.has(phoneKey(m.phone)) && m.at >= since);
