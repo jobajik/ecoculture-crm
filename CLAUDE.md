@@ -967,6 +967,23 @@ Wazzup, всё было сделано под него (задание 110), п�
   (`broadcast.ts`) вставляет «— перерыв N дн. —» при паузе от 12 ч, в подсказке — «после перерыва новый разговор».
   После 12:00 позиция, которой нет в офисе, но есть на завтра, — «на сегодня разобрали, на завтра есть», не
   «закончилась» (`botStoreNote`). Где бот писал фразу — `scripts/diag-bot-phrase.ts <слово>`;
+- **не повторяться и говорить про срезку** (09.10.2026, владелец со снимком: на «3000 Джамили на Караганду» бот
+  предложил «Jumilia 40 см около 100, поставить 100?», на «зачем мне 100, мне 1000 надо» — ТЕМ ЖЕ текстом; «почему
+  повторяешься, а не предлагаешь новое?» и «не объясняешь, что сортов пока нет, но срезка будет позже»). На складе
+  тогда лежало Jumilia 60 см ~1 000, 70 — ~300, 50 — ~200, а по плану срезки ~11 000 в неделю. Теперь: в подсказке —
+  **план срезки агронома** на остаток этой недели и две следующие, строка на сорт (`harvestForBot` в
+  `botKnowledge.ts`, из `HarvestForecast`; текущая неделя — только оставшиеся дни, «до 11 октября»), и правило: объём
+  больше строки склада — сложить сорт по всем длинам, добрать похожим сортом, остальное — «сейчас столько нет, по плану
+  срезки ожидаем …» (прогноз, без дня и длины) и `alert` «предзаказ: …»; на возражение — другое предложение. **Повтор
+  ловит код** (`repeatsOurMessage` в `src/lib/botTurn.ts`: тот же текст или ≥ 85 % общих слов с одним из трёх наших
+  последних): модель переспрашивается с `REPEAT_TASK`, второй повтор не уходит — вместо него записка менеджеру.
+  **Серия сообщений — один ответ**: каждое уведомление шло своим ходом, и на «Нет сорта Джулия…» + «Белая» (через
+  4 с) ушло два ответа, причём второй ход не знал первое сообщение. Теперь ход ждёт 4 с (`SERIES_WAIT_MS`), читает
+  свежие `WaMessages` номера: клиент дописал что-то не-кивковое — отвечает ход последнего (`supersededBy`; смайлик и
+  «ок» ответ не забирают), недостающие входящие дописываются в память (`missingIncoming`). Перед записью память
+  объединяется со свежей строкой `BotChats` (`mergeChatMemory`) — иначе параллельный ход стирал наш же ответ. Переписку
+  номера, как её видел бот, со складом и планом срезки печатает `scripts/diag-chat.ts <цифры> [дней] [слово]`;
+  переответить на конкретное сообщение — `bot-redo.ts <цифры> --at <слово>`. Проверка — `check-bot-turn`;
 - **продажи бота — сообщением команде** (03.10.2026, владелец: «все продажи бота скидывай Руслану, мне и
   Данияру»): «Бот оформил заказ №…» (клиент, позиции, сумма, доставка, склад, что со счётом) сразу после
   оформления (`placeBotOrder`) и «Оплачено — можно собирать» / «Оплачена часть» из вебхука оплаты
@@ -2740,7 +2757,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

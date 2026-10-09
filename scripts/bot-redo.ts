@@ -8,7 +8,10 @@ dotenv.config();
  * Модель видит переписку без нашего неудачного ответа; уходит новый ответ.
  * Без --send — только показ.
  *
- *   npx tsx scripts/bot-redo.ts 3627600 [--send]
+ *   npx tsx scripts/bot-redo.ts 3627600 [--at <слово>] [--send]
+ *
+ * `--at` — ответить на последнее сообщение клиента, где есть это слово (латиницей или цифрами — из .bat
+ * русские слова портятся), а не на самое последнее.
  */
 import { commitAtomic } from "../src/lib/sheets";
 import { botChatWrite, listBotChats, settingsMap } from "../src/lib/repo/broadcasts";
@@ -22,7 +25,11 @@ async function main() {
   const [chats, map] = await Promise.all([listBotChats(true), settingsMap(true)]);
   const found = chats.find((c) => c.phone.replace(/\D/g, "").endsWith(suffix));
   if (!suffix || !found) throw new Error("чат не найден");
-  const lastClient = found.context.map((m) => m.role).lastIndexOf("client");
+  const ai = process.argv.indexOf("--at");
+  const word = ai >= 0 ? String(process.argv[ai + 1] || "").toLowerCase() : "";
+  const lastClient = word
+    ? found.context.map((m) => m.role === "client" && m.text.toLowerCase().includes(word)).lastIndexOf(true)
+    : found.context.map((m) => m.role).lastIndexOf("client");
   if (lastClient < 0) throw new Error("клиент ещё не писал");
   const trimmed = { ...found, context: found.context.slice(0, lastClient + 1) };
   const d = await botReply(trimmed, botSettingsFrom(map).instructions);

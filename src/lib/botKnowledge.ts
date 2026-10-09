@@ -1,4 +1,4 @@
-import { FLOWER_TYPE_LABELS, compareGrades, formatGrade } from "./constants";
+import { FLOWER_TYPE_LABELS, compareGrades, formatGrade, monthOfWeek, weekOfDate, weeksOfMonth } from "./constants";
 import { computeBatchStorageInfo } from "./shelfLife";
 import { phoneKey } from "./leads";
 import type { Batch, Settings } from "./types";
@@ -58,6 +58,65 @@ export function stockForBot(batches: Batch[], settings: Settings, now: Date): st
     .map((r) => `${FLOWER_TYPE_LABELS[r.flower] ?? r.flower} · ${r.variety || "без сорта"} · ${formatGrade(r.grade)} — ${roughStems(r.qty)}`)
     .join("\n");
   return text.length > 6000 ? `${text.slice(0, 6000)}\n…` : text;
+}
+
+/** Прогноз срезки по-человечески: вниз до сотен, от тысячи — до тысяч. */
+function roughForecast(n: number): string {
+  const r = n >= 1000 ? Math.floor(n / 1000) * 1000 : Math.floor(n / 100) * 100;
+  return `~${r.toLocaleString("ru-RU").replace(/\s/g, " ")}`;
+}
+
+/**
+ * План срезки агронома на эту и две следующие недели — строка на сорт (09.10.2026, владелец: бот «не
+ * объясняет, что этих сортов пока в наличии нет, но срезка будет позже»). Прогноз ведётся по сорту без
+ * длины, поэтому и говорить о нём можно только «ожидаем срезку … на неделе …», не обещая длину и день.
+ */
+export function harvestForBot(
+  rows: { period: string; flowerType: string; variety: string; targetStems: number }[],
+  today: string
+): string {
+  const base = new Date(`${today}T12:00:00`);
+  const weeks: string[] = [];
+  for (const add of [0, 7, 14]) {
+    const code = weekOfDate(new Date(base.getTime() + add * 86_400_000));
+    if (!weeks.includes(code)) weeks.push(code);
+  }
+  const byVariety = new Map<string, { flower: string; variety: string; per: Map<string, number> }>();
+  for (const r of rows) {
+    if (!weeks.includes(r.period) || !(r.targetStems >= 100) || !r.variety) continue;
+    const k = `${r.flowerType}|${r.variety}`;
+    const cur = byVariety.get(k) ?? { flower: r.flowerType, variety: r.variety, per: new Map<string, number>() };
+    cur.per.set(r.period, (cur.per.get(r.period) ?? 0) + r.targetStems);
+    byVariety.set(k, cur);
+  }
+  const fi = (f: string) => {
+    const i = FLOWER_ORDER.indexOf(f);
+    return i < 0 ? 99 : i;
+  };
+  // Текущая неделя наполовину прошла, и её срезка уже на складе: показываем только остаток недели
+  // («до 11 октября»), долей оставшихся дней. Неделя кончилась сегодня — её нет вовсе.
+  const span = new Map<string, { label: string; share: number }>();
+  for (const code of weeks) {
+    const w = weeksOfMonth(monthOfWeek(code)).find((x) => x.code === code);
+    if (!w) continue;
+    const day = (iso: string) => Date.parse(`${iso}T12:00:00Z`) / 86_400_000;
+    const len = day(w.to) - day(w.from) + 1;
+    const left = Math.min(len, day(w.to) - day(today));
+    if (left <= 0) continue;
+    const label = left < len ? `до ${w.label.split("–").pop()!.trim()}` : w.label;
+    span.set(code, { label, share: left / len });
+  }
+  return Array.from(byVariety.values())
+    .sort((a, b) => fi(a.flower) - fi(b.flower) || a.variety.localeCompare(b.variety, "ru"))
+    .map((v) => {
+      const parts = weeks
+        .filter((w) => v.per.has(w) && span.has(w) && v.per.get(w)! * span.get(w)!.share >= 100)
+        .map((w) => `${span.get(w)!.label} ${roughForecast(v.per.get(w)! * span.get(w)!.share)}`);
+      if (parts.length === 0) return "";
+      return `${FLOWER_TYPE_LABELS[v.flower] ?? v.flower} · ${v.variety}: ${parts.join(" · ")}`;
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 type BroadcastLite = { broadcastId?: string; title: string; text: string; startedAt: string; createdAt: string };

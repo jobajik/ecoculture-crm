@@ -6,7 +6,11 @@ import { almatyHourOf, botStoreFor, botStoreNote, inStore } from "./officeStore"
 import { staffPhoneKeys } from "./botSalesAlert";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
-import { lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "./botKnowledge";
+import { harvestForBot, lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "./botKnowledge";
+import { listHarvestForecast } from "./repo/harvestForecast";
+import { listWaMessages } from "./repo/talks";
+import { readTable } from "./sheets";
+import { REPEAT_TASK, mergeChatMemory, missingIncoming, repeatsOurMessage, supersededBy, withMissingIncoming } from "./botTurn";
 import { BOT_ORDER_SCHEMA, toWhatsApp } from "./botOrder";
 import { botClientContext, cancelBotOrder, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
 import {
@@ -148,8 +152,10 @@ function systemPrompt(p: {
   broadcast: string;
   client: string;
   today: string;
+  /** План срезки агронома на ближайшие недели (`harvestForBot`). */
+  harvest?: string;
 }): string {
-  const { instructions, prices, stock, broadcast, client, today } = p;
+  const { instructions, prices, stock, broadcast, client, today, harvest } = p;
   const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${today}T12:00:00`).getDay()];
   return [
     "Ты — сильный продавец оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома).",
@@ -184,6 +190,15 @@ function systemPrompt(p: {
     "- «Да», «интересно», «давайте» — не переспрашивай общими словами, а сразу предложи конкретное: сорт, категорию, цену, объём",
     "  (для пробы 50–100 стеблей) и спроси «Оформляем?».",
     "- Предлагай КОНКРЕТНО то, что есть на складе. Мало на складе — честно скажи «осталось немного», это повод решить сейчас.",
+    "- Клиенту нужно БОЛЬШЕ, чем есть в одной строке склада (09.10, владелец: «почему повторяешься, а не предлагаешь новое?»):",
+    "  НЕ предлагай меньший объём одной длины. Сложи этот сорт по ВСЕМ длинам («Jumilia: 60 см ~1 000, 70 см ~300, 50 см ~200»),",
+    "  добери остальное похожим сортом того же цвета — с ценами и суммой. Длину клиент не назвал — не бери самую короткую,",
+    "  предлагай ту, которой хватает на объём. Всё равно не хватает или сорта нет вовсе — скажи прямо «сейчас столько нет»",
+    "  и по плану срезки ниже назови, когда ожидаем этот сорт («по плану срезки на неделе 13–19 октября ожидаем около 11 000»):",
+    "  это прогноз — не обещай день и длину. Предложи взять что есть сейчас, а остальное — к срезке, и заполни alert",
+    "  («предзаказ: 1000 Jumilia красной на Караганду к срезке»), чтобы менеджер увидел.",
+    "- Клиент возразил на твоё предложение («зачем мне 100», «не то», «нет такого») — следующий ответ ОБЯЗАН быть другим",
+    "  предложением. Повторить своё прошлое сообщение — худшая ошибка.",
     "- Допродажа: когда клиент выбрал — один раз предложи добавить второе (другую категорию, эустому, розы) к той же доставке.",
     "- «Дорого» — предложи дешевле: категорию ниже, другой сорт, мини-микс, и посчитай сумму. «Подумаю» — спроси, что смущает,",
     "  предложи пробную партию. «Беру у другого» — предложи сравнить на пробной партии: свежий срез с нашей теплицы.",
@@ -237,6 +252,9 @@ function systemPrompt(p: {
     broadcast ? `\nРассылка, которую получил этот клиент (на неё он, скорее всего, и отвечает):\n${broadcast}` : "",
     prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — цены не называй, предлагай по наличию и спрашивай объём.",
     stock ? `\nСклад сейчас (можно продать):\n${stock}` : "\nДанных склада сейчас нет — о наличии не обещай, спрашивай, что нужно.",
+    harvest
+      ? `\nПлан срезки агронома (прогноз, стеблей за неделю по сорту, без длины; продать можно только то, что уже на складе):\n${harvest}`
+      : "",
   ].join("\n");
 }
 
@@ -264,6 +282,7 @@ export async function runBot(all: BotIncoming[]): Promise<boolean> {
     const staff = staffPhoneKeys(map);
     const phones = Array.from(new Set(messages.map((m) => phoneKey(m.phone)).filter(Boolean))).filter((k) => !staff.has(k));
     const writes: WriteOp[] = [];
+    const pending: { chat: BotChat; existing: (BotChat & { rowNumber: number }) | null }[] = [];
     for (const key of phones) {
       const mine = messages.filter((m) => phoneKey(m.phone) === key).sort((a, b) => (a.at < b.at ? -1 : 1));
       const existing = byKey.get(key) ?? null;
@@ -302,7 +321,16 @@ export async function runBot(all: BotIncoming[]): Promise<boolean> {
           if (await answer(chat, last, settings.instructions)) answered = true;
         }
       }
-      if (changed) writes.push(botChatWrite(chat, existing?.rowNumber ?? null));
+      if (changed) pending.push({ chat, existing });
+    }
+    // Пока этот ход думал, соседнее уведомление того же номера могло записать память — объединить, а
+    // не затереть (иначе бот забывал свой же ответ). Одно свежее чтение, только если есть что писать.
+    if (pending.length > 0) {
+      const fresh = await listBotChats(true).catch(() => [] as Awaited<ReturnType<typeof listBotChats>>);
+      for (const { chat, existing } of pending) {
+        const now = fresh.find((c) => phoneKey(c.phone) === phoneKey(chat.phone)) ?? null;
+        writes.push(botChatWrite(mergeChatMemory(chat, now), now?.rowNumber ?? existing?.rowNumber ?? null));
+      }
     }
     if (writes.length > 0) await commitAtomic(writes);
   } catch (err) {
@@ -346,15 +374,19 @@ export async function botReply(
     SHEET_TABS.ORDERS,
     SHEET_TABS.ORDER_ITEMS,
     SHEET_TABS.KASPI_INVOICES,
+    SHEET_TABS.HARVEST_FORECAST,
   ]).catch(() => undefined);
-  const [prices, stockInfo, broadcast, client] = await Promise.all([
+  const [prices, stockInfo, broadcast, client, harvest] = await Promise.all([
     priceText(),
     stockText(),
     broadcastText(chat.phone),
     botClientContext(chat.phone),
+    listHarvestForecast()
+      .then((rows) => harvestForBot(rows, localDayKey()))
+      .catch(() => ""),
   ]);
   const { data } = await chatJson(
-    systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey() }),
+    systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey(), harvest }),
     `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
     "bot_reply",
     BOT_SCHEMA,
@@ -473,13 +505,43 @@ export async function sendBotFiles(chat: BotChat, phone: string, files: BotFile[
 }
 
 /** Ответил ли бот (тогда заказ ведёт он, и черновик для менеджера не нужен). */
+/** Сколько ждать, не допишет ли клиент ещё (серия «Нет сорта Джулия…» + «Белая» шла через 4 с). */
+const SERIES_WAIT_MS = 4000;
+
+/** Свежие сообщения этого номера из WaMessages (их пишет вебхук до бота) — одно чтение. */
+async function recentTurnMessages(phone: string): Promise<{ messageId: string; phone: string; direction: string; at: string; text: string; type: string }[]> {
+  try {
+    await readTable(SHEET_TABS.WA_MESSAGES, { fresh: true });
+    const key = phoneKey(phone);
+    const from = new Date(Date.now() - 20 * 60_000).toISOString();
+    return (await listWaMessages()).filter((m) => phoneKey(m.phone) === key && m.at >= from);
+  } catch {
+    return [];
+  }
+}
+
 async function answer(chat: BotChat, last: BotIncoming, instructions: string): Promise<boolean> {
   if (!openAiConfigured()) return false;
+  // Серия сообщений — один ответ, и он видит их все (`botTurn.ts`).
+  await new Promise((r) => setTimeout(r, SERIES_WAIT_MS));
+  const recent = await recentTurnMessages(last.phone);
+  const newer = supersededBy(last, recent, last.phone);
+  if (newer) return false;
+  chat.context = withMissingIncoming(chat.context, missingIncoming(chat.context, recent, last.phone, new Date()));
   let decision: ReturnType<typeof botDecision>;
   try {
     decision = await botReply(chat, instructions);
+    // Ответ слово в слово повторяет уже отправленное — переспросить модель один раз с объяснением.
+    if (!decision.silent && !decision.order.confirmed && repeatsOurMessage(decision.reply, chat.context)) {
+      decision = await botReply(chat, instructions, REPEAT_TASK);
+    }
   } catch (err) {
     console.error("whatsapp bot ai:", err instanceof Error ? err.message : err);
+    return false;
+  }
+  if (!decision.silent && !decision.order.confirmed && repeatsOurMessage(decision.reply, chat.context)) {
+    // Тот же текст второй раз не уходит: лучше записка менеджеру, чем клиенту одно и то же.
+    noteForManager(chat, "внимание: бот не нашёл, что ответить, кроме повтора — ответьте клиенту сами");
     return false;
   }
   const { text, note, files } = await botAct(chat, decision);
