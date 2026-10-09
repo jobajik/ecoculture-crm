@@ -358,12 +358,12 @@ async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<bool
  * Что бот ответил бы на последнее сообщение клиента — решение модели, без
  * отправки и записи. Им же пользуется `scripts/diag-bot-reply.ts`.
  */
-export async function botReply(
+/** Подсказка модели и переписка — то, что бот видит перед ответом (её же печатает `bot-redo --prompt`). */
+export async function botPrompt(
   chat: BotChat,
   instructions: string,
-  /** Своё задание вместо «ответь на последнее сообщение» — дожим молчащего (`botNudge.ts`). */
   task = "Ответь на последнее сообщение клиента."
-): Promise<ReturnType<typeof botDecision>> {
+): Promise<{ system: string; user: string }> {
   // Прайс, склад, рассылка и заказы — одним запросом и только когда бот правда отвечает (грабли 1.17).
   await prefetchTables([
     SHEET_TABS.BATCHES,
@@ -386,13 +386,20 @@ export async function botReply(
       .then((rows) => harvestForBot(rows, localDayKey()))
       .catch(() => ""),
   ]);
-  const { data } = await chatJson(
-    systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey(), harvest }),
-    `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
-    "bot_reply",
-    BOT_SCHEMA,
-    { fast: true }
-  );
+  return {
+    system: systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey(), harvest }),
+    user: `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
+  };
+}
+
+export async function botReply(
+  chat: BotChat,
+  instructions: string,
+  /** Своё задание вместо «ответь на последнее сообщение» — дожим молчащего (`botNudge.ts`). */
+  task = "Ответь на последнее сообщение клиента."
+): Promise<ReturnType<typeof botDecision>> {
+  const { system, user } = await botPrompt(chat, instructions, task);
+  const { data } = await chatJson(system, user, "bot_reply", BOT_SCHEMA, { fast: true });
   return botDecision(data);
 }
 

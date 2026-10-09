@@ -25,8 +25,10 @@ const TRANSCRIBE_MODELS = () =>
     (m): m is string => !!m && !!m.trim()
   );
 
+// Бот — gpt-4.1 (09.10.2026): mini при подсказке в 20 тыс. знаков не складывал склад сорта по длинам и на
+// «нужно 1000 Jumilia» трижды предлагал 100 шт. 40 см, хотя 60 см лежало около тысячи. Ответ дороже примерно на 8 ₸.
 const FAST_MODELS = () =>
-  [process.env.OPENAI_BOT_MODEL, "gpt-4.1-mini", "gpt-4o-mini"].filter((m): m is string => !!m && !!m.trim());
+  [process.env.OPENAI_BOT_MODEL, "gpt-4.1", "gpt-4.1-mini", "gpt-4o-mini"].filter((m): m is string => !!m && !!m.trim());
 
 let chosenText: string | null = null;
 let chosenFast: string | null = null;
