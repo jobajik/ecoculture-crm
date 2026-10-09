@@ -54,8 +54,20 @@ export function stockForBot(batches: Batch[], settings: Settings, now: Date): st
   const rows = Array.from(sums.values())
     .filter((r) => r.qty > 0)
     .sort((a, b) => fi(a.flower) - fi(b.flower) || a.variety.localeCompare(b.variety, "ru") || compareGrades(a.flower, a.grade, b.grade));
-  const text = rows
-    .map((r) => `${FLOWER_TYPE_LABELS[r.flower] ?? r.flower} · ${r.variety || "без сорта"} · ${formatGrade(r.grade)} — ${roughStems(r.qty)}`)
+  // Строка на СОРТ со всеми длинами и «всего» (09.10.2026): построчно по длинам модель не складывала
+  // и на «нужно 1000 Jumilia» предлагала 100 шт. 40 см, хотя 60 см лежало около тысячи.
+  const byVariety = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const k = `${r.flower}|${r.variety}`;
+    byVariety.set(k, [...(byVariety.get(k) ?? []), r]);
+  }
+  const text = Array.from(byVariety.values())
+    .map((list) => {
+      const head = `${FLOWER_TYPE_LABELS[list[0].flower] ?? list[0].flower} · ${list[0].variety || "без сорта"}`;
+      const parts = list.map((r) => `${formatGrade(r.grade)} — ${roughStems(r.qty)}`);
+      const total = list.length > 1 ? ` · всего ${roughStems(list.reduce((sum, r) => sum + r.qty, 0))}` : "";
+      return `${head}: ${parts.join(" · ")}${total}`;
+    })
     .join("\n");
   return text.length > 6000 ? `${text.slice(0, 6000)}\n…` : text;
 }
