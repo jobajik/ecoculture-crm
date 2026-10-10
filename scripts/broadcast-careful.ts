@@ -6,7 +6,7 @@ dotenv.config();
  * Включить осторожный режим рассылок после блокировки номера: разогрев с сегодняшнего дня
  * (1–2 день — 20 сообщений, 3–4 — 35, 5–7 — 50) и потолок после разогрева. Без --yes — показ.
  *
- *   npx tsx scripts/broadcast-careful.ts [ГГГГ-ММ-ДД начала] [--yes]
+ *   npx tsx scripts/broadcast-careful.ts [ГГГГ-ММ-ДД начала] [--limit 40] [--yes]
  *
  * 04.10.2026: номер заблокировали после рассылок по 50 за раз; владелец: «давай теперь аккуратнее».
  * Правила самой отправки — `broadcast.ts` (pacingWait, pickNextRecipient, effectiveDailyLimit).
@@ -21,7 +21,10 @@ async function main() {
   const from = arg || localDayKey();
   const map = await settingsMap(true);
   console.log(`Сейчас: предел ${map.BroadcastDailyLimit || "(по умолчанию)"}, разогрев с ${map.BroadcastWarmupFrom || "—"}`);
-  const next = { BroadcastDailyLimit: String(DEFAULT_DAILY_LIMIT), BroadcastWarmupFrom: from };
+  const li = process.argv.indexOf("--limit");
+  const limit = li >= 0 ? Number(process.argv[li + 1]) : DEFAULT_DAILY_LIMIT;
+  if (!(limit > 0)) throw new Error("--limit — число больше нуля");
+  const next = { BroadcastDailyLimit: String(limit), BroadcastWarmupFrom: from };
   console.log(`Станет: предел ${next.BroadcastDailyLimit}, разогрев с ${from}`);
   for (let i = 0; i < 9; i++) {
     const d = new Date(`${from}T12:00:00`);
