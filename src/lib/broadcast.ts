@@ -38,6 +38,12 @@ export const SEND_FROM_HOUR = 10;
 export const SEND_TO_HOUR = 19;
 /** Тем, кто ни разу нам не писал, — не больше стольких в день: «холодные» чаще жалуются. */
 export const COLD_DAILY_LIMIT = 10;
+/**
+ * В дни разогрева (10.10.2026, после второй блокировки за неделю; владелец: «да, давай так») «тёплые» — только те,
+ * кто сам писал нам в WhatsApp: из 51 сообщения покупателям прочитали 2 — номер у них не сохранён, и для WhatsApp
+ * это признак спама. Остальным — не больше этого в день. После разогрева — снова как раньше (`warmthRules`).
+ */
+export const WARMUP_COLD_DAILY_LIMIT = 5;
 /** Разогрев после блокировки: до какого дня (включительно) какой предел в сутки. Дальше — настройка. */
 export const WARMUP_STEPS: { untilDay: number; limit: number }[] = [
   { untilDay: 2, limit: 20 },
@@ -219,6 +225,15 @@ export function effectiveDailyLimit(raw: string | null | undefined, warmupFrom: 
   return step ? Math.min(base, step.limit) : base;
 }
 
+/** Кого считать «тёплым» сегодня и сколько остальным в день: в разогрев строже (`WARMUP_COLD_DAILY_LIMIT`). */
+export function warmthRules(warmupFrom: string | null | undefined, today: string): { buyersAreWarm: boolean; coldLimit: number; inWarmup: boolean } {
+  const day = warmupDay(warmupFrom, today);
+  const inWarmup = day > 0 && day <= WARMUP_STEPS[WARMUP_STEPS.length - 1].untilDay;
+  return inWarmup
+    ? { buyersAreWarm: false, coldLimit: WARMUP_COLD_DAILY_LIMIT, inWarmup }
+    : { buyersAreWarm: true, coldLimit: COLD_DAILY_LIMIT, inWarmup };
+}
+
 /**
  * Можно ли отправлять сейчас — по времени. `sentTimes` — моменты (мс) сообщений рассылок,
  * ушедших сегодня по всем рассылкам; `minutes` — минуты от полуночи по Алматы.
@@ -252,12 +267,18 @@ export function pacingWait(input: { now: Date; minutes: number; sentTimes: numbe
  * Кому следующему: сначала «тёплым» (писали нам в WhatsApp или уже покупали — решает `isWarm`),
  * потом остальным — не больше `COLD_DAILY_LIMIT` в день.
  */
-export function pickNextRecipient<T extends { phone: string }>(queued: T[], isWarm: (r: T) => boolean, coldSentToday: number): { next: T | null; note: string } {
+export function pickNextRecipient<T extends { phone: string }>(
+  queued: T[],
+  isWarm: (r: T) => boolean,
+  coldSentToday: number,
+  coldLimit = COLD_DAILY_LIMIT,
+  coldWho = "кто нам не писал и не покупал"
+): { next: T | null; note: string } {
   const w = queued.find((r) => isWarm(r));
   if (w) return { next: w, note: "" };
   if (queued.length === 0) return { next: null, note: "" };
-  if (coldSentToday >= COLD_DAILY_LIMIT) {
-    return { next: null, note: `Тем, кто нам не писал и не покупал, — не больше ${COLD_DAILY_LIMIT} в день. Продолжим завтра` };
+  if (coldSentToday >= coldLimit) {
+    return { next: null, note: `Тем, ${coldWho}, — не больше ${coldLimit} в день. Продолжим завтра` };
   }
   return { next: queued[0], note: "" };
 }

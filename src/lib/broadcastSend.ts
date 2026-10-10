@@ -19,6 +19,7 @@ import {
   pacingWait,
   personalize,
   pickNextRecipient,
+  warmthRules,
   sendTooSoon,
 } from "./broadcast";
 import { listWaMessages } from "./repo/talks";
@@ -179,12 +180,13 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   const wait = pacingWait({ now, minutes: now.getHours() * 60 + now.getMinutes(), sentTimes: sentRows.map((r) => Date.parse(r.sentAt)) });
   if (wait) return result(wait);
 
-  // Сначала тем, кто уже писал нам или покупал; остальным — не больше 10 в день.
+  // Сначала тем, кто уже писал нам (и, после разогрева, покупал); остальным — не больше N в день (`warmthRules`).
+  const rules = warmthRules(settings.BroadcastWarmupFrom, today);
   const wrote = new Set((await listWaMessages()).filter((m) => m.direction === "in").map((m) => phoneKey(m.phone)));
-  const buyers = await buyerClientIds();
+  const buyers = rules.buyersAreWarm ? await buyerClientIds() : new Set<string>();
   const isWarm = (r: { phone: string; kind: string; refId: string }) => wrote.has(phoneKey(r.phone)) || (r.kind === "client" && buyers.has(r.refId));
   const coldSentToday = sentRows.filter((r) => !isWarm(r)).length;
-  const pick = pickNextRecipient(queued, isWarm, coldSentToday);
+  const pick = pickNextRecipient(queued, isWarm, coldSentToday, rules.coldLimit, rules.buyersAreWarm ? "кто нам не писал и не покупал" : "кто нам ещё не писал в WhatsApp (идёт разогрев)");
   if (!pick.next) return result({ waitSeconds: 1800, note: pick.note });
   const next = pick.next;
 

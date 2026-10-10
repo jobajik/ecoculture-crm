@@ -6,7 +6,7 @@ import { ROLES } from "@/lib/constants";
 import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
 import { formatMoment } from "@/lib/formatDate";
 import { phoneKey } from "@/lib/leads";
-import { botSettingsFrom, dailyLimitOf, effectiveDailyLimit, warmupDay } from "@/lib/broadcast";
+import { WARMUP_COLD_DAILY_LIMIT, botSettingsFrom, dailyLimitOf, effectiveDailyLimit, warmupDay } from "@/lib/broadcast";
 import { localDayKey } from "@/lib/timezone";
 import { listBotChats, settingsMap } from "@/lib/repo/broadcasts";
 import { listClients } from "@/lib/repo/clients";
@@ -151,5 +151,7 @@ function todayLimitNote(map: Record<string, string>): string {
   const today = localDayKey();
   const limit = effectiveDailyLimit(map.BroadcastDailyLimit, map.BroadcastWarmupFrom, today);
   const day = warmupDay(map.BroadcastWarmupFrom, today);
-  return day && day <= 7 ? `Сегодня — не больше ${limit}: разогрев номера, день ${day} из 7` : `Сегодня — не больше ${limit}`;
+  return day && day <= 7
+    ? `Сегодня — не больше ${limit}: разогрев номера, день ${day} из 7; без переписки с нами — не больше ${WARMUP_COLD_DAILY_LIMIT}`
+    : `Сегодня — не больше ${limit}`;
 }
