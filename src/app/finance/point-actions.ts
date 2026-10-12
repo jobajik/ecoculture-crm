@@ -15,6 +15,7 @@ import {
   canEditPoint,
   POINT_NAME,
   pointDayRefusal,
+  pointStemsRefusal,
   pointMoneyClearRefusal,
   pointOrdersWithMoney,
   pointWriteoffRefusal,
@@ -36,19 +37,22 @@ const num = (v: unknown) => Math.round((Number(v) || 0) * 100) / 100;
 /** Выручка точки за день — по компаниям: Есентай (хризантема) и Rose Farm (роза, эустома). */
 async function savePointDayActionInner(input: {
   date: string;
-  parts: { farm: string; kaspi: number; cash: number }[];
+  parts: { farm: string; kaspi: number; cash: number; soldStems?: Record<string, number | null> }[];
   note: string;
 }) {
   const { email, role } = await who();
   const date = String(input.date || "");
   const parts = FARM_ORDER.map((farm) => {
     const p = (input.parts || []).find((x) => x.farm === farm);
-    return { farm, kaspi: num(p?.kaspi), cash: num(p?.cash) };
+    // Штуки: пустое поле — «не вносили» (тогда их оценит страница по деньгам).
+    const entered = Object.entries(p?.soldStems ?? {}).filter(([, q]) => q !== null && q !== undefined && String(q) !== "");
+    const soldStems = entered.length ? Object.fromEntries(entered.map(([f, q]) => [f, Number(q)])) : undefined;
+    return { farm, kaspi: num(p?.kaspi), cash: num(p?.cash), soldStems };
   });
   const kaspi = parts.reduce((s, p) => s + p.kaspi, 0);
   const cash = parts.reduce((s, p) => s + p.cash, 0);
   for (const p of parts) {
-    const refusal = pointDayRefusal({ role, date, today: localDayKey(), kaspi: p.kaspi, cash: p.cash });
+    const refusal = pointDayRefusal({ role, date, today: localDayKey(), kaspi: p.kaspi, cash: p.cash }) || pointStemsRefusal(p.farm, p.soldStems);
     if (refusal) throw new Error(refusal);
   }
   const result = await savePointDayByFarm({ date, parts, note: String(input.note || "").trim().slice(0, 200), email });
@@ -62,8 +66,16 @@ async function savePointDayActionInner(input: {
         ? `${POINT_NAME}: выручка за ${day} удалена`
         : `${POINT_NAME}: выручка за ${day} — ` +
           parts
-            .filter((p) => p.kaspi + p.cash > 0)
-            .map((p) => `${FARM_LABELS[p.farm]}: Kaspi ${money(p.kaspi)}, наличные ${money(p.cash)}`)
+            .filter((p) => p.kaspi + p.cash > 0 || p.soldStems)
+            .map(
+              (p) =>
+                `${FARM_LABELS[p.farm]}: Kaspi ${money(p.kaspi)}, наличные ${money(p.cash)}` +
+                (p.soldStems
+                  ? `, продано ${Object.entries(p.soldStems)
+                      .map(([f, q]) => `${FLOWER_TYPE_LABELS[f] ?? f} ${q} шт.`)
+                      .join(", ")}`
+                  : "")
+            )
             .join("; "),
     amountBefore: 0,
     amountAfter: kaspi + cash,

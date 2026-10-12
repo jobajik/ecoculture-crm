@@ -1,4 +1,4 @@
-import { FARM_LABELS, FARM_ORDER, FLOWER_TYPES, FLOWER_TYPE_LABELS, MONEY_EPSILON, ORDER_STATUSES, ROLES, bonusRateFor, getFarmFor } from "./constants";
+import { FARM_LABELS, FARM_ORDER, FLOWER_TYPES, FLOWER_TYPE_LABELS, MONEY_EPSILON, ORDER_STATUSES, ROLES, bonusRateFor, flowerTypesForFarm, getFarmFor } from "./constants";
 import { isConsignment } from "./orderKind";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +37,12 @@ export interface PointDay {
   note: string;
   accountantEmail: string;
   updatedAt: string;
+  /**
+   * Продано штук по цветкам этой компании (12.10.2026, владелец: «нужно видеть движение
+   * количественное»). Нет поля — штуки не вносили, их оценивает `pointStemFlow` по деньгам;
+   * есть — внесено, и цветок компании без числа значит ноль.
+   */
+  soldStems?: Record<string, number>;
 }
 
 export interface PointWriteoff {
@@ -131,6 +137,18 @@ export function pointDayRefusal(input: { role: string | null | undefined; date: 
   for (const v of [input.kaspi, input.cash]) {
     if (!Number.isFinite(v) || v < 0) return "Суммы — неотрицательные числа";
     if (v > 100_000_000) return "Слишком большая сумма — проверьте";
+  }
+  return "";
+}
+
+/** Проданные штуки за день: только цветки этой компании, целые, не отрицательные. Пусто — можно. */
+export function pointStemsRefusal(farm: string, stems: Record<string, number> | undefined): string {
+  if (!stems) return "";
+  const own = flowerTypesForFarm(farm);
+  for (const [f, q] of Object.entries(stems)) {
+    if (!own.includes(f)) return `${FLOWER_TYPE_LABELS[f] ?? f} — не цветок ${FARM_LABELS[farm] ?? farm}`;
+    if (!Number.isInteger(q) || q < 0) return "Штуки — целое число, не меньше нуля";
+    if (q > 100_000) return "Слишком много штук — проверьте";
   }
   return "";
 }
@@ -451,4 +469,128 @@ export function pointBonusShares(input: { orders: TransferOrder[]; days: PointDa
     const amount = round2((revenue * w) / total);
     return { managerEmail, flowerType, amount, bonus: round2(amount * bonusRateFor(flowerType)) };
   });
+}
+
+
+// --- Движение в штуках ---------------------------------------------------------------
+
+export interface PointStemRow {
+  flowerType: string;
+  label: string;
+  /** На точке на начало месяца, шт. (из движений с самого начала). */
+  start: number;
+  transferred: number;
+  /** Продано по внесённым штукам. */
+  sold: number;
+  /** Продано по оценке: деньги дня ÷ средняя цена отвезённого (штуки за день не внесли). */
+  soldEstimated: number;
+  writeoff: number;
+  /** На конец месяца (или на сегодня). */
+  end: number;
+}
+
+export interface PointStemDay {
+  transferred: number;
+  sold: number;
+  soldEstimated: number;
+  writeoff: number;
+}
+
+/**
+ * Движение товара на точке В ШТУКАХ по цветку: на начало месяца + отвезли − продано −
+ * списано = на конец. Отвезли и списано — точные числа. Продано — что внесено в отчёт за
+ * день; где штук нет, оценка: деньги дня делятся между цветками компании по доле
+ * отвезённого и переводятся в штуки по средней цене перемещения. На базаре продают
+ * дороже, чем возят, поэтому оценка скорее ЗАВЫШАЕТ проданное — отсюда просьба вносить
+ * штуки. Прежние деньги прямо на заявки-перемещения оцениваются по позициям этой заявки.
+ */
+export function pointStemFlow(input: {
+  orders: TransferOrder[];
+  days: PointDay[];
+  writeoffs: PointWriteoff[];
+  month: string;
+  today: string;
+}): { flowers: PointStemRow[]; days: Record<string, PointStemDay> } {
+  const { month, today } = input;
+  const endDay = [today, `${month}-31`].sort()[0];
+  const before = (d: string) => d < `${month}-01`;
+  const inMonth = (d: string) => d.slice(0, 7) === month && d <= endDay;
+  const transfers = pointTransfers(input.orders);
+  const rows = new Map<string, PointStemRow>();
+  const rowOf = (f: string) => {
+    let r = rows.get(f);
+    if (!r) {
+      r = { flowerType: f, label: FLOWER_TYPE_LABELS[f] ?? f, start: 0, transferred: 0, sold: 0, soldEstimated: 0, writeoff: 0, end: 0 };
+      rows.set(f, r);
+    }
+    return r;
+  };
+  const days: Record<string, PointStemDay> = {};
+  const dayOfRow = (d: string) => (days[d] ??= { transferred: 0, sold: 0, soldEstimated: 0, writeoff: 0 });
+  // Событие в штуках: до месяца — в начальный остаток, в месяце — в свою колонку.
+  const add = (d: string, f: string, kind: "transferred" | "sold" | "soldEstimated" | "writeoff", q: number) => {
+    if (!d || d > endDay || !(q > 0)) return;
+    const r = rowOf(f);
+    if (before(d)) r.start += kind === "transferred" ? q : -q;
+    else if (inMonth(d)) {
+      r[kind] += q;
+      dayOfRow(d)[kind] += q;
+    }
+  };
+
+  // Отвезённое по дню: стебли и деньги на цветок — для оценки проданного.
+  const shipped: { day: string; flowerType: string; stems: number; amount: number }[] = [];
+  for (const o of transfers) {
+    const d = transferDay(o);
+    for (const l of transferLines(o)) {
+      add(d, l.flowerType, "transferred", l.stems);
+      shipped.push({ day: d, ...l });
+    }
+  }
+  const upTo = (f: string, day: string) => {
+    let stems = 0;
+    let amount = 0;
+    for (const x of shipped) {
+      if (x.flowerType !== f || x.day > day) continue;
+      stems += x.stems;
+      amount += x.amount;
+    }
+    return { stems, amount };
+  };
+
+  for (const day of input.days) {
+    const farm = FARM_ORDER.includes(day.farm ?? "") ? (day.farm as string) : "";
+    const flowers = farm ? flowerTypesForFarm(farm) : FLOWERS;
+    if (day.soldStems) {
+      for (const f of flowers) add(day.date, f, "sold", Math.round(Number(day.soldStems[f]) || 0));
+      continue;
+    }
+    const money = (Number(day.kaspi) || 0) + (Number(day.cash) || 0);
+    if (money <= MONEY_EPSILON) continue;
+    const got = flowers.map((f) => ({ f, ...upTo(f, day.date) })).filter((x) => x.amount > 0);
+    const total = got.reduce((s, x) => s + x.amount, 0);
+    for (const x of got) add(day.date, x.f, "soldEstimated", Math.round((money * (x.amount / total)) / (x.amount / x.stems)));
+  }
+
+  // Прежние деньги прямо на заявку-перемещение: доля оплаченного от отвезённого по ней.
+  for (const o of transfers) {
+    const paidDay = dayOf(o.paidAt);
+    if (!(o.paidAmount > MONEY_EPSILON) || !paidDay) continue;
+    const lines = transferLines(o);
+    const amount = lines.reduce((s, l) => s + l.amount, 0);
+    if (amount <= 0) continue;
+    const share = Math.min(1, o.paidAmount / amount);
+    for (const l of lines) add(paidDay, l.flowerType, "soldEstimated", Math.round(l.stems * share));
+  }
+
+  for (const w of input.writeoffs) add(w.date, w.flowerType, "writeoff", Math.round(Number(w.quantity) || 0));
+
+  const order = [...FLOWERS, ...[...rows.keys()].filter((f) => !FLOWERS.includes(f)).sort()];
+  const flowers = order
+    .filter((f) => rows.has(f))
+    .map((f) => {
+      const r = rows.get(f)!;
+      return { ...r, end: r.start + r.transferred - r.sold - r.soldEstimated - r.writeoff };
+    });
+  return { flowers, days };
 }

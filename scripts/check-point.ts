@@ -20,7 +20,10 @@ import {
   pointMoneyClearRefusal,
   pointOrdersWithMoney,
   pointReport,
+  pointStemFlow,
+  pointStemsRefusal,
   pointWriteoffRefusal,
+  type PointDay,
   type TransferOrder,
 } from "../src/lib/point";
 import { isNotASale } from "../src/lib/orderKind";
@@ -132,6 +135,34 @@ check("дни — от новых к старым", r.days.map((d) => d.date), [
   const paidSplit = [...orders, t("OLD3", "2026-09-04", "emil@x", [["rose", 10, 500, 10]], { paidAmount: 5000, paidAt: "2026-09-04", paidRoseFarm: 5000, paidEsentai: 0 })];
   const rp = pointReport({ orders: paidSplit, days: [], writeoffs: [], month: "2026-09", today: "2026-09-29" });
   check("старый платёж с разбивкой по компаниям — в свою компанию", rp.farms.find((f) => f.farm === "rose_farm")!.fromOrders, 5000);
+}
+
+// Движение в штуках (12.10.2026, владелец: «нужно видеть движение количественное»).
+{
+  const so = [
+    t("A", "2026-08-28", "emil@x", [["chrysanthemum", 100, 300, 100]]),
+    t("B", "2026-09-05", "emil@x", [["chrysanthemum", 200, 300, 200], ["rose", 50, 400, 50]]),
+  ];
+  const sd: PointDay[] = [
+    { date: "2026-08-30", farm: "esentai", kaspi: 6000, cash: 0, note: "", accountantEmail: "", updatedAt: "" }, // штук нет: ≈ 20 до месяца
+    { date: "2026-09-06", farm: "esentai", kaspi: 20000, cash: 0, note: "", accountantEmail: "", updatedAt: "", soldStems: { chrysanthemum: 50 } },
+    { date: "2026-09-07", farm: "rose_farm", kaspi: 8000, cash: 0, note: "", accountantEmail: "", updatedAt: "" }, // ≈ 8000 / 400 = 20 роз
+    { date: "2026-09-08", farm: "rose_farm", kaspi: 3000, cash: 0, note: "", accountantEmail: "", updatedAt: "", soldStems: { rose: 10 } },
+  ];
+  const sw = [{ writeoffId: "W", date: "2026-09-10", flowerType: "chrysanthemum", quantity: 5, amount: 1500, reason: "x", createdByEmail: "", createdAt: "" }];
+  const flow = pointStemFlow({ orders: so, days: sd, writeoffs: sw, month: "2026-09", today: "2026-09-29" });
+  const by = Object.fromEntries(flow.flowers.map((f) => [f.flowerType, f]));
+  check("штуки: хризантема — начало, отвезли, продано, оценка, списано, конец", [by.chrysanthemum.start, by.chrysanthemum.transferred, by.chrysanthemum.sold, by.chrysanthemum.soldEstimated, by.chrysanthemum.writeoff, by.chrysanthemum.end], [80, 200, 50, 0, 5, 225]);
+  check("штуки: роза — внесено 10, по деньгам ≈20", [by.rose.start, by.rose.transferred, by.rose.sold, by.rose.soldEstimated, by.rose.end], [0, 50, 10, 20, 20]);
+  check("штуки: внесли розу — эустома в этот день ноль, не оценка", flow.flowers.map((f) => f.flowerType), ["rose", "chrysanthemum"]);
+  check("штуки по дням", [flow.days["2026-09-06"]?.sold, flow.days["2026-09-07"]?.soldEstimated, flow.days["2026-09-05"]?.transferred], [50, 20, 250]);
+  const unsplit = pointStemFlow({ orders: so, days: [{ date: "2026-09-09", kaspi: 13000, cash: 0, note: "", accountantEmail: "", updatedAt: "" }], writeoffs: [], month: "2026-09", today: "2026-09-29" });
+  // Одной суммой: делится по доле отвезённого (хризантема 90 000, роза 20 000) и в штуки по средней цене.
+  check("одной суммой — делится по отвезённому и в штуки", unsplit.flowers.map((f) => [f.flowerType, f.soldEstimated]), [["rose", Math.round((13000 * 20000) / 110000 / 400)], ["chrysanthemum", Math.round((13000 * 90000) / 110000 / 300)]]);
+  check("штуки: чужой цветок компании — отказ", refused(pointStemsRefusal("rose_farm", { chrysanthemum: 1 })), true);
+  check("штуки: дробь — отказ", refused(pointStemsRefusal("esentai", { chrysanthemum: 2.5 })), true);
+  check("штуки: свои целые — можно", pointStemsRefusal("rose_farm", { rose: 10, eustoma: 0 }), "");
+  check("штуки не вносили — можно", pointStemsRefusal("esentai", undefined), "");
 }
 
 check("цена списания — средняя отвезённого", avgTransferPrice(orders, "chrysanthemum", "2026-09-14"), Math.round((30000 + 60000 + 35000) / 400 * 100) / 100);

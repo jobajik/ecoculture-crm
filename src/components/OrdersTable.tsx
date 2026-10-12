@@ -11,6 +11,7 @@ import { formatDay } from "@/lib/formatDate";
 import { byUrgency, orderStage, STAGE_LABELS, STAGE_ORDER, type OrderStage } from "@/lib/orderStage";
 import { personName, type NameByEmail } from "@/lib/personName";
 import DeleteOrder from "./DeleteOrder";
+import { managerOptions } from "@/lib/financeManagers";
 
 /** Фильтр списка: этап заявки, «опаздывают» или все. */
 export const STAGE_FILTERS: { value: string; label: string }[] = [
@@ -45,6 +46,7 @@ export default function OrdersTable({
   managerNames = {},
   today,
   initialFilter = "all",
+  initialManager = "",
   canAdmin = false,
 }: {
   orders: OrderWithItems[];
@@ -54,6 +56,8 @@ export default function OrdersTable({
   today: string;
   /** Фильтр из адреса (`?stage=late`) — плитки главной ведут сразу в нужный список. */
   initialFilter?: string;
+  /** Менеджер из адреса (`?manager=почта`). */
+  initialManager?: string;
   /** Администратор: «изменить» и «удалить» прямо в строке списка. */
   canAdmin?: boolean;
 }) {
@@ -62,6 +66,15 @@ export default function OrdersTable({
     STAGE_FILTERS.some((f) => f.value === initialFilter) ? initialFilter : "all"
   );
   const [search, setSearch] = useState("");
+  // Фильтр по менеджеру (12.10.2026, владелец: «в заявках сделай фильтр по менеджерам»).
+  const managers = useMemo(
+    () => managerOptions(orders.map((o) => ({ managerEmail: o.managerEmail.toLowerCase(), managerName: personName(o.managerEmail, managerNames) }))),
+    [orders, managerNames]
+  );
+  const [manager, setManager] = useState<string>(() => {
+    const m = initialManager.toLowerCase();
+    return managers.some((x) => x.email === m) ? m : "";
+  });
 
   // Этап считается один раз на заявку: им пользуются фильтр, сортировка и бейдж.
   const stages = useMemo(() => {
@@ -74,6 +87,7 @@ export default function OrdersTable({
   const filtered = useMemo(() => {
     const list = orders.filter((o) => {
       const st = stages.get(o.orderId)!;
+      if (manager && o.managerEmail.toLowerCase() !== manager) return false;
       if (status === "open" && (st.key === "shipped" || st.key === "cancelled")) return false;
       if (status === "late" && st.lateDays <= 0) return false;
       if (status !== "all" && status !== "open" && status !== "late" && st.key !== status) return false;
@@ -86,13 +100,17 @@ export default function OrdersTable({
     });
     // В рабочих отборах — сначала те, что опаздывают сильнее всего.
     return status === "all" ? list : [...list].sort(byUrgency((o: OrderWithItems) => stages.get(o.orderId)!));
-  }, [orders, stages, status, search]);
+  }, [orders, stages, status, search, manager]);
 
   // Заявок со временем накопится много. Показываем начало списка, остальное по
   // кнопке; при поиске и фильтре по статусу показываем всё найденное — там
   // список человек сузил сам.
   const [expanded, setExpanded] = useState(false);
-  const narrowed = status !== "all" || search.trim().length > 0;
+  const narrowed = status !== "all" || search.trim().length > 0 || manager !== "";
+  // Итог выбранного менеджера: заявки и сумма (отменённые в сумму не идут).
+  const managerTotal = manager
+    ? filtered.filter((o) => stageOf(o).key !== "cancelled").reduce((sum, o) => sum + o.totalAmount, 0)
+    : 0;
   const shown = expanded || narrowed ? filtered : filtered.slice(0, COLLAPSED_TABLE_SIZE);
   const hidden = filtered.length - shown.length;
 
@@ -115,6 +133,22 @@ export default function OrdersTable({
             </option>
           ))}
         </select>
+        {managers.length > 1 && (
+          <select
+            id="orders-manager"
+            aria-label="Менеджер"
+            value={manager}
+            onChange={(e) => setManager(e.target.value)}
+            className="input !w-auto"
+          >
+            <option value="">Все менеджеры</option>
+            {managers.map((m) => (
+              <option key={m.email} value={m.email}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           className="input !w-auto flex-1 min-w-[200px]"
           placeholder="Клиент, менеджер или номер"
@@ -123,6 +157,13 @@ export default function OrdersTable({
         />
       </div>
 
+      {manager && (
+        <p className="mb-3 text-sm text-ink-secondary">
+          {managers.find((m) => m.email === manager)?.name}: заявок {filtered.length.toLocaleString("ru-RU")}
+          {managerTotal > 0 ? ` на ${Math.round(managerTotal).toLocaleString("ru-RU")} ₸` : ""}
+          <span className="text-ink-muted"> · без отменённых в сумме</span>
+        </p>
+      )}
       <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>

@@ -14,6 +14,21 @@ const num = (v: string | undefined) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Проданные штуки из ячейки: JSON {"rose":120}. Пусто или не разобралось — «не вносили». */
+function parseStems(raw: string | undefined): Record<string, number> | undefined {
+  const text = String(raw ?? "").trim();
+  if (!text) return undefined;
+  try {
+    const o = JSON.parse(text) as Record<string, unknown>;
+    if (!o || typeof o !== "object") return undefined;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(o)) if (Number.isFinite(Number(v))) out[k] = Math.round(Number(v));
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function listPointDays(options: { fresh?: boolean } = {}): Promise<PointDay[]> {
   try {
     const t = await readTable(SHEET_TABS.POINT_SALES, options);
@@ -27,6 +42,7 @@ export async function listPointDays(options: { fresh?: boolean } = {}): Promise<
         note: r.Note || "",
         accountantEmail: (r.AccountantEmail || "").toLowerCase(),
         updatedAt: toIsoDateTime(r.UpdatedAt) || r.UpdatedAt || "",
+        soldStems: parseStems(r.SoldStems),
       }))
       .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.date));
   } catch {
@@ -66,7 +82,7 @@ export async function savePointDay(input: { date: string; kaspi: number; cash: n
  */
 export async function savePointDayByFarm(input: {
   date: string;
-  parts: { farm: string; kaspi: number; cash: number }[];
+  parts: { farm: string; kaspi: number; cash: number; soldStems?: Record<string, number> }[];
   note: string;
   email: string;
 }): Promise<"saved" | "removed"> {
@@ -77,8 +93,17 @@ export async function savePointDayByFarm(input: {
     .map((x) => x.n);
   const now = new Date().toISOString();
   const records = input.parts
-    .filter((p) => p.kaspi > 0 || p.cash > 0)
-    .map((p) => ({ Date: input.date, Kaspi: p.kaspi, Cash: p.cash, Note: input.note, AccountantEmail: input.email, UpdatedAt: now, Farm: p.farm }));
+    .filter((p) => p.kaspi > 0 || p.cash > 0 || Object.values(p.soldStems ?? {}).some((q) => q > 0))
+    .map((p) => ({
+      Date: input.date,
+      Kaspi: p.kaspi,
+      Cash: p.cash,
+      Note: input.note,
+      AccountantEmail: input.email,
+      UpdatedAt: now,
+      Farm: p.farm,
+      SoldStems: p.soldStems ? JSON.stringify(p.soldStems) : "",
+    }));
   const ops: WriteOp[] = [];
   if (records.length) ops.push({ kind: "append", tab: SHEET_TABS.POINT_SALES, records });
   if (rowNumbers.length) ops.push({ kind: "delete", tab: SHEET_TABS.POINT_SALES, rowNumbers });

@@ -2,14 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { FARM_LABELS, FARM_ORDER, FARMS, FLOWER_TYPES, FLOWER_TYPE_LABELS, SHEET_TABS, periodLabel, periodOf, periodShift } from "@/lib/constants";
+import { FARM_LABELS, FARM_ORDER, FARMS, FLOWER_TYPES, FLOWER_TYPE_LABELS, SHEET_TABS, flowerTypesForFarm, periodLabel, periodOf, periodShift } from "@/lib/constants";
 import { prefetchTables } from "@/lib/sheets";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
 import { canSeeFinance } from "@/lib/financeAccess";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listPointDays, listPointWriteoffs } from "@/lib/repo/point";
-import { POINT_NAME, canEditPoint, pointOrdersWithMoney, pointReport, pointTransfers, transferDay, transferLines } from "@/lib/point";
+import { POINT_NAME, canEditPoint, pointOrdersWithMoney, pointReport, pointStemFlow, pointTransfers, transferDay, transferLines } from "@/lib/point";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import Hint from "@/components/Hint";
@@ -42,12 +42,25 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.POINT_SALES, SHEET_TABS.POINT_WRITEOFFS]);
   const [orders, days, writeoffs] = await Promise.all([listOrdersWithItems(), listPointDays(), listPointWriteoffs()]);
   const report = pointReport({ orders, days, writeoffs, month, today });
+  const stems = pointStemFlow({ orders, days, writeoffs, month, today });
+  const stemTotal = stems.flowers.reduce(
+    (t, f) => ({
+      start: t.start + f.start,
+      transferred: t.transferred + f.transferred,
+      sold: t.sold + f.sold,
+      soldEstimated: t.soldEstimated + f.soldEstimated,
+      writeoff: t.writeoff + f.writeoff,
+      end: t.end + f.end,
+    }),
+    { start: 0, transferred: 0, sold: 0, soldEstimated: 0, writeoff: 0, end: 0 }
+  );
+  const isCurrent = month === current;
   const editable = canEditPoint(role);
   // День → по компаниям и внесённое одной суммой (до разделения).
   const known: Record<string, PointKnownDay> = {};
   for (const d of days) {
     const k = (known[d.date] ??= { farms: {}, unsplit: 0, note: "" });
-    if (d.farm && FARM_ORDER.includes(d.farm)) k.farms[d.farm] = { kaspi: d.kaspi, cash: d.cash };
+    if (d.farm && FARM_ORDER.includes(d.farm)) k.farms[d.farm] = { kaspi: d.kaspi, cash: d.cash, soldStems: d.soldStems };
     else k.unsplit += d.kaspi + d.cash;
     if (d.note) k.note = d.note;
   }
@@ -108,6 +121,69 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
           </div>
         ))}
       </div>
+
+      <Section
+        tone="stock"
+        icon="leaf"
+        title={
+          <>
+            Движение в штуках{" "}
+            <Hint>
+              На начало месяца + отвезли − продано − списано = {isCurrent ? "на точке сейчас" : "на конец месяца"}. Отвезли — по
+              отгрузкам заявок «Пожарка», списано — по списаниям на точке. Продано — штуки из отчёта за день; где их не вносили,
+              «≈» — оценка по деньгам и средней цене, по которой цветок возили на точку. На базаре продают дороже, поэтому
+              оценка скорее завышает проданное: точнее всего — вносить штуки вместе с деньгами.
+            </Hint>
+          </>
+        }
+        flush
+      >
+        {stems.flowers.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-ink-muted">На точку пока ничего не возили.</p>
+        ) : (
+          <div className="table-cards">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                  <th className="px-3 py-2.5 font-medium">Цветок</th>
+                  <th className="px-3 py-2.5 font-medium text-right">На начало, шт.</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Отвезли</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Продано</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Списано</th>
+                  <th className="px-3 py-2.5 font-medium text-right">{isCurrent ? "На точке сейчас" : "На конец месяца"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...stems.flowers, ...(stems.flowers.length > 1 ? [{ ...stemTotal, flowerType: "total", label: "Всего" }] : [])].map((f) => (
+                  <tr key={f.flowerType} className={"border-b border-line-hairline last:border-0" + (f.flowerType === "total" ? " font-medium" : "")}>
+                    <td className="px-3 py-2">{f.label}</td>
+                    <td className="px-3 py-2 sm:text-right tabular-nums" data-label="На начало, шт.">{n(f.start)}</td>
+                    <td className="px-3 py-2 sm:text-right tabular-nums" data-label="Отвезли">{f.transferred ? `+${n(f.transferred)}` : "—"}</td>
+                    <td className="px-3 py-2 sm:text-right tabular-nums" data-label="Продано">
+                      {f.sold + f.soldEstimated ? `−${n(f.sold + f.soldEstimated)}` : "—"}
+                      {f.soldEstimated > 0 && (
+                        <div className="text-xs text-[#8a5a00] font-normal">
+                          {f.sold > 0 ? `внесено ${n(f.sold)} · ` : ""}≈ {n(f.soldEstimated)} по деньгам
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 sm:text-right tabular-nums" data-label="Списано">{f.writeoff ? `−${n(f.writeoff)}` : "—"}</td>
+                    <td className={"px-3 py-2 sm:text-right tabular-nums font-medium" + (f.end < 0 ? " text-status-critical" : "")} data-label="На точке">
+                      {n(f.end)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {stems.flowers.some((f) => f.end < 0) && (
+          <p className="px-4 py-2 text-xs text-status-critical border-t border-line-hairline">
+            Где остаток меньше нуля, продано по оценке больше, чем отвезли: на точке продают дороже цены перемещения. Внесите
+            проданные штуки за дни — и остаток станет точным.
+          </p>
+        )}
+      </Section>
 
       <Section
         tone="money"
@@ -183,7 +259,12 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
           <PointDayForm
             today={today}
             known={known}
-            farms={farmsOrder.map((f) => ({ farm: f, label: FARM_LABELS[f], hint: FARM_HINT[f] }))}
+            farms={farmsOrder.map((f) => ({
+              farm: f,
+              label: FARM_LABELS[f],
+              hint: FARM_HINT[f],
+              flowers: flowerTypesForFarm(f).map((fl) => ({ key: fl, label: FLOWER_TYPE_LABELS[fl] ?? fl })),
+            }))}
           />
         </Section>
       )}
@@ -210,7 +291,20 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
                   const rev = d.kaspi + d.cash + d.fromOrders;
                   return (
                     <tr key={d.date} className="border-b border-line-hairline last:border-0">
-                      <td className="px-3 py-2">{formatDay(d.date)}</td>
+                      <td className="px-3 py-2">
+                        {formatDay(d.date)}
+                        {(() => {
+                          const st = stems.days[d.date];
+                          if (!st) return null;
+                          const parts = [
+                            st.transferred ? `отвезли ${n(st.transferred)}` : "",
+                            st.sold ? `продано ${n(st.sold)}` : "",
+                            st.soldEstimated ? `продано ≈${n(st.soldEstimated)}` : "",
+                            st.writeoff ? `списано ${n(st.writeoff)}` : "",
+                          ].filter(Boolean);
+                          return parts.length ? <div className="text-xs text-ink-muted">{parts.join(" · ")} шт.</div> : null;
+                        })()}
+                      </td>
                       <td className="px-3 py-2 sm:text-right tabular-nums" data-label="Отвезли">
                         {d.transferred ? money(d.transferred) : "—"}
                       </td>

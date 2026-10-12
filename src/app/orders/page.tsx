@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams?: { stage?: string };
+  searchParams?: { stage?: string; manager?: string };
 }) {
   const session = await getServerSession(authOptions);
   const all = await listOrdersWithItems();
@@ -137,6 +137,7 @@ export default async function OrdersPage({
         managerNames={managerNames}
         today={localDayKey()}
         initialFilter={searchParams?.stage}
+        initialManager={searchParams?.manager}
         canAdmin={role === ROLES.ADMIN}
       />
     </div>
