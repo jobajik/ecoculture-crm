@@ -193,6 +193,20 @@ const open = planReminders({
   today: "2026-09-30",
 }).due[0];
 check("счёт уже выставлен — второй не выставляем", [open.kaspiNew.length, open.kaspiOpen.length], [0, 1]);
+{
+  // 12.10.2026: «по реквизитам» — клиент платит по счёту, Kaspi-счёт не выставляем.
+  const bank = planReminders({
+    orders: [o("A1", "A", { paymentMethod: "Оплата по реквизитам" })],
+    clients: rClients,
+    reminders: [],
+    invoices: [],
+    kaspiFarms: ["esentai"],
+    today: "2026-09-30",
+  }).due[0];
+  check("по реквизитам: напоминаем, но без Kaspi-счёта", [bank.orders.length, bank.kaspiNew.length, bank.bankTransfer], [1, 0, true]);
+  const bt = reminderText(bank, []);
+  check("по реквизитам: в тексте счёт на реквизиты, не Kaspi", [bt.includes("по счёту на реквизиты"), bt.includes("Kaspi")], [true, false]);
+}
 const failed = planReminders({
   orders: [o("E1", "E", {})],
   clients: rClients,

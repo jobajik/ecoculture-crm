@@ -15,7 +15,7 @@ import type { FinancePayment } from "@/lib/finance";
 import { flowerOwed, paymentHistory, type Realization } from "@/lib/payments";
 import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
-import { MIXED_PAYMENT_METHOD, PAYMENT_METHODS } from "@/lib/constants";
+import { BANK_TRANSFER_METHOD, MIXED_PAYMENT_METHOD, PAYMENT_METHODS, paysByBankTransfer } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
 import { unwrap } from "@/lib/actionResult";
 import KaspiInvoiceBlock from "./KaspiInvoiceBlock";
@@ -80,7 +80,10 @@ export default function PaymentPanel({
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
   const onKaspiState = useCallback((s: "action" | "none") => setKaspi(s), []);
   const left = totalAmount - paidAmount;
-  const manualIsOpen = manualOpen ?? (kaspi === "none" && left > 1);
+  // Менеджер поставил «Оплата по реквизитам»: клиент платит по счёту на расчётный счёт, Kaspi-счёт
+  // ему не нужен — главное действие бухгалтера «деньги на счёт пришли», Kaspi убран под ссылку.
+  const byBank = paysByBankTransfer(defaultMethod);
+  const manualIsOpen = manualOpen ?? ((byBank || kaspi === "none") && left > 1);
 
   return (
     <div className="space-y-4">
@@ -91,7 +94,27 @@ export default function PaymentPanel({
         invoiceSentAt={invoiceSentAt}
         consignment={consignment}
       />
-      <KaspiInvoiceBlock orderId={orderId} onState={onKaspiState} />
+      {byBank ? (
+        <>
+          {left > 1 && (
+            <div className="rounded-xl bg-status-warning/10 px-3 py-2 text-sm">
+              <span className="font-medium">{BANK_TRANSFER_METHOD}</span> — клиент платит по счёту. Kaspi-счёт не нужен: когда
+              деньги придут на расчётный счёт, внесите платёж ниже.
+            </div>
+          )}
+          <details className="group rounded-xl border border-line-hairline">
+            <summary className="px-3 py-2.5 text-sm cursor-pointer select-none flex items-center gap-2 list-none [&::-webkit-details-marker]:hidden text-ink-secondary">
+              Kaspi-счёт — если клиент всё-таки попросил
+              <span className="ml-auto text-ink-muted transition-transform group-open:rotate-90">›</span>
+            </summary>
+            <div className="px-3 pb-3">
+              <KaspiInvoiceBlock orderId={orderId} onState={onKaspiState} />
+            </div>
+          </details>
+        </>
+      ) : (
+        <KaspiInvoiceBlock orderId={orderId} onState={onKaspiState} />
+      )}
       <PaymentsList
         orderId={orderId}
         totalAmount={totalAmount}

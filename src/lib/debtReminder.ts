@@ -9,7 +9,7 @@
  * Здесь — чистые правила: кому пора, что написать. Отправка —
  * `debtReminderRunner.ts`, страница — «Оплаты → Напоминания».
  */
-import { MONEY_EPSILON, ORDER_STATUSES } from "./constants";
+import { MONEY_EPSILON, ORDER_STATUSES, paysByBankTransfer } from "./constants";
 import { isNotASale } from "./orderKind";
 import { farmPayments } from "./orderMoney";
 import { orderCode } from "./paymentStage";
@@ -71,7 +71,7 @@ type ReminderOrder = Pick<
   | "retail"
   | "kind"
   | "direction"
-> & { clientPaymentTerms?: string; managerEmail?: string };
+> & { clientPaymentTerms?: string; managerEmail?: string; paymentMethod?: string };
 
 /** «Отсрочка 7 дней» → 7; «По факту», «Предоплата», пусто → 0. */
 export function termDays(terms: string | null | undefined): number {
@@ -135,6 +135,8 @@ export interface ReminderGroup {
   kaspiNew: KaspiPart[];
   /** Уже выставленные и ждущие оплаты — про них напомним словами. */
   kaspiOpen: KaspiPart[];
+  /** Есть заявка «по реквизитам»: Kaspi-счёт по ней не выставляем, в тексте — про счёт на реквизиты. */
+  bankTransfer?: boolean;
   lastRemindedAt: string;
   problem: string;
 }
@@ -223,6 +225,12 @@ export function planReminders(input: {
     g.total += debt;
     if (last > g.lastRemindedAt) g.lastRemindedAt = last;
 
+    // По реквизитам — платят по счёту на расчётный счёт, Kaspi-счёт им не нужен.
+    if (paysByBankTransfer(o.paymentMethod)) {
+      g.bankTransfer = true;
+      groups.set(key, g);
+      continue;
+    }
     for (const part of farmPayments(o)) {
       const due = kaspiDueAmount(part);
       if (due <= 0 || !input.kaspiFarms.includes(part.farm)) continue;
@@ -264,7 +272,7 @@ const dm = (key: string) => (key ? `${key.slice(8, 10)}.${key.slice(5, 7)}` : ""
  * (при предпросмотре — все запланированные), плюс уже висящие в Kaspi.
  */
 export function reminderText(
-  g: Pick<ReminderGroup, "greeting" | "orders" | "total" | "kaspiPhone">,
+  g: Pick<ReminderGroup, "greeting" | "orders" | "total" | "kaspiPhone" | "bankTransfer">,
   kaspi: { amount: number }[]
 ): string {
   const lines = [
@@ -280,6 +288,10 @@ export function reminderText(
       `Счёт Kaspi на ${money(inKaspi)} выставлен на номер ${prettyKaspiPhone(g.kaspiPhone)} — его можно оплатить в приложении Kaspi.` +
         (inKaspi + 1 < g.total ? " Остальное — удобным вам способом." : "")
     );
+  }
+  if (g.bankTransfer) {
+    lines.push("");
+    lines.push("Оплата — по счёту на реквизиты компании. Если счёт потерялся, напишите — пришлём заново.");
   }
   lines.push("");
   lines.push("Если уже оплатили — пожалуйста, не обращайте внимания и напишите нам, мы сверим. Спасибо!");

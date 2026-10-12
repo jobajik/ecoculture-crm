@@ -743,6 +743,15 @@ export const MIXED_PAYMENT_METHOD = "Смешанная";
 /** Что можно выбрать как вид оплаты заявки: способы плюс «смешанная». */
 export const ORDER_PAYMENT_METHODS: string[] = [...PAYMENT_METHODS, MIXED_PAYMENT_METHOD];
 
+/**
+ * Клиент платит по счёту на реквизиты (12.10.2026, владелец: «если менеджер ставит оплата по
+ * реквизитам, то он не должен уходить на выставление Kaspi-счёта — он оплачивает по счёту, а
+ * Юлия потом подтверждает, что оплата села»). Такой заявке Kaspi-счёт не выставляется сам
+ * (напоминания о долге), а в панели оплаты главное действие — внести поступление на счёт.
+ */
+export const BANK_TRANSFER_METHOD: PaymentMethod = "Оплата по реквизитам";
+export const paysByBankTransfer = (method: string | null | undefined) => (method || "").trim() === BANK_TRANSFER_METHOD;
+
 /** Через сколько дней после даты доставки долг считается просроченным. */
 export const DEBT_OVERDUE_DAYS = 3;
 
