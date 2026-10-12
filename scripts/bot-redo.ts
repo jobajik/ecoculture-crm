@@ -8,7 +8,7 @@ dotenv.config();
  * Модель видит переписку без нашего неудачного ответа; уходит новый ответ.
  * Без --send — только показ.
  *
- *   npx tsx scripts/bot-redo.ts 3627600 [--at <слово>] [--prompt] [--send]
+ *   npx tsx scripts/bot-redo.ts 3627600 [--at <слово> | --at-file <json {"at":"слово"}>] [--prompt] [--send]
  *
  * `--at` — ответить на последнее сообщение клиента, где есть это слово (латиницей или цифрами — из .bat
  * русские слова портятся), а не на самое последнее.
@@ -18,6 +18,7 @@ import { botChatWrite, listBotChats, settingsMap } from "../src/lib/repo/broadca
 import { botSettingsFrom, pushContext } from "../src/lib/broadcast";
 import { botAct, botPrompt, botReply, noteForManager, sendBotFiles } from "../src/lib/botEngine";
 import { greenConfig, sendText } from "../src/lib/greenApi";
+import { readFileSync } from "node:fs";
 
 async function main() {
   const suffix = process.argv.slice(2).find((a) => /^\d{4,}$/.test(a)) ?? "";
@@ -26,7 +27,11 @@ async function main() {
   const found = chats.find((c) => c.phone.replace(/\D/g, "").endsWith(suffix));
   if (!suffix || !found) throw new Error("чат не найден");
   const ai = process.argv.indexOf("--at");
-  const word = ai >= 0 ? String(process.argv[ai + 1] || "").toLowerCase() : "";
+  const fi = process.argv.indexOf("--at-file");
+  // Русское слово из .bat портится кодировкой консоли — его можно передать файлом JSON {"at":"слово"}.
+  const word = (
+    fi >= 0 ? String((JSON.parse(readFileSync(process.argv[fi + 1], "utf8").replace(/^\uFEFF/, "")) as { at?: string }).at || "") : ai >= 0 ? String(process.argv[ai + 1] || "") : ""
+  ).toLowerCase();
   const lastClient = word
     ? found.context.map((m) => m.role === "client" && m.text.toLowerCase().includes(word)).lastIndexOf(true)
     : found.context.map((m) => m.role).lastIndexOf("client");
@@ -38,7 +43,7 @@ async function main() {
   }
   const d = await botReply(trimmed, botSettingsFrom(map).instructions);
   console.log(`клиент: ${found.context[lastClient].text}`);
-  console.log(`модель: ${d.reply}${d.order.confirmed ? "  [ЗАКАЗ]" : ""}${d.catalog ? `  [каталог ${d.catalog}]` : ""}${d.photo.flowerType ? `  [фото: ${[d.photo.flowerType, d.photo.variety, d.photo.grade].filter(Boolean).join(" ")}]` : ""}`);
+  console.log(`модель: ${d.reply}${d.alert ? `  [тревога: ${d.alert}]` : ""}${d.order.confirmed ? "  [ЗАКАЗ]" : ""}${d.catalog ? `  [каталог ${d.catalog}]` : ""}${d.photo.flowerType ? `  [фото: ${[d.photo.flowerType, d.photo.variety, d.photo.grade].filter(Boolean).join(" ")}]` : ""}`);
   if (!send) return console.log("Только показ.");
   // После неудачного ответа должно быть ровно одно наше сообщение: клиент уже написал снова — бот ответил сам.
   if (found.context.length - 1 !== lastClient + 1) return console.log("После нашего ответа уже была переписка — не отправляю.");

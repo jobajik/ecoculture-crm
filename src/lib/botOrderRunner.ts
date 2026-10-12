@@ -337,7 +337,11 @@ export async function botClientContext(phone: string): Promise<string> {
     const key = phoneKey(phone);
     const lead = !client && key ? leads.find((l) => phoneKey(l.phone) === key) : undefined;
     const lines: string[] = [];
-    if (client) lines.push(`Клиент в базе: «${client.name}», город ${client.city || "не указан"}.`);
+    if (client) {
+      lines.push(`Клиент в базе: «${client.name}», город ${client.city || "не указан"}.`);
+      // Условия оплаты из карточки: «По факту» / «Отсрочка N дней» — оплата после отгрузки для него нормальна.
+      if (client.paymentTerms) lines.push(`Условия оплаты по карточке: ${client.paymentTerms}.`);
+    }
     else if (lead) lines.push(`Клиент есть в лидах: «${lead.name}», город ${lead.city || "не указан — спроси город доставки"}.`);
     else lines.push("Клиента нет в базе — до оформления спроси название точки и город доставки (shopName, city).");
     const mine = botOrdersOf(orders, phone, client?.clientId ?? "").slice(0, 5);

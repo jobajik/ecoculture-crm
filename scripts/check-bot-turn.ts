@@ -3,6 +3,10 @@
  *   npx tsx scripts/check-bot-turn.ts
  */
 import {
+  botAlertTeamText,
+  disputesPayment,
+  invoiceReminderBlocked,
+  teamAlertDue,
   mergeChatMemory,
   missingIncoming,
   repeatsOurMessage,
@@ -103,6 +107,45 @@ check("в понедельник сегодняшний день не счита
 check("роза раньше хризантемы", h2.indexOf("Jumilia") < h2.indexOf("Altaj"));
 check("в последний день недели её уже нет", !harvestForBot(rows, "2026-10-11").includes("октября ~11 000 · 12–18") && harvestForBot(rows, "2026-10-11").startsWith("Роза · Jumilia: 12–18 октября"));
 check("пустой прогноз — пусто", harvestForBot([], "2026-10-09") === "");
+
+// --- оплата не вперёд и тревоги (живой случай 11.10, Флорентина)
+check("«наличными оплатить при доставке» — спор об оплате", disputesPayment("Да удобно нам наличными оплатить при доставке"));
+check("«ничего оплачивать не буду пока не увижу товар»", disputesPayment("Я вам ничего оплачивать не буду пока я не увижу товар"));
+check("«оплачивать только после того как привезёте»", disputesPayment("Мы будем оплачивать только после того как вы нам привезёте товар"));
+check("«предоплату 50 000, не больше»", disputesPayment("я могу сделать предоплату 50 000 тенге не больше"));
+check("«как товар получим остальное заплатим»", disputesPayment("Как товар получим остальное заплатим"));
+check("«рассчитаюсь с вами на месте»", disputesPayment("я рассчитаюсь с вами на месте"));
+check("обычный заказ — не спор", !disputesPayment("Давайте 500 Jumilia на завтра"));
+check("«оплатила» — не спор", !disputesPayment("Оплатила, проверьте"));
+
+const ORDER_AT = "2026-10-11T08:22:46.000Z";
+const flor = {
+  ...emptyBotChat(PHONE),
+  context: [
+    { role: "us" as const, text: "*Заказ №EC8AZ оформлен*", at: ORDER_AT },
+    { role: "client" as const, text: "Да удобно нам наличными оплатить при доставке", at: "2026-10-11T08:28:24.000Z" },
+  ],
+};
+check("живой случай: напоминание о счёте не уходит", invoiceReminderBlocked(flor, ORDER_AT) === "клиент спорит об оплате");
+check("спор ДО заказа не мешает напоминанию", invoiceReminderBlocked(flor, "2026-10-11T09:00:00.000Z") === "");
+check("молчит после заказа — напоминаем", invoiceReminderBlocked({ ...flor, context: flor.context.slice(0, 1) }, ORDER_AT) === "");
+check(
+  "менеджер писал после заказа — не напоминаем",
+  invoiceReminderBlocked({ ...flor, context: [], humanAt: "2026-10-11T16:23:20.000Z" }, ORDER_AT) !== ""
+);
+check(
+  "тревога об оплате после заказа — не напоминаем",
+  invoiceReminderBlocked({ ...flor, context: [], handoffAt: "2026-10-11T08:28:30.000Z", handoffReason: "внимание: оплата наличными" }, ORDER_AT) !== ""
+);
+check("нет памяти чата — напоминаем", invoiceReminderBlocked(null, ORDER_AT) === "");
+
+const alertNow = new Date("2026-10-11T09:00:00.000Z");
+check("первая тревога — команде", teamAlertDue({ handoffAt: "2026-10-11T08:59:00.000Z", handoffReason: "заказ: 500 Jumilia" }, alertNow));
+check("тревога 20 мин назад — команде не повторяем", !teamAlertDue({ handoffAt: "2026-10-11T08:40:00.000Z", handoffReason: "внимание: оплата наличными" }, alertNow));
+check("тревога внутри записки о заказе тоже считается", !teamAlertDue({ handoffAt: "2026-10-11T08:40:00.000Z", handoffReason: "заказ: …; внимание: x" }, alertNow));
+check("тревога час назад — снова можно", teamAlertDue({ handoffAt: "2026-10-11T07:59:00.000Z", handoffReason: "внимание: x" }, alertNow));
+const team = botAlertTeamText({ phone: "+7 747 541 52 72", name: "Флорентина", note: "внимание: просит оплату при получении", lastClient: "Мы будем оплачивать только после доставки" });
+check("текст команде: имя, номер, что случилось, ссылка", team.includes("Флорентина, +77475415272") && team.includes("просит оплату при получении") && !team.includes("внимание:") && team.includes("https://wa.me/77475415272"));
 
 if (failed) {
   console.log(`\nПровалено: ${failed}`);

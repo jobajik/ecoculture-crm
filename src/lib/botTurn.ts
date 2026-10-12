@@ -144,3 +144,69 @@ export const REPEAT_TASK =
   "Ответь на последнее сообщение клиента ДРУГИМ предложением: сложи наличие сорта по всем длинам, добери объём " +
   "другими длинами или похожим сортом того же цвета (с ценами и суммой), а чего не хватает — скажи честно и назови, " +
   "когда по плану срезки ожидаем этот сорт.";
+
+// ---------------------------------------------------------------------------
+// Оплата и тревоги (12.10.2026, Флорентина, «Центр цветов Романтик»). Бот оформил заказ на 252 000 ₸,
+// клиентка написала «удобно нам наличными оплатить при доставке» — бот согласился (так велело старое
+// правило подсказки), а через четыре часа напомнил «счёт Kaspi ждёт оплаты». Тревога «оплата
+// наличными» висела только на странице «Бот», её никто не увидел; потом бот упёрся в предел ответов
+// и замолчал — клиентка три часа писала «Ребята, вы почему не отвечаете». Владелец ответил сам
+// (100 % предоплата), но клиентку уже потеряли. Отсюда:
+// - напоминание об оплате не уходит, если после заказа клиент спорил об оплате, писал менеджер или
+//   была тревога про оплату (`invoiceReminderBlocked`);
+// - тревога бота уходит команде в WhatsApp, не чаще раза в час на чат (`teamAlertDue`, `botAlertTeamText`).
+// ---------------------------------------------------------------------------
+
+/** Клиент не готов платить по счёту вперёд: при получении, частями, «сначала привезите», в долг. */
+const PAYMENT_DISPUTE =
+  /(?:при|после)\s+(?:получени|доставк|при[её]м)|(?:опла|плат)\S*\s+(?:только\s+)?после|на\s+месте|наличн|не\s+буд(?:у|ем)\s+(?:опла|плат)|ничего\s+(?:оплачивать|платить)|сначала\s+(?:привез|достав|цвет|товар)|как\s+(?:товар|цвет\S*)\s+(?:получ|привез)|предоплат|остальн\S*\s+(?:за|о|до)плат|по\s+факту|в\s+долг|реализаци/i;
+
+export function disputesPayment(text: string): boolean {
+  return PAYMENT_DISPUTE.test(String(text || "").replace(/ё/g, "е"));
+}
+
+const after = (iso: string, since: string) => {
+  const a = Date.parse(iso || "");
+  const s = Date.parse(since || "");
+  return Number.isFinite(a) && (!Number.isFinite(s) || a > s);
+};
+
+/**
+ * Почему НЕ напоминать клиенту о счёте по заказу, оформленному в `since`. Пусто — напоминать можно.
+ * Напоминание «счёт ждёт оплаты» после «оплачу при получении» читается как глухота — так и вышло.
+ */
+export function invoiceReminderBlocked(
+  chat: Pick<BotChat, "mode" | "humanAt" | "handoffAt" | "handoffReason" | "context"> | null,
+  since: string
+): string {
+  if (!chat) return "";
+  if (chat.mode === "optout") return "клиент отписался";
+  if (after(chat.humanAt, since)) return "после заказа в чате писал менеджер";
+  if (after(chat.handoffAt, since) && /оплат|долг|реализац/i.test(chat.handoffReason)) return "после заказа была тревога об оплате";
+  if (chat.context.some((c) => c.role === "client" && after(c.at, since) && disputesPayment(c.text))) {
+    return "клиент спорит об оплате";
+  }
+  return "";
+}
+
+/** Тревога команде — не чаще раза в час на чат: иначе на каждое сообщение спорящего клиента придёт по сообщению. */
+export const TEAM_ALERT_GAP_HOURS = 1;
+
+export function teamAlertDue(prev: { handoffAt: string; handoffReason: string }, now: Date): boolean {
+  if (!/внимание:/.test(prev.handoffReason || "")) return true;
+  const t = Date.parse(prev.handoffAt || "");
+  return !Number.isFinite(t) || now.getTime() - t >= TEAM_ALERT_GAP_HOURS * 3600000;
+}
+
+/** Сообщение команде: кто, что случилось, последнее от клиента и ссылка на чат. */
+export function botAlertTeamText(input: { phone: string; name: string; note: string; lastClient: string }): string {
+  const digits = input.phone.replace(/\D/g, "");
+  const last = input.lastClient.replace(/\s+/g, " ").trim();
+  return [
+    "⚠️ *Бот: нужен человек*",
+    `${input.name ? `${input.name}, ` : ""}+${digits}`,
+    input.note.replace(/^внимание:\s*/, ""),
+    ...(last ? [`Клиент: «${last.length > 160 ? `${last.slice(0, 157)}…` : last}»`] : []),
+    `https://wa.me/${digits}`,
+  ].join("\n");
+}

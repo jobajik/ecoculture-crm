@@ -3,17 +3,27 @@ import { localDayKey } from "./timezone";
 import { getCurrentPrices } from "./repo/prices";
 import { listBatches } from "./repo/batches";
 import { almatyHourOf, botStoreFor, botStoreNote, inStore } from "./officeStore";
-import { staffPhoneKeys } from "./botSalesAlert";
+import { notifyBotSale, staffPhoneKeys } from "./botSalesAlert";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
 import { harvestForBot, lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "./botKnowledge";
 import { listHarvestForecast } from "./repo/harvestForecast";
 import { listWaMessages } from "./repo/talks";
 import { readTable } from "./sheets";
-import { REPEAT_TASK, mergeChatMemory, missingIncoming, repeatsOurMessage, supersededBy, withMissingIncoming } from "./botTurn";
+import {
+  REPEAT_TASK,
+  botAlertTeamText,
+  mergeChatMemory,
+  missingIncoming,
+  repeatsOurMessage,
+  supersededBy,
+  teamAlertDue,
+  withMissingIncoming,
+} from "./botTurn";
 import { BOT_ORDER_SCHEMA, toWhatsApp } from "./botOrder";
 import { botClientContext, cancelBotOrder, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
 import {
+  BOT_MAX_REPLIES,
   BOT_MODES,
   BOT_OPT_OUT_TEXT,
   EMPTY_NUDGE,
@@ -83,7 +93,11 @@ const BOT_SCHEMA = {
       enum: ["", "all", "rose", "chrysanthemum", "eustoma"],
       description: "Клиент просит каталог, фото, прайс картинкой или «что есть» с фото — какой цветок (all — все). Иначе пусто.",
     },
-    alert: { type: "string", description: "Жалоба или клиент просит живого человека — одной фразой для менеджера. Иначе пусто." },
+    alert: {
+      type: "string",
+      description:
+        "Нужен человек — одной фразой для менеджера: жалоба, просят живого человека, оплату при получении/частями/отсрочку, фото собранного заказа, накладную, предзаказ. Иначе пусто.",
+    },
     silent: {
       type: "boolean",
       description: "true — не отвечать: автоответ магазина, кивок без вопроса, разговор о доставке уже оформленного заказа.",
@@ -160,8 +174,9 @@ function systemPrompt(p: {
   return [
     "Ты — сильный продавец оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома).",
     "Продаём оптом салонам, магазинам и цветочникам. Пишешь клиентам в WhatsApp от имени компании. Твоя единственная цель — ПРОДАТЬ:",
-    "довести разговор до подтверждённого заказа. Ты НИКОГДА не передаёшь разговор менеджеру и не пишешь «передам менеджеру»,",
-    "«менеджер свяжется», «менеджер ответит» — ты сам и есть менеджер в этом чате.",
+    "довести разговор до подтверждённого заказа. Цены, наличие, каталог, фото, заказ — ведёшь сам и не пишешь «передам менеджеру»,",
+    "«менеджер свяжется». Руководителю передаёшь только три вещи (ниже): оплату не вперёд, документы и фото собранного заказа,",
+    "просьбу поговорить с живым человеком.",
     "",
     "Стиль: как живой человек в WhatsApp — коротко, тепло, по-разному, на языке клиента (русский или казахский).",
     "Начинай естественно («Да, есть!», «Конечно», «Смотрите», «Отлично») и НИКОГДА не повторяй уже сказанное в переписке:",
@@ -238,10 +253,19 @@ function systemPrompt(p: {
     "   дату — повтори НОВЫЙ заказ целиком и после «да» заполни order (confirmed=true) и cancelOrder=номер старого заказа;",
     "   передумал, не нужно — cancelOrder=номер заказа и вежливо попрощайся, предложив написать, когда понадобятся цветы.",
     "6) Оплатил — поблагодари: оплата придёт в систему сама, и ты напишешь, когда заказ уйдёт на сборку. Не подтверждай оплату сам.",
-    "   Хочет платить наличными или по реквизитам — согласись, заполни alert («оплата наличными/по реквизитам»), заказ всё равно оформляй.",
+    "7) ОПЛАТА — 100 % ПРЕДОПЛАТА до отгрузки (владелец, 11.10). Kaspi-счёт, наличные в офисе или перевод по реквизитам —",
+    "   можно, если ДО отгрузки (по реквизитам/наличными — alert «оплата по реквизитам/наличными»). Оплата при получении, после",
+    "   доставки, «сначала привезите», частичная предоплата, отсрочка, в долг — ты НЕ соглашаешься и ничего не обещаешь: коротко",
+    "   и вежливо скажи, что работаем по предоплате, а исключения решает руководитель — ты передала ему вопрос, ответ придёт",
+    "   здесь же. Заполни alert («просит оплату при получении / предоплату N ₸ / отсрочку: …»). Заказ не отменяй и о счёте",
+    "   больше не напоминай. Исключение — в «О клиенте» условия «По факту» или «Отсрочка»: такому клиенту оплата по условиям.",
+    "Говори только то, что знаешь. НЕ выдумывай о компании и логистике: юрлицо, чеки, «сколько лет на рынке», курьер, водитель,",
+    "время отправки и приезда, транспорт, гарантии. НЕ обещай то, чего система не делает: фото собранного заказа, накладную,",
+    "PDF и документы, звонок водителя, видео, «пришлю позже». Просят это — честно: «уточню у склада», и заполни alert",
+    "(«просит фото собранного заказа / накладную / данные доставки»). Просят живого человека или телефон для звонка —",
+    "не спорь, что ты и есть менеджер: «передала руководителю, он свяжется здесь», alert обязательно.",
     "Доставка — завтра и позже обычно; сегодня — только если клиент просит (после 12:00 из офиса — сегодня, см. ниже), не обещай время.",
-    "Жалоба или клиент прямо просит живого человека — извинись или согласись, скажи, что разберёмся, задай уточняющий",
-    "вопрос и заполни alert. Разговор продолжаешь ты.",
+    "Жалоба — извинись, скажи, что разберёмся, задай уточняющий вопрос и заполни alert. Разговор продолжаешь ты.",
     "",
     "silent=true — только если: автоответ магазина или бота (шаблон, часы работы, адрес); кивок без вопроса; разговор о доставке",
     "уже оформленного заказа («келди», «пришли», «выезжаю», «буду через 5 минут»). Не обещай позвонить, приехать или прислать файл.",
@@ -320,6 +344,9 @@ export async function runBot(all: BotIncoming[]): Promise<boolean> {
           await reply(chat, last, BOT_OPT_OUT_TEXT);
         } else if (!silence && greenConfig() && !(last.type === "text" && isAckOnly(last.text))) {
           if (await answer(chat, last, settings.instructions)) answered = true;
+        } else if (silence === "бот уже ответил много раз" && !(last.type === "text" && isAckOnly(last.text))) {
+          // 11.10: бот упёрся в предел и замолчал, клиентка три часа писала «почему не отвечаете» — и никто не знал.
+          await noteAndAlert(chat, `внимание: бот ответил уже ${BOT_MAX_REPLIES} раз за сутки и молчит — клиент ждёт, ответьте сами`);
         }
       }
       if (changed) pending.push({ chat, existing });
@@ -549,7 +576,7 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
   }
   if (!decision.silent && !decision.order.confirmed && repeatsOurMessage(decision.reply, chat.context)) {
     // Тот же текст второй раз не уходит: лучше записка менеджеру, чем клиенту одно и то же.
-    noteForManager(chat, "внимание: бот не нашёл, что ответить, кроме повтора — ответьте клиенту сами");
+    await noteAndAlert(chat, "внимание: бот не нашёл, что ответить, кроме повтора — ответьте клиенту сами");
     return false;
   }
   const { text, note, files } = await botAct(chat, decision);
@@ -562,8 +589,25 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
   const quietMs = Date.now() - Date.parse(chat.updatedAt || "");
   if (!Number.isFinite(quietMs) || quietMs >= 24 * 3600000) chat.botReplies = 0;
   chat.botReplies += 1;
-  noteForManager(chat, note);
+  await noteAndAlert(chat, note);
   return true;
+}
+
+/**
+ * Записка менеджеру и, если в ней тревога, — сообщение команде в WhatsApp (номера продаж бота,
+ * не чаще раза в час на чат). 11.10 тревога «оплата наличными» висела только на странице «Бот», и её
+ * никто не увидел, пока клиентка не ушла.
+ */
+async function noteAndAlert(chat: BotChat, note: string): Promise<void> {
+  const prev = { handoffAt: chat.handoffAt, handoffReason: chat.handoffReason };
+  noteForManager(chat, note);
+  const alert = note
+    .split("; ")
+    .filter((n) => n.startsWith("внимание:"))
+    .join("; ");
+  if (!alert || !teamAlertDue(prev, new Date())) return;
+  const lastClient = [...chat.context].reverse().find((c) => c.role === "client")?.text ?? "";
+  await notifyBotSale(botAlertTeamText({ phone: chat.phone, name: chat.name, note: alert, lastClient }));
 }
 
 /**

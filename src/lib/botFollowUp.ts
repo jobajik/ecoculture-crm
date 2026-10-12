@@ -26,6 +26,7 @@ import { botDeclinedReminderText, botDeclinedText, botInvoiceErrorText, botPaidA
 import { notifyBotSale } from "./botSalesAlert";
 import { dueParts, invoicePart, lastInvoice } from "./botOrderRunner";
 import type { KaspiInvoice } from "./types";
+import { invoiceReminderBlocked } from "./botTurn";
 
 // ---------------------------------------------------------------------------
 // Бот доводит заказ до денег: пишет клиенту, когда оплата пришла или счёт не
@@ -119,14 +120,28 @@ const REMIND_GAP_HOURS = 20;
  * Напомнить об оплате по заявкам бота: счёт ждёт дольше 3 часов — напомнить;
  * истёк или отменён — выставить заново и сказать об этом. Не чаще раза в
  * 20 часов на заявку (журнал — вкладка DebtReminders, подпись — почта бота).
+ * Не напоминает, если после заказа клиент спорил об оплате, писал менеджер или
+ * бот поднимал тревогу об оплате (`invoiceReminderBlocked`).
  * Зовут утренняя сводка и вечерний разбор.
  */
 export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent: number; errors: number }> {
   let sent = 0;
   let errors = 0;
   try {
-    await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.KASPI_INVOICES, SHEET_TABS.DEBT_REMINDERS]);
-    const [orders, invoices, reminders] = await Promise.all([listOrdersWithItems(), listKaspiInvoices(), listDebtReminders()]);
+    await prefetchTables([
+      SHEET_TABS.ORDERS,
+      SHEET_TABS.ORDER_ITEMS,
+      SHEET_TABS.CLIENTS,
+      SHEET_TABS.KASPI_INVOICES,
+      SHEET_TABS.DEBT_REMINDERS,
+      SHEET_TABS.BOT_CHATS,
+    ]);
+    const [orders, invoices, reminders, chats] = await Promise.all([
+      listOrdersWithItems(),
+      listKaspiInvoices(),
+      listDebtReminders(),
+      listBotChats().catch(() => [] as Awaited<ReturnType<typeof listBotChats>>),
+    ]);
     const since = now.getTime() - 7 * 24 * 3600000;
     for (const order of orders) {
       if (!isBotEmail(order.managerEmail) || order.status === ORDER_STATUSES.CANCELLED || order.paid || !order.clientPhone) continue;
@@ -136,6 +151,9 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
         .filter((r) => r.orderIds.includes(order.orderId) && r.sentByEmail === BOT_MANAGER_EMAIL)
         .reduce((max, r) => Math.max(max, Date.parse(r.sentAt) || 0), 0);
       if (now.getTime() - lastReminder < REMIND_GAP_HOURS * 3600000) continue;
+      // Клиент после заказа спорил об оплате, писал менеджер или была тревога про оплату — не напоминаем (`botTurn.ts`).
+      const chat = chats.find((c) => phoneKey(c.phone) === phoneKey(order.clientPhone)) ?? null;
+      if (invoiceReminderBlocked(chat, order.createdAt)) continue;
 
       const texts: string[] = [];
       let amount = 0;
