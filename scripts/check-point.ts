@@ -41,6 +41,8 @@ const refused = (s: string) => s.length > 0;
 
 check("пожарка — не продажа", isNotASale({ direction: "Пожарка", retail: "", kind: "" }), true);
 check("обычная заявка — продажа", isNotASale({ direction: "", retail: "", kind: "" }), false);
+check("карточка «Пожарка» без направления — тоже точка", isNotASale({ direction: "", retail: "", kind: "", clientName: " пожарка " }), true);
+check("другой клиент без направления — продажа", isNotASale({ direction: "", retail: "", kind: "", clientName: "Пожарка 2" }), false);
 check("наш магазин — не продажа", isNotASale({ direction: "", retail: "almaty", kind: "" }), true);
 check("опт на город — не продажа", isNotASale({ direction: "Астана", retail: "", kind: "region" }), true);
 

@@ -59,6 +59,8 @@ export interface PointWriteoff {
 
 export interface TransferOrder {
   orderId: string;
+  /** Карточка «Пожарка» без направления — тоже точка (`isConsignment`). */
+  clientName?: string;
   createdAt: string;
   deliveryDate: string;
   managerEmail: string;

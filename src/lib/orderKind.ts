@@ -81,10 +81,15 @@ export function hasNoClientInvoice(
  * той: в выручку и бонусы полученные деньги идут как обычно.
  */
 export function isConsignment(
-  order: { direction?: string; retail?: string; kind?: string } | null | undefined
+  order: { direction?: string; retail?: string; kind?: string; clientName?: string } | null | undefined
 ): boolean {
   if (!order || hasNoClientInvoice(order)) return false;
-  return CONSIGNMENT_DIRECTIONS.includes(cleanDirection(order.direction));
+  if (CONSIGNMENT_DIRECTIONS.includes(cleanDirection(order.direction))) return true;
+  // 12.10.2026: на деле заявки на точку оформляют на карточку клиента «Пожарка», без
+  // направления (за сентябрь–октябрь — 15 таких, ни одной с направлением), и точка не видела
+  // ни одной отгрузки. Карточка с этим именем — тоже точка.
+  const name = (order.clientName || "").trim().toLowerCase().replace(/ё/g, "е");
+  return CONSIGNMENT_DIRECTIONS.some((d) => d.toLowerCase() === name);
 }
 
 /**
@@ -97,7 +102,7 @@ export function isConsignment(
  * не пришлось дописывать руками в каждом.
  */
 export function isNotASale(
-  order: { direction?: string; retail?: string; kind?: string } | null | undefined
+  order: { direction?: string; retail?: string; kind?: string; clientName?: string } | null | undefined
 ): boolean {
   return hasNoClientInvoice(order) || isConsignment(order);
 }
