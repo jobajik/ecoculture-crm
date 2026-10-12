@@ -75,16 +75,25 @@ export interface ChannelInfo {
   text: string;
 }
 
-/** Состояние WhatsApp в Green API — одной строкой для шапки. Никогда не бросает. */
+/**
+ * Состояние WhatsApp в Green API — одной строкой для шапки. Никогда не бросает.
+ * Разовый неответ переспрашивается (12.10.2026: шапка висела «Green API не ответил», хотя
+ * номер был в порядке и рассылка шла — проверка совпала по времени с проверкой перед
+ * отправкой, а Green API на частые одинаковые запросы отвечает отказом).
+ */
 export async function channelInfo(): Promise<ChannelInfo> {
   const cfg = greenConfig();
   if (!cfg) return { ok: false, text: "WhatsApp (Green API) не подключён — ключи вводятся в whatsapp-key.bat" };
-  try {
-    const state = await getInstanceState(cfg);
-    return state === "authorized"
-      ? { ok: true, text: "WhatsApp работает (Green API)" }
-      : { ok: false, text: `WhatsApp: ${greenStateText(state)}` };
-  } catch {
-    return { ok: false, text: "Green API не ответил — обновите страницу через минуту" };
+  for (const pause of [0, 1500, 3000]) {
+    if (pause) await new Promise((r) => setTimeout(r, pause));
+    try {
+      const state = await getInstanceState(cfg);
+      return state === "authorized"
+        ? { ok: true, text: "WhatsApp работает (Green API)" }
+        : { ok: false, text: `WhatsApp: ${greenStateText(state)}` };
+    } catch {
+      // ниже — повтор
+    }
   }
+  return { ok: false, text: "Green API не ответил на проверку номера — рассылку это не останавливает, обновите страницу позже" };
 }
