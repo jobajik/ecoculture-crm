@@ -10,6 +10,7 @@ import PaymentPanel, { PaymentState, money } from "./PaymentPanel";
 import InvoiceCell from "./InvoiceCell";
 import CashByFlowerCard from "./CashByFlowerCard";
 import StageBadge from "./StageBadge";
+import { FINANCE_FARMS, managerFarmSummary, managerOptions } from "@/lib/financeManagers";
 
 type Filter = "all" | "noinvoice" | "unpaid" | "partial" | "paid" | "ready";
 
@@ -65,6 +66,8 @@ export default function FinanceBoard({
 }) {
   const [filter, setFilter] = useState<Filter>("unpaid");
   const [search, setSearch] = useState("");
+  // Фильтр по менеджеру (просьба бухгалтера): пусто — все.
+  const [manager, setManager] = useState("");
   // Какая заявка сейчас раскрыта на оплату. Одна за раз: панель занимает
   // строку, и две открытые превращают таблицу в лестницу.
   const [openId, setOpenId] = useState<string | null>(null);
@@ -76,6 +79,7 @@ export default function FinanceBoard({
 
   const rows = useMemo(() => {
     return snapshot.orders.filter((r) => {
+      if (manager && r.managerEmail !== manager) return false;
       if (filter === "noinvoice" && r.stage !== PAYMENT_STAGES.NEW) return false;
       if (filter === "unpaid" && r.paid) return false;
       if (filter === "partial" && r.stage !== PAYMENT_STAGES.PARTIAL) return false;
@@ -95,7 +99,11 @@ export default function FinanceBoard({
         search
       );
     });
-  }, [snapshot.orders, filter, search]);
+  }, [snapshot.orders, filter, search, manager]);
+
+  const managers = useMemo(() => managerOptions(snapshot.orders), [snapshot.orders]);
+  // Продажи каждого менеджера по компаниям — из тех же отфильтрованных строк, что и список ниже.
+  const byManager = useMemo(() => managerFarmSummary(rows), [rows]);
 
   // Разрез по менеджерам считается из ОТФИЛЬТРОВАННЫХ строк, а не из снимка:
   // иначе в шапке группы стояло бы «12 заявок», а внутри лежало три, и сойтись
@@ -205,6 +213,19 @@ export default function FinanceBoard({
             </button>
           ))}
         </div>
+        <select
+          className="input !w-auto !py-1.5"
+          value={manager}
+          onChange={(e) => setManager(e.target.value)}
+          aria-label="Менеджер"
+        >
+          <option value="">Все менеджеры</option>
+          {managers.map((m) => (
+            <option key={m.email} value={m.email}>
+              {m.name}
+            </option>
+          ))}
+        </select>
         <input
           className="input !w-auto flex-1 min-w-[200px] !py-1.5"
           placeholder="Клиент, менеджер, №, 1С или сумма"
@@ -217,6 +238,61 @@ export default function FinanceBoard({
         <p className="text-sm text-ink-muted -mt-2">
           Найдено заявок: {rows.length.toLocaleString("ru-RU")}
         </p>
+      )}
+
+      {byManager.rows.length > 0 && (
+        <div className="card !p-0">
+          <div className="px-3 pt-3 pb-1 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="font-medium">По менеджерам и компаниям</h3>
+            <span className="text-xs text-ink-muted">сумма заявок · под ней получено · нажмите на менеджера — останутся его заявки</span>
+          </div>
+          <table className="w-full text-sm table-cards">
+            <thead>
+              <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                <th className="px-3 py-2 font-medium">Менеджер</th>
+                {FINANCE_FARMS.map((f) => (
+                  <th key={f.farm} className="px-3 py-2 font-medium text-right">
+                    {f.label}
+                  </th>
+                ))}
+                <th className="px-3 py-2 font-medium text-right">Итого</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byManager.rows.map((m) => (
+                <tr
+                  key={m.managerEmail}
+                  className={clsx(
+                    "border-b border-line-hairline cursor-pointer hover:bg-surface-plane",
+                    manager === m.managerEmail && "bg-accent-soft/40"
+                  )}
+                  onClick={() => setManager(manager === m.managerEmail ? "" : m.managerEmail)}
+                >
+                  <td className="px-3 py-2 font-medium">
+                    {m.managerName}
+                    <span className="text-ink-muted font-normal">
+                      {" "}
+                      · {m.orders} {orderWord(m.orders)}
+                    </span>
+                  </td>
+                  {FINANCE_FARMS.map((f) => (
+                    <MoneyCell key={f.farm} label={f.label} cell={m.byFarm[f.farm]} />
+                  ))}
+                  <MoneyCell label="Итого" cell={{ amount: m.amount, paid: m.paid }} strong />
+                </tr>
+              ))}
+              {byManager.rows.length > 1 && (
+                <tr className="bg-surface-plane/60">
+                  <td className="px-3 py-2 font-medium">Всего</td>
+                  {FINANCE_FARMS.map((f) => (
+                    <MoneyCell key={f.farm} label={f.label} cell={byManager.total.byFarm[f.farm]} />
+                  ))}
+                  <MoneyCell label="Итого" cell={{ amount: byManager.total.amount, paid: byManager.total.paid }} strong />
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <div className="card !p-0 table-scroll">
@@ -244,7 +320,8 @@ export default function FinanceBoard({
           </thead>
           <tbody>
             {groups.map((g) => {
-              const open = searching || openManagers.has(g.managerEmail);
+              // Выбран один менеджер — его группа раскрыта сразу: ради неё фильтр и ставили.
+              const open = searching || manager !== "" || openManagers.has(g.managerEmail);
               const full = fullGroups.has(g.managerEmail);
               const shown = open && !full ? g.rows.slice(0, COLLAPSED_TABLE_SIZE) : g.rows;
               const hidden = g.rows.length - shown.length;
@@ -253,9 +330,9 @@ export default function FinanceBoard({
                   <tr
                     className={clsx(
                       "border-b border-line-hairline bg-surface-plane/60",
-                      !searching && "cursor-pointer hover:bg-surface-plane"
+                      !searching && !manager && "cursor-pointer hover:bg-surface-plane"
                     )}
-                    onClick={() => !searching && toggleManager(g.managerEmail)}
+                    onClick={() => !searching && !manager && toggleManager(g.managerEmail)}
                   >
                     <td className="px-3 py-2.5 font-medium" colSpan={3}>
                       <span className="text-ink-muted mr-2">{open ? "▾" : "▸"}</span>
@@ -280,7 +357,7 @@ export default function FinanceBoard({
                       )}
                     </td>
                     <td className="px-2 py-2.5 text-right text-xs text-ink-muted whitespace-nowrap">
-                      {searching ? "" : open ? "свернуть" : "раскрыть"}
+                      {searching || manager ? "" : open ? "свернуть" : "раскрыть"}
                     </td>
                   </tr>
 
@@ -483,6 +560,30 @@ export default function FinanceBoard({
         </p>
       )}
     </div>
+  );
+}
+
+function MoneyCell({
+  label,
+  cell,
+  strong,
+}: {
+  label: string;
+  cell: { amount: number; paid: number } | undefined;
+  strong?: boolean;
+}) {
+  const amount = cell?.amount ?? 0;
+  return (
+    <td data-label={label} className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+      {amount > 0 ? (
+        <>
+          <div className={strong ? "font-semibold" : undefined}>{money(amount)}</div>
+          <div className="text-xs text-status-good">{money(cell?.paid ?? 0)}</div>
+        </>
+      ) : (
+        <span className="text-ink-muted">—</span>
+      )}
+    </td>
   );
 }
 

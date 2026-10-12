@@ -33,6 +33,7 @@ import { getFinanceSnapshot } from "../src/lib/finance";
 import { byNewest, orderPicklistColumns } from "../src/lib/picklistOrder";
 import { ORDER_PAYMENT_METHODS, ROLES, SHEET_HEADERS, SHEET_TABS } from "../src/lib/constants";
 import { matchesOrderSearch } from "../src/lib/paymentStage";
+import { managerFarmSummary, managerOptions } from "../src/lib/financeManagers";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -422,6 +423,31 @@ async function main() {
   check("номер 1С в строке", row("SALE").realization1c, "РН-7");
   check("сумма по цветку в строке", row("SALE").byFlower, [{ flowerType: "rose", label: "роза", amount: 100_000 }]);
 
+
+
+  // --- «Оплаты»: продажи менеджеров по компаниям (Юлия, 12.10.2026)
+  {
+    const rows = [
+      { managerEmail: "ilyas@x", managerName: "Ильяс", amount: 70_900, paidAmount: 70_900, farms: [
+        { farm: "rose_farm", amount: 30_400, paidAmount: 30_400 },
+        { farm: "esentai", amount: 40_500, paidAmount: 40_500 },
+      ] },
+      { managerEmail: "ilyas@x", managerName: "Ильяс", amount: 100_000, paidAmount: 120_000, farms: [
+        { farm: "esentai", amount: 100_000, paidAmount: 120_000 },
+      ] },
+      { managerEmail: "emil@x", managerName: "Эмиль", amount: 50_000, paidAmount: 0, farms: [
+        { farm: "rose_farm", amount: 50_000, paidAmount: 0 },
+      ] },
+    ];
+    const s = managerFarmSummary(rows);
+    check("менеджеры — крупные сверху", s.rows.map((r) => r.managerName), ["Ильяс", "Эмиль"]);
+    check("Ильяс: Rose Farm отдельно", s.rows[0].byFarm.rose_farm, { amount: 30_400, paid: 30_400 });
+    check("Ильяс: Есентай, переплата не считается продажей", s.rows[0].byFarm.esentai, { amount: 140_500, paid: 140_500 });
+    check("Ильяс: итог и заявки", [s.rows[0].amount, s.rows[0].paid, s.rows[0].orders], [170_900, 170_900, 2]);
+    check("Эмиль: Есентай пусто", s.rows[1].byFarm.esentai, { amount: 0, paid: 0 });
+    check("всего по компаниям сходится с итогом", s.total.byFarm.rose_farm.amount + s.total.byFarm.esentai.amount, s.total.amount);
+    check("фильтр: менеджеры по имени без повторов", managerOptions(rows).map((m) => m.name), ["Ильяс", "Эмиль"]);
+  }
 
   // --- потерянный платёж: два Kaspi-счёта оплачены в одну секунду (№YKLQQ, 12.10.2026)
   {
