@@ -108,6 +108,17 @@ async function main() {
   check("фото другого цветка не берём", pickItemPhoto(lib, item("rose")), null);
   check("выключенное не уходит", pickItemPhoto([ph("x", { active: false })], item("chrysanthemum")), null);
   check("эустома по сорту", pickItemPhoto(lib, item("eustoma", "Corelli Pink", "Стандарт"))?.photoId, "eu");
+
+  console.log("\nИнфографика — ознакомительная, дальше живые фото");
+  const info = ph("info", { variety: "Altaj", kind: "info", caption: "Altaj — все категории на одной картинке" });
+  const withInfo = [...lib, info];
+  check("знакомство с сортом — сначала инфографика", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"))?.photoId, "info");
+  check("уже отправляли этому человеку — живое фото", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"), "", ["info"])?.photoId, "altaj2");
+  check("о другом сорте — инфографику Altaj не шлём", pickItemPhoto(withInfo, item("chrysanthemum", "Momoko"))?.photoId, "common");
+  check("общий вопрос о хризантеме — не инфографика", pickItemPhoto([info, lib[3]], item("chrysanthemum"))?.photoId, "common");
+  check("в ротацию (дожим, рассылка) инфографика не идёт", pickRotationPhoto([info, ph("live", { lastSentAt: "2026-10-05T00:00:00Z" })])?.photoId, "live");
+  check("только инфографика — ротация пустая", pickRotationPhoto([info]), null);
+  check("в каталог инфографика не идёт", catalogPhotos([info, ph("live")], "chrysanthemum").map((p) => p.photoId), ["live"]);
   check("бот: позиция для фото разбирается", botDecision({ reply: "Есть", photo: { flowerType: "chrysanthemum", variety: " Altaj ", grade: "Вторая" } }).photo, { flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая" });
   check("бот: мусор вместо цветка — без фото", botDecision({ reply: "Есть", photo: { flowerType: "тюльпан", variety: "X", grade: "" } }).photo.flowerType, "");
   check("бот: поля нет — без фото", botDecision({ reply: "Есть" }).photo, { flowerType: "", variety: "", grade: "" });

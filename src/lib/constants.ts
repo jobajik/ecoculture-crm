@@ -512,6 +512,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Active",
     "SentCount",
     "LastSentAt",
+    // «info» — инфографика: клиенту один раз, для знакомства; пусто — живое фото (12.10.2026). Последней — грабли 1.1.
+    "Kind",
   ],
   // Перемещение основной склад ⇄ офис: строка на партию. Direction — «to_office»
   // или «to_main»; FromBatchID → ToBatchID — откуда и куда ушли стебли.
@@ -554,6 +556,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "BotReplies",
     // Дожим молчащего клиента (botNudge.ts): {"count","at","done"} JSON. Последней — грабли 1.1.
     "Nudge",
+    // Какая инфографика (PhotoID через запятую) уже ушла этому человеку — второй раз не шлём.
+    "InfoPhotos",
   ],
   [SHEET_TABS.LEAD_ANALYSES]: [
     "AnalysisID",

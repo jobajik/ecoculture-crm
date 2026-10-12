@@ -16,6 +16,8 @@ import { readFileSync } from "node:fs";
 import { botReply } from "../src/lib/botEngine";
 import { botSettingsFrom } from "../src/lib/broadcast";
 import { emptyBotChat, settingsMap } from "../src/lib/repo/broadcasts";
+import { listBotPhotos } from "../src/lib/repo/botPhotos";
+import { isInfoPhoto, photoLabel, pickItemPhoto } from "../src/lib/botPhotos";
 
 type Line = { role: "client" | "us"; text: string };
 
@@ -25,6 +27,7 @@ async function main() {
   const spec = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")) as { phone: string; context: Line[]; cases: { name: string; add: Line[] }[] };
   const instructions = botSettingsFrom(await settingsMap(true)).instructions;
   const start = Date.now() - 3 * 3600000;
+  const photos = await listBotPhotos(true);
   for (const c of spec.cases) {
     const lines = [...spec.context, ...c.add];
     const chat = { ...emptyBotChat(spec.phone), context: lines.map((l, i) => ({ ...l, at: new Date(start + i * 60000).toISOString() })) };
@@ -32,6 +35,12 @@ async function main() {
     console.log(`\n=== ${c.name}`);
     console.log(`клиент: ${c.add.filter((l) => l.role === "client").map((l) => l.text).join(" / ")}`);
     console.log(`бот: ${d.silent ? "[молчит]" : d.reply}`);
+    if (d.photo.flowerType) {
+      // Как в botAct: фото позиции, ответ — подписью. Инфографику этому номеру считаем ещё не отправленной.
+      const pic = pickItemPhoto(photos, d.photo, lines.map((l) => l.text).join("\n"));
+      console.log(`фото: ${photoLabel(d.photo)} → ${pic ? `${pic.photoId} (${isInfoPhoto(pic) ? "инфографика" : "живое"}: ${photoLabel(pic)})` : "подходящего фото нет — уйдёт текстом"}`);
+    } else if (d.catalog) console.log(`[каталог: ${d.catalog}]`);
+    else if (!d.silent) console.log("фото: нет");
     if (d.alert) console.log(`тревога: ${d.alert}`);
     if (d.order.confirmed) console.log("[ОФОРМИЛ ЗАКАЗ]");
     if (d.cancelOrder) console.log(`[отмена заказа ${d.cancelOrder}]`);

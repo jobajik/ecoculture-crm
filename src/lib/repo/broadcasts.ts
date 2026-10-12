@@ -259,6 +259,7 @@ function toBotChat(r: Record<string, string>): BotChat {
     name: r.Name || "",
     botReplies: Number(r.BotReplies) || 0,
     nudge: parseNudge(r.Nudge),
+    infoPhotos: (r.InfoPhotos || "").split(/[,\s]+/).filter(Boolean),
   };
 }
 
@@ -296,6 +297,7 @@ export function botChatRecord(chat: BotChat): Record<string, unknown> {
     Name: chat.name,
     BotReplies: chat.botReplies,
     Nudge: JSON.stringify(chat.nudge ?? EMPTY_NUDGE),
+    InfoPhotos: (chat.infoPhotos ?? []).join(","),
   };
 }
 
@@ -320,6 +322,7 @@ export function emptyBotChat(phone: string): BotChat {
     name: "",
     botReplies: 0,
     nudge: { ...EMPTY_NUDGE },
+    infoPhotos: [],
   };
 }
 

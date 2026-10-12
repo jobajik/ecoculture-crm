@@ -83,6 +83,10 @@ check("по времени", mm.context.every((c, i, arr) => i === 0 || arr[i - 
 check("номера наших сообщений — обоих", mm.ourIds.includes("x2"));
 check("счётчик ответов не уменьшился", mm.botReplies === 6);
 check("без свежей строки — своё как есть", mergeChatMemory(b, null) === b);
+check(
+  "отправленная инфографика не теряется при объединении",
+  mergeChatMemory({ ...b, infoPhotos: ["PH-1"] }, { ...a, infoPhotos: ["PH-2"] }).infoPhotos?.sort().join(",") === "PH-1,PH-2"
+);
 
 // --- план срезки для бота
 const rows = [

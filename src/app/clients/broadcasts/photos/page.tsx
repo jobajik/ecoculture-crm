@@ -52,6 +52,7 @@ export default async function PhotosPage() {
       active: p.active,
       sentCount: p.sentCount,
       lastSentAt: p.lastSentAt,
+      info: p.kind === "info",
     }));
   const flowers = Object.keys(FLOWER_TYPE_LABELS).map((f) => ({
     key: f,

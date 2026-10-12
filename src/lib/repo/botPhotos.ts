@@ -21,6 +21,7 @@ function toPhoto(r: Record<string, string>, rowNumber: number): Row {
     active: !/^(false|нет|no|0)$/i.test((r.Active || "").trim()),
     sentCount: Number(r.SentCount) || 0,
     lastSentAt: r.LastSentAt || "",
+    kind: (r.Kind || "").trim().toLowerCase() === "info" ? "info" : "",
     rowNumber,
   };
 }
@@ -34,7 +35,7 @@ export async function listBotPhotos(fresh = false): Promise<Row[]> {
   }
 }
 
-export async function createBotPhoto(input: Omit<BotPhoto, "photoId" | "createdAt" | "active" | "sentCount" | "lastSentAt">): Promise<string> {
+export async function createBotPhoto(input: Omit<BotPhoto, "photoId" | "createdAt" | "active" | "sentCount" | "lastSentAt" | "kind"> & { kind?: string }): Promise<string> {
   const photoId = generateId("PH");
   await commitAtomic([
     {
@@ -54,6 +55,7 @@ export async function createBotPhoto(input: Omit<BotPhoto, "photoId" | "createdA
           Active: "TRUE",
           SentCount: 0,
           LastSentAt: "",
+          Kind: input.kind === "info" ? "info" : "",
         },
       ],
     },

@@ -135,6 +135,7 @@ export function mergeChatMemory(mine: BotChat, fresh: BotChat | null): BotChat {
     handoffAt: mine.handoffAt >= fresh.handoffAt ? mine.handoffAt : fresh.handoffAt,
     handoffReason: mine.handoffAt >= fresh.handoffAt ? mine.handoffReason : fresh.handoffReason,
     lastInMessageId: mine.lastInMessageId || fresh.lastInMessageId,
+    infoPhotos: Array.from(new Set([...(fresh.infoPhotos ?? []), ...(mine.infoPhotos ?? [])])),
   };
 }
 

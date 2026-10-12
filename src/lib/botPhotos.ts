@@ -12,6 +12,11 @@ import { FLOWER_TYPE_LABELS, formatGrade } from "./constants";
 //
 // Ротация: реже всех отправленное фото первым (`pickRotationPhoto`), так
 // клиенты видят разные снимки, а не один и тот же.
+//
+// Инфографика (`kind = "info"`, 12.10.2026, владелец: «пусть бот чаще использует живые
+// фотографии, а эту инфографику — как ознакомительную»): в ротацию, каталог и дожим не
+// идёт; к ответу про позицию уходит ОДИН раз на человека — при первом знакомстве с этим
+// сортом, дальше только живые фото.
 // Чистые правила — проверка `scripts/check-bot-photos.ts`.
 // ---------------------------------------------------------------------------
 
@@ -28,7 +33,12 @@ export interface BotPhoto {
   active: boolean;
   sentCount: number;
   lastSentAt: string;
+  /** «info» — инфографика; пусто — живое фото. */
+  kind?: string;
 }
+
+export const INFO_PHOTO = "info";
+export const isInfoPhoto = (p: Pick<BotPhoto, "kind">) => p.kind === INFO_PHOTO;
 
 /** Вложение рассылки: вместо своего файла — фото из ротации или каталог. */
 export const ROTATION_FILE = "@rotation";
@@ -60,7 +70,7 @@ export function photoRefusal(input: { flowerType: string; caption: string; fileI
  */
 export function pickRotationPhoto(photos: BotPhoto[], opts: { flowers?: string[]; exclude?: string[] } = {}): BotPhoto | null {
   const exclude = new Set(opts.exclude ?? []);
-  const live = photos.filter((p) => p.active && p.fileId && !exclude.has(p.photoId));
+  const live = photos.filter((p) => p.active && p.fileId && !isInfoPhoto(p) && !exclude.has(p.photoId));
   const wanted = (opts.flowers ?? []).filter(Boolean);
   const pool = wanted.length ? live.filter((p) => wanted.includes(p.flowerType)) : [];
   const list = pool.length ? pool : live;
@@ -72,7 +82,7 @@ export function pickRotationPhoto(photos: BotPhoto[], opts: { flowers?: string[]
 /** Фото цветка для каталога: свежие первыми; первое — большое, следующие три — галерея. */
 export function catalogPhotos(photos: BotPhoto[], flowerType: string): BotPhoto[] {
   return photos
-    .filter((p) => p.active && p.fileId && p.flowerType === flowerType)
+    .filter((p) => p.active && p.fileId && !isInfoPhoto(p) && p.flowerType === flowerType)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
     .slice(0, 4);
 }
@@ -136,12 +146,15 @@ export function parseCaption(raw: unknown): string {
  * фото того же цветка, у которого сорт и категория либо совпадают, либо не
  * указаны (общее фото цветка). Точнее совпало — лучше; при равенстве — давнее
  * отправленное. Фото, чья подпись уже есть в переписке (`recent`), второй раз
- * этому человеку не шлём. Нет подходящего — null.
+ * этому человеку не шлём. Инфографика — только если её этому человеку ещё не
+ * слали (`infoSent`), и тогда первой: она знакомит с сортом; дальше — живые
+ * фото. Нет подходящего — null.
  */
 export function pickItemPhoto(
   photos: BotPhoto[],
   item: { flowerType: string; variety: string; grade: string },
-  recent = ""
+  recent = "",
+  infoSent: string[] = []
 ): BotPhoto | null {
   const norm = (s: string) => s.trim().toLowerCase().replace(/ё/g, "е");
   const v = norm(item.variety);
@@ -149,15 +162,19 @@ export function pickItemPhoto(
   const scored = photos
     .filter((p) => p.active && p.fileId && p.flowerType === item.flowerType)
     .filter((p) => !(p.caption && recent.includes(p.caption.slice(0, 40))))
+    .filter((p) => !(isInfoPhoto(p) && infoSent.includes(p.photoId)))
     .map((p) => {
       const pv = norm(p.variety);
       const pg = norm(p.grade);
       if ((pv && v && pv !== v) || (pg && g && pg !== g)) return null;
+      // Инфографика сорта — только когда речь именно об этом сорте.
+      if (isInfoPhoto(p) && !(pv && pv === v)) return null;
       return { p, score: (pv && pv === v ? 2 : 0) + (pg && pg === g ? 1 : 0) };
     })
     .filter((x): x is { p: BotPhoto; score: number } => !!x);
   if (scored.length === 0) return null;
   const t = (iso: string) => Date.parse(iso || "") || 0;
-  scored.sort((a, b) => b.score - a.score || t(a.p.lastSentAt) - t(b.p.lastSentAt) || a.p.sentCount - b.p.sentCount);
+  const info = (p: BotPhoto) => (isInfoPhoto(p) ? 1 : 0);
+  scored.sort((a, b) => info(b.p) - info(a.p) || b.score - a.score || t(a.p.lastSentAt) - t(b.p.lastSentAt) || a.p.sentCount - b.p.sentCount);
   return scored[0].p;
 }

@@ -475,6 +475,8 @@ export interface BotChat {
   botReplies: number;
   /** Дожим молчащего клиента: сколько раз, когда последний, закрыт ли (`botNudge.ts`). */
   nudge: BotNudgeState;
+  /** Инфографика, уже отправленная этому человеку (PhotoID): она ознакомительная — второй раз не шлём. */
+  infoPhotos?: string[];
 }
 
 export interface BotNudgeState {

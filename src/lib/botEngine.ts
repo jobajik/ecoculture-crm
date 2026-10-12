@@ -40,7 +40,7 @@ import { chatJson, openAiConfigured } from "./openai";
 import { greenConfig, sendFileByUrl, sendText } from "./greenApi";
 import { catalogFiles } from "./catalogFiles";
 import { loadPhotoContext, rotationPhoto } from "./botPhotoSend";
-import { photoLabel, pickItemPhoto, type BotPhoto } from "./botPhotos";
+import { isInfoPhoto, photoLabel, pickItemPhoto, type BotPhoto } from "./botPhotos";
 import { botPhotoSentWrite, listBotPhotos } from "./repo/botPhotos";
 import { photoFileUrl } from "./catalogFiles";
 import { FLOWER_TYPE_LABELS } from "./constants";
@@ -221,8 +221,13 @@ function systemPrompt(p: {
     "- «Скидка» — только то, что есть в указаниях владельца; иначе: цена уже оптовая, на крупный объём посчитаем при оформлении",
     "  счёта, — и сразу спроси объём.",
     "- Явный отказ («не надо», «не интересно», «не пишите») — вежливо попрощайся одной фразой без давления.",
-    "- Отвечаешь про конкретную позицию (клиент о ней спросил или ты её предлагаешь) — заполни photo: цветок, сорт и категорию.",
-    "  Система приложит живое фото этой позиции из теплицы, а твой reply уйдёт ПОДПИСЬЮ к фото — пиши его как подпись:",
+    "- Чувствуй клиента. Задаёт вопросы о цветах (что есть, какие сорта, цена, категории, длина, свежесть, сколько есть) — он",
+    "  заинтересован: отвечай С ФОТО. Заполни photo позицией, о которой спросил, а если спросил общо («хризантема есть?») —",
+    "  выбери со склада конкретный ходовой сорт и категорию, предложи его и заполни photo им. Живое фото с теплицы цепляет",
+    "  сильнее слов. Аккуратно: одно фото на ответ, без нажима; в конце — один лёгкий вопрос, который ведёт дальше (объём, день).",
+    "- Фото НЕ прикладывай (photo пустой), когда: клиент отказался или раздражён, спорит об оплате или доставке, пишет",
+    "  автоответ, спрашивает не про цветы (адрес, оплата, документы), вы уже оформляете заказ, или ответ — короткое «спасибо».",
+    "- photo заполнен — система приложит фото этой позиции из теплицы, а твой reply уйдёт ПОДПИСЬЮ к фото — пиши его как подпись:",
     "  коротко, что за позиция, цена и одна живая деталь. Спрашивают «есть фото хризантемы второго сорта?» — это photo,",
     "  а не catalog. Не пиши «отправляю фото» и не обещай фото — оно придёт само, если есть.",
     "- Просят каталог, прайс картинкой или фото «всего, что есть» — заполни catalog (цветок или all): система сама пришлёт",
@@ -511,9 +516,11 @@ async function itemPhotoFor(chat: BotChat, item: { flowerType: string; variety: 
   try {
     const photos = await listBotPhotos();
     const recent = chat.context.map((m) => m.text).join("\n");
-    const photo = pickItemPhoto(photos, item, recent) as (BotPhoto & { rowNumber: number }) | null;
+    const photo = pickItemPhoto(photos, item, recent, chat.infoPhotos ?? []) as (BotPhoto & { rowNumber: number }) | null;
     if (!photo) return null;
     await commitAtomic([botPhotoSentWrite(photo)]).catch(() => undefined);
+    // Инфографика — один раз на человека (память чата сохраняется после ответа).
+    if (isInfoPhoto(photo)) chat.infoPhotos = Array.from(new Set([...(chat.infoPhotos ?? []), photo.photoId]));
     // В память чата — и подпись фото, чтобы этому человеку то же фото второй раз не ушло.
     return { url: photoFileUrl(photo), name: photo.fileName || "photo.jpg", caption, memo: `[фото: ${photoLabel(photo)} — ${photo.caption.slice(0, 40)}] ${caption}` };
   } catch (err) {

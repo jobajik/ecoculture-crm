@@ -27,6 +27,7 @@ type PhotoRow = {
   active: boolean;
   sentCount: number;
   lastSentAt: string;
+  info: boolean;
 };
 
 type Flower = { key: string; label: string; varieties: string[]; grades: { key: string; label: string }[] };
@@ -116,7 +117,7 @@ export default function PhotoLibrary({ photos, flowers, aiReady }: { photos: Pho
   }
 
   const select = "input !w-auto !py-1.5 text-sm";
-  const active = photos.filter((p) => p.active).length;
+  const active = photos.filter((p) => p.active && !p.info).length;
 
   return (
     <>
@@ -203,7 +204,7 @@ export default function PhotoLibrary({ photos, flowers, aiReady }: { photos: Pho
         </div>
       </Section>
 
-      <Section tone="leads" icon="list" title={`Фото в ротации: ${active}`} aside={<span className="text-xs text-ink-muted">реже отправленное уходит первым</span>}>
+      <Section tone="leads" icon="list" title={`Живых фото в ротации: ${active}`} aside={<span className="text-xs text-ink-muted">реже отправленное уходит первым</span>}>
         {photos.length === 0 ? (
           <p className="text-sm text-ink-muted">Пока ни одного фото. Пока их нет, бот дожимает текстом, а в каталоге — плашка с названием цветка.</p>
         ) : (
@@ -225,7 +226,7 @@ function PhotoCard({ photo }: { photo: PhotoRow }) {
   const [pending, startTransition] = useTransition();
   const changed = caption.trim() !== photo.caption.trim();
 
-  function update(changes: { caption?: string; active?: boolean }) {
+  function update(changes: { caption?: string; active?: boolean; info?: boolean }) {
     setError(null);
     startTransition(async () => {
       try {
@@ -243,14 +244,19 @@ function PhotoCard({ photo }: { photo: PhotoRow }) {
       <img src={photo.url} alt={photo.label} loading="lazy" className="aspect-[4/3] w-full rounded-lg object-cover" />
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium">{photo.label}</span>
-        <button type="button" className="text-xs text-ink-secondary hover:underline" disabled={pending} onClick={() => update({ active: !photo.active })}>
-          {photo.active ? "выключить" : "включить"}
-        </button>
+        <span className="flex gap-3">
+          <button type="button" className="text-xs text-ink-secondary hover:underline" disabled={pending} onClick={() => update({ info: !photo.info })}>
+            {photo.info ? "это живое фото" : "это инфографика"}
+          </button>
+          <button type="button" className="text-xs text-ink-secondary hover:underline" disabled={pending} onClick={() => update({ active: !photo.active })}>
+            {photo.active ? "выключить" : "включить"}
+          </button>
+        </span>
       </div>
       <textarea className="input min-h-[70px] text-sm" maxLength={MAX_PHOTO_CAPTION} value={caption} onChange={(e) => setCaption(e.target.value)} />
       <div className="flex items-center justify-between text-xs text-ink-muted">
         <span>
-          {photo.active ? "в ротации" : "выключено"} · отправлено {photo.sentCount}
+          {!photo.active ? "выключено" : photo.info ? "инфографика — клиенту один раз" : "живое фото"} · отправлено {photo.sentCount}
           {photo.lastSentAt ? ` · ${formatMoment(photo.lastSentAt)}` : ""}
         </span>
         {changed && (

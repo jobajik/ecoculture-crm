@@ -56,8 +56,8 @@ async function savePhotoActionInner(input: { fileId: string; fileName: string; f
   return { photoId };
 }
 
-/** Поправить подпись или выключить фото из ротации (удалять не нужно: выключенное просто не уходит). */
-async function updatePhotoActionInner(photoId: string, changes: { caption?: string; active?: boolean }) {
+/** Поправить подпись, выключить фото (удалять не нужно: выключенное не уходит) или пометить инфографикой. */
+async function updatePhotoActionInner(photoId: string, changes: { caption?: string; active?: boolean; info?: boolean }) {
   await requirePhotoEditor();
   const photo = (await listBotPhotos(true)).find((p) => p.photoId === photoId);
   if (!photo) throw new Error("Фото не найдено");
@@ -67,6 +67,8 @@ async function updatePhotoActionInner(photoId: string, changes: { caption?: stri
     patch.Caption = clean(changes.caption, MAX_PHOTO_CAPTION);
   }
   if (changes.active !== undefined) patch.Active = changes.active ? "TRUE" : "FALSE";
+  // Инфографика — клиенту один раз, для знакомства; живые фото — в ротации и к ответам.
+  if (changes.info !== undefined) patch.Kind = changes.info ? "info" : "";
   if (Object.keys(patch).length) await commitAtomic([botPhotoUpdate(photo.rowNumber, patch)]);
   revalidatePath("/clients/broadcasts/photos");
   return { ok: true };
