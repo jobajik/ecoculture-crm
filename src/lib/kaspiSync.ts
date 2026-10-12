@@ -72,6 +72,8 @@ export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" 
     method: "Каспи",
     note: `Kaspi-счёт №${row.invoiceId}${inv.is_sandbox ? " (тест)" : ""}`,
     actorEmail: KASPI_ACTOR,
+    // Счета Rose Farm и Есентай одной заявки оплачивают одним заходом — вебхуки приходят в ту же секунду.
+    verify: true,
   });
   await updateKaspiInvoiceRow(again.rowNumber, {
     PaymentID: result?.paymentId ?? "",

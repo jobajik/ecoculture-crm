@@ -419,3 +419,65 @@ export function realizationsOf(
     number: numbers[f] ?? "",
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Потерянный платёж (12.10.2026, заявка №YKLQQ, Мира Жанкожа): клиент оплатил оба Kaspi-счёта — Rose Farm
+// 30 400 и Есентай 40 500 — в одну секунду. Два вебхука провели оба платежа в журнал, но итог заявки каждый
+// считал от того, что прочитал ДО записи соседа: второй записал «Есентай 40 500, Rose Farm 0, итого 40 500».
+// Заявка пять дней висела с «остатком 30 400», бухгалтер трижды перевыставляла счёт на уже оплаченное.
+//
+// Итог намеренно НЕ пересчитывается по журналу целиком (у старых заявок деньги лежат в итоге одним числом,
+// а «вернули переплату» ставит итог ниже журнала). Поэтому чинится узко: итог по компании меньше журнала
+// ровно на НЕДАВНИЕ платежи (или часть из них) — значит, их записи итога потерялись, и они добавляются.
+// ---------------------------------------------------------------------------
+
+/** Сколько минут платёж считается «только что внесённым» для проверки после записи. */
+export const LOST_PAYMENT_WINDOW_MIN = 10;
+
+/** Есть ли среди сумм набор, дающий `target` (±1 ₸). Платежей по заявке единицы — перебор дешёвый. */
+function subsetHits(amounts: number[], target: number): boolean {
+  const list = amounts.slice(0, 12);
+  for (let mask = 1; mask < 1 << list.length; mask++) {
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) if (mask & (1 << i)) sum += list[i];
+    if (Math.abs(sum - target) <= MONEY_EPSILON) return true;
+  }
+  return false;
+}
+
+/**
+ * Итог заявки с вернувшимися потерянными платежами — или null, если всё сходится.
+ *
+ * `farms` — компании счёта заявки; у заявки одной компании строки журнала идут без компании, и сверяется
+ * только общий итог. `recentOnly` — сверять только с платежами за последние `LOST_PAYMENT_WINDOW_MIN`
+ * минут (проверка сразу после записи); без него — с любыми (разбор старых заявок, по списку человека).
+ */
+export function lostPaymentFix(input: {
+  farms: string[];
+  paidAmount: number;
+  paidByFarm: Record<string, number>;
+  ledger: { farm: string; amount: number; createdAt: string }[];
+  now: Date;
+  recentOnly: boolean;
+}): { paidAmount: number; byFarm: Record<string, number>; added: number } | null {
+  const mixed = input.farms.length > 1;
+  const since = input.now.getTime() - LOST_PAYMENT_WINDOW_MIN * 60000;
+  const fresh = (p: { createdAt: string }) => !input.recentOnly || (Date.parse(p.createdAt) || 0) >= since;
+  const byFarm = { ...input.paidByFarm };
+  let added = 0;
+  const groups = mixed ? input.farms.map((f) => [f, input.ledger.filter((p) => p.farm === f)] as const) : ([["", input.ledger]] as const);
+  for (const [farm, rows] of groups) {
+    const ledgerSum = rows.reduce((s, p) => s + p.amount, 0);
+    const stored = mixed ? Number(input.paidByFarm[farm]) || 0 : Number(input.paidAmount) || 0;
+    const missing = round2(ledgerSum - stored);
+    if (missing <= MONEY_EPSILON) continue;
+    if (!subsetHits(rows.filter(fresh).map((p) => p.amount), missing)) continue;
+    if (mixed) byFarm[farm] = round2(stored + missing);
+    added = round2(added + missing);
+  }
+  if (added <= MONEY_EPSILON) return null;
+  // У заявки одной компании её поле тоже ведётся (`totalsAfter`) — поднять вместе с итогом.
+  const only = input.farms[0];
+  if (!mixed && only && only in input.paidByFarm) byFarm[only] = round2((Number(input.paidByFarm[only]) || 0) + added);
+  return { paidAmount: round2((Number(input.paidAmount) || 0) + added), byFarm, added };
+}

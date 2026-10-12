@@ -24,6 +24,7 @@ import {
   assignPaymentFlowers,
   flowerOwed,
   splitByFlowerOwed,
+  lostPaymentFix,
 } from "../src/lib/payments";
 import { invoiceByFlower } from "../src/lib/orderMoney";
 import { isConsignment } from "../src/lib/orderKind";
@@ -420,6 +421,65 @@ async function main() {
   check("и день внесения при нём", row("SALE").payments[0].enteredOn, "2026-09-10");
   check("номер 1С в строке", row("SALE").realization1c, "РН-7");
   check("сумма по цветку в строке", row("SALE").byFlower, [{ flowerType: "rose", label: "роза", amount: 100_000 }]);
+
+
+  // --- потерянный платёж: два Kaspi-счёта оплачены в одну секунду (№YKLQQ, 12.10.2026)
+  {
+    const now = new Date("2026-10-07T07:11:03.000Z");
+    const ledger = [
+      { farm: "rose_farm", amount: 30_400, createdAt: "2026-10-07T07:10:58.295Z" },
+      { farm: "esentai", amount: 40_500, createdAt: "2026-10-07T07:10:59.335Z" },
+    ];
+    const farms = ["rose_farm", "esentai"];
+    const lost = { farms, paidAmount: 40_500, paidByFarm: { rose_farm: 0, esentai: 40_500 }, ledger, now, recentOnly: true };
+    check("живой случай: Rose Farm возвращается, итог 70 900", lostPaymentFix(lost), {
+      paidAmount: 70_900,
+      byFarm: { rose_farm: 30_400, esentai: 40_500 },
+      added: 30_400,
+    });
+    check("всё сходится — ничего не делаем", lostPaymentFix({ ...lost, paidAmount: 70_900, paidByFarm: { rose_farm: 30_400, esentai: 40_500 } }), null);
+    check(
+      "через пять дней сам не чинит (только недавние)…",
+      lostPaymentFix({ ...lost, now: new Date("2026-10-12T07:00:00.000Z") }),
+      null
+    );
+    check("…а по списку человека — чинит", lostPaymentFix({ ...lost, now: new Date("2026-10-12T07:00:00.000Z"), recentOnly: false })?.paidAmount, 70_900);
+    check(
+      "«вернули переплату» (итог ниже журнала на старые деньги) — не трогаем",
+      lostPaymentFix({
+        farms: ["esentai"],
+        paidAmount: 100_000,
+        paidByFarm: { esentai: 100_000 },
+        ledger: [
+          { farm: "", amount: 120_000, createdAt: "2026-10-01T05:00:00.000Z" },
+          { farm: "", amount: 5_000, createdAt: "2026-10-07T07:10:58.000Z" },
+        ],
+        now,
+        recentOnly: true,
+      }),
+      null
+    );
+    check(
+      "одна компания: потерянный недавний платёж возвращается в итог и в поле компании",
+      lostPaymentFix({
+        farms: ["esentai"],
+        paidAmount: 20_000,
+        paidByFarm: { esentai: 20_000 },
+        ledger: [
+          { farm: "", amount: 20_000, createdAt: "2026-10-07T07:10:58.000Z" },
+          { farm: "", amount: 15_000, createdAt: "2026-10-07T07:10:59.000Z" },
+        ],
+        now,
+        recentOnly: true,
+      }),
+      { paidAmount: 35_000, byFarm: { esentai: 35_000 }, added: 15_000 }
+    );
+    check(
+      "старые деньги одной суммой (итог больше журнала) — не трогаем",
+      lostPaymentFix({ farms: ["esentai"], paidAmount: 90_000, paidByFarm: { esentai: 90_000 }, ledger: [{ farm: "", amount: 30_000, createdAt: "2026-10-07T07:10:58.000Z" }], now, recentOnly: true }),
+      null
+    );
+  }
 
   console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);

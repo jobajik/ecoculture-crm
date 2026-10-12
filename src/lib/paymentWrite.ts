@@ -2,7 +2,7 @@ import { getOrderById, setOrderPaidTotals } from "./repo/orders";
 import { appendPayments, listPayments } from "./repo/payments";
 import { logMoney } from "./repo/moneyLog";
 import { farmPayments, invoiceByFarm } from "./orderMoney";
-import { flowerOwed, methodOfPayments, splitByFlowerOwed, totalsAfter } from "./payments";
+import { flowerOwed, lostPaymentFix, methodOfPayments, splitByFlowerOwed, totalsAfter } from "./payments";
 import { FARM_LABELS, FLOWER_TYPE_LABELS, MONEY_LOG_ACTIONS, PAID_FIELD_BY_FARM } from "./constants";
 import { forgetReads } from "./sheets";
 
@@ -70,6 +70,8 @@ export async function recordPayment(input: {
   method: string;
   note: string;
   actorEmail: string;
+  /** Сверить итог с журналом после записи (вебхук Kaspi: два счёта заявки оплачивают в одну секунду). */
+  verify?: boolean;
 }): Promise<{ paymentId: string; paidAfter: number } | null> {
   forgetReads();
   const order = await getOrderById(input.orderId);
@@ -108,5 +110,58 @@ export async function recordPayment(input: {
     amountBefore: order.paidAmount,
     amountAfter: after,
   });
-  return { paymentId, paidAfter: after };
+  // Два Kaspi-счёта одной заявки, оплаченные в одну секунду, писали итог наперегонки, и платёж терялся
+  // (№YKLQQ, `lostPaymentFix`). Выждать, пока сосед допишет, и сверить итог со свежим журналом.
+  if (!input.verify) return { paymentId, paidAfter: after };
+  await new Promise((r) => setTimeout(r, 2000 + Math.floor(Math.random() * 1500)));
+  const repaired = await repairLostPayments(order.orderId, input.actorEmail, true);
+  return { paymentId, paidAfter: repaired ?? after };
+}
+
+/**
+ * Вернуть в итог заявки платежи журнала, чья запись итога потерялась (`lostPaymentFix`). Возвращает новый
+ * итог или null, если всё сходится. `recentOnly` — только платежи последних минут (после записи);
+ * без него — любые, для разбора старых заявок по списку человека.
+ */
+export async function repairLostPayments(orderId: string, actorEmail: string, recentOnly: boolean): Promise<number | null> {
+  try {
+    forgetReads();
+    const order = await getOrderById(orderId);
+    if (!order) return null;
+    const ledger = (await listPayments({ fresh: true })).filter((p) => p.orderId === orderId);
+    const farms = invoiceByFarm(order.items).map((f) => f.farm);
+    const paidByFarm: Record<string, number> = {};
+    for (const f of farms) {
+      const field = PAID_FIELD_BY_FARM[f];
+      if (field) paidByFarm[f] = Number((order as unknown as Record<string, number>)[field]) || 0;
+    }
+    const fix = lostPaymentFix({ farms, paidAmount: order.paidAmount, paidByFarm, ledger, now: new Date(), recentOnly });
+    if (!fix) return null;
+    const byField: Record<string, number> = {};
+    for (const [f, value] of Object.entries(fix.byFarm)) {
+      const field = PAID_FIELD_BY_FARM[f];
+      if (field) byField[field] = value;
+    }
+    const firstDay = ledger.map((p) => p.date).filter(Boolean).sort()[0] ?? "";
+    await setOrderPaidTotals(orderId, {
+      amount: fix.paidAmount,
+      totalAmount: order.totalAmount,
+      accountantEmail: actorEmail,
+      paymentMethod: methodOfPayments(ledger.map((p) => p.method)) || order.paymentMethod,
+      byField,
+      paidAt: order.paidAt || firstDay || new Date().toISOString(),
+    });
+    await logMoney({
+      actorEmail,
+      orderId,
+      action: MONEY_LOG_ACTIONS.PAYMENT_ADDED,
+      details: `Итог исправлен: ${money(fix.added)} из журнала платежей не попали в итог (оплата одновременно по двум счетам) · всего получено ${money(fix.paidAmount)} из ${money(order.totalAmount)}`,
+      amountBefore: order.paidAmount,
+      amountAfter: fix.paidAmount,
+    });
+    return fix.paidAmount;
+  } catch (err) {
+    console.error("repair lost payments:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
