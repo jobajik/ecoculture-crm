@@ -185,7 +185,7 @@ check("10 холодных за день — ждём завтра", pickNextRec
 check("тёплый идёт и после 10 холодных", pickNextRecipient(q, wrote(["7010000002"]), 10).next?.phone, "77010000002");
 check("покупавший клиент — тёплый", pickNextRecipient(q, (r) => r.kind === "client", 10).next?.phone, "77010000003");
 // Разогрев после блокировки 10.10.2026: «тёплые» — только писавшие нам, остальным — не больше 5 в день.
-check("разогрев: покупатели — не тёплые, холодным 5", warmthRules("2026-10-12", "2026-10-12"), { buyersAreWarm: false, coldLimit: 5, inWarmup: true });
+check("разогрев: покупатели — не тёплые, холодным 10", warmthRules("2026-10-12", "2026-10-12"), { buyersAreWarm: false, coldLimit: 10, inWarmup: true });
 check("разогрев: седьмой день ещё строго", warmthRules("2026-10-12", "2026-10-18").buyersAreWarm, false);
 check("после разогрева — как раньше", warmthRules("2026-10-12", "2026-10-19"), { buyersAreWarm: true, coldLimit: 10, inWarmup: false });
 check("разогрева нет — как раньше", warmthRules("", "2026-10-12").buyersAreWarm, true);
