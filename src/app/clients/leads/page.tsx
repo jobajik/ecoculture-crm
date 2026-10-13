@@ -89,12 +89,9 @@ export default async function LeadsPage({
   const known = new Set<string>();
   for (const l of leads) if (phoneKey(l.phone)) known.add(phoneKey(l.phone));
   for (const c of clients) for (const p of [c.phone, c.messenger, c.kaspiPay1, c.kaspiPay2]) if (phoneKey(p)) known.add(phoneKey(p));
-  // «Написали в WhatsApp»: у Земфиры — те, кто написал на ЕЁ номер, у остальных — на рабочий.
-  const inbox = buildInbox(
-    messages.filter((m) => (leadgen ? m.line === "leads" : !m.line)),
-    known,
-    now
-  );
+  // «Написали в WhatsApp» — только номер Земфиры (ей, РОПу и админу). Рабочий номер сюда не идёт
+  // (13.10.2026, владелец: «убери это, номер Эмиля пока я не использую» — там сотрудники и водители).
+  const inbox = leadgen || manage ? buildInbox(messages.filter((m) => m.line === "leads"), known, now) : [];
   const initial =
     searchParams?.new === "1"
       ? {
@@ -176,7 +173,7 @@ export default async function LeadsPage({
         </Section>
       )}
 
-      {/* Земфира видит, кто написал на её номер и ещё не заведён лидом; рабочий номер ей не показываем. */}
+      {/* Кто написал на номер Земфиры и ещё не заведён лидом; рабочий номер не показываем. */}
       <WaInbox rows={inbox} />
 
       <LeadsBoard rows={rows} myEmail={email} canManage={manage} leadgen={leadgen} managers={managers} talk={talk} />
