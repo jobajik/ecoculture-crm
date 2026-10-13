@@ -5,7 +5,9 @@ import { botChatWrite, emptyBotChat, listBotChats, settingsMap } from "./repo/br
 import { appendDebtReminder, listDebtReminders } from "./repo/debtReminders";
 import { greenConfig, sendFileByUrl, sendText } from "./greenApi";
 import { loadPhotoContext, rotationPhoto, type PhotoContext } from "./botPhotoSend";
-import { nudgePhotoQuestion, photoLabel } from "./botPhotos";
+import { isInfoPhoto, nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhoto, type BotPhoto } from "./botPhotos";
+import { photoFileUrl } from "./catalogFiles";
+import { botPhotoSentWrite } from "./repo/botPhotos";
 import { phoneKey } from "./leads";
 import { botSettingsFrom, EMPTY_NUDGE, pushContext } from "./broadcast";
 import { NUDGE_DECISION_SCHEMA, NUDGE_GAPS_HOURS, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
@@ -277,23 +279,41 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
             priceOf: (f, v, g) => priceFor(prices, f, v, g),
             mentioned: `${transcriptText}\n${lastBroadcastForBot(broadcasts, recipients, chat.phone)}`,
             isLiquid: isLiquidGrade,
+            clientText: chat.context.filter((c) => c.role === "client").map((c) => c.text).join("\n"),
           });
           if (sent > 0) await pause(3000 + Math.floor(Math.random() * 4000));
           // Касания, кроме последнего, — фото из ротации с продающей подписью и ценами (владелец: «разные фотографии в
           // ротации, с цветком и продающим текстом»); нет фото — текст. Последнее касание — мягкое, текстом.
-          const photo =
-            attempt < NUDGE_GAPS_HOURS.length
-              ? rotationPhoto((photoCtx ??= await loadPhotoContext()), {
-                  flowers: offers.map((o) => o.flowerType),
-                  question: nudgePhotoQuestion(attempt),
-                })
-              : null;
+          // Фото — той позиции, о которой шла речь (13.10.2026: спросила про Altaj, касание пришло с фото Chik);
+          // нет её фото — фото из ротации, только если клиент ни о каком сорте не спрашивал, иначе текст.
+          const ctx = attempt < NUDGE_GAPS_HOURS.length && offers.length ? (photoCtx ??= await loadPhotoContext()) : null;
+          const recent = chat.context.map((c) => c.text).join("\n");
+          const itemPic = ctx ? pickItemPhoto(ctx.photos, offers[0], recent, chat.infoPhotos ?? []) : null;
+          const talkedVariety = offers.length > 0 && recent.toLowerCase().includes(offers[0].variety.toLowerCase());
+          const photo = !ctx
+            ? null
+            : itemPic
+              ? {
+                  url: photoFileUrl(itemPic),
+                  name: itemPic.fileName || "photo.jpg",
+                  caption: photoMessage({
+                    caption: itemPic.caption,
+                    prices: offers.slice(0, 1).map((o) => ({ label: label(o), price: o.price })),
+                    question: nudgePhotoQuestion(attempt),
+                  }),
+                  after: botPhotoSentWrite(itemPic as BotPhoto & { rowNumber: number }),
+                  photo: itemPic,
+                }
+              : talkedVariety
+                ? null
+                : rotationPhoto(ctx, { flowers: offers.map((o) => o.flowerType), question: nudgePhotoQuestion(attempt) });
           let id: string;
           let memo: string;
           if (photo) {
             id = await sendFileByUrl(greenConfig()!, chat.phone, photo.url, photo.name, photo.caption);
             memo = `[фото: ${photoLabel(photo.photo)}] ${photo.caption}`;
             photoWrites.push(photo.after);
+            if (isInfoPhoto(photo.photo)) chat.infoPhotos = Array.from(new Set([...(chat.infoPhotos ?? []), photo.photo.photoId]));
           } else {
             memo = nudgeText(attempt, offers, label);
             id = await sendText(greenConfig()!, chat.phone, memo);

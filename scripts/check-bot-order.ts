@@ -19,7 +19,7 @@ import { staffPhoneKeys } from "../src/lib/botSalesAlert";
 import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "../src/lib/botIdentity";
 import { nameIndex, personName } from "../src/lib/personName";
 import { followupRunDue, followupRunText } from "../src/lib/botFollowUpRun";
-import { nudgeDue, nudgeStatus, nudgeTask, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
+import { mentionedGrades, nudgeDue, nudgeStatus, nudgeTask, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
 import type { BotChat, BotSettings } from "../src/lib/broadcast";
 
 let failed = 0;
@@ -255,6 +255,19 @@ async function main() {
     isLiquid: (f, g) => g !== "Уценка",
   });
   check("предложение: сначала то, о чём спрашивали, цена из прайса, без уценки и мелких остатков", offers.map((o) => `${o.variety} ${o.grade} ${o.price}`), ["Altaj Высшая 580", "Jumilia 60 220"]);
+  // Тансулу, 13.10: «3 котегор канша?» про Altaj — касание про третью Altaj, а не про ходовой Chik.
+  check("названные категории: «3 котегор канша?»", mentionedGrades("3 котегор канша?"), ["Третья"]);
+  check("названные категории: казахский и длина", mentionedGrades("үшінші бар ма? и розу 60 см"), ["Третья", "60"]);
+  check("названные категории: «первую» и «2 кат»", mentionedGrades("первую или 2 кат"), ["Первая", "Вторая"]);
+  check("без категорий — пусто", mentionedGrades("Здравствуйте, прайс?"), []);
+  const asked = pickNudgeOffers({
+    stock: [...nstock, { flower: "chrysanthemum", variety: "Altaj", grade: "Третья", qty: 80 }, { flower: "chrysanthemum", variety: "Chik", grade: "Первая", qty: 2000 }],
+    priceOf: (f, v, g) => ({ ...nprices, "chrysanthemum|Altaj|Третья": 300, "chrysanthemum|Chik|Первая": 450 } as Record<string, number>)[`${f}|${v}|${g}`] ?? 0,
+    mentioned: "Клиент: Алтай 3 котегор канша?",
+    isLiquid: (f, g) => !["Уценка", "Третья"].includes(g),
+    clientText: "Алтай 3 котегор канша?",
+  });
+  check("дожим: первой — та категория, о которой спросили (даже не ходовая)", asked.map((o) => `${o.variety} ${o.grade}`)[0], "Altaj Третья");
   const lbl = (o: { variety: string; grade: string }) => `${o.variety}, ${o.grade}`;
   check("касание 1 — списком с ценами", nudgeText(1, offers, lbl).split("\n"), [
     "Здравствуйте! Сегодня свежий срез:",

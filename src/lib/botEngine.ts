@@ -17,6 +17,8 @@ import {
   missingIncoming,
   repeatsOurMessage,
   supersededBy,
+  isGreetingOnly,
+  looksLikeAutoreply,
   teamAlertDue,
   withMissingIncoming,
 } from "./botTurn";
@@ -200,6 +202,12 @@ function systemPrompt(p: {
     "  СРАЗУ order.confirmed=true, без «Оформляю?» (владелец, 02.10: «просто выставь счёт и оформляй, хватит вопросы задавать»).",
     "  Не хватает только точки и города — спроси их одним коротким вопросом и после ответа сразу оформляй.",
     "  Сколько штук в коробке — только из указаний владельца; не знаешь — не выдумывай, считай в штуках.",
+    "- Вопрос про ОДНУ позицию («3 категория канша?», «Алтай первая почём?») — ответ ровно про неё одной строкой (цена за",
+    "  стебель, есть ли), БЕЗ списка остальных категорий и сортов, и сразу конкретное предложение (12.10: на «3 котегор канша?»",
+    "  бот выложил все четыре категории, а клиентка спрашивала одну).",
+    "- Объём не назван — НЕ спрашивай «100 или 200?»: сам предложи ОДНО число (для пробы 100 шт.; клиент в базе — как в его",
+    "  прошлых заказах) с суммой: «Поставлю N шт. на завтра — *сумма ₸*. Оформляем?». Клиент поправит, если нужно иначе.",
+    "- Один ход — одно сообщение: всё, что хочешь сказать, — в одном reply.",
     "- На любой вопрос сначала ДАЙ ОТВЕТ по существу (цена, наличие), потом сразу предложение. Вопрос «что есть в наличии» —",
     "  перечисли 3–5 позиций со склада с ценами, первым — товар из рассылки, и спроси, что поставить.",
     "- «Да», «интересно», «давайте» — не переспрашивай общими словами, а сразу предложи конкретное: сорт, категорию, цену, объём",
@@ -550,6 +558,8 @@ export async function sendBotFiles(chat: BotChat, phone: string, files: BotFile[
 /** Ответил ли бот (тогда заказ ведёт он, и черновик для менеджера не нужен). */
 /** Сколько ждать, не допишет ли клиент ещё (серия «Нет сорта Джулия…» + «Белая» шла через 4 с). */
 const SERIES_WAIT_MS = 4000;
+/** После одного приветствия — дольше: вопрос обычно идёт следом. */
+const GREETING_WAIT_MS = 15000;
 
 /** Свежие сообщения этого номера из WaMessages (их пишет вебхук до бота) — одно чтение. */
 async function recentTurnMessages(phone: string): Promise<{ messageId: string; phone: string; direction: string; at: string; text: string; type: string }[]> {
@@ -565,12 +575,16 @@ async function recentTurnMessages(phone: string): Promise<{ messageId: string; p
 
 async function answer(chat: BotChat, last: BotIncoming, instructions: string): Promise<boolean> {
   if (!openAiConfigured()) return false;
-  // Серия сообщений — один ответ, и он видит их все (`botTurn.ts`).
-  await new Promise((r) => setTimeout(r, SERIES_WAIT_MS));
+  // Серия сообщений — один ответ, и он видит их все (`botTurn.ts`). На одно «здравствуйте» ждём
+  // дольше: следом обычно идёт сам вопрос (12.10: на «здравствуйте» бот выложил прайс из четырёх
+  // позиций, а клиент через минуту спросил про розы).
+  await new Promise((r) => setTimeout(r, last.type === "text" && isGreetingOnly(last.text) ? GREETING_WAIT_MS : SERIES_WAIT_MS));
   const recent = await recentTurnMessages(last.phone);
   const newer = supersededBy(last, recent, last.phone);
   if (newer) return false;
   chat.context = withMissingIncoming(chat.context, missingIncoming(chat.context, recent, last.phone, new Date()));
+  // Автоответ магазина на нашу рассылку — не человек, продавать ему нечего.
+  if (last.type === "text" && looksLikeAutoreply(last.text, chat.context, last.at)) return false;
   let decision: ReturnType<typeof botDecision>;
   try {
     decision = await botReply(chat, instructions);
@@ -587,6 +601,9 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
     await noteAndAlert(chat, "внимание: бот не нашёл, что ответить, кроме повтора — ответьте клиенту сами");
     return false;
   }
+  // Пока модель думала (5–15 с), клиент мог дописать — тогда отвечает ход того сообщения, а этот
+  // молчит: иначе уходило два ответа подряд, и первый — уже не на то (Тансулу, 12.10).
+  if (supersededBy(last, await recentTurnMessages(last.phone), last.phone)) return false;
   const { text, note, files } = await botAct(chat, decision);
   const filesSent = await sendBotFiles(chat, last.phone, files);
   if (!text && !filesSent) return false;

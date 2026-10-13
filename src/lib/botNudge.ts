@@ -146,22 +146,51 @@ export function pickNudgeOffers(input: {
   priceOf: (flowerType: string, variety: string, grade: string) => number;
   mentioned: string;
   isLiquid: (flowerType: string, grade: string) => boolean;
+  /** Что писал сам клиент — по нему ищем названную категорию или длину («3 котегор канша?»). */
+  clientText?: string;
 }): NudgeOffer[] {
   const text = normWord(input.mentioned);
-  const rows = input.stock
-    .filter((s) => s.qty >= 100 && s.variety && input.isLiquid(s.flower, s.grade))
+  const all = input.stock
+    .filter((s) => s.variety)
     .map((s) => ({ flowerType: s.flower, variety: s.variety, grade: s.grade, qty: s.qty, price: input.priceOf(s.flower, s.variety, s.grade) }))
     .filter((s) => s.price > 0);
-  const named = rows.filter((r) => text.includes(normWord(r.variety)) || (normWord(r.variety) === "altaj" && text.includes("алтай")));
+  const rows = all.filter((s) => s.qty >= 100 && input.isLiquid(s.flowerType, s.grade));
+  const isNamed = (r: NudgeOffer) => text.includes(normWord(r.variety)) || (normWord(r.variety) === "altaj" && text.includes("алтай"));
+  // Клиент сам назвал категорию или длину — дожимаем ИМЕННО её (13.10.2026: спросила про третью
+  // категорию Altaj, а касание пришло с фото Chik), даже если она не из «ходовых».
+  const asked = mentionedGrades(input.clientText ?? "");
+  const askedRows = all.filter((r) => r.qty >= 50 && isNamed(r) && asked.some((g) => gradeMatches(r.flowerType, r.grade, g)));
+  const named = rows.filter(isNamed);
   const byQty = (a: NudgeOffer, b: NudgeOffer) => b.qty - a.qty;
   const out: NudgeOffer[] = [];
-  for (const r of [...named.sort(byQty), ...rows.sort(byQty)]) {
+  for (const r of [...askedRows.sort(byQty), ...named.sort(byQty), ...rows.sort(byQty)]) {
     if (out.length >= 2) break;
     if (out.some((o) => o.flowerType === r.flowerType && o.variety === r.variety)) continue;
     out.push(r);
   }
   return out;
 }
+
+/** Категории и длины, которые клиент называл: «третья», «3 кат», «үшінші», «60 см». Последние — в конце. */
+export function mentionedGrades(clientText: string): string[] {
+  const t = normWord(clientText);
+  const found: { at: number; grade: string }[] = [];
+  const rules: [RegExp, string][] = [
+    [/высш|жоғарғы/g, "Высшая"],
+    [/перв|1\s*-?\s*(?:я|ая)?\s*кат|1\s*котег|бірінші/g, "Первая"],
+    [/втор|2\s*-?\s*(?:я|ая)?\s*кат|2\s*котег|екінші|2\s*сорт/g, "Вторая"],
+    [/трет|3\s*-?\s*(?:я|ья)?\s*кат|3\s*котег|үшінші/g, "Третья"],
+    [/четв|4\s*-?\s*(?:я|ая)?\s*кат|4\s*котег|төртінші/g, "Четвёртая"],
+    [/(\d{2})\s*см/g, "$len"],
+  ];
+  for (const [re, grade] of rules) {
+    for (const m of Array.from(t.matchAll(re))) found.push({ at: m.index ?? 0, grade: grade === "$len" ? m[1] : grade });
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.grade);
+}
+
+const gradeMatches = (flowerType: string, grade: string, asked: string) =>
+  normWord(grade) === normWord(asked) || (flowerType !== "chrysanthemum" && normWord(grade).startsWith(normWord(asked)));
 
 /**
  * Текст касания. Цены — из `pickNudgeOffers`, то есть из прайса. Оформление

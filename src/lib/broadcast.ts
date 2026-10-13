@@ -1,4 +1,4 @@
-import { phoneKey } from "./leads";
+import { guessCity, phoneKey } from "./leads";
 import type { WaMessage } from "./types";
 import { EMPTY_BOT_ORDER, parseBotOrder, type BotOrderDraft } from "./botOrder";
 
@@ -112,6 +112,14 @@ export function greetingName(contactPerson: string, name: string): string {
   // «ИП Жанибекова» → «Жанибекова»: форма собственности в обращении звучит как в налоговой.
   const pick = ((contactPerson || "").trim() || (name || "").trim()).replace(/^(ИП|ТОО|ООО|АО|ЧП)\s+/i, "").trim();
   if (!pick || /^без имени$/i.test(pick)) return "";
+  // «Бахыт ГРЭС», «Михаил Экибастуз» (13.10.2026, рассылка так и поздоровалась): в карточке к имени
+  // дописан город или район. Из контактного лица — только первое слово; из названия — без города и
+  // слов капсом.
+  const words = pick.split(/\s+/);
+  const isWord = (w: string) => /^[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі-]{2,}$/.test(w);
+  if ((contactPerson || "").trim()) return isWord(words[0]) ? words[0] : "";
+  const kept = words.filter((w, i) => i === 0 || !(guessCity(w) || (/^[A-ZА-ЯЁӘҒҚҢӨҰҮҺІ]{2,}$/.test(w) && w.length <= 6)));
+  if (kept.length < words.length) return kept.length === 1 && isWord(kept[0]) ? kept[0] : "";
   // Длинное название точки («ТОО Цветы 24 на Абая») в обращение не годится.
   return pick.length > 32 ? "" : pick;
 }
