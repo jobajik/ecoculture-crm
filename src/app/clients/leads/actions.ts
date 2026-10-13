@@ -7,9 +7,13 @@ import { guard } from "@/lib/actionResult";
 import { CLIENT_SOURCES, CLIENT_TYPES, PAYMENT_TERMS, ROLES } from "@/lib/constants";
 import { localDayKey } from "@/lib/timezone";
 import {
+  adsManagerTouches,
   canManageLeads,
   canUseLeads,
   canWorkLead,
+  handoverRefusal,
+  isAdsLead,
+  LEAD_ORIGIN_ADS,
   cleanStage,
   dealEvenly,
   leadChangesAfterTouch,
@@ -24,7 +28,7 @@ import {
   type LeadImportRow,
   type TouchInput,
 } from "@/lib/leads";
-import { addTouch, createLead, createLeads, getLead, listLeads, updateLead, type NewLead } from "@/lib/repo/leads";
+import { addTouch, createLead, createLeads, findLeadRow, getLead, listLeadTouches, listLeads, updateLead, type NewLead } from "@/lib/repo/leads";
 import { listClients } from "@/lib/repo/clients";
 import { listUsers } from "@/lib/repo/users";
 import { ensureClientForLead } from "@/lib/leadConvert";
@@ -39,7 +43,7 @@ async function requireLeads() {
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role;
   if (!canUseLeads(role)) throw new Error("Лидами занимаются менеджеры и РОП");
-  return { email: session.user.email.trim().toLowerCase(), role, manage: canManageLeads(role) };
+  return { email: session.user.email.trim().toLowerCase(), role, manage: canManageLeads(role), leadgen: role === ROLES.LEADGEN };
 }
 
 const LEADS_PATH = "/clients/leads";
@@ -98,7 +102,7 @@ async function phoneTwin(phone: string, exceptLeadId = ""): Promise<string> {
 // --- Новый лид -------------------------------------------------------------------
 
 async function createLeadActionInner(input: Partial<LeadInfo> & { managerEmail?: string }) {
-  const { email, manage } = await requireLeads();
+  const { email, manage, leadgen } = await requireLeads();
   const info = cleanInfo(input);
   if (!info.name) throw new Error("Укажите название");
   if (info.name.length > 200) throw new Error("Слишком длинное название");
@@ -117,7 +121,8 @@ async function createLeadActionInner(input: Partial<LeadInfo> & { managerEmail?:
 
   const leads = await listLeads();
   const similar = leads.filter((l) => nameKey(l.name) === nameKey(info.name)).map((l) => ({ leadId: l.leadId, name: l.name, city: l.city }));
-  const lead: NewLead = { ...info, createdByEmail: email, managerEmail };
+  // Земфира заводит лид на себя и с пометкой «с рекламы» — по ней лид потом и считается отдельно.
+  const lead: NewLead = { ...info, createdByEmail: email, managerEmail, ...(leadgen ? { origin: LEAD_ORIGIN_ADS } : {}) };
   // Новый лид сразу встаёт в «на сегодня»: его заводят, чтобы позвонить.
   const leadId = await createLead(lead, localDayKey());
   revalidatePath(LEADS_PATH);
@@ -200,7 +205,9 @@ async function addTouchActionInner(leadId: string, input: TouchInput) {
     lostReason: (input.lostReason || "").trim(),
   };
   const today = localDayKey();
-  const refusal = touchRefusal(clean, lead, today);
+  // Клиент с рекламы, уже у менеджера: сколько касаний он сделал — до отказа нужно минимум два.
+  const adsBefore = isAdsLead(lead) && lead.handedOverAt ? adsManagerTouches(lead, await listLeadTouches({ fresh: true })).length : 0;
+  const refusal = touchRefusal(clean, lead, today, adsBefore);
   if (refusal) throw new Error(refusal);
 
   const now = new Date().toISOString();
@@ -223,6 +230,38 @@ async function addTouchActionInner(leadId: string, input: TouchInput) {
   return { ok: true };
 }
 
+// --- Передача лида с рекламы менеджеру --------------------------------------------
+
+/**
+ * Земфира (или РОП) передаёт лид с рекламы менеджеру: менеджер, когда и кто передал, касание
+ * «Передан менеджеру …» с её словами и касание менеджеру — сегодня. Одной записью (грабли 1.16).
+ */
+async function handoverLeadActionInner(leadId: string, input: { managerEmail: string; comment: string }) {
+  const { email, role } = await requireLeads();
+  const found = await findLeadRow(leadId);
+  if (!found) throw new Error("Лид не найден");
+  const lead = found.lead;
+  const to = (input.managerEmail || "").trim().toLowerCase();
+  const comment = (input.comment || "").trim().slice(0, 2000);
+  const refusal = handoverRefusal({ role, email, lead, to, comment, sellers: await assignableEmails() });
+  if (refusal) throw new Error(refusal);
+  const users = await listUsers();
+  const toName = users.find((u) => u.email.toLowerCase() === to)?.name || to;
+  const now = new Date().toISOString();
+  const stage = cleanStage(lead.stage);
+  await addTouch(
+    leadId,
+    { managerEmail: email, channel: "Другое", comment: `Передан менеджеру ${toName}: ${comment}`, stageFrom: stage, stageTo: stage, nextTouchAt: localDayKey() },
+    { ManagerEmail: to, HandedOverAt: now, HandedOverBy: email, NextTouchAt: localDayKey() },
+    now,
+    found.rowNumber
+  );
+  revalidatePath(LEADS_PATH);
+  revalidatePath(`${LEADS_PATH}/${leadId}`);
+  revalidatePath(`${LEADS_PATH}/ads`);
+  return { ok: true, managerName: toName };
+}
+
 // --- Лид → клиент -----------------------------------------------------------------
 
 /**
@@ -230,7 +269,8 @@ async function addTouchActionInner(leadId: string, input: TouchInput) {
  * тем же телефоном уже есть, лид привязывается к нему, а не плодит двойника.
  */
 async function convertLeadActionInner(leadId: string, input: { paymentTerms?: string } = {}) {
-  const { email, role } = await requireLeads();
+  const { email, role, leadgen } = await requireLeads();
+  if (leadgen) throw new Error("Клиентом лида заводит менеджер — передайте ему лид");
   const lead = await getLead(leadId, { fresh: true });
   if (!lead) throw new Error("Лид не найден");
   if (!canWorkLead(role, email, lead)) throw new Error("Это лид другого менеджера");
@@ -342,6 +382,9 @@ export async function takeLeadAction(...args: Parameters<typeof takeLeadActionIn
 }
 export async function addTouchAction(...args: Parameters<typeof addTouchActionInner>) {
   return guard(() => addTouchActionInner(...args));
+}
+export async function handoverLeadAction(...args: Parameters<typeof handoverLeadActionInner>) {
+  return guard(() => handoverLeadActionInner(...args));
 }
 export async function convertLeadAction(...args: Parameters<typeof convertLeadActionInner>) {
   return guard(() => convertLeadActionInner(...args));

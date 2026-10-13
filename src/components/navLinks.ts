@@ -33,6 +33,8 @@ export const NAV_LINKS: NavLink[] = [
   // Клиентская база — рабочий инструмент продаж, поэтому стоит рядом с
   // заявками. Складу и агроному она не нужна.
   { href: "/clients", label: "Клиенты", roles: ["manager", "sales_head", "accountant", "admin"] },
+  // Земфира (лиды с рекламы): её раздел — лиды, без клиентской базы.
+  { href: "/clients/leads", label: "Лиды", roles: ["leadgen"] },
   // Собственная розница — свой раздел, а не вкладка в клиентах: у менеджера
   // розницы это единственное рабочее место, и прятать его внутрь чужого
   // раздела значило бы заставлять его каждый раз проходить мимо клиентов.
@@ -106,6 +108,7 @@ const FIRST_BY_ROLE: Record<string, string[]> = {
   sales_head: ["/", "/orders", "/sales", "/finance"],
   office: ["/office", "/"],
   office_retail: ["/office", "/retail", "/orders", "/"],
+  leadgen: ["/clients/leads"],
 };
 
 export function navLinksFor(role: string): NavLink[] {
@@ -115,6 +118,8 @@ export function navLinksFor(role: string): NavLink[] {
     return i === -1 ? first.length + NAV_LINKS.indexOf(l) : i;
   };
   return NAV_LINKS.filter((l) => !l.roles || l.roles.includes(role))
+    // У Земфиры главной нет — её работа целиком в лидах (главная её туда и уводит).
+    .filter((l) => !(role === "leadgen" && l.href === "/"))
     .sort((a, b) => rank(a) - rank(b))
     .map((link) => {
     if (link.href === "/analytics" && ANALYTICS_HREF_BY_ROLE[role]) {

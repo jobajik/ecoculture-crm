@@ -9,7 +9,7 @@ import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
 import LeadStageBadge from "./LeadStageBadge";
 import { ScoreChip, TemperatureChip, WaitingChip } from "./TalkChips";
 
-type Who = "mine" | "free" | "all";
+type Who = "mine" | "free" | "all" | "handed";
 type When = "work" | "today" | "overdue" | "waiting" | "closed" | "any";
 
 /** Что известно о переписке лида: ждёт ли ответа, «температура», оценка менеджера. */
@@ -28,12 +28,15 @@ export default function LeadsBoard({
   rows,
   myEmail,
   canManage,
+  leadgen = false,
   managers,
   talk = {},
 }: {
   rows: LeadRow[];
   myEmail: string;
   canManage: boolean;
+  /** Земфира: «Мои» (ещё у неё) и «Передала» (у менеджеров, с итогом). */
+  leadgen?: boolean;
   managers: { email: string; name: string }[];
   talk?: Record<string, LeadTalkMark>;
 }) {
@@ -49,6 +52,7 @@ export default function LeadsBoard({
       rows.filter((r) => {
         if (who === "mine" && r.managerEmail !== myEmail) return false;
         if (who === "free" && r.managerEmail) return false;
+        if (who === "handed" && !(r.handedOverAt && r.handedOverBy === myEmail)) return false;
         if (canManage && manager && r.managerEmail !== manager) return false;
         return true;
       }),
@@ -126,11 +130,18 @@ export default function LeadsBoard({
         <Segment
           value={who}
           onChange={(v) => setWho(v as Who)}
-          options={[
-            { key: "mine", label: "Мои" },
-            { key: "free", label: "Ничьи" },
-            ...(canManage ? [{ key: "all", label: "Все" }] : []),
-          ]}
+          options={
+            leadgen
+              ? [
+                  { key: "mine", label: "Мои" },
+                  { key: "handed", label: "Передала" },
+                ]
+              : [
+                  { key: "mine", label: "Мои" },
+                  { key: "free", label: "Ничьи" },
+                  ...(canManage ? [{ key: "all", label: "Все" }] : []),
+                ]
+          }
         />
         {canManage && who === "all" && (
           <select className="input !w-auto !py-1.5" value={manager} onChange={(e) => setManager(e.target.value)}>
@@ -172,6 +183,12 @@ export default function LeadsBoard({
                     <div className="text-xs text-ink-muted">
                       {[r.city, r.contactPerson, r.phone].filter(Boolean).join(" · ")}
                     </div>
+                    {r.origin === "ads" && (
+                      <div className="text-xs mt-0.5">
+                        <span className="rounded bg-section-leads-soft px-1.5 py-0.5 text-section-leads">с рекламы</span>
+                        {r.handedOverAt && <span className="text-ink-muted"> · передан {formatDay(r.handedOverAt)}</span>}
+                      </div>
+                    )}
                     {talk[r.leadId] && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         <WaitingChip minutes={talk[r.leadId].waitingMinutes} />

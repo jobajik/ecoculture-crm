@@ -35,6 +35,9 @@ function toLead(r: Record<string, string>): Lead {
     history: r.History || "",
     firstSeenAt: toIsoDate(r.FirstSeenAt).slice(0, 10),
     pastOrders: Number(r.PastOrders) || 0,
+    origin: (r.Origin || "").trim().toLowerCase(),
+    handedOverAt: toIsoDateTime(r.HandedOverAt),
+    handedOverBy: (r.HandedOverBy || "").trim().toLowerCase(),
   };
 }
 
@@ -88,9 +91,23 @@ export async function getLead(leadId: string, options: { fresh?: boolean } = {})
 
 export type NewLead = Omit<
   Lead,
-  "leadId" | "createdAt" | "stage" | "stageChangedAt" | "nextTouchAt" | "lostReason" | "clientId" | "campaign" | "segment" | "history" | "firstSeenAt" | "pastOrders"
+  | "leadId"
+  | "createdAt"
+  | "stage"
+  | "stageChangedAt"
+  | "nextTouchAt"
+  | "lostReason"
+  | "clientId"
+  | "campaign"
+  | "segment"
+  | "history"
+  | "firstSeenAt"
+  | "pastOrders"
+  | "origin"
+  | "handedOverAt"
+  | "handedOverBy"
 > &
-  Partial<Pick<Lead, "campaign" | "segment" | "history" | "firstSeenAt" | "pastOrders">>;
+  Partial<Pick<Lead, "campaign" | "segment" | "history" | "firstSeenAt" | "pastOrders" | "origin">>;
 
 function leadRecord(input: NewLead, nowIso: string, nextTouchAt = ""): Record<string, unknown> {
   return {
@@ -116,6 +133,9 @@ function leadRecord(input: NewLead, nowIso: string, nextTouchAt = ""): Record<st
     History: input.history ?? "",
     FirstSeenAt: input.firstSeenAt ?? "",
     PastOrders: input.pastOrders ? input.pastOrders : "",
+    Origin: input.origin ?? "",
+    HandedOverAt: "",
+    HandedOverBy: "",
   };
 }
 

@@ -138,7 +138,7 @@ async function main() {
     leadId: id, createdAt: "2026-10-01T10:00:00", createdByEmail: "rop@x", name: id, city: "Алматы", contactPerson: "",
     phone: "+77010000000", clientType: "", source: "", address: "", note: "", managerEmail: "m1@x", stage: "new",
     stageChangedAt: "2026-10-01T10:00:00", nextTouchAt: "", lostReason: "", clientId: "", campaign: "Октябрь",
-    segment: "Только заявка", history: "", firstSeenAt: "2026-01-01", pastOrders: 0, ...extra,
+    segment: "Только заявка", history: "", firstSeenAt: "2026-01-01", pastOrders: 0, origin: "", handedOverAt: "", handedOverBy: "", ...extra,
   });
   const T = (id: string, leadId: string, at: string, outcome: string, manager = "m1@x"): LeadTouch => ({
     touchId: id, leadId, createdAt: at, managerEmail: manager, channel: "Звонок", comment: outcome, stageFrom: "new",

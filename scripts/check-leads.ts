@@ -15,7 +15,10 @@ import {
   summarizeLeads,
   touchRefusal,
   whatsappLink,
+  adsManagerTouches,
+  handoverRefusal,
 } from "../src/lib/leads";
+import { buildAdsReport } from "../src/lib/adsLeads";
 import type { Lead, LeadTouch } from "../src/lib/types";
 
 let failed = 0;
@@ -30,7 +33,7 @@ const lead = (id: string, extra: Partial<Lead> = {}): Lead => ({
   leadId: id, createdAt: "2026-09-20T10:00:00", createdByEmail: "rop@x", name: `Лид ${id}`, city: "Алматы",
   contactPerson: "", phone: "", clientType: "", source: "", address: "", note: "", managerEmail: "m1@x",
   stage: "new", stageChangedAt: "2026-09-20T10:00:00", nextTouchAt: "", lostReason: "", clientId: "",
-  campaign: "", segment: "", history: "", firstSeenAt: "", pastOrders: 0, ...extra,
+  campaign: "", segment: "", history: "", firstSeenAt: "", pastOrders: 0, origin: "", handedOverAt: "", handedOverBy: "", ...extra,
 });
 
 // --- Телефон ------------------------------------------------------------------
@@ -165,6 +168,62 @@ check("без колонки телефона: уже лид по названи
 check("без колонки телефона: вторая «Магнолия» в том же городе — повтор", noPhone.rows[2].skip.startsWith("повтор в файле"), true);
 check("без колонки телефона: «Магнолия» в другом городе — новая", noPhone.rows[3].skip, "");
 check("нет заголовков — понятная ошибка", !!parseLeadMatrix([["a", "b"]], { leads: [], clients: [] }, []).fatalError, true);
+
+// --- Лиды с рекламы (Земфира, 13.10.2026) ------------------------------------------
+{
+  const Z = "zemfira@x";
+  const mine = lead("A1", { origin: "ads", createdByEmail: Z, managerEmail: Z, stage: "need" });
+  const handed = lead("A2", { origin: "ads", createdByEmail: Z, managerEmail: "m1@x", handedOverAt: "2026-09-20T09:00:00", handedOverBy: Z, stage: "offer" });
+  const plain = lead("P1", { managerEmail: "m1@x" });
+  check("Земфира видит свой лид с рекламы", canSeeLead("leadgen", Z, mine), true);
+  check("…и переданный — ради итога", canSeeLead("leadgen", Z, handed), true);
+  check("…но не обычный лид менеджера", canSeeLead("leadgen", Z, plain), false);
+  check("работает со своим, пока не передала", [canWorkLead("leadgen", Z, mine), canWorkLead("leadgen", Z, handed)], [true, false]);
+  check("менеджер работает с переданным ему", canWorkLead("manager", "m1@x", handed), true);
+  const sellers = new Set(["m1@x", "m2@x"]);
+  const ho = (extra: Partial<Parameters<typeof handoverRefusal>[0]> = {}) =>
+    handoverRefusal({ role: "leadgen", email: Z, lead: mine, to: "m1@x", comment: "берёт хризантему, звонить завтра", sellers, ...extra });
+  check("передать менеджеру — можно", ho(), "");
+  check("без менеджера — нельзя", ho({ to: "" }) !== "", true);
+  check("без слов менеджеру — нельзя", ho({ comment: "" }) !== "", true);
+  check("уже переданный второй раз — нельзя", ho({ lead: handed }) !== "", true);
+  check("чужой лид — нельзя", ho({ email: "other@x" }) !== "", true);
+  check("менеджер передавать не может", ho({ role: "manager", email: "m1@x" }) !== "", true);
+
+  const T = (id: string, at: string, who: string): LeadTouch => ({ touchId: id, leadId: "A2", createdAt: at, managerEmail: who, channel: "Звонок", comment: "x", stageFrom: "offer", stageTo: "offer", nextTouchAt: "", outcome: "" });
+  const adsTouches = [T("Z1", "2026-09-19T10:00:00", Z), T("Z2", "2026-09-20T09:00:00", Z), T("M1", "2026-09-21T10:00:00", "m1@x")];
+  check("касания менеджера — только после передачи и не Земфиры", adsManagerTouches(handed, adsTouches).map((t) => t.touchId), ["M1"]);
+  const lostTouch = { channel: "Звонок", comment: "не берёт", stage: "lost", nextTouchAt: "", lostReason: "Дорого" };
+  check("отказ на 1-м касании менеджера — нельзя", touchRefusal(lostTouch, handed, TODAY, 0).startsWith("Клиент с рекламы"), true);
+  check("отказ на 2-м касании — можно", touchRefusal(lostTouch, handed, TODAY, 1), "");
+  check("неверный номер — можно сразу", touchRefusal({ ...lostTouch, lostReason: "Неверный контакт" }, handed, TODAY, 0), "");
+  check("обычный лид — без этого правила", touchRefusal(lostTouch, plain, TODAY, 0), "");
+
+  const many = lead("A3", { origin: "ads", createdByEmail: Z, managerEmail: "m2@x", handedOverAt: "2026-09-10T09:00:00", handedOverBy: Z, stage: "offer" });
+  const fresh = lead("A4", { origin: "ads", createdByEmail: Z, managerEmail: "m2@x", handedOverAt: "2026-09-20T09:00:00", handedOverBy: Z, stage: "need" });
+  const won = lead("A5", { origin: "ads", createdByEmail: Z, managerEmail: "m1@x", handedOverAt: "2026-09-12T09:00:00", handedOverBy: Z, stage: "trial", clientId: "C5" });
+  const T3 = (n: number): LeadTouch => ({ ...T(`MM${n}`, `2026-09-1${n}T12:00:00`, "m2@x"), leadId: "A3" });
+  const report = buildAdsReport({
+    leads: [mine, handed, many, fresh, won, plain],
+    touches: [...adsTouches, ...[1, 2, 3, 4, 5].map(T3)],
+    orders: [
+      { clientId: "C5", createdAt: "2026-09-13T10:00:00", status: "new", totalAmount: 120000 },
+      { clientId: "C5", createdAt: "2026-09-01T10:00:00", status: "new", totalAmount: 999 }, // до передачи — не в счёт
+      { clientId: "C5", createdAt: "2026-09-14T10:00:00", status: "cancelled", totalAmount: 50000 },
+    ],
+    today: TODAY,
+  });
+  check("отчёт: только лиды с рекламы", report.created, 5);
+  check("отчёт: передано, у Земфиры, стали клиентами", [report.handed, report.inWork, report.won], [4, 1, 1]);
+  check("отчёт: сумма заказов после передачи, без отменённых", report.orderSum, 120000);
+  const flag = (id: string) => report.rows.find((r) => r.leadId === id)?.flag;
+  check("5 касаний без заказа — решить", flag("A3"), "many");
+  check("передан 5 дней назад, не тронут — «не связался»", flag("A4"), "no_touch");
+  check("стал клиентом — без флажка", flag("A5"), "");
+  check("по менеджерам: m2 — двое, касаний в среднем 2,5", report.byManager.find((m) => m.email === "m2@x"), {
+    email: "m2@x", handed: 2, avgTouches: 2.5, won: 0, lost: 0, orderSum: 0, noTouch: 1, few: 0, many: 1,
+  });
+}
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

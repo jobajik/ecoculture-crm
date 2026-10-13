@@ -70,9 +70,9 @@ const MAX_AHEAD_DAYS = 366;
 
 // --- Кто что видит ------------------------------------------------------------
 
-/** Лидами занимаются продажи: менеджер, РОП, админ. */
+/** Лидами занимаются продажи (менеджер, РОП, админ) и «Лиды с рекламы» (Земфира). */
 export function canUseLeads(role: string | null | undefined): boolean {
-  return role === ROLES.MANAGER || role === ROLES.SALES_HEAD || role === ROLES.ADMIN;
+  return role === ROLES.MANAGER || role === ROLES.SALES_HEAD || role === ROLES.ADMIN || role === ROLES.LEADGEN;
 }
 /** Раздавать лиды, загружать базу и видеть всех — РОП и админ. */
 export function canManageLeads(role: string | null | undefined): boolean {
@@ -82,15 +82,75 @@ export function canManageLeads(role: string | null | undefined): boolean {
  * Менеджер видит свои лиды и НИЧЬИ — чтобы взять себе. Чужие не видит: иначе
  * тёплый лид коллеги можно было бы тихо «дожать» самому.
  */
-export function canSeeLead(role: string | null | undefined, email: string, lead: Pick<Lead, "managerEmail">): boolean {
+export function canSeeLead(
+  role: string | null | undefined,
+  email: string,
+  lead: Pick<Lead, "managerEmail"> & Partial<Pick<Lead, "origin" | "createdByEmail" | "handedOverBy">>
+): boolean {
   if (canManageLeads(role)) return true;
+  const me = email.toLowerCase();
+  // Земфира видит только лиды с рекламы, которые завела, ведёт или передала, — и после передачи тоже:
+  // ей нужен итог («что стало с клиентом»), но не чужая база.
+  if (role === ROLES.LEADGEN) {
+    return isAdsLead(lead) && (lead.createdByEmail === me || lead.managerEmail === me || lead.handedOverBy === me);
+  }
   if (role !== ROLES.MANAGER) return false;
-  return !lead.managerEmail || lead.managerEmail === email.toLowerCase();
+  return !lead.managerEmail || lead.managerEmail === me;
 }
-/** Работать с лидом (касание, правка) — его менеджер, РОП и админ. */
-export function canWorkLead(role: string | null | undefined, email: string, lead: Pick<Lead, "managerEmail">): boolean {
+/** Работать с лидом (касание, правка) — его менеджер, РОП и админ; Земфира — свой, пока не передала. */
+export function canWorkLead(
+  role: string | null | undefined,
+  email: string,
+  lead: Pick<Lead, "managerEmail"> & Partial<Pick<Lead, "handedOverAt">>
+): boolean {
   if (canManageLeads(role)) return true;
-  return role === ROLES.MANAGER && !!lead.managerEmail && lead.managerEmail === email.toLowerCase();
+  const mine = !!lead.managerEmail && lead.managerEmail === email.toLowerCase();
+  if (role === ROLES.LEADGEN) return mine && !lead.handedOverAt;
+  return role === ROLES.MANAGER && mine;
+}
+
+// --- Лиды с рекламы ---------------------------------------------------------------
+//
+// 13.10.2026, владелец: «Земфира отрабатывает лиды с инсты и других источников и передаёт
+// готовых клиентов менеджерам. Клиенты от Земфиры для нас отдельные: это новые клиенты после
+// рекламы, а мы их дальше отрабатываем сами — на 2–5 касаний». Решения: минимум 2, максимум 5
+// касаний менеджера после передачи; Земфира видит свои лиды и итог по ним.
+
+export const LEAD_ORIGIN_ADS = "ads";
+export const isAdsLead = (lead: Partial<Pick<Lead, "origin">>) => lead.origin === LEAD_ORIGIN_ADS;
+/** Касаний менеджера после передачи — не меньше, прежде чем закрыть отказом. */
+export const ADS_MIN_TOUCHES = 2;
+/** После стольких касаний без заказа — РОП и владелец решают: отказ или дальше. */
+export const ADS_MAX_TOUCHES = 5;
+/** Отказ раньше минимума можно, если продавать просто некому: мёртвый номер или не оптовик. */
+export const ADS_EARLY_LOST_REASONS = ["Неверный контакт", "Не оптовик (розница)"];
+/** Передан и не тронут дольше — в отчёте «менеджер не связался». */
+export const ADS_FIRST_TOUCH_DAYS = 2;
+
+/** Касания менеджера ПОСЛЕ передачи (касания Земфиры не в счёт). */
+export function adsManagerTouches(lead: Pick<Lead, "leadId" | "handedOverAt" | "handedOverBy">, touches: LeadTouch[]): LeadTouch[] {
+  if (!lead.handedOverAt) return [];
+  return touches.filter((t) => t.leadId === lead.leadId && t.createdAt > lead.handedOverAt && t.managerEmail !== lead.handedOverBy);
+}
+
+/** Можно ли передать лид менеджеру. Пусто — можно. */
+export function handoverRefusal(input: {
+  role: string | null | undefined;
+  email: string;
+  lead: Pick<Lead, "managerEmail" | "stage" | "origin" | "handedOverAt">;
+  to: string;
+  comment: string;
+  sellers: Set<string>;
+}): string {
+  const { role, lead } = input;
+  if (role !== ROLES.LEADGEN && !canManageLeads(role)) return "Передаёт лиды с рекламы Земфира (или РОП)";
+  if (!isAdsLead(lead)) return "Передать так можно только лид с рекламы";
+  if (lead.handedOverAt) return "Лид уже передан менеджеру";
+  if (role === ROLES.LEADGEN && lead.managerEmail !== input.email.toLowerCase()) return "Это не ваш лид";
+  if (isClosedStage(cleanStage(lead.stage))) return "Лид закрыт — передавать нечего";
+  if (!input.to || !input.sellers.has(input.to.toLowerCase())) return "Выберите менеджера";
+  if ((input.comment || "").trim().length < MIN_COMMENT) return "Напишите менеджеру, что клиенту нужно и о чём договорились";
+  return "";
 }
 
 // --- Телефон и двойники ---------------------------------------------------------
@@ -140,7 +200,13 @@ function addDays(day: string, n: number): string {
 }
 
 /** Почему касание нельзя записать; пустая строка — можно. */
-export function touchRefusal(input: TouchInput, lead: Pick<Lead, "stage" | "clientId">, today: string): string {
+export function touchRefusal(
+  input: TouchInput,
+  lead: Pick<Lead, "stage" | "clientId"> & Partial<Pick<Lead, "origin" | "handedOverAt">>,
+  today: string,
+  /** Лид с рекламы, уже переданный: сколько касаний менеджер сделал ДО этого. */
+  adsTouchesBefore = 0
+): string {
   if (!(LEAD_CHANNELS as readonly string[]).includes(input.channel)) return "Выберите, как связывались";
   if ((input.comment || "").trim().length < MIN_COMMENT) return "Напишите, о чём договорились";
   if (input.comment.length > 3000) return "Комментарий слишком длинный";
@@ -150,6 +216,15 @@ export function touchRefusal(input: TouchInput, lead: Pick<Lead, "stage" | "clie
   }
   if (input.stage === "lost" && !(LEAD_LOST_REASONS as readonly string[]).includes(input.lostReason)) {
     return "Укажите причину отказа";
+  }
+  if (
+    input.stage === "lost" &&
+    isAdsLead(lead) &&
+    lead.handedOverAt &&
+    adsTouchesBefore + 1 < ADS_MIN_TOUCHES &&
+    !ADS_EARLY_LOST_REASONS.includes(input.lostReason)
+  ) {
+    return `Клиент с рекламы: до отказа — минимум ${ADS_MIN_TOUCHES} касания. Запишите это касание и назначьте следующее`;
   }
   if (!isClosedStage(input.stage)) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.nextTouchAt || "")) return "Когда следующее касание?";

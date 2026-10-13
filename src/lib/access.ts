@@ -68,6 +68,14 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
     ],
   },
   { prefix: "/analytics", roles: ["manager", "warehouse", "accountant", "sales_head", "admin"] },
+  // «Лиды с рекламы» (Земфира) — только лиды и отчёт «С рекламы»; обзвон, разговоры,
+  // карточки клиентов и всё остальное ей закрыты. Узкие адреса — выше общего «/clients/leads».
+  { prefix: "/clients/leads/calls", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
+  { prefix: "/clients/leads/talks", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
+  {
+    prefix: "/clients/leads",
+    roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions", "leadgen"],
+  },
   // Карточка магазина — та же карточка клиента, и держать её вторую копию в
   // разделе розницы значило бы чинить потом обе. Список клиентов менеджеру
   // розницы всё равно не показывается: страница разворачивает его в «Розницу».

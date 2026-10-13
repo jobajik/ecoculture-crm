@@ -21,6 +21,7 @@ export default function LeadInfoForm({
   canWork,
   canManage,
   canTake,
+  canConvert = true,
   managers,
   managerName,
   clientName,
@@ -29,6 +30,8 @@ export default function LeadInfoForm({
   canWork: boolean;
   canManage: boolean;
   canTake: boolean;
+  /** «Завести клиентом» — не у Земфиры: клиентом лида заводит менеджер. */
+  canConvert?: boolean;
   managers: { email: string; name: string }[];
   managerName: string;
   clientName: string;
@@ -138,7 +141,7 @@ export default function LeadInfoForm({
                 Изменить
               </button>
             )}
-            {canWork && !lead.clientId && !converting && (
+            {canWork && canConvert && !lead.clientId && !converting && (
               <button type="button" className="btn-secondary !py-1.5" onClick={() => setConverting(true)}>
                 Завести клиентом
               </button>

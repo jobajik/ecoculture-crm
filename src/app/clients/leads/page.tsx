@@ -45,6 +45,7 @@ export default async function LeadsPage({
   if (!canUseLeads(role)) redirect("/?error=forbidden");
   const email = (session?.user?.email ?? "").toLowerCase();
   const manage = canManageLeads(role);
+  const leadgen = role === ROLES.LEADGEN;
 
   // Все вкладки — одним запросом (грабли 1.17).
   await prefetchTables([
@@ -170,9 +171,10 @@ export default async function LeadsPage({
         </Section>
       )}
 
-      <WaInbox rows={inbox} />
+      {/* Чужие входящие рабочего номера Земфире не показываем: её лиды — с рекламы, а не весь WhatsApp. */}
+      {!leadgen && <WaInbox rows={inbox} />}
 
-      <LeadsBoard rows={rows} myEmail={email} canManage={manage} managers={managers} talk={talk} />
+      <LeadsBoard rows={rows} myEmail={email} canManage={manage} leadgen={leadgen} managers={managers} talk={talk} />
     </div>
   );
 }

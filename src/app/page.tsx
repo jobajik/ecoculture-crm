@@ -43,6 +43,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
   if (!role) {
     return <div className="card max-w-xl">Для вашей почты не назначена роль. Обратитесь к администратору.</div>;
   }
+  // «Лиды с рекламы»: склад, заявки и деньги ей не нужны — главная у неё это лиды.
+  if (role === ROLES.LEADGEN) redirect("/clients/leads");
   if (missingFarm(role, session.user?.farm)) {
     return <div className="card max-w-xl">{MISSING_FARM_MESSAGE}</div>;
   }

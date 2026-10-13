@@ -8,8 +8,12 @@ import { listLeadTouches, listLeads } from "@/lib/repo/leads";
 import { listUsers } from "@/lib/repo/users";
 import { getClientById } from "@/lib/repo/clients";
 import {
+  ADS_MAX_TOUCHES,
+  ADS_MIN_TOUCHES,
   LEAD_STAGES,
+  adsManagerTouches,
   canManageLeads,
+  isAdsLead,
   canSeeLead,
   canUseLeads,
   canWorkLead,
@@ -25,6 +29,7 @@ import Section from "@/components/Section";
 import LeadStageBadge from "@/components/LeadStageBadge";
 import LeadInfoForm from "@/components/LeadInfoForm";
 import LeadTouchForm from "@/components/LeadTouchForm";
+import LeadHandoverForm from "@/components/LeadHandoverForm";
 import LeadTalkPanel from "@/components/LeadTalkPanel";
 import WaChat from "@/components/WaChat";
 import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
@@ -81,6 +86,11 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
     .map((u) => ({ email: u.email.toLowerCase(), name: u.name || u.email }))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
   const overdue = !isClosedStage(stage) && !!lead.nextTouchAt && lead.nextTouchAt < today;
+  // Лид с рекламы: кто завёл, кому и когда передан, сколько касаний сделал менеджер (норма 2–5).
+  const leadgen = role === ROLES.LEADGEN;
+  const ads = isAdsLead(lead);
+  const adsTouches = ads ? adsManagerTouches(lead, touches).length : 0;
+  const canHandover = ads && !lead.handedOverAt && !isClosedStage(stage) && ((leadgen && work) || manage);
   const current = stageIndex(stage);
 
   // Переписка рабочего WhatsApp и её разбор ИИ.
@@ -150,10 +160,36 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
           canWork={work}
           canManage={manage}
           canTake={!lead.managerEmail && (role === ROLES.MANAGER || role === ROLES.SALES_HEAD)}
+          canConvert={!leadgen}
           managers={managers}
           managerName={lead.managerEmail ? nameByEmail.get(lead.managerEmail) ?? lead.managerEmail : ""}
           clientName={client?.name ?? ""}
         />
+        {ads && (
+          <Section tone="leads" icon="client" title="С рекламы" className="!mb-0">
+            <div className="space-y-1 text-sm">
+              <p>
+                Завела {nameByEmail.get(lead.createdByEmail) ?? lead.createdByEmail} · {formatDay(lead.createdAt)}
+                {lead.source ? ` · ${lead.source}` : ""}
+              </p>
+              {lead.handedOverAt ? (
+                <>
+                  <p>
+                    Передан менеджеру {nameByEmail.get(lead.managerEmail) ?? lead.managerEmail} · {formatDay(lead.handedOverAt)}
+                  </p>
+                  <p className={adsTouches === 0 || adsTouches >= ADS_MAX_TOUCHES ? "text-[#8a5a00]" : "text-ink-secondary"}>
+                    Касаний менеджера: {adsTouches} · норма {ADS_MIN_TOUCHES}–{ADS_MAX_TOUCHES}
+                    {adsTouches >= ADS_MAX_TOUCHES && !isClosedStage(stage) && !lead.clientId ? " — пора решать: отказ или дальше" : ""}
+                  </p>
+                  {lead.clientId && client && <p className="text-status-good">Стал клиентом: {client.name}</p>}
+                </>
+              ) : (
+                <p className="text-ink-secondary">Ещё не передан менеджеру</p>
+              )}
+            </div>
+          </Section>
+        )}
+        {canHandover && <LeadHandoverForm leadId={lead.leadId} managers={managers} />}
         {(lead.history || lead.campaign) && (
           <Section tone="leads" icon="note" title="Что известно" className="!mb-0">
             <div className="space-y-1.5 text-sm">
@@ -193,7 +229,11 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
             <LeadTouchForm leadId={lead.leadId} stage={stage} hasClient={!!lead.clientId} today={today} />
           ) : (
             <p className="card text-sm text-ink-secondary">
-              {lead.managerEmail ? "Касания записывает менеджер этого лида." : "Возьмите лид себе, чтобы записывать касания."}
+              {leadgen && lead.handedOverAt
+                ? "Лид у менеджера — касания записывает он. Здесь видно, как идёт работа."
+                : lead.managerEmail
+                  ? "Касания записывает менеджер этого лида."
+                  : "Возьмите лид себе, чтобы записывать касания."}
             </p>
           )}
 

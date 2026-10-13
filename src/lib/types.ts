@@ -312,6 +312,12 @@ export interface Lead {
   firstSeenAt: string;
   /** Сколько раз покупал раньше (из файла). */
   pastOrders: number;
+  /** «ads» — лид с рекламы: завела роль «Лиды с рекламы». Пусто — обычный лид. */
+  origin: string;
+  /** Когда лид с рекламы передали менеджеру (ISO). Пусто — ещё не передан. */
+  handedOverAt: string;
+  /** Кто передал (почта). */
+  handedOverBy: string;
 }
 
 /** Одно касание лида — вкладка LeadTouches. */
