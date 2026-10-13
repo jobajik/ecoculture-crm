@@ -20,8 +20,8 @@ import {
   type WriteoffLine,
   type WriteoffPlan,
 } from "@/lib/writeoffPlan";
+import { WRITEOFF_REASONS } from "@/lib/writeoffReasons";
 
-const REASONS = [DEFAULT_WRITEOFF_REASON, "Брак", "Сломан при сборке", "Не продан, завял"];
 
 /**
  * Списание общим количеством — «как приёмке».
@@ -47,6 +47,11 @@ export default function WriteoffBulkForm({
   const [mode, setMode] = useState<"writeoff" | "recount">(initialMode);
   const recount = mode === "recount";
   const fileRef = useRef<HTMLInputElement>(null);
+  // Итог проверки — в нижней карточке; на телефоне кнопки стоят полоской у края
+  // экрана, поэтому после нажатия показываем, что получилось.
+  const resultRef = useRef<HTMLDivElement>(null);
+  const showResult = () =>
+    requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   const [qty, setQty] = useState<Record<string, string>>({});
   const [reason, setReason] = useState(DEFAULT_WRITEOFF_REASON);
   const [note, setNote] = useState("");
@@ -130,6 +135,7 @@ export default function WriteoffBulkForm({
       setError(e instanceof Error ? e.message : "Не удалось проверить");
     } finally {
       setBusy(false);
+      showResult();
     }
   }
 
@@ -148,6 +154,7 @@ export default function WriteoffBulkForm({
       setError(e instanceof Error ? e.message : "Не удалось списать");
     } finally {
       setBusy(false);
+      showResult();
     }
   }
 
@@ -163,7 +170,7 @@ export default function WriteoffBulkForm({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 sm:pb-0">
       <div className="inline-flex rounded-lg border border-line-hairline p-1 bg-surface-plane" role="tablist">
         {(
           [
@@ -194,8 +201,9 @@ export default function WriteoffBulkForm({
         </p>
       )}
 
+      {/* Файл грузят с компьютера; на телефоне у холодильника — только список. */}
       {!recount && (
-      <div className="card space-y-3">
+      <div className="card space-y-3 hidden sm:block">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-medium">Файлом</h2>
@@ -299,7 +307,7 @@ export default function WriteoffBulkForm({
         </div>
       )}
 
-      <div className="card space-y-3">
+      <div ref={resultRef} className="card space-y-3 scroll-mt-4">
         <div className="grid sm:grid-cols-2 gap-3">
           {!recount && (
           <label className="text-sm">
@@ -314,7 +322,7 @@ export default function WriteoffBulkForm({
               }}
             />
             <datalist id="writeoff-reasons">
-              {REASONS.map((r) => (
+              {WRITEOFF_REASONS.map((r) => (
                 <option key={r} value={r} />
               ))}
             </datalist>
@@ -379,16 +387,24 @@ export default function WriteoffBulkForm({
           <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">{done}</div>
         )}
 
-        <div className="flex flex-wrap items-center gap-3">
+        {/* На телефоне — полоска у нижнего края, над панелью разделов (как SaveBar):
+            список позиций длинный, и кнопка не должна быть за три экрана от поля. */}
+        <div className="no-print fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 px-4 sm:static sm:px-0">
+        <div className="flex items-center gap-3 rounded-xl border border-line-hairline bg-surface px-3 py-2.5 shadow-card-hover sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
           {!planOk ? (
-            <button type="button" className="btn-primary" disabled={busy || lines.length === 0} onClick={check}>
+            <button
+              type="button"
+              className="btn-primary flex-1 sm:flex-none disabled:opacity-50"
+              disabled={busy || lines.length === 0}
+              onClick={check}
+            >
               {busy
                 ? "Проверяю…"
                 : `Проверить${linesTotal > 0 ? ` · ${recount ? "спишется " : ""}${nf(linesTotal)} шт.` : ""}`}
             </button>
           ) : (
             <>
-              <button type="button" className="btn-primary" disabled={busy} onClick={apply}>
+              <button type="button" className="btn-primary flex-1 sm:flex-none" disabled={busy} onClick={apply}>
                 {busy ? "Списываю…" : `Списать ${nf(plan!.result.total)} шт.`}
               </button>
               <button type="button" className="btn-secondary" disabled={busy} onClick={() => setPlan(null)}>
@@ -396,6 +412,7 @@ export default function WriteoffBulkForm({
               </button>
             </>
           )}
+        </div>
         </div>
         <p className="text-xs text-ink-muted">
           Если хоть одна строка не сходится с остатком — не спишется ничего.

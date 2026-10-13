@@ -1,7 +1,10 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getFinanceSnapshot } from "@/lib/finance";
-import { DEBT_OVERDUE_DAYS, ROLES } from "@/lib/constants";
+import { DEBT_OVERDUE_DAYS, SHEET_TABS } from "@/lib/constants";
+import { prefetchTables } from "@/lib/sheets";
+import { listDebtReminders } from "@/lib/repo/debtReminders";
+import { localDayKey } from "@/lib/timezone";
 
 import Hint from "@/components/Hint";
 import PageHeader from "@/components/PageHeader";
@@ -33,9 +36,30 @@ export default async function DebtsPage() {
   // заметки ставит бухгалтер (src/lib/financeAccess.ts).
   const canEdit = canEditFinance(role);
 
+  // Все нужные вкладки — одним запросом к Google (грабли 1.17).
+  await prefetchTables([
+    SHEET_TABS.ORDERS,
+    SHEET_TABS.ORDER_ITEMS,
+    SHEET_TABS.CLIENTS,
+    SHEET_TABS.USERS,
+    SHEET_TABS.PAYMENTS,
+    SHEET_TABS.DEBT_REMINDERS,
+  ]);
   // Долги считаются по всей базе, поэтому период здесь не важен.
-  const snapshot = await getFinanceSnapshot("month");
-  const { debts, calls } = snapshot;
+  const [snapshot, reminders] = await Promise.all([getFinanceSnapshot("month"), listDebtReminders()]);
+  const { debts } = snapshot;
+  // Последнее УШЕДШЕЕ напоминание в WhatsApp по заявке — в колонку «Почему в списке».
+  const remindedByOrder = new Map<string, string>();
+  for (const r of reminders) {
+    if (!r.messageId || !r.sentAt) continue;
+    const t = new Date(r.sentAt);
+    if (Number.isNaN(t.getTime())) continue;
+    const day = localDayKey(t);
+    for (const id of r.orderIds) {
+      if (day > (remindedByOrder.get(id) ?? "")) remindedByOrder.set(id, day);
+    }
+  }
+  const calls = snapshot.calls.map((c) => ({ ...c, remindedAt: remindedByOrder.get(c.orderId) ?? "" }));
   const broken = calls.filter((c) => c.promiseState === "broken").length;
 
   return (

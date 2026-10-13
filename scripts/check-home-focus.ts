@@ -79,7 +79,8 @@ check(
   m?.attention?.[0]?.tone,
   "critical"
 );
-check("плитка ведёт в отфильтрованный список, а не в общий", m?.stats.find((s) => s.label === "Ждут вашей галочки")?.href, "/orders?stage=wait_confirm");
+check("плитка ведёт в отфильтрованный список, а не в общий", m?.stats.find((s) => s.label === "Ждут вашей галочки")?.href, "/orders?stage=wait_confirm&manager=emil%40x.kz");
+check("без даты — в свой отбор «без даты»", m?.attention?.[0]?.href, "/orders?stage=nodate&manager=emil%40x.kz");
 
 // Опоздание: доставка прошла, заявка не отгружена.
 const lateM = homeFocus({

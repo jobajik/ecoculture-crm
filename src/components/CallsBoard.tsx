@@ -27,6 +27,11 @@ function todayKey(): string {
   ).padStart(2, "0")}`;
 }
 
+/** «2026-10-13…» → «13.10». */
+function dayMonth(key: string): string {
+  return /^\d{4}-\d{2}-\d{2}/.test(key) ? `${key.slice(8, 10)}.${key.slice(5, 7)}` : "";
+}
+
 /**
  * «Кому звонить сегодня».
  *
@@ -124,6 +129,11 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                     </td>
                     <td data-label="Почему в списке" className={clsx("px-4 py-2.5", style.text)}>
                       {c.why}
+                      {c.remindedAt && (
+                        <span className="block text-xs text-ink-muted">
+                          напомнили в WhatsApp {dayMonth(c.remindedAt)}
+                        </span>
+                      )}
                       {c.collectionNote && (
                         <span className="block text-xs text-ink-muted">{c.collectionNote}</span>
                       )}
@@ -134,7 +144,7 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                           onClick={() => setOpenId(openId === c.orderId ? null : c.orderId)}
                           className="btn-secondary !py-1 !px-2.5 text-xs"
                         >
-                          {openId === c.orderId ? "Закрыть" : "Записать"}
+                          {openId === c.orderId ? "Закрыть" : "Обещание / оплата"}
                         </button>
                       ) : (
                         <span className="text-xs text-ink-muted">просмотр</span>
@@ -152,6 +162,11 @@ export default function CallsBoard({ calls, canEdit }: { calls: CallRow[]; canEd
                             paidAmount={c.paidAmount}
                             farms={c.farms}
                             invoiceSentAt={c.invoiceSentAt}
+                            payments={c.payments}
+                            realizations={c.realizations}
+                            defaultMethod={c.paymentMethod}
+                            status={c.status}
+                            consignment={c.consignment}
                             onDone={() => setOpenId(null)}
                           />
                         </div>

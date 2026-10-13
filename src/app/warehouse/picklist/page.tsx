@@ -41,7 +41,7 @@ export default async function PicklistPage({
   return (
     <div>
       {/* Шапка сама `no-print`: печатный лист остаётся прежним. */}
-      <PageHeader area="stock" title="Заявка на день" icon="order" tabs={WAREHOUSE_TABS} />
+      <PageHeader area="stock" title="Лист сборки" icon="order" tabs={WAREHOUSE_TABS} />
       {picklist.overdue.orders > 0 && (
         <Link
           href="/warehouse"

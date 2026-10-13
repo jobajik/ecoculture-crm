@@ -30,7 +30,7 @@ const n = (v: number) => Math.round(v).toLocaleString("ru-RU");
  * направлением «Пожарка», выручку бухгалтер вносит отчётом за день, списания
  * на точке — здесь же. Правила — `src/lib/point.ts`.
  */
-export default async function PointPage({ searchParams }: { searchParams?: { month?: string } }) {
+export default async function PointPage({ searchParams }: { searchParams?: { month?: string; day?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
   if (!canSeeFinance(role)) redirect("/?error=forbidden");
@@ -38,6 +38,8 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
   const current = periodOf(new Date());
   const month = searchParams?.month && /^\d{4}-\d{2}$/.test(searchParams.month) ? searchParams.month : current;
   const today = localDayKey();
+  // День из «По дням» — форма «Выручка за день» открывается на нём.
+  const day = searchParams?.day && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.day) && searchParams.day <= today ? searchParams.day : "";
 
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.POINT_SALES, SHEET_TABS.POINT_WRITEOFFS]);
   const [orders, days, writeoffs] = await Promise.all([listOrdersWithItems(), listPointDays(), listPointWriteoffs()]);
@@ -94,6 +96,39 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
   return (
     <div className="space-y-5">
       <PageHeader area="money" title={POINT_NAME} icon="store" tabs={financeTabsFor(role)} />
+
+      {/* Бухгалтер приходит сюда внести выручку за день — форма первой. */}
+      {editable && (
+        <div id="day-form" className="scroll-mt-20">
+          <Section
+            tone="money"
+            icon="wallet"
+            title={
+              <>
+                Выручка за день{" "}
+                <Hint>
+                  Сколько точка приняла за день: на Kaspi (счета они выставляют сами) и наличными. Это и есть продажа —
+                  сама заявка «Пожарка» только перемещает товар. Один день — одна запись: внесёте день ещё раз, запись
+                  заменится.
+                </Hint>
+              </>
+            }
+          >
+            <PointDayForm
+              key={day || today}
+              today={today}
+              initialDay={day || undefined}
+              known={known}
+              farms={farmsOrder.map((f) => ({
+                farm: f,
+                label: FARM_LABELS[f],
+                hint: FARM_HINT[f],
+                flowers: flowerTypesForFarm(f).map((fl) => ({ key: fl, label: FLOWER_TYPE_LABELS[fl] ?? fl })),
+              }))}
+            />
+          </Section>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {months.map((m) => (
@@ -241,34 +276,6 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
         )}
       </Section>
 
-      {editable && (
-        <Section
-          tone="money"
-          icon="wallet"
-          title={
-            <>
-              Выручка за день{" "}
-              <Hint>
-                Сколько точка приняла за день: на Kaspi (счета они выставляют сами) и наличными. Это и есть продажа —
-                сама заявка «Пожарка» только перемещает товар. Один день — одна запись: внесёте день ещё раз, запись
-                заменится.
-              </Hint>
-            </>
-          }
-        >
-          <PointDayForm
-            today={today}
-            known={known}
-            farms={farmsOrder.map((f) => ({
-              farm: f,
-              label: FARM_LABELS[f],
-              hint: FARM_HINT[f],
-              flowers: flowerTypesForFarm(f).map((fl) => ({ key: fl, label: FLOWER_TYPE_LABELS[fl] ?? fl })),
-            }))}
-          />
-        </Section>
-      )}
-
       <Section tone="money" icon="calendar" title="По дням" flush>
         {report.days.length === 0 ? (
           <p className="px-4 py-4 text-sm text-ink-muted">За этот месяц ничего не было.</p>
@@ -292,7 +299,17 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
                   return (
                     <tr key={d.date} className="border-b border-line-hairline last:border-0">
                       <td className="px-3 py-2">
-                        {formatDay(d.date)}
+                        {editable ? (
+                          <Link
+                            href={`/finance/point?month=${month}&day=${d.date}#day-form`}
+                            className="text-accent hover:underline"
+                            title="Открыть этот день в «Выручке за день»"
+                          >
+                            {formatDay(d.date)}
+                          </Link>
+                        ) : (
+                          formatDay(d.date)
+                        )}
                         {(() => {
                           const st = stems.days[d.date];
                           if (!st) return null;

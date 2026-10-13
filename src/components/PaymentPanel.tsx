@@ -15,7 +15,7 @@ import type { FinancePayment } from "@/lib/finance";
 import { flowerOwed, paymentHistory, type Realization } from "@/lib/payments";
 import { formatMoment } from "@/lib/formatDate";
 import type { FarmPayment } from "@/lib/orderMoney";
-import { BANK_TRANSFER_METHOD, MIXED_PAYMENT_METHOD, PAYMENT_METHODS, paysByBankTransfer } from "@/lib/constants";
+import { BANK_TRANSFER_METHOD, MIXED_PAYMENT_METHOD, MONEY_EPSILON, PAYMENT_METHODS, paysByBankTransfer } from "@/lib/constants";
 import { parseNumber } from "./NumberCell";
 import { unwrap } from "@/lib/actionResult";
 import KaspiInvoiceBlock from "./KaspiInvoiceBlock";
@@ -93,6 +93,7 @@ export default function PaymentPanel({
         paidAmount={paidAmount}
         invoiceSentAt={invoiceSentAt}
         consignment={consignment}
+        onDone={onDone}
       />
       {byBank ? (
         <>
@@ -187,12 +188,14 @@ function PaymentSummary({
   paidAmount,
   invoiceSentAt,
   consignment,
+  onDone,
 }: {
   orderId: string;
   totalAmount: number;
   paidAmount: number;
   invoiceSentAt: string;
   consignment: boolean;
+  onDone?: () => void;
 }) {
   const left = totalAmount - paidAmount;
   const paid = left <= 1 && paidAmount > 0;
@@ -214,7 +217,6 @@ function PaymentSummary({
         <span className="text-sm text-ink-secondary tabular-nums">
           счёт {money(totalAmount)}
           {paidAmount > 0 && !paid && ` · получено ${money(paidAmount)}`}
-          {left < -1 && ` · переплата ${money(-left)}`}
         </span>
         <InvoiceMark orderId={orderId} invoiceSentAt={invoiceSentAt} hide={paid} />
       </div>
@@ -226,9 +228,59 @@ function PaymentSummary({
           />
         </div>
       )}
+      {paidAmount > totalAmount + MONEY_EPSILON && (
+        <RefundOverpaid orderId={orderId} totalAmount={totalAmount} paidAmount={paidAmount} onDone={onDone} />
+      )}
       {consignment && (
         <p className="text-xs text-ink-secondary">Реализация: остаток — непроданный цветок, а не долг.</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Переплата (обычно после пересчёта по рекламации): денег пришло больше счёта.
+ * Кнопка стоит на виду, а не под «Исправить итог вручную»: иначе переплату
+ * видели, а закрыть её было нечем. Итог становится равен счёту; способ оплаты
+ * не трогаем — его знал менеджер.
+ */
+function RefundOverpaid({
+  orderId,
+  totalAmount,
+  paidAmount,
+  onDone,
+}: {
+  orderId: string;
+  totalAmount: number;
+  paidAmount: number;
+  onDone?: () => void;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const extra = paidAmount - totalAmount;
+
+  function refund() {
+    if (!window.confirm(`Записать, что клиенту вернули ${money(extra)}?`)) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        unwrap(await setPaymentAction(orderId, totalAmount, ""));
+        router.refresh();
+        onDone?.();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Не удалось сохранить");
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-status-critical/10 px-3 py-2 text-sm">
+      <span className="text-status-critical">Переплата {money(extra)} — вернуть или зачесть.</span>
+      <button type="button" onClick={refund} disabled={pending} className="btn-secondary !py-1 text-xs disabled:opacity-50">
+        {pending ? "Сохраняю…" : `Вернули переплату ${money(extra)}`}
+      </button>
+      {error && <span className="basis-full text-status-critical">{error}</span>}
     </div>
   );
 }
@@ -481,11 +533,19 @@ function AddPayment({
           ]
         : [{ amount: 0, method: firstMethod, flowerType: "" }];
   // Менеджер написал «Смешанная» — сразу две строки: картой и наличными.
-  const [lines, setLines] = useState<Line[]>(() => initialLines(flowers));
+  const [stored, setLines] = useState<Line[]>(() => initialLines(flowers));
+  // Одна строка — сумма сразу равна остатку (её можно поправить): самый частый
+  // случай «заплатили всё» — одно нажатие. Пока сумму не трогали, она следует
+  // за остатком — после платежа и обновления страницы там новый остаток.
+  const [autoFill, setAutoFill] = useState(true);
   const [date, setDate] = useState(todayKey());
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const owed = owedFor(farm);
+  const lines: Line[] =
+    autoFill && !byFlower && stored.length === 1
+      ? [{ ...stored[0], amount: Math.round(owed * 100) / 100 }]
+      : stored;
   const total = Math.round(lines.reduce((s, l) => s + (l.amount || 0), 0) * 100) / 100;
   const unusedMethod = PAYMENT_METHODS.find((m) => !lines.some((l) => l.method === m));
   const canAddLine = byFlower || Boolean(unusedMethod);
@@ -494,19 +554,26 @@ function AddPayment({
     setFarm(next);
     const row = farms.find((f) => f.farm === next);
     setLines(initialLines(row?.flowers ?? []));
+    setAutoFill(true);
+  }
+
+  /** Правка руками: дальше строки живут сами, без подстановки остатка. */
+  function edit(update: (prev: Line[]) => Line[]) {
+    setAutoFill(false);
+    setLines(update(lines));
   }
 
   function setLine(i: number, patch: Partial<Line>) {
-    setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+    edit((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   }
 
   function addLine() {
     if (byFlower) {
       const f = flowers[0].flowerType;
       const method = PAYMENT_METHODS.find((m) => !lines.some((l) => l.flowerType === f && l.method === m)) ?? PAYMENT_METHODS[0];
-      setLines((prev) => [...prev, { amount: 0, method, flowerType: f }]);
+      edit((prev) => [...prev, { amount: 0, method, flowerType: f }]);
     } else if (unusedMethod) {
-      setLines((prev) => [...prev, { amount: 0, method: unusedMethod, flowerType: "" }]);
+      edit((prev) => [...prev, { amount: 0, method: unusedMethod, flowerType: "" }]);
     }
   }
 
@@ -514,7 +581,7 @@ function AddPayment({
     if (byFlower) {
       // Каждому цветку — его остаток: в последнюю строку этого цветка, за
       // вычетом того, что уже вписано в другие его строки.
-      setLines((prev) => {
+      edit((prev) => {
         const next = [...prev];
         for (const f of owedByFlower) {
           const idx = next.map((l) => l.flowerType).lastIndexOf(f.flowerType);
@@ -546,6 +613,7 @@ function AddPayment({
           })
         );
         setLines(initialLines(flowers));
+        setAutoFill(true);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось сохранить");
@@ -636,7 +704,7 @@ function AddPayment({
               {lines.length > 1 && (
                 <button
                   type="button"
-                  onClick={() => setLines((prev) => prev.filter((_, j) => j !== i))}
+                  onClick={() => edit((prev) => prev.filter((_, j) => j !== i))}
                   className="text-xs text-ink-muted hover:text-status-critical pb-3"
                 >
                   убрать
@@ -669,11 +737,7 @@ function AddPayment({
           disabled={pending || total <= 0}
           className="btn-primary disabled:opacity-50"
         >
-          {pending
-            ? "Сохраняю…"
-            : lines.length > 1 && total > 0
-              ? `Внести ${money(total)}`
-              : "Внести платёж"}
+          {pending ? "Сохраняю…" : total > 0 ? `Внести ${money(total)}` : "Внести платёж"}
         </button>
         {owed > 1 && Math.abs(total - owed) > 0.5 && (
           <button type="button" onClick={fillRest} className="btn-secondary">
@@ -807,19 +871,7 @@ function WholePayment({
             Оплачено целиком
           </button>
         )}
-        {/* Переплата появляется после пересчёта по рекламации: денег пришло
-            больше, чем стоит заявка. Кнопка закрывает вопрос одним нажатием —
-            иначе бухгалтер считает разницу в уме и вбивает её руками. */}
-        {paidAmount > totalAmount + 1 && (
-          <button
-            onClick={() => save(totalAmount)}
-            disabled={pending}
-            className="btn-secondary disabled:opacity-50"
-            title="Записать, что лишние деньги вернули клиенту"
-          >
-            Вернули переплату {money(paidAmount - totalAmount)}
-          </button>
-        )}
+        {/* «Вернули переплату» — на виду, в итоге панели (RefundOverpaid). */}
         {paidAmount > 0 && (
           <button
             onClick={() => save(0)}

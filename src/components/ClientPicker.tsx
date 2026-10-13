@@ -76,7 +76,8 @@ export default function ClientPicker({
     phone: "",
     messenger: "",
     address: "",
-    paymentTerms: PAYMENT_TERMS[1] as string,
+    // Новый клиент — деньги вперёд, пока не договорились иначе.
+    paymentTerms: PAYMENT_TERMS.find((t) => t === "Предоплата") ?? (PAYMENT_TERMS[0] as string),
     paymentMethod: PAYMENT_METHODS[0] as string,
     kaspiPay1: "",
     kaspiPay2: "",
@@ -129,6 +130,8 @@ export default function ClientPicker({
           mine: true,
           orders: 0,
           daysSinceLast: -1,
+          // «Вид оплаты» заявки подхватывает способ из только что заведённой карточки.
+          paymentMethod: form.paymentMethod,
         });
         setCreating(false);
       } catch (e) {

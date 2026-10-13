@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createBatchAction } from "@/app/warehouse/actions";
-import { FLOWER_TYPE_LABELS, GRADE_LABELS, formatGrade, getGradesFor } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor, gradeColumnLabel } from "@/lib/constants";
 import type { FlowerType } from "@/lib/constants";
 import { unwrapValue } from "@/lib/actionResult";
 
@@ -12,10 +12,13 @@ type FlowerTypeKey = FlowerType;
 export default function BatchReceiveForm({
   varieties,
   allowedTypes,
+  today,
 }: {
   varieties: Record<string, string[]>;
   /** Типы цветка своего производства — остальные зав. складом принимать не может. */
   allowedTypes: string[];
+  /** Сегодня по Алматы, «ГГГГ-ММ-ДД», — с сервера (`localDayKey`), а не по часам браузера. */
+  today: string;
 }) {
   const router = useRouter();
   const initialType = (allowedTypes[0] ?? "rose") as FlowerTypeKey;
@@ -23,7 +26,7 @@ export default function BatchReceiveForm({
   const [variety, setVariety] = useState<string>(varieties[initialType]?.[0] ?? "");
   const [grade, setGrade] = useState<string>(getGradesFor(initialType)[0] ?? "");
   const [quantityIn, setQuantityIn] = useState("");
-  const [harvestDate, setHarvestDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [harvestDate, setHarvestDate] = useState(today);
   const [location, setLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +91,7 @@ export default function BatchReceiveForm({
           </select>
         </div>
         <div>
-          <label className="label">{GRADE_LABELS[flowerType]} *</label>
+          <label className="label">{gradeColumnLabel(flowerType)} *</label>
           <select className="input" value={grade} onChange={(e) => setGrade(e.target.value)} required>
             {getGradesFor(flowerType).map((g) => (
               <option key={g} value={g}>
@@ -102,6 +105,7 @@ export default function BatchReceiveForm({
           <input
             type="number"
             min={1}
+            inputMode="numeric"
             className="input"
             value={quantityIn}
             onChange={(e) => setQuantityIn(e.target.value)}
@@ -109,7 +113,7 @@ export default function BatchReceiveForm({
           />
         </div>
         <div>
-          <label className="label">Дата срезки *</label>
+          <label className="label">Срезка *</label>
           <input
             type="date"
             className="input"

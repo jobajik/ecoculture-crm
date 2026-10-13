@@ -154,12 +154,15 @@ export function homeFocus(input: {
     const late = open.filter(({ st }) => st.lateDays > 0);
     const noDate = open.filter(({ o }) => !o.deliveryDate);
     const link = newOrderLinkFor(role);
+    // Плитки ведут в СВОИ заявки: список у менеджера иначе открывался бы
+    // с чужими, и цифра на плитке не сходилась бы со строками.
+    const own = `&manager=${encodeURIComponent((email || "").toLowerCase())}`;
     const attention: AttentionItem[] = [];
     if (noDate.length) {
       attention.push({
         label: `Без даты доставки: ${num(noDate.length)}`,
         detail: "не попадут в лист сборки — укажите дату",
-        href: "/orders?stage=open",
+        href: `/orders?stage=nodate${own}`,
         tone: "critical",
       });
     }
@@ -176,28 +179,28 @@ export function homeFocus(input: {
           label: "Можно собирать",
           value: num(ready.length),
           hint: ready.length ? "склад может отгружать" : "пока ни одной",
-          href: "/orders?stage=ready",
+          href: `/orders?stage=ready${own}`,
           tone: ready.length ? "good" : "default",
         },
         {
           label: "Ждут вашей галочки",
           value: num(waitingMe.length),
           hint: waitingMe.length ? "без подтверждения не соберут" : "все подтверждены",
-          href: "/orders?stage=wait_confirm",
+          href: `/orders?stage=wait_confirm${own}`,
           tone: waitingMe.length ? "warn" : "default",
         },
         {
           label: "Опаздывают",
           value: num(late.length),
           hint: late.length ? "доставка прошла, не отгружены" : "опозданий нет",
-          href: "/orders?stage=late",
+          href: `/orders?stage=late${own}`,
           tone: late.length ? "critical" : "default",
         },
         {
           label: "Всего открытых",
           value: num(open.length),
           hint: "ваших, ещё не отгруженных",
-          href: "/orders?stage=open",
+          href: `/orders?stage=open${own}`,
         },
       ],
     };
@@ -269,7 +272,7 @@ export function homeFocus(input: {
       attention.push({
         label: `Без даты доставки: ${num(noDate.length)}`,
         detail: "выпадают из листа сборки",
-        href: "/orders?stage=open",
+        href: "/orders?stage=nodate",
         tone: "warn",
       });
     }

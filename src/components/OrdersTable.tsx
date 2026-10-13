@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { OrderWithItems } from "@/lib/types";
@@ -12,12 +12,15 @@ import { byUrgency, orderStage, STAGE_LABELS, STAGE_ORDER, type OrderStage } fro
 import { personName, type NameByEmail } from "@/lib/personName";
 import DeleteOrder from "./DeleteOrder";
 import { managerOptions } from "@/lib/financeManagers";
+import { orderCode } from "@/lib/paymentStage";
+import { matchesOrderListSearch } from "@/lib/orderListSearch";
 
 /** Фильтр списка: этап заявки, «опаздывают» или все. */
 export const STAGE_FILTERS: { value: string; label: string }[] = [
   { value: "all", label: "Все заявки" },
   { value: "open", label: "Открытые" },
   { value: "late", label: "Опаздывают" },
+  { value: "nodate", label: "Без даты доставки" },
   ...STAGE_ORDER.map((k) => ({ value: k, label: STAGE_LABELS[k] })),
 ];
 
@@ -47,6 +50,9 @@ export default function OrdersTable({
   today,
   initialFilter = "all",
   initialManager = "",
+  initialSearch = "",
+  viewerRole = "",
+  viewerEmail = "",
   canAdmin = false,
 }: {
   orders: OrderWithItems[];
@@ -58,6 +64,11 @@ export default function OrdersTable({
   initialFilter?: string;
   /** Менеджер из адреса (`?manager=почта`). */
   initialManager?: string;
+  /** Поиск из адреса (`?q=`). */
+  initialSearch?: string;
+  /** Кто смотрит: менеджер по умолчанию видит свои заявки. */
+  viewerRole?: string;
+  viewerEmail?: string;
   /** Администратор: «изменить» и «удалить» прямо в строке списка. */
   canAdmin?: boolean;
 }) {
@@ -65,16 +76,40 @@ export default function OrdersTable({
   const [status, setStatus] = useState<string>(
     STAGE_FILTERS.some((f) => f.value === initialFilter) ? initialFilter : "all"
   );
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   // Фильтр по менеджеру (12.10.2026, владелец: «в заявках сделай фильтр по менеджерам»).
   const managers = useMemo(
     () => managerOptions(orders.map((o) => ({ managerEmail: o.managerEmail.toLowerCase(), managerName: personName(o.managerEmail, managerNames) }))),
     [orders, managerNames]
   );
+  // Менеджер по умолчанию видит свои заявки; «Все менеджеры» — `?manager=all`.
+  const me = viewerEmail.toLowerCase();
+  const defaultManager = viewerRole === "manager" && managers.some((x) => x.email === me) ? me : "";
   const [manager, setManager] = useState<string>(() => {
     const m = initialManager.toLowerCase();
+    if (m === "all") return "";
+    if (!m) return defaultManager;
     return managers.some((x) => x.email === m) ? m : "";
   });
+
+  // Фильтры живут в адресе: «Назад» со страницы заявки возвращает тот же список.
+  // replaceState, а не router.replace: тот перечитывал бы страницу с сервера
+  // (все заявки из Google) на каждую букву поиска.
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const set = (key: string, value: string) => {
+        if (value) url.searchParams.set(key, value);
+        else url.searchParams.delete(key);
+      };
+      set("stage", status === "all" ? "" : status);
+      set("manager", manager === defaultManager ? "" : manager || "all");
+      set("q", search.trim());
+      if (url.href !== window.location.href) window.history.replaceState(window.history.state, "", url.href);
+    } catch {
+      // адрес — удобство, список работает и без него
+    }
+  }, [status, manager, search, defaultManager]);
 
   // Этап считается один раз на заявку: им пользуются фильтр, сортировка и бейдж.
   const stages = useMemo(() => {
@@ -90,23 +125,20 @@ export default function OrdersTable({
       if (manager && o.managerEmail.toLowerCase() !== manager) return false;
       if (status === "open" && (st.key === "shipped" || st.key === "cancelled")) return false;
       if (status === "late" && st.lateDays <= 0) return false;
-      if (status !== "all" && status !== "open" && status !== "late" && st.key !== status) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        const haystack = `${o.clientName} ${o.managerEmail} ${o.orderId}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
+      if (status === "nodate" && (o.deliveryDate || st.key === "shipped" || st.key === "cancelled")) return false;
+      if (!["all", "open", "late", "nodate"].includes(status) && st.key !== status) return false;
+      if (search.trim() && !matchesOrderListSearch(o, personName(o.managerEmail, managerNames), search)) return false;
       return true;
     });
     // В рабочих отборах — сначала те, что опаздывают сильнее всего.
     return status === "all" ? list : [...list].sort(byUrgency((o: OrderWithItems) => stages.get(o.orderId)!));
-  }, [orders, stages, status, search, manager]);
+  }, [orders, stages, status, search, manager, managerNames]);
 
   // Заявок со временем накопится много. Показываем начало списка, остальное по
   // кнопке; при поиске и фильтре по статусу показываем всё найденное — там
   // список человек сузил сам.
   const [expanded, setExpanded] = useState(false);
-  const narrowed = status !== "all" || search.trim().length > 0 || manager !== "";
+  const narrowed = status !== "all" || search.trim().length > 0 || (manager !== "" && manager !== defaultManager);
   // Итог выбранного менеджера: заявки и сумма (отменённые в сумму не идут).
   const managerTotal = manager
     ? filtered.filter((o) => stageOf(o).key !== "cancelled").reduce((sum, o) => sum + o.totalAmount, 0)
@@ -151,7 +183,7 @@ export default function OrdersTable({
         )}
         <input
           className="input !w-auto flex-1 min-w-[200px]"
-          placeholder="Клиент, менеджер или номер"
+          placeholder="Клиент, телефон, сорт, менеджер, №"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -190,9 +222,10 @@ export default function OrdersTable({
                         строки и в одиночку задирал высоту всей строки. */}
                     <Link
                       href={`/orders/${o.orderId}`}
-                      className="text-series-1 font-medium whitespace-nowrap"
+                      className="text-series-1 font-medium whitespace-nowrap font-mono"
+                      title={o.orderId}
                     >
-                      {o.orderId}
+                      №{orderCode(o.orderId)}
                     </Link>
                     <div className="text-xs text-ink-muted whitespace-nowrap">
                       {formatDay(o.createdAt)}

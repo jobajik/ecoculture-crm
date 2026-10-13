@@ -9,6 +9,7 @@ import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor"
 import { ORDER_PAYMENT_METHODS, SHIPMENT_DIRECTIONS } from "@/lib/constants";
 import { directionForCity } from "@/lib/direction";
 import { unwrapValue } from "@/lib/actionResult";
+import { addDaysToKey } from "@/lib/dayKey";
 
 export default function OrderForm({
   varieties,
@@ -24,6 +25,7 @@ export default function OrderForm({
   initialNotes = "",
   draftId = "",
   managers,
+  today = "",
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -72,6 +74,8 @@ export default function OrderForm({
    * сам РОП. Подставляется менеджер карточки клиента, пока не выбрали руками.
    */
   managers?: { email: string; name: string }[];
+  /** Сегодня по Алматы (от сервера) — для кнопок «Сегодня / Завтра / Послезавтра». */
+  today?: string;
 }) {
   const router = useRouter();
   const [client, setClient] = useState<ClientOption | null>(initialClient);
@@ -167,6 +171,8 @@ export default function OrderForm({
               if (!directionTouched) setDirection(directionForCity(next?.city));
               if (!methodTouched) setPaymentMethod(methodOf(next));
               if (!assignTouched) setAssignTo(managerOf(next));
+              // Телефон доставки — нового клиента, а не набранный для прежнего.
+              setClientPhone(next?.phone ?? "");
             }}
           />
         </div>
@@ -206,6 +212,27 @@ export default function OrderForm({
             value={deliveryDate}
             onChange={(e) => setDeliveryDate(e.target.value)}
           />
+          {today && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {(["Сегодня", "Завтра", "Послезавтра"] as const).map((label, n) => {
+                const day = addDaysToKey(today, n);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setDeliveryDate(day)}
+                    className={
+                      deliveryDate === day
+                        ? "rounded-full px-3 py-1 text-xs border border-accent bg-accent-soft text-accent font-medium"
+                        : "rounded-full px-3 py-1 text-xs border border-line-hairline text-ink-secondary hover:bg-surface-plane"
+                    }
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         {showDirection && (
           <div>
@@ -275,10 +302,7 @@ export default function OrderForm({
         <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <button type="submit" disabled={submitting} className="btn-primary">
-          {submitting ? "Сохранение…" : "Создать заявку"}
-        </button>
+      <div className="space-y-3">
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input
             id="order-confirmed"
@@ -289,6 +313,9 @@ export default function OrderForm({
           />
           Согласовано с клиентом — можно собирать
         </label>
+        <button type="submit" disabled={submitting} className="btn-primary">
+          {submitting ? "Сохранение…" : "Создать заявку"}
+        </button>
       </div>
     </form>
   );

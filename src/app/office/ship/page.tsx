@@ -1,5 +1,7 @@
 import Link from "next/link";
 import ItemsCell from "@/components/ItemsCell";
+import ShipQueueTable from "@/components/ShipQueueTable";
+import { orderCode } from "@/lib/paymentStage";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listBatches } from "@/lib/repo/batches";
 import { getSettings } from "@/lib/repo/settings";
@@ -15,7 +17,7 @@ import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import { officeTabsFor } from "../tabs";
 import { formatDay } from "@/lib/formatDate";
-import { creditNote, isReadyToShip } from "@/lib/orderReady";
+import { isReadyToShip } from "@/lib/orderReady";
 import { inStore, isOfficeRole } from "@/lib/officeStore";
 import { confirmRefusal } from "@/lib/orderRules";
 import ConfirmOrderButton from "@/components/ConfirmOrderButton";
@@ -111,66 +113,23 @@ export default async function OfficeShipPage() {
         }
         flush
       >
-        <div className="table-scroll table-cards border-t border-line-hairline">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                <th className="px-4 py-3 font-medium">Заявка</th>
-                <th className="px-4 py-3 font-medium">Клиент</th>
-                <th className="px-4 py-3 font-medium">Доставка</th>
-                <th className="px-4 py-3 font-medium">Позиции</th>
-                <th className="px-4 py-3 font-medium">Этап</th>
-                <th className="px-4 py-3 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {readyToShip.map((o) => (
-                <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top">
-                  <td className="px-4 py-3 font-medium">{o.orderId}</td>
-                  <td className="px-4 py-3" data-label="Клиент">
-                    <div className="truncate max-w-[200px]" title={o.clientName}>
-                      {o.clientName}
-                    </div>
-                    {o.clientPhone && <div className="text-xs text-ink-muted whitespace-nowrap">{o.clientPhone}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">
-                    {formatDay(o.deliveryDate)}
-                  </td>
-                  <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
-                    <ItemsCell
-                      lines={o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)}
-                      width="max-w-[260px]"
-                    />
-                  </td>
-                  <td className="px-4 py-3" data-label="Этап">
-                    <OrderStageBadge stage={stageOf(o)} compact />
-                    {creditNote(o) && (
-                      <div className="text-xs text-[#8a5a00] mt-1 whitespace-nowrap">{creditNote(o)}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {isOfficeRole(role) || role === "admin" ? (
-                      <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
-                        Отгрузить
-                      </Link>
-                    ) : (
-                      <Link href={`/orders/${o.orderId}`} className="text-series-1 hover:underline">
-                        Открыть
-                      </Link>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {readyToShip.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
-                    {waiting.length > 0 ? "Готовых заявок нет" : "Заявок офиса нет"}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <ShipQueueTable
+          orders={readyToShip}
+          today={today}
+          stageOf={stageOf}
+          showPhone={true}
+          empty={waiting.length > 0 ? "Готовых заявок нет" : "Заявок офиса нет"}
+          action={(o) =>
+            isOfficeRole(role) || role === "admin" ? (
+              <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
+                Отгрузить
+              </Link>
+            ) : (
+              <Link href={`/orders/${o.orderId}`} className="text-series-1 hover:underline">
+                Открыть
+              </Link>
+            )}
+        />
       </Section>
 
       {waiting.length > 0 && (
@@ -179,7 +138,6 @@ export default async function OfficeShipPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                  <th className="px-4 py-3 font-medium">Заявка</th>
                   <th className="px-4 py-3 font-medium">Клиент</th>
                   <th className="px-4 py-3 font-medium">Доставка</th>
                   <th className="px-4 py-3 font-medium">Позиции</th>
@@ -192,19 +150,29 @@ export default async function OfficeShipPage() {
                     key={o.orderId}
                     className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
                   >
-                    <td className="px-4 py-3 font-medium whitespace-nowrap">
-                      {role === "office" ? (
-                        o.orderId
-                      ) : (
-                        <Link href={`/orders/${o.orderId}`} className="hover:underline">
-                          {o.orderId}
-                        </Link>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const title = (
+                          <>
+                            <div className="font-medium truncate max-w-[220px]" title={o.clientName}>
+                              {o.clientName || "—"}
+                            </div>
+                            <div className="text-[11px] text-ink-muted font-mono font-normal">№ {orderCode(o.orderId)}</div>
+                          </>
+                        );
+                        return role === "office" ? (
+                          title
+                        ) : (
+                          <Link href={`/orders/${o.orderId}`} className="hover:underline">
+                            {title}
+                          </Link>
+                        );
+                      })()}
+                      {o.clientPhone && (
+                        <a href={`tel:${o.clientPhone}`} className="block text-xs text-ink-secondary font-normal whitespace-nowrap">
+                          {o.clientPhone}
+                        </a>
                       )}
-                    </td>
-                    <td className="px-4 py-3" data-label="Клиент">
-                      <div className="truncate max-w-[200px]" title={o.clientName}>
-                        {o.clientName}
-                      </div>
                     </td>
                     <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">{formatDay(o.deliveryDate)}</td>
                     <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">

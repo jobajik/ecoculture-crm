@@ -16,6 +16,7 @@ import Icon from "@/components/Icon";
 import { orderCode } from "@/lib/paymentStage";
 import { canSeeShop, isOwnShop, isRetailRole, retailLabel } from "@/lib/retail";
 import { withBotName } from "@/lib/botIdentity";
+import { canCreateClientOrder, newClientOrderHref } from "@/lib/repeatOrder";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +79,9 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     // карточку: людей там мало, и «чужая карточка» между двумя коллегами одного
     // направления означала бы просто неисправимую опечатку.
     (shop && canSeeShop(role, client));
+  // «+ Заявка» прямо с карточки: клиент уже подставлен.
+  const newOrderHref =
+    !shop && client.active && canCreateClientOrder(role) ? newClientOrderHref(role, client.clientId) : "";
 
   return (
     <div className="max-w-4xl">
@@ -135,12 +139,19 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                 )}
               </div>
             </div>
-            <Link
-              href={shop ? "/retail/shops" : "/clients"}
-              className="text-sm text-ink-secondary hover:underline"
-            >
-              {shop ? "← Все магазины" : "← Все клиенты"}
-            </Link>
+            <div className="flex flex-col items-end gap-2">
+              <Link
+                href={shop ? "/retail/shops" : "/clients"}
+                className="text-sm text-ink-secondary hover:underline"
+              >
+                {shop ? "← Все магазины" : "← Все клиенты"}
+              </Link>
+              {newOrderHref && (
+                <Link href={newOrderHref} className="btn-primary !py-1.5">
+                  + Заявка
+                </Link>
+              )}
+            </div>
           </div>
 
           {row && (

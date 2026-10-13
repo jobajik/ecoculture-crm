@@ -20,6 +20,7 @@ import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeChangeRef
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
 import ConfirmOrderButton from "@/components/ConfirmOrderButton";
 import { confirmRefusal } from "@/lib/orderRules";
+import { orderCode } from "@/lib/paymentStage";
 
 export const dynamic = "force-dynamic";
 
@@ -54,19 +55,35 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
     shippedQuantity: item.shippedQuantity,
     availableBatches: availableBatchesFor(allBatches, item.flowerType, item.variety, item.grade),
   }));
+  // Куда вернуться после отгрузки: склад офиса — к своей очереди.
+  const backHref = office || isOfficeRole(role) ? "/office/ship" : "/warehouse";
+  // Своё отгружено целиком: после «Отгрузить» страница перерисовывается, и вместо
+  // формы должен стоять понятный итог с дорогой обратно, а не «Отгружать рано».
+  const ownShipped =
+    order.status === "shipped" ||
+    (ownItems.length > 0 && ownItems.every((i) => i.shippedQuantity >= i.quantity));
+  // Ручной выбор партий нужен, когда программе не хватило склада, — иначе он свёрнут.
+  const manualOpen = whole.shortages.length > 0 || whole.total === 0;
 
   return (
     <div className="max-w-2xl">
       <PageHeader
         area="stock"
-        title={`Отгрузка ${order.orderId}`}
+        title={`Отгрузка № ${orderCode(order.orderId)}`}
         icon="truck"
         subtitle={
           <>
             {office && <>Офис · </>}
             {farm && <>{farmLabel(farm)} · </>}
             {order.clientName}
-            {office && order.clientPhone && ` · ${order.clientPhone}`}
+            {order.clientPhone && (
+              <>
+                {" · "}
+                <a href={`tel:${order.clientPhone}`} className="underline decoration-dotted">
+                  {order.clientPhone}
+                </a>
+              </>
+            )}
             {order.deliveryDate && ` · доставка ${formatDay(order.deliveryDate)}`}
           </>
         }
@@ -82,7 +99,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
           <p className="text-xs text-ink-muted mt-1">Не хватает в офисе — отдайте заявку на основной склад.</p>
         </div>
       )}
-      {office && order.notes && (
+      {order.notes && (
         <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2 mb-4">{order.notes}</p>
       )}
       {storeRefusal ? (
@@ -95,10 +112,20 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
           Отгрузка в долг: у клиента «{order.clientPaymentTerms}».
         </p>
       )}
-      {storeRefusal ? null : isReadyToShip(order) ? (
+      {storeRefusal ? null : ownShipped && order.status !== "cancelled" ? (
+        <Section tone="good" icon="check" title="Отгружено">
+          <p className="text-sm text-ink-secondary mb-3">
+            {ownItems.reduce((s, i) => s + i.shippedQuantity, 0).toLocaleString("ru-RU")} шт. — всё по заявке.
+          </p>
+          <Link href={backHref} className="btn-primary inline-flex w-full sm:w-auto justify-center">
+            ← К очереди
+          </Link>
+        </Section>
+      ) : isReadyToShip(order) ? (
         <>
           <WholeOrderShip
             orderId={order.orderId}
+            backHref={backHref}
             total={whole.total}
             lines={whole.lines.map((l) => {
               const item = ownItems.find((i) => i.itemId === l.itemId)!;
@@ -113,8 +140,12 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
               return { label: `${item.variety} ${formatGrade(item.grade)}`, missing: s.missing };
             })}
           />
-          <h2 className="font-medium mb-2">По позициям — выбрать партии самому</h2>
-          <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} />
+          <details open={manualOpen} className="group">
+            <summary className="cursor-pointer select-none font-medium mb-3 text-ink-secondary">
+              Выбрать партии вручную
+            </summary>
+            <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} backHref={backHref} />
+          </details>
         </>
       ) : (
         <Section

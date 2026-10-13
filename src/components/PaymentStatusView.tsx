@@ -10,6 +10,7 @@ import { matchesOrderSearch } from "@/lib/paymentStage";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { DEBT_OVERDUE_DAYS } from "@/lib/constants";
 import PaymentPanel from "./PaymentPanel";
+import InvoiceCell from "./InvoiceCell";
 import MoreToggle from "./MoreToggle";
 import Hint from "./Hint";
 
@@ -325,9 +326,8 @@ function statusText(r: StatusRow): string {
     case "partial":
       return `получено ${money(r.row.paidAmount)} из ${money(r.row.amount)}`;
     default:
-      return r.row.invoiceNote
-        ? `заметка: ${r.row.invoiceNote}`
-        : r.row.deliveryDate
+      // Заметку «почему не ушёл» показывает InvoiceCell в той же строке.
+      return r.row.deliveryDate
           ? `доставка ${formatDay(r.row.deliveryDate)}`
           : "без даты доставки";
   }
@@ -361,6 +361,19 @@ function StatusItem({
             </Link>
           </div>
           <div className={clsx("text-xs truncate", LANE_TONE[r.lane].text)}>{statusText(r)}</div>
+          {/* «Нет отметки о счёте»: отметить отправленный счёт или записать, почему
+              не ушёл, — прямо в строке, как в «Оплатах», не раскрывая панель. */}
+          {r.lane === "no_invoice" && (
+            <div className="mt-1">
+              <InvoiceCell
+                orderId={r.row.orderId}
+                stage={r.row.stage}
+                invoiceSentAt={r.row.invoiceSentAt}
+                invoiceNote={r.row.invoiceNote}
+                canEdit={canEdit}
+              />
+            </div>
+          )}
         </div>
         <div className="text-xs text-ink-muted truncate sm:w-32 flex-none">{r.row.managerName}</div>
         <div className="text-right flex-none sm:w-28 ml-auto sm:ml-0">

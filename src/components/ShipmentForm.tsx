@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createShipmentAction } from "@/app/warehouse/actions";
 import clsx from "clsx";
@@ -38,9 +39,12 @@ interface ItemWithBatches {
 export default function ShipmentForm({
   order,
   itemsWithBatches,
+  backHref = "/warehouse",
 }: {
   order: OrderWithItems;
   itemsWithBatches: ItemWithBatches[];
+  /** Куда «← К очереди», когда всё отгружено: склад или офис. */
+  backHref?: string;
 }) {
   const router = useRouter();
   const remainingItems = itemsWithBatches.filter((i) => i.shippedQuantity < i.quantity);
@@ -48,7 +52,12 @@ export default function ShipmentForm({
   return (
     <div className="space-y-4">
       {remainingItems.length === 0 && (
-        <div className="card text-ink-secondary">Всё отгружено.</div>
+        <div className="card space-y-3">
+          <div className="text-status-good">Всё отгружено.</div>
+          <Link href={backHref} className="btn-primary inline-flex w-full sm:w-auto justify-center">
+            ← К очереди
+          </Link>
+        </div>
       )}
       {remainingItems.map((item) => (
         <ItemShipRow key={item.itemId} orderId={order.orderId} item={item} onDone={() => router.refresh()} />
@@ -199,7 +208,7 @@ function ItemShipRow({
                 <button
                   type="button"
                   onClick={pickInOrder}
-                  className="text-sm text-accent hover:underline"
+                  className="btn-secondary !py-1 !px-2.5 text-sm"
                 >
                   Отметить по порядку на {remainingToShip} шт.
                 </button>

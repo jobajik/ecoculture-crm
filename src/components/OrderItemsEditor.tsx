@@ -56,6 +56,34 @@ export function emptyItem(
   };
 }
 
+/** Градации, доступные сорту: у мини-микса — только «Мини-микс». */
+function gradesForRow(flowerType: FlowerType, variety: string): string[] {
+  return getGradesFor(flowerType).filter((g) => !isMiniMixVariety(variety) || g === "Мини-микс");
+}
+
+/**
+ * Следующая позиция: тот же цветок и сорт, что в предыдущей строке, длина —
+ * следующая по порядку (заявку обычно набирают «60, 70, 80» одного сорта).
+ */
+export function nextItem(
+  prev: DraftItem | undefined,
+  varieties: Record<string, string[]>,
+  prices: Record<string, number>
+): DraftItem {
+  if (!prev || !prev.variety) return emptyItem(varieties, prices);
+  const grades = gradesForRow(prev.flowerType, prev.variety);
+  const at = grades.indexOf(prev.grade);
+  const grade = (at >= 0 ? grades[at + 1] : undefined) ?? grades[0] ?? "";
+  const price = priceFromMap(prices, prev.flowerType, prev.variety, grade);
+  return {
+    flowerType: prev.flowerType,
+    variety: prev.variety,
+    grade,
+    quantity: "",
+    unitPrice: price > 0 ? String(price) : "",
+  };
+}
+
 /** Ключ остатка склада — тот же, что у прайса. */
 export function stockKey(flowerType: string, variety: string, grade: string): string {
   return `${flowerType}|${variety}|${grade}`;
@@ -134,13 +162,24 @@ export default function OrderItemsEditor({
   );
   const stems = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
 
+  // Остаток по сорту целиком (все длины) — подсказка в списке сортов.
+  const varietyStock = new Map<string, number>();
+  if (stock) {
+    for (const [key, qty] of Object.entries(stock)) {
+      const [ft, v] = key.split("|");
+      const k = `${ft}|${v}`;
+      varietyStock.set(k, (varietyStock.get(k) ?? 0) + (Number(qty) || 0));
+    }
+  }
+  const stockLabel = (n: number) => (n > 0 ? n.toLocaleString("ru-RU") : "нет");
+
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-medium">Позиции заявки</h2>
         <button
           type="button"
-          onClick={() => onChange([...items, emptyItem(varieties, prices)])}
+          onClick={() => onChange([...items, nextItem(items[items.length - 1], varieties, prices)])}
           className="btn-secondary !py-1"
         >
           + Добавить позицию
@@ -184,7 +223,7 @@ export default function OrderItemsEditor({
                   {!it.variety && <option value="">— выберите —</option>}
                   {(varieties[it.flowerType] ?? []).map((v) => (
                     <option key={v} value={v}>
-                      {v}
+                      {stock ? `${v} · ${stockLabel(varietyStock.get(`${it.flowerType}|${v}`) ?? 0)}` : v}
                     </option>
                   ))}
                 </select>
@@ -197,11 +236,11 @@ export default function OrderItemsEditor({
                   onChange={(e) => updatePosition(idx, { grade: e.target.value })}
                 >
                   {!it.grade && <option value="">— выберите —</option>}
-                  {getGradesFor(it.flowerType)
-                    .filter((grade) => !isMiniMixVariety(it.variety) || grade === "Мини-микс")
-                    .map((grade) => (
+                  {gradesForRow(it.flowerType, it.variety).map((grade) => (
                     <option key={grade} value={grade}>
-                      {formatGrade(grade)}
+                      {stock
+                        ? `${formatGrade(grade)} · ${stockLabel(stock[stockKey(it.flowerType, it.variety, grade)] ?? 0)}`
+                        : formatGrade(grade)}
                     </option>
                   ))}
                 </select>
@@ -233,6 +272,7 @@ export default function OrderItemsEditor({
                 </label>
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={1}
                   className="input"
                   value={it.quantity}
@@ -269,11 +309,26 @@ export default function OrderItemsEditor({
                   />
                 </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Копия без номера позиции: на сервере это новая строка.
+                    const { itemId: _skip, ...copy } = it;
+                    void _skip;
+                    onChange([...items.slice(0, idx + 1), { ...copy }, ...items.slice(idx + 1)]);
+                  }}
+                  className="self-end min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[40px] rounded-lg text-ink-secondary hover:bg-surface-plane flex items-center justify-center"
+                  title="Копировать строку"
+                  aria-label="Копировать строку"
+                >
+                  ⧉
+                </button>
                 {items.length > 1 && (
                   <button
                     type="button"
                     onClick={() => onChange(items.filter((_, i) => i !== idx))}
-                    className="text-status-critical text-sm px-2 self-end pb-2"
+                    className="self-end min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[40px] rounded-lg text-status-critical hover:bg-status-critical/10 flex items-center justify-center"
+                    title="Удалить позицию"
                     aria-label="Удалить позицию"
                   >
                     ✕

@@ -30,10 +30,13 @@ type Stems = Record<string, Record<string, string>>;
  */
 export default function PointDayForm({
   today,
+  initialDay,
   known,
   farms,
 }: {
   today: string;
+  /** С какого дня открыть форму (ссылка из «По дням»). Нет или из будущего — сегодня. */
+  initialDay?: string;
   known: Record<string, PointKnownDay>;
   farms: { farm: string; label: string; hint: string; flowers: { key: string; label: string }[] }[];
 }) {
@@ -47,10 +50,11 @@ export default function PointDayForm({
         return [f.farm, Object.fromEntries(f.flowers.map((fl) => [fl.key, sold ? String(sold[fl.key] ?? 0) : ""]))];
       })
     );
-  const [date, setDate] = useState(today);
-  const [values, setValues] = useState<Values>(valuesOf(today));
-  const [stems, setStems] = useState<Stems>(stemsOf(today));
-  const [note, setNote] = useState(known[today]?.note ?? "");
+  const firstDay = initialDay && /^\d{4}-\d{2}-\d{2}$/.test(initialDay) && initialDay <= today ? initialDay : today;
+  const [date, setDate] = useState(firstDay);
+  const [values, setValues] = useState<Values>(() => valuesOf(firstDay));
+  const [stems, setStems] = useState<Stems>(() => stemsOf(firstDay));
+  const [note, setNote] = useState(known[firstDay]?.note ?? "");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const existing = known[date];

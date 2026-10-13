@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { sendDebtReminderAction } from "@/app/finance/reminder-actions";
 import { unwrapValue } from "@/lib/actionResult";
@@ -12,7 +13,8 @@ export interface ReminderRow {
   clientName: string;
   phone: string;
   total: string;
-  orders: string[];
+  /** Заявки: номер ведёт на заявку, `text` — остальное (день, долг, срок). */
+  orders: { orderId: string; code: string; text: string }[];
   kaspi: string;
   last: string;
   problem: string;
@@ -132,7 +134,12 @@ export default function DebtReminderList({ rows, canSend }: { rows: ReminderRow[
                   </div>
                   <ul className="text-sm text-ink-secondary mt-1">
                     {r.orders.map((o) => (
-                      <li key={o}>{o}</li>
+                      <li key={o.orderId}>
+                        <Link href={`/orders/${o.orderId}`} className="text-accent hover:underline">
+                          № {o.code}
+                        </Link>{" "}
+                        {o.text}
+                      </li>
                     ))}
                   </ul>
                   {r.kaspi && <div className="text-xs text-kaspi mt-1">{r.kaspi}</div>}

@@ -34,7 +34,11 @@ export default async function RemindersPage() {
     clientName: g.clientName,
     phone: prettyWaPhone(g.waPhone),
     total: money(g.total),
-    orders: g.orders.map((o) => `№ ${o.code} от ${formatDay(o.day)} — ${money(o.debt)}${o.daysLate ? ` · срок прошёл ${o.daysLate} дн. назад` : " · срок сегодня"}`),
+    orders: g.orders.map((o) => ({
+      orderId: o.orderId,
+      code: o.code,
+      text: `от ${formatDay(o.day)} — ${money(o.debt)}${o.daysLate ? ` · срок прошёл ${o.daysLate} дн. назад` : " · срок сегодня"}`,
+    })),
     kaspi: g.kaspiNew.length
       ? `выставим счёт Kaspi на ${money(g.kaspiNew.reduce((s, k) => s + k.amount, 0))} · ${prettyKaspiPhone(g.kaspiPhone)}`
       : g.kaspiOpen.length

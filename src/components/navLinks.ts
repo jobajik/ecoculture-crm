@@ -95,6 +95,15 @@ const RETAIL_HREF_BY_ROLE: Record<string, string> = {
 };
 
 /**
+ * Склад офиса каждый день открывает «Офис» ради очереди отгрузки — туда пункт
+ * и ведёт. Подсветка — по началу адреса, как у «Розницы».
+ */
+const OFFICE_HREF_BY_ROLE: Record<string, string> = {
+  office: "/office/ship",
+  office_retail: "/office/ship",
+};
+
+/**
  * Что у роли идёт ПЕРВЫМ. На телефоне в нижнюю панель помещаются четыре пункта,
  * остальное уходит под «Ещё», — и аудит сентября нашёл, что у владельца под
  * «Ещё» оказались Оплаты и Склад, у склада «Розница» стояла раньше «Склада», а у
@@ -127,6 +136,9 @@ export function navLinksFor(role: string): NavLink[] {
     }
     if (link.href === "/retail" && RETAIL_HREF_BY_ROLE[role]) {
       return { ...link, href: RETAIL_HREF_BY_ROLE[role], match: "/retail" };
+    }
+    if (link.href === "/office" && OFFICE_HREF_BY_ROLE[role]) {
+      return { ...link, href: OFFICE_HREF_BY_ROLE[role], match: "/office" };
     }
     return link;
   });

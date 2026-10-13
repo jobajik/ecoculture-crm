@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { shipWholeOrderAction } from "@/app/warehouse/actions";
 import { unwrapValue } from "@/lib/actionResult";
@@ -23,8 +24,11 @@ export default function WholeOrderShip({
   total,
   lines,
   shortages,
+  backHref = "/warehouse",
 }: {
   orderId: string;
+  /** Куда «← К очереди» после отгрузки: склад или офис. */
+  backHref?: string;
   total: number;
   lines: WholeShipPreviewLine[];
   shortages: { label: string; missing: number }[];
@@ -35,6 +39,18 @@ export default function WholeOrderShip({
   const [done, setDone] = useState<string | null>(null);
   const nf = (n: number) => n.toLocaleString("ru-RU");
 
+  // После отгрузки страница перерисуется и раскладка станет пустой — итог и
+  // дорога обратно должны остаться на экране.
+  if (done) {
+    return (
+      <div className="card space-y-3 mb-6 border-status-good/30">
+        <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">{done}</div>
+        <Link href={backHref} className="btn-primary inline-flex w-full sm:w-auto justify-center">
+          ← К очереди
+        </Link>
+      </div>
+    );
+  }
   if (total === 0) return null;
 
   async function ship() {
@@ -82,13 +98,9 @@ export default function WholeOrderShip({
         </div>
       )}
       {error && <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>}
-      {done ? (
-        <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">{done}</div>
-      ) : (
-        <button type="button" className="btn-primary w-full sm:w-auto" disabled={busy} onClick={ship}>
-          {busy ? "Отгружаю…" : `Отгрузить всё · ${nf(total)} шт.`}
-        </button>
-      )}
+      <button type="button" className="btn-primary w-full sm:w-auto" disabled={busy} onClick={ship}>
+        {busy ? "Отгружаю…" : `Отгрузить всё · ${nf(total)} шт.`}
+      </button>
     </div>
   );
 }

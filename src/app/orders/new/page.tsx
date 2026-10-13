@@ -36,6 +36,10 @@ import {
   shopOrderForm,
 } from "@/lib/retail";
 import { withBotName } from "@/lib/botIdentity";
+import { localDayKey } from "@/lib/timezone";
+import { addDaysToKey } from "@/lib/dayKey";
+import { canRepeatFrom, repeatFormItems } from "@/lib/repeatOrder";
+import { orderCode } from "@/lib/paymentStage";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +62,8 @@ export default async function NewOrderPage({
     sale?: string;
     /** Черновик из WhatsApp (`waOrder.ts`): форма открывается заполненной. */
     draft?: string;
+    /** «Повторить заявку»: позиции берутся из этой заявки, цены — по текущему прайсу. */
+    from?: string;
   };
 }) {
   const session = await getServerSession(authOptions);
@@ -228,6 +234,22 @@ export default async function NewOrderPage({
       ? options.find((c) => c.clientId === searchParams.client) ?? null
       : null;
 
+  // «Повторить»: только заявка, которую человек и так видит, и только этого клиента
+  // (грабли 1.11: адрес — не разрешение).
+  const repeatFrom =
+    !draftHit && preselected && searchParams?.from
+      ? orders.find(
+          (o) =>
+            o.orderId === searchParams.from &&
+            o.clientId === preselected.clientId &&
+            canRepeatFrom(o, role, myEmail)
+        ) ?? null
+      : null;
+
+  // Дата: из черновика или адреса, иначе — завтра по Алматы (заявки собирают накануне).
+  const today = localDayKey();
+  const initialDate = draftHit?.draft.deliveryDate || preselectedDate || addDaysToKey(today, 1);
+
   // Направление из адреса — так РОП попадает сюда из раздела «Регионы», нажав
   // «Заявка в Астану». Значение проверяется по закрытому списку: подставленное
   // из адреса ничем не лучше введённого руками (грабли 1.11).
@@ -269,13 +291,25 @@ export default async function NewOrderPage({
           </div>
         </div>
       )}
+      {repeatFrom && (
+        <div className="card mb-5 max-w-4xl text-sm">
+          Повтор заявки №{orderCode(repeatFrom.orderId)} — цены по текущему прайсу. Проверьте количество и дату.
+        </div>
+      )}
       <div>
         <OrderForm
           varieties={varieties}
           prices={priceMap}
           initialClient={preselected}
-          initialDeliveryDate={draftHit?.draft.deliveryDate || preselectedDate}
-          initialItems={draftHit ? (draftFormItems(draftHit.draft, priceMap, varieties) as DraftItem[]) : undefined}
+          initialDeliveryDate={initialDate}
+          today={today}
+          initialItems={
+            draftHit
+              ? (draftFormItems(draftHit.draft, priceMap, varieties) as DraftItem[])
+              : repeatFrom
+                ? (repeatFormItems(repeatFrom.items, priceMap, varieties) as DraftItem[])
+                : undefined
+          }
           initialNotes={draftHit?.draft.note ?? ""}
           draftId={draftHit?.draft.draftId ?? ""}
           clients={options}

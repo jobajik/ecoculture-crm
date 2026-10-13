@@ -14,6 +14,7 @@ import { isOwnClientOrder, isRetailOrder, retailLabel, retailTerritoryFor } from
 import { ROLES } from "@/lib/constants";
 import OrderEditForm from "@/components/OrderEditForm";
 import PageHeader from "@/components/PageHeader";
+import { orderCode } from "@/lib/paymentStage";
 import type { DraftItem } from "@/components/OrderItemsEditor";
 import type { FlowerType } from "@/lib/constants";
 
@@ -126,7 +127,7 @@ export default async function EditOrderPage({ params }: { params: { id: string }
     <div>
       <PageHeader
         area="orders"
-        title={`Изменить заявку ${order.orderId}`}
+        title={`Изменить заявку №${orderCode(order.orderId)}`}
         subtitle={itemsLockReason ? lockedSubtitle : undefined}
         actions={
           <Link href={`/orders/${order.orderId}`} className="text-sm text-ink-secondary hover:underline">

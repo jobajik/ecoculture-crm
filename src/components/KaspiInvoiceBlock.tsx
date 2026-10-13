@@ -257,8 +257,8 @@ export default function KaspiInvoiceBlock({
             {head}
             {f.sessionLost && (
               <p className="text-sm rounded-lg bg-status-critical/10 text-status-critical px-3 py-2">
-                <b>Касса Kaspi отключилась.</b> {f.sessionLost}. Переподключите кассира в кабинете ApiPay по SMS, а
-                пока внесите оплату вручную ниже.
+                <b>Касса Kaspi отключилась.</b> {f.sessionLost}. Нажмите «Переподключить кассира» в красной полосе
+                вверху «Оплат», а пока внесите оплату вручную ниже.
               </p>
             )}
             {failed && (

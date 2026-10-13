@@ -1,15 +1,21 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { importBatchesAction, parseBatchesFileAction } from "@/app/warehouse/actions";
-import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, formatGrade, gradeColumnLabelFor } from "@/lib/constants";
 import type { ParsedBatchRow, ParseResult } from "@/lib/excel";
 import { unwrapValue } from "@/lib/actionResult";
+import { formatDay } from "@/lib/formatDate";
 
 export default function BatchImportForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  // На телефоне (холодильник) файл не грузят — блок свёрнут; на компьютере открыт сразу.
+  useEffect(() => {
+    if (detailsRef.current && window.matchMedia("(min-width: 640px)").matches) detailsRef.current.open = true;
+  }, []);
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -62,9 +68,11 @@ export default function BatchImportForm() {
   }
 
   return (
-    <div className="card space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h2 className="font-medium">Загрузка файлом</h2>
+    <details ref={detailsRef} className="card group">
+      <summary className="cursor-pointer select-none font-medium">Загрузить файлом</summary>
+      <div className="space-y-4 mt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink-secondary">Excel по шаблону — много партий сразу.</p>
         <a href="/api/warehouse/template" className="btn-secondary !py-1.5">
           ↓ Шаблон
         </a>
@@ -117,9 +125,11 @@ export default function BatchImportForm() {
               <thead>
                 <tr className="text-left text-ink-secondary border-b border-line-hairline bg-surface-plane">
                   <th className="px-3 py-2 font-medium">Строка</th>
-                  <th className="px-3 py-2 font-medium">Сбор</th>
+                  <th className="px-3 py-2 font-medium">Срезка</th>
                   <th className="px-3 py-2 font-medium">Тип / сорт</th>
-                  <th className="px-3 py-2 font-medium">Длина / категория</th>
+                  <th className="px-3 py-2 font-medium">
+                    {gradeColumnLabelFor(result.rows.map((r) => r.flowerType).filter(Boolean))}
+                  </th>
                   <th className="px-3 py-2 font-medium">Кол-во</th>
                   <th className="px-3 py-2 font-medium">Место</th>
                 </tr>
@@ -157,7 +167,8 @@ export default function BatchImportForm() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -167,7 +178,7 @@ function PreviewRow({ row }: { row: ParsedBatchRow }) {
       <tr className="border-b border-line-hairline last:border-0">
         <td className="px-3 py-2 text-ink-muted">{row.rowNumber}</td>
         <td className="px-3 py-2">
-          {row.harvestDate ? new Date(row.harvestDate).toLocaleDateString("ru-RU") : "—"}
+          {row.harvestDate ? formatDay(row.harvestDate) : "—"}
         </td>
         <td className="px-3 py-2">
           {FLOWER_TYPE_LABELS[row.flowerType]} {row.variety}

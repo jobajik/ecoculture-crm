@@ -12,15 +12,18 @@ import CashByFlowerCard from "./CashByFlowerCard";
 import StageBadge from "./StageBadge";
 import { FINANCE_FARMS, managerFarmSummary, managerOptions } from "@/lib/financeManagers";
 
-type Filter = "all" | "noinvoice" | "unpaid" | "partial" | "paid" | "ready";
+type Filter = "all" | "noinvoice" | "unpaid" | "partial" | "paid" | "ready" | "overpaid";
 
 const FILTER_LABELS: Record<Filter, string> = {
   all: "Все",
-  noinvoice: "Без отметки о счёте",
+  noinvoice: "Нет отметки о счёте",
   unpaid: "Не оплачены",
   partial: "Оплачены частично",
   paid: "Оплачены",
   ready: "Готовы к отгрузке",
+  // Переплата — по всей базе, а не за период: вернуть её надо, когда бы ни
+  // оформили заявку (snapshot.overpaidRows).
+  overpaid: "Переплата",
 };
 
 /** Сколько колонок в таблице — под colSpan. */
@@ -77,8 +80,10 @@ export default function FinanceBoard({
   // В каких группах человек попросил показать все строки (а не первые 12).
   const [fullGroups, setFullGroups] = useState<Set<string>>(new Set());
 
+  // «Переплата» смотрит на всю базу, остальные отборы — на заявки периода.
+  const source = filter === "overpaid" ? snapshot.overpaidRows : snapshot.orders;
   const rows = useMemo(() => {
-    return snapshot.orders.filter((r) => {
+    return source.filter((r) => {
       if (manager && r.managerEmail !== manager) return false;
       if (filter === "noinvoice" && r.stage !== PAYMENT_STAGES.NEW) return false;
       if (filter === "unpaid" && r.paid) return false;
@@ -99,9 +104,12 @@ export default function FinanceBoard({
         search
       );
     });
-  }, [snapshot.orders, filter, search, manager]);
+  }, [source, filter, search, manager]);
 
-  const managers = useMemo(() => managerOptions(snapshot.orders), [snapshot.orders]);
+  const managers = useMemo(
+    () => managerOptions([...snapshot.orders, ...snapshot.overpaidRows]),
+    [snapshot.orders, snapshot.overpaidRows]
+  );
   // Продажи каждого менеджера по компаниям — из тех же отфильтрованных строк, что и список ниже.
   const byManager = useMemo(() => managerFarmSummary(rows), [rows]);
 
@@ -165,7 +173,7 @@ export default function FinanceBoard({
           tone={t.unpaidAmount > 0 ? "warning" : "default"}
         />
         <Tile
-          label="Долг всего"
+          label="Всего долг"
           value={money(snapshot.debtTotal)}
           sub={
             snapshot.debtOverdueTotal > 0
@@ -210,6 +218,9 @@ export default function FinanceBoard({
               )}
             >
               {FILTER_LABELS[f]}
+              {f === "overpaid" && (
+                <span className="ml-1 tabular-nums opacity-70">{snapshot.overpaidRows.length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -295,7 +306,15 @@ export default function FinanceBoard({
         </div>
       )}
 
-      <div className="card !p-0 table-scroll">
+      {filter === "overpaid" && (
+        <p className="text-sm text-ink-muted -mt-2">
+          Переплаты по всей базе, не только за период: деньги надо вернуть или зачесть.
+        </p>
+      )}
+
+      {/* На телефоне строки — карточки (`table-cards`): кнопка «Оплата» видна без
+          боковой прокрутки. На компьютере — та же таблица. */}
+      <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             {/* Колонок ровно шесть, и это предел: девять не влезали даже на
@@ -342,7 +361,7 @@ export default function FinanceBoard({
                         · {g.rows.length} {orderWord(g.rows.length)}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                    <td data-label="Сумма" className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                       <div className="font-medium">{money(g.amount)}</div>
                       <div className="text-xs text-status-good">{money(g.paid)}</div>
                     </td>
@@ -415,7 +434,7 @@ export default function FinanceBoard({
                           {/* Номер — служебная надпись: мелкий, серый, моноширинный.
                               Тот же приём, что с кодом партии на складе: он нужен,
                               только чтобы сверить строку с тем, что назвали. */}
-                          <td className="px-2 py-2.5 font-mono text-xs text-ink-muted whitespace-nowrap">
+                          <td data-label="№" className="px-2 py-2.5 font-mono text-xs text-ink-muted whitespace-nowrap">
                             {r.code}
                             {/* Номер реализации 1С — под номером заявки: оба
                                 служебные, и сверяют их всегда вместе. */}
@@ -435,11 +454,14 @@ export default function FinanceBoard({
                           {/* Две даты в одной ячейке: сверху оформлена, снизу
                               доставка. По отдельности они съедали две колонки,
                               а читают их всегда вместе. */}
-                          <td className="px-3 py-2.5 text-xs text-ink-secondary whitespace-nowrap hidden sm:table-cell">
+                          <td
+                            data-label="Оформлена / доставка"
+                            className="px-3 py-2.5 text-xs text-ink-secondary whitespace-nowrap hidden sm:table-cell"
+                          >
                             <div>{dateLabel(r.createdDate)}</div>
                             <div className="text-ink-muted">{dateLabel(r.deliveryDate)}</div>
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                          <td data-label="Сумма" className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                             <div className="font-medium">{money(r.amount)}</div>
                             {/* В смешанной заявке — сумма по каждому цветку:
                                 клиент платит по компаниям, и пришедшие 60 000
@@ -460,7 +482,7 @@ export default function FinanceBoard({
                               слова «отправлен». Владелец на этом и споткнулся —
                               два счёта не ушли из-за неверных телефонов, а
                               найти их в списке было нечем. */}
-                          <td className="px-3 py-2.5">
+                          <td data-label="Статус оплаты" className="px-3 py-2.5">
                             <InvoiceCell
                               orderId={r.orderId}
                               stage={r.stage}
@@ -469,7 +491,7 @@ export default function FinanceBoard({
                               canEdit={canEdit}
                             />
                           </td>
-                          <td className="px-2 py-2.5 text-right whitespace-nowrap">
+                          <td data-label="Оплата" className="px-2 py-2.5 text-right whitespace-nowrap">
                             {canEdit ? (
                               <button
                                 onClick={() => setOpenId(openId === r.orderId ? null : r.orderId)}
@@ -528,7 +550,9 @@ export default function FinanceBoard({
             {groups.length === 0 && (
               <tr>
                 <td colSpan={COLS} className="px-4 py-10 text-center">
-                  {snapshot.orders.length === 0 ? (
+                  {filter === "overpaid" && source.length === 0 ? (
+                    <p className="font-medium">Переплат нет</p>
+                  ) : source.length === 0 ? (
                     <>
                       <p className="font-medium">За этот период заявок нет</p>
                       <p className="text-sm text-ink-secondary mt-1">

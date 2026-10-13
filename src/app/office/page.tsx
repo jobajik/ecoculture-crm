@@ -5,8 +5,8 @@ import { listBatches } from "@/lib/repo/batches";
 import { getSettings } from "@/lib/repo/settings";
 import { computeBatchStorageInfo } from "@/lib/shelfLife";
 import { stockPositions } from "@/lib/writeoffPlan";
-import { canMoveStock, inStore } from "@/lib/officeStore";
-import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
+import { canMoveStock, inStore, isOfficeRole } from "@/lib/officeStore";
+import { FLOWER_TYPE_LABELS, formatGrade, gradeColumnLabel, gradeColumnLabelFor } from "@/lib/constants";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import Hint from "@/components/Hint";
@@ -45,6 +45,8 @@ export default async function OfficePage() {
   const total = list.reduce((s, r) => s + r.qty, 0);
   const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
   const mover = canMoveStock(role);
+  // Пересчёт — у тех, кто списывает в офисе (РОП только смотрит и перемещает).
+  const canRecount = isOfficeRole(role) || role === "admin";
 
   return (
     <div className="max-w-4xl">
@@ -55,9 +57,16 @@ export default async function OfficePage() {
         icon="store"
         tabs={officeTabsFor(role)}
         actions={
-          <Link href="/office/ship" className="btn-primary">
-            Отгрузка
-          </Link>
+          <div className="flex gap-2">
+            {canRecount && (
+              <Link href="/office/writeoff?mode=recount" className="btn-secondary">
+                Пересчёт
+              </Link>
+            )}
+            <Link href="/office/ship" className="btn-primary">
+              Отгрузка
+            </Link>
+          </div>
         }
       />
 
@@ -83,7 +92,7 @@ export default async function OfficePage() {
               <tr className="text-left text-ink-secondary border-b border-line-hairline">
                 <th className="px-4 py-2.5 font-medium">Цветок</th>
                 <th className="px-3 py-2.5 font-medium">Сорт</th>
-                <th className="px-3 py-2.5 font-medium">Категория</th>
+                <th className="px-3 py-2.5 font-medium">{gradeColumnLabelFor(list.map((r) => r.flowerType))}</th>
                 <th className="px-3 py-2.5 font-medium text-right">Шт.</th>
                 <th className="px-3 py-2.5 font-medium text-right">Лежит</th>
               </tr>
@@ -93,7 +102,7 @@ export default async function OfficePage() {
                 <tr key={`${r.flowerType}|${r.variety}|${r.grade}`} className="border-b border-line-hairline last:border-0">
                   <td className="px-4 py-2">{FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType}</td>
                   <td data-label="Сорт" className="px-3 py-2">{r.variety}</td>
-                  <td data-label="Категория" className="px-3 py-2">{formatGrade(r.grade)}</td>
+                  <td data-label={gradeColumnLabel(r.flowerType)} className="px-3 py-2">{formatGrade(r.grade)}</td>
                   <td data-label="Шт." className="px-3 py-2 text-right tabular-nums font-medium">{nf(r.qty)}</td>
                   <td
                     data-label="Лежит"

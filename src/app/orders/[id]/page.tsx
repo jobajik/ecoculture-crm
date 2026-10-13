@@ -63,6 +63,7 @@ import { DEBT_OVERDUE_DAYS } from "@/lib/constants";
 import { canEditFinance } from "@/lib/financeAccess";
 import { paymentHistory, realizationsOf } from "@/lib/payments";
 import { withBotName } from "@/lib/botIdentity";
+import { canRepeatFrom, newClientOrderHref } from "@/lib/repeatOrder";
 
 export const dynamic = "force-dynamic";
 
@@ -201,6 +202,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // значит показан целиком, и править его ей можно.
   const shownWhole = !farm || (region && order.items.length === loaded.items.length);
   const canEdit = shownWhole && canEditOrder(loaded, role, session?.user?.email);
+  // «Повторить» — новая заявка тому же клиенту с теми же позициями (цены — текущие).
+  const repeatHref =
+    !farm && canRepeatFrom(loaded, role, myEmail) ? newClientOrderHref(role, loaded.clientId, loaded.orderId) : "";
 
   // Правка склада — отдельная дверь с отдельными правилами: свой цветок, только
   // количество, ростовка и цена. Считаем по ПОЛНОЙ заявке (`loaded`), а не по
@@ -339,7 +343,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             )}
           </div>
           <div className="flex flex-col items-start sm:items-end gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {repeatHref && (
+                <Link href={repeatHref} className="btn-secondary !py-1.5 !min-h-0" title="Новая заявка с теми же позициями">
+                  Повторить
+                </Link>
+              )}
               {canEdit && (
                 <Link href={`/orders/${order.orderId}/edit`} className="btn-secondary !py-1.5 !min-h-0">
                   Изменить

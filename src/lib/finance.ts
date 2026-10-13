@@ -10,6 +10,7 @@ import { orderCode, paymentStage, type PaymentStage } from "./paymentStage";
 import type { OrderWithItems, Payment } from "./types";
 import { listPayments } from "./repo/payments";
 import { realizationsOf, type Realization } from "./payments";
+import { dueDateOf, termDays } from "./debtReminder";
 
 /** Порядок цветков в денежных строках — как везде: роза, хризантема, эустома. */
 const FLOWER_ORDER_FOR_MONEY = ["rose", "chrysanthemum", "eustoma"];
@@ -118,8 +119,16 @@ export interface FinanceOrderRow {
 /** Как обстоят дела с обещанием клиента заплатить. */
 export type PromiseState = "none" | "future" | "today" | "broken";
 
-/** Строка списка «кому звонить сегодня»: один долг — одна строка. */
-export interface CallRow {
+/**
+ * Строка списка «кому звонить сегодня»: один долг — одна строка.
+ *
+ * Панель оплаты здесь та же, что в «Оплатах», и данных ей нужно столько же:
+ * платежи, реализации 1С, способ оплаты (по реквизитам — без Kaspi), статус и
+ * цветки по компаниям. Без них в «Долгах и звонках» панель показывала неполную
+ * картину — без платежей и с Kaspi у заявки «по реквизитам».
+ */
+export interface CallRow
+  extends Pick<FinanceOrderRow, "payments" | "realizations" | "paymentMethod" | "status" | "consignment"> {
   orderId: string;
   clientName: string;
   clientPhone: string;
@@ -143,6 +152,12 @@ export interface CallRow {
   code: string;
   /** Почему строка стоит именно здесь — пишем словами, чтобы не гадать. */
   why: string;
+  /** Условия оплаты из карточки клиента («Отсрочка 7 дней» и т. п.). */
+  paymentTerms: string;
+  /** Когда пора платить: доставка + отсрочка (`dueDateOf`). Пусто — даты нет. */
+  dueDate: string;
+  /** Когда по заявке последний раз напоминали в WhatsApp. Заполняет страница. */
+  remindedAt: string;
 }
 
 export interface DebtRow {
@@ -221,6 +236,8 @@ export interface FinanceSnapshot {
   openRows: FinanceOrderRow[];
   /** Заявки с платежом за последние 7 дней — для «оплачено сегодня / за неделю». */
   recentPaidRows: FinanceOrderRow[];
+  /** Все заявки с переплатой — по всей базе, как долги: их надо вернуть или зачесть. */
+  overpaidRows: FinanceOrderRow[];
 }
 
 function dayKey(date: Date): string {
@@ -322,6 +339,8 @@ export async function getFinanceSnapshot(
   );
 
   const { from, to, label } = periodRange(period, anchor);
+  // Условия оплаты клиента (подтягиваются в заявку при чтении) — для срока в звонках.
+  const termsByOrder = new Map(counted.map((o) => [o.orderId, o.clientPaymentTerms ?? ""]));
 
   const toRow = (order: OrderWithItems): FinanceOrderRow => {
     const amount = order.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
@@ -504,6 +523,15 @@ export async function getFinanceSnapshot(
       // Юлия давно отправила руками. Пустая колонка не должна ничего утверждать
       // (грабли 1.10: ошибка в данных закрывает, а не открывает). Саму отметку
       // видно в панели оплаты, и она заполнится сама по мере работы.
+      //
+      // Срок — с отсрочкой клиента (`dueDateOf`, то же правило, что у
+      // напоминаний): клиенту с отсрочкой 14 дней звонить на третий день
+      // бессмысленно и вредно. Без отсрочки — как раньше, DEBT_OVERDUE_DAYS.
+      const paymentTerms = termsByOrder.get(r.orderId) ?? "";
+      const deferral = termDays(paymentTerms);
+      const dueDate = dueDateOf({ deliveryDate: r.deliveryDate, createdAt: r.createdDate, clientPaymentTerms: paymentTerms });
+      const lateDays = dueDate ? Math.max(0, daysBetween(parseKey(dueDate), today)) : 0;
+      const overdue = deferral > 0 && dueDate ? dueDate < todayKey : days > DEBT_OVERDUE_DAYS;
       const why =
         promiseState === "broken"
           ? `Обещал заплатить ${dateWord(r.promisedAt)} — деньги не пришли`
@@ -511,9 +539,15 @@ export async function getFinanceSnapshot(
             ? "Обещал заплатить сегодня"
             : promiseState === "future"
               ? `Обещал заплатить ${dateWord(r.promisedAt)} — можно не трогать`
-              : days > DEBT_OVERDUE_DAYS
-                ? `Висит ${days} дн., договорённости о сроке нет`
-                : "Срок ещё не вышел";
+              : deferral > 0 && dueDate
+                ? dueDate > todayKey
+                  ? `Отсрочка ${deferral} дн. — срок ${dateWord(dueDate)}`
+                  : dueDate === todayKey
+                    ? `Отсрочка ${deferral} дн. — срок сегодня`
+                    : `Срок по отсрочке прошёл ${lateDays} дн. назад, договорённости нет`
+                : days > DEBT_OVERDUE_DAYS
+                  ? `Висит ${days} дн., договорённости о сроке нет`
+                  : "Срок ещё не вышел";
       return {
         orderId: r.orderId,
         clientName: r.clientName || "(без названия)",
@@ -524,7 +558,7 @@ export async function getFinanceSnapshot(
         paidAmount: r.paidAmount,
         debt: r.debt,
         days,
-        overdue: days > DEBT_OVERDUE_DAYS,
+        overdue,
         promisedAt: r.promisedAt,
         promiseState,
         collectionNote: r.collectionNote,
@@ -532,6 +566,14 @@ export async function getFinanceSnapshot(
         invoiceSentAt: r.invoiceSentAt,
         code: r.code,
         why,
+        payments: r.payments,
+        realizations: r.realizations,
+        paymentMethod: r.paymentMethod,
+        status: r.status,
+        consignment: r.consignment,
+        paymentTerms,
+        dueDate,
+        remindedAt: "",
       };
     })
     .sort((a, b) => {
@@ -587,6 +629,9 @@ export async function getFinanceSnapshot(
       const sinceKey = dayKey(since);
       return allRows.filter((r) => r.payments.some((p) => p.date >= sinceKey && p.date <= todayKey));
     })(),
+    overpaidRows: allRows
+      .filter((r) => r.overpaid > MONEY_EPSILON)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     // Касса считается по СВОЕЙ выборке и по своему дню, и оба отличия
     // осознанные:
     //

@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createWriteoffAction, fixBatchAction } from "@/app/warehouse/actions";
-import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor, gradeColumnLabel } from "@/lib/constants";
+import { DEFAULT_WRITEOFF_REASON } from "@/lib/writeoffPlan";
+import { WRITEOFF_REASONS } from "@/lib/writeoffReasons";
+import { formatDay } from "@/lib/formatDate";
 import type { BatchStorageInfo } from "@/lib/shelfLife";
 import StorageStatusBadge from "./StorageStatusBadge";
 import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
@@ -28,23 +31,50 @@ export default function BatchesList({
   const [onlyActive, setOnlyActive] = useState(true);
 
   const [expanded, setExpanded] = useState(false);
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
 
   const visible = useMemo(
-    () => infos.filter((i) => (onlyActive ? i.batch.quantityRemaining > 0 : true)),
-    [infos, onlyActive]
+    () =>
+      infos
+        .filter((i) => (onlyActive ? i.batch.quantityRemaining > 0 : true))
+        .filter((i) => {
+          if (!query) return true;
+          const b = i.batch;
+          return [FLOWER_TYPE_LABELS[b.flowerType] ?? "", b.variety, b.grade, formatGrade(b.grade), b.batchId]
+            .join(" ")
+            .toLowerCase()
+            .includes(query);
+        }),
+    [infos, onlyActive, query]
   );
 
   // Партий на складе бывает под две сотни. Показываем начало списка (он уже
-  // отсортирован — сверху то, что дольше лежит), остальное по кнопке.
-  const shown = expanded ? visible : visible.slice(0, COLLAPSED_TABLE_SIZE);
+  // отсортирован — сверху то, что дольше лежит), остальное по кнопке. Во время
+  // поиска не сворачиваем: человек уже сузил список сам.
+  const shown = expanded || query ? visible : visible.slice(0, COLLAPSED_TABLE_SIZE);
   const hidden = visible.length - shown.length;
 
   return (
     <div>
-      <label className="flex items-center gap-2 text-sm text-ink-secondary mb-3">
-        <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
-        Только с остатком
-      </label>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+        <input
+          type="search"
+          className="input sm:!w-64"
+          placeholder="Найти сорт…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <label className="flex items-center gap-2 text-sm text-ink-secondary">
+          <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
+          Только с остатком
+        </label>
+      </div>
+      <datalist id="batch-writeoff-reasons">
+        {WRITEOFF_REASONS.map((r) => (
+          <option key={r} value={r} />
+        ))}
+      </datalist>
 
       <div className="card !p-0 table-scroll table-cards">
         <table className="w-full text-sm">
@@ -52,8 +82,8 @@ export default function BatchesList({
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
               <th className="px-4 py-3 font-medium">Тип / сорт</th>
               <th className="px-4 py-3 font-medium">Код партии</th>
-              <th className="px-4 py-3 font-medium">Сбор</th>
-              <th className="px-4 py-3 font-medium">В хранении</th>
+              <th className="px-4 py-3 font-medium">Срезка</th>
+              <th className="px-4 py-3 font-medium">Лежит</th>
               <th className="px-4 py-3 font-medium">Остаток</th>
               <th className="px-4 py-3 font-medium">Статус</th>
               <th className="px-4 py-3 font-medium"></th>
@@ -82,7 +112,7 @@ export default function BatchesList({
             {visible.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
-                  Партий нет
+                  {query ? "Ничего не нашлось" : "Партий нет"}
                 </td>
               </tr>
             )}
@@ -129,7 +159,7 @@ function BatchRow({
   // Исправлять можно только нетронутую партию; журналы сервер проверит сам.
   const canFix = Boolean(fix) && !batch.store && batch.quantityIn > 0 && batch.quantityRemaining === batch.quantityIn;
   const [quantity, setQuantity] = useState("");
-  const [reason, setReason] = useState("Порча / истёк срок хранения");
+  const [reason, setReason] = useState(DEFAULT_WRITEOFF_REASON);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -162,19 +192,19 @@ function BatchRow({
         </td>
         {/* Код партии — служебный: он нужен, чтобы сверить строку с ярлыком на
             ведре, и не должен спорить глазами с сортом и сроком. */}
-        <td className="px-4 py-3 text-[11px] text-ink-muted font-mono whitespace-nowrap">
+        <td data-label="Код" className="px-4 py-3 text-[11px] text-ink-muted font-mono whitespace-nowrap">
           {batch.batchId}
         </td>
-        <td className="px-4 py-3 text-ink-secondary">
-          {batch.harvestDate ? new Date(batch.harvestDate).toLocaleDateString("ru-RU") : "—"}
+        <td data-label="Срезка" className="px-4 py-3 text-ink-secondary">
+          {batch.harvestDate ? formatDay(batch.harvestDate) : "—"}
         </td>
-        <td className="px-4 py-3 text-ink-secondary">
+        <td data-label="Лежит" className="px-4 py-3 text-ink-secondary">
           {info.daysInStorage} из {info.maxDays} дн.
         </td>
-        <td className="px-4 py-3">
-          {batch.quantityRemaining} / {batch.quantityIn}
+        <td data-label="Остаток" className="px-4 py-3 tabular-nums">
+          {batch.quantityRemaining.toLocaleString("ru-RU")} / {batch.quantityIn.toLocaleString("ru-RU")}
         </td>
-        <td className="px-4 py-3">
+        <td data-label="Статус" className="px-4 py-3">
           <StorageStatusBadge status={info.status} />
         </td>
         <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -200,6 +230,7 @@ function BatchRow({
                   type="number"
                   min={1}
                   max={batch.quantityRemaining}
+                  inputMode="numeric"
                   className="input !w-32"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
@@ -207,7 +238,12 @@ function BatchRow({
               </div>
               <div className="flex-1 min-w-[200px]">
                 <label className="label">Причина</label>
-                <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} />
+                <input
+                  className="input"
+                  list="batch-writeoff-reasons"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
               </div>
               <button onClick={handleWriteoff} disabled={submitting} className="btn-primary">
                 {submitting ? "Списание…" : "Списать"}
@@ -287,7 +323,7 @@ function BatchFixForm({
           </select>
         </div>
         <div>
-          <label className="label">Градация</label>
+          <label className="label">{gradeColumnLabel(batch.flowerType)}</label>
           <select className="input" value={grade} onChange={(e) => setGrade(e.target.value)}>
             {getGradesFor(batch.flowerType).map((g) => (
               <option key={g} value={g}>
@@ -301,6 +337,7 @@ function BatchFixForm({
           <input
             type="number"
             min={1}
+            inputMode="numeric"
             className="input !w-28"
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
