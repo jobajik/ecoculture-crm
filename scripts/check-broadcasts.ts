@@ -338,7 +338,8 @@ check("номер в сети — отправляем", act({ state: "authorize
 check("Green API не ответил / 5xx / 429 — повтор через минуту", [act({ httpStatus: 0 }), act({ httpStatus: 502 }), act({ httpStatus: 429 })], ["retry", "retry", "retry"]);
 check("номер запускается — повтор", act({ state: "starting" }), "retry");
 check("ключ, тариф, номер отключён — пауза", [act({ httpStatus: 401 }), act({ httpStatus: 466 }), act({ state: "notAuthorized" }), act({ state: "yellowCard" })], ["pause", "pause", "pause", "pause"]);
-check("незнакомый отказ проверки — пауза с кодом", channelProblem({ httpStatus: 404 }), { action: "pause", text: "Green API отказал в проверке номера (код 404)" });
+check("404 на проверке номера — сбой у них, повтор", channelProblem({ httpStatus: 404 }).action, "retry");
+check("незнакомый отказ проверки — пауза с кодом", channelProblem({ httpStatus: 400 }), { action: "pause", text: "Green API отказал в проверке номера (код 400)" });
 check("текст про тариф", greenSendErrorText(466, "").includes("«Бизнес»"), true);
 check("состояние", [greenStateText("authorized"), greenStateText("notAuthorized").includes("QR")], ["работает", true]);
 check("незнакомое состояние", greenStateText("odd"), "состояние «odd»");

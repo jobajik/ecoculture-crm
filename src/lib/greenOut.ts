@@ -131,6 +131,9 @@ export function channelProblem(check: ChannelCheck): { action: "ok" | "retry" | 
   if (s === 0) return { action: "retry", text: "Green API не ответил (нет связи) — пробую снова через минуту" };
   if (s === 429) return { action: "retry", text: "Green API просит писать реже — пробую снова через минуту" };
   if (s >= 500) return { action: "retry", text: `Green API не ответил (сбой у них, код ${s}) — пробую снова через минуту` };
+  // 13.10.2026: утром проверка номера разово вернула 404, и рассылка встала на паузу, хотя через
+  // минуту номер был «authorized». На проверке номера 404 — сбой у Green API, а не наш ключ.
+  if (s === 404) return { action: "retry", text: "Green API временно не нашёл номер (код 404) — проверю снова через минуту" };
   const kind = greenFailureKind(s);
   return { action: "pause", text: kind === "pause" ? greenSendErrorText(s, "") : `Green API отказал в проверке номера (код ${s})` };
 }
