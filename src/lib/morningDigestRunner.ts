@@ -18,6 +18,12 @@ import { waPhone } from "./broadcast";
 import { sendText } from "./greenApi";
 import { checkGreenChannel } from "./greenChannel";
 import { DIGEST_SETTING, digestParts, digestPhones } from "./morningDigest";
+import { parsePush, pushLineText, pushLines, pushSold, SALES_PUSH_SETTING } from "./salesPush";
+import { getCurrentPrices } from "./repo/prices";
+import { priceFor } from "./priceList";
+import { stockMap as liveStockMap } from "./botKnowledge";
+import { inStore } from "./officeStore";
+import { isNotASale } from "./orderKind";
 
 const SITE = () => (process.env.NEXTAUTH_URL || "https://www.crm-ecoculture.kz").replace(/\/+$/, "");
 
@@ -32,6 +38,7 @@ export async function buildMorningDigestParts(now: Date = new Date()): Promise<s
     SHEET_TABS.BATCHES,
     SHEET_TABS.SETTINGS,
     SHEET_TABS.USERS,
+    SHEET_TABS.PRICE_HISTORY,
   ]);
   const [orders, payments, pointDays, batches, settings, users] = await Promise.all([
     listOrdersWithItems(),
@@ -61,7 +68,19 @@ export async function buildMorningDigestParts(now: Date = new Date()): Promise<s
     todayKey: today,
     extras: { expiredStems, stockStems: inStock.reduce((s, b) => s + b.quantityRemaining, 0) },
   });
+  // «Распродаём в первую очередь» — сколько живого лежит и сколько продали вчера (`salesPush.ts`).
+  const push = parsePush((await settingsMap())[SALES_PUSH_SETTING]);
+  let pushText: string[] = [];
+  if (push.length) {
+    const prices = await getCurrentPrices(today);
+    const live = Array.from(liveStockMap(inStore(batches, ""), settings, now).values());
+    const y = localDayKey(new Date(now.getTime() - 86_400_000));
+    pushText = pushLines(push, live, (f, v, g) => priceFor(prices, f, v, g)).map(
+      (l) => `${pushLineText(l)} · вчера продали ${pushSold(l, orders, y, y, (iso) => localDayKey(new Date(iso)), (o) => !isNotASale(o)).toLocaleString("ru-RU")} шт.`
+    );
+  }
   return digestParts({
+    push: pushText,
     today,
     orders,
     payments,

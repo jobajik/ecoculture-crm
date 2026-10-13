@@ -140,6 +140,8 @@ export function planBotOrder(input: {
   draft: BotOrderDraft;
   stock: StockRow[];
   priceOf: (flowerType: string, variety: string, grade: string) => number;
+  /** Цена с учётом объёма (распродажа, `pushUnitPrice`): от N шт. — дешевле. Нет — цена прайса. */
+  volumePrice?: (flowerType: string, grade: string, quantity: number, listPrice: number) => number;
   today: string;
 }): BotOrderPlan {
   const { draft, stock, today } = input;
@@ -182,7 +184,8 @@ export function planBotOrder(input: {
           : `${itemName(it.flowerType, variety, grade)} сейчас закончилась. Предложить похожую позицию?`,
       };
     }
-    const unitPrice = input.priceOf(it.flowerType, variety, grade);
+    const listPrice = input.priceOf(it.flowerType, variety, grade);
+    const unitPrice = listPrice > 0 && input.volumePrice ? input.volumePrice(it.flowerType, grade, quantity, listPrice) : listPrice;
     if (!(unitPrice > 0)) return { ok: false, question: `На ${itemName(it.flowerType, variety, grade)} уточняю цену. Взять пока другую позицию?` };
     merged.set(key, { flowerType: it.flowerType, variety, grade, quantity, unitPrice });
   }

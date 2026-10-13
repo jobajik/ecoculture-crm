@@ -9,6 +9,7 @@ import { isInfoPhoto, nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhot
 import { photoFileUrl } from "./catalogFiles";
 import { botPhotoSentWrite } from "./repo/botPhotos";
 import { phoneKey } from "./leads";
+import { parsePush, pushItemFor, SALES_PUSH_SETTING } from "./salesPush";
 import { botSettingsFrom, EMPTY_NUDGE, pushContext } from "./broadcast";
 import { NUDGE_DECISION_SCHEMA, NUDGE_GAPS_HOURS, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
 import { chatJson, openAiConfigured } from "./openai";
@@ -236,6 +237,7 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
     ]);
     const [chats, map] = await Promise.all([listBotChats(true), settingsMap()]);
     const settings = botSettingsFrom(map);
+    const push = parsePush(map[SALES_PUSH_SETTING]);
     const now = new Date();
     const hour = almatyHour(now);
     const due = chats
@@ -280,6 +282,7 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
             mentioned: `${transcriptText}\n${lastBroadcastForBot(broadcasts, recipients, chat.phone)}`,
             isLiquid: isLiquidGrade,
             clientText: chat.context.filter((c) => c.role === "client").map((c) => c.text).join("\n"),
+            isPush: (f, g) => !!pushItemFor(push, f, g),
           });
           if (sent > 0) await pause(3000 + Math.floor(Math.random() * 4000));
           // Касания, кроме последнего, — фото из ротации с продающей подписью и ценами (владелец: «разные фотографии в

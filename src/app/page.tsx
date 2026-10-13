@@ -19,6 +19,12 @@ import { computeBatchStorageInfo } from "@/lib/shelfLife";
 import { localDayKey } from "@/lib/timezone";
 import { MISSING_FARM_MESSAGE, missingFarm } from "@/lib/access";
 import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
+import { settingsMap } from "@/lib/repo/broadcasts";
+import { getCurrentPrices } from "@/lib/repo/prices";
+import { priceFor } from "@/lib/priceList";
+import { stockMap as liveStockMap } from "@/lib/botKnowledge";
+import { isNotASale } from "@/lib/orderKind";
+import { parsePush, pushLineText, pushLines, pushSold, SALES_PUSH_SETTING } from "@/lib/salesPush";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -106,6 +112,24 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
   });
   const showStock = focus?.showStock ?? true;
 
+  // «Распродаём в первую очередь» (`salesPush.ts`, 13.10.2026: «усиленно распродай 4 категорию хризантемы») —
+  // тем, кто продаёт: что, сколько живого на складе, цена от объёма и сколько продали за 7 дней.
+  const sells = role === ROLES.MANAGER || role === ROLES.SALES_HEAD || role === ROLES.ADMIN;
+  const pushItems = sells ? parsePush((await settingsMap().catch(() => ({} as Record<string, string>)))[SALES_PUSH_SETTING]) : [];
+  let pushRows: { text: string; sold7: number }[] = [];
+  if (pushItems.length) {
+    const prices = await getCurrentPrices(localDayKey(now)).catch(() => new Map());
+    const live = Array.from(liveStockMap(inStore(batches, ""), settings, now).values());
+    const todayKey = localDayKey(now);
+    const weekAgo = localDayKey(new Date(now.getTime() - 6 * 86_400_000));
+    pushRows = pushLines(pushItems, live, (f, v, g) => priceFor(prices, f, v, g))
+      .filter((l) => l.qty > 0)
+      .map((l) => ({
+        text: pushLineText(l),
+        sold7: pushSold(l, orders, weekAgo, todayKey, (iso) => localDayKey(new Date(iso)), (o) => !isNotASale(o)),
+      }));
+  }
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -131,6 +155,19 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
         <Suspense fallback={null}>
           <KaspiAlert />
         </Suspense>
+      )}
+
+      {pushRows.length > 0 && (
+        <div className="card border-l-4 border-status-warning space-y-1">
+          <div className="font-display font-extrabold">Распродаём в первую очередь</div>
+          {pushRows.map((r) => (
+            <div key={r.text} className="text-sm">
+              {r.text}
+              <span className="text-ink-muted"> · за 7 дней продали {r.sold7.toLocaleString("ru-RU")} шт.</span>
+            </div>
+          ))}
+          <div className="text-xs text-ink-muted">Предлагайте клиентам первой — к любому заказу и на «дорого». Бот делает так же.</div>
+        </div>
       )}
 
       {focus && !focus.aboveStock && <HomeFocusStrip focus={focus} />}

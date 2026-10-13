@@ -6,6 +6,8 @@ import { almatyHourOf, botOrderStore, inStore } from "./officeStore";
 import { getSettings } from "./repo/settings";
 import { getCurrentPrices } from "./repo/prices";
 import { priceFor } from "./priceList";
+import { settingsMap } from "./repo/broadcasts";
+import { parsePush, pushUnitPrice, SALES_PUSH_SETTING } from "./salesPush";
 import { createClient, listClients } from "./repo/clients";
 import { listLeads } from "./repo/leads";
 import { createOrder, getOrderById, listOrdersWithItems, updateOrderStatus } from "./repo/orders";
@@ -103,7 +105,8 @@ export async function placeBotOrder(input: {
       SHEET_TABS.ORDER_ITEMS,
     ]);
     const today = localDayKey();
-    const [allBatches, settings, prices] = await Promise.all([listBatches(), getSettings(), getCurrentPrices(today)]);
+    const [allBatches, settings, prices, map] = await Promise.all([listBatches(), getSettings(), getCurrentPrices(today), settingsMap()]);
+    const push = parsePush(map[SALES_PUSH_SETTING]);
     // После 12:00 заказ НА СЕГОДНЯ — из подсклада «Офис», остальное — основной
     // склад (`officeStore.ts`): то же деление, что бот видел в подсказке.
     const now = new Date();
@@ -118,6 +121,7 @@ export async function placeBotOrder(input: {
       draft,
       stock: Array.from(stockMap(batches, settings, new Date()).values()),
       priceOf: (f, v, g) => priceFor(prices, f, v, g),
+      volumePrice: (f, g, q, list) => pushUnitPrice(push, f, g, q, list),
       today,
     });
     if (!plan.ok) return { text: plan.question, orderId: "", note: "" };

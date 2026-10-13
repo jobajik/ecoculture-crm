@@ -48,6 +48,8 @@ import { photoFileUrl } from "./catalogFiles";
 import { FLOWER_TYPE_LABELS } from "./constants";
 import type { BotIncoming } from "./greenOut";
 import { phoneKey } from "./leads";
+import { parsePush, pushLines, pushPromptBlock, SALES_PUSH_SETTING } from "./salesPush";
+import { priceFor } from "./priceList";
 
 // ---------------------------------------------------------------------------
 // Бот-автоответчик WhatsApp (Green API). Зовётся из вебхука ПОСЛЕ того, как
@@ -145,6 +147,20 @@ async function stockText(): Promise<{ text: string; storeNote: string }> {
   }
 }
 
+/** «Распродаём в первую очередь» (`salesPush.ts`) — блок подсказки по основному складу. Сбой — пусто. */
+async function pushText(): Promise<string> {
+  try {
+    const items = parsePush((await settingsMap())[SALES_PUSH_SETTING]);
+    if (items.length === 0) return "";
+    const now = new Date();
+    const [batches, settings, prices] = await Promise.all([listBatches(), getSettings(), getCurrentPrices(localDayKey())]);
+    const stock = Array.from(stockMap(inStore(batches, ""), settings, now).values());
+    return pushPromptBlock(pushLines(items, stock, (f, v, g) => priceFor(prices, f, v, g)));
+  } catch {
+    return "";
+  }
+}
+
 async function broadcastText(phone: string): Promise<string> {
   try {
     const [list, recipients] = await Promise.all([listBroadcasts(), listRecipients()]);
@@ -170,6 +186,8 @@ function systemPrompt(p: {
   today: string;
   /** План срезки агронома на ближайшие недели (`harvestForBot`). */
   harvest?: string;
+  /** «Распродаём в первую очередь» (`pushPromptBlock`). */
+  push?: string;
 }): string {
   const { instructions, prices, stock, broadcast, client, today, harvest } = p;
   const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${today}T12:00:00`).getDay()];
@@ -289,6 +307,7 @@ function systemPrompt(p: {
     ...(p.storeNote ? [p.storeNote] : []),
     client ? `\nО клиенте:\n${client}` : "",
     instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены и наличие):\n${instructions}` : "",
+    p.push ? `\n${p.push}` : "",
     broadcast ? `\nРассылка, которую получил этот клиент (на неё он, скорее всего, и отвечает):\n${broadcast}` : "",
     prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — цены не называй, предлагай по наличию и спрашивай объём.",
     stock ? `\nСклад сейчас (можно продать):\n${stock}` : "\nДанных склада сейчас нет — о наличии не обещай, спрашивай, что нужно.",
@@ -418,8 +437,9 @@ export async function botPrompt(
     SHEET_TABS.ORDER_ITEMS,
     SHEET_TABS.KASPI_INVOICES,
     SHEET_TABS.HARVEST_FORECAST,
+    SHEET_TABS.SETTINGS,
   ]).catch(() => undefined);
-  const [prices, stockInfo, broadcast, client, harvest] = await Promise.all([
+  const [prices, stockInfo, broadcast, client, harvest, push] = await Promise.all([
     priceText(),
     stockText(),
     broadcastText(chat.phone),
@@ -427,9 +447,10 @@ export async function botPrompt(
     listHarvestForecast()
       .then((rows) => harvestForBot(rows, localDayKey()))
       .catch(() => ""),
+    pushText(),
   ]);
   return {
-    system: systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey(), harvest }),
+    system: systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey(), harvest, push }),
     user: `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
   };
 }

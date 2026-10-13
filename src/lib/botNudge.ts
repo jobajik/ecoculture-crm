@@ -148,6 +148,8 @@ export function pickNudgeOffers(input: {
   isLiquid: (flowerType: string, grade: string) => boolean;
   /** Что писал сам клиент — по нему ищем названную категорию или длину («3 котегор канша?»). */
   clientText?: string;
+  /** Распродаём в первую очередь (`salesPush.ts`): такие позиции идут сразу после спрошенной, даже не «ходовые». */
+  isPush?: (flowerType: string, grade: string) => boolean;
 }): NudgeOffer[] {
   const text = normWord(input.mentioned);
   const all = input.stock
@@ -161,9 +163,10 @@ export function pickNudgeOffers(input: {
   const asked = mentionedGrades(input.clientText ?? "");
   const askedRows = all.filter((r) => r.qty >= 50 && isNamed(r) && asked.some((g) => gradeMatches(r.flowerType, r.grade, g)));
   const named = rows.filter(isNamed);
+  const pushRows = input.isPush ? all.filter((r) => r.qty >= 100 && input.isPush!(r.flowerType, r.grade)) : [];
   const byQty = (a: NudgeOffer, b: NudgeOffer) => b.qty - a.qty;
   const out: NudgeOffer[] = [];
-  for (const r of [...askedRows.sort(byQty), ...named.sort(byQty), ...rows.sort(byQty)]) {
+  for (const r of [...askedRows.sort(byQty), ...pushRows.sort(byQty).slice(0, 1), ...named.sort(byQty), ...rows.sort(byQty)]) {
     if (out.length >= 2) break;
     if (out.some((o) => o.flowerType === r.flowerType && o.variety === r.variety)) continue;
     out.push(r);

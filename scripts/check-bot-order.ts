@@ -19,6 +19,7 @@ import { staffPhoneKeys } from "../src/lib/botSalesAlert";
 import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "../src/lib/botIdentity";
 import { nameIndex, personName } from "../src/lib/personName";
 import { followupRunDue, followupRunText } from "../src/lib/botFollowUpRun";
+import { parsePush, pushLineText, pushLines, pushPromptBlock, pushUnitPrice } from "../src/lib/salesPush";
 import { mentionedGrades, nudgeDue, nudgeStatus, nudgeTask, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
 import type { BotChat, BotSettings } from "../src/lib/broadcast";
 
@@ -268,6 +269,29 @@ async function main() {
     clientText: "Алтай 3 котегор канша?",
   });
   check("дожим: первой — та категория, о которой спросили (даже не ходовая)", asked.map((o) => `${o.variety} ${o.grade}`)[0], "Altaj Третья");
+  // Распродажа 4-й категории (13.10.2026): от 1 000 шт. — 160 ₸, бот и дожим предлагают её первой.
+  const push = parsePush('[{"flowerType":"chrysanthemum","grade":"Четвёртая","bulkFrom":1000,"bulkPrice":160}]');
+  check("распродажа: настройка читается", push.length, 1);
+  check("распродажа: мусор в настройке — распродажи нет", parsePush("не json").length + parsePush("").length, 0);
+  check("цена от объёма: 999 шт. — прайс, 1 000 — 160", [pushUnitPrice(push, "chrysanthemum", "Четвёртая", 999, 180), pushUnitPrice(push, "chrysanthemum", "Четвертая", 1000, 180)], [180, 160]);
+  check("цена от объёма: другая позиция — прайс", pushUnitPrice(push, "chrysanthemum", "Третья", 5000, 270), 270);
+  const pstock = [
+    { flower: "chrysanthemum", variety: "Altaj", grade: "Четвёртая", qty: 39190 },
+    { flower: "chrysanthemum", variety: "Chik", grade: "Четвёртая", qty: 3440 },
+    { flower: "chrysanthemum", variety: "Altaj", grade: "Высшая", qty: 300 },
+  ];
+  const plines = pushLines(push, pstock, (_f, v) => (v === "Altaj" ? 180 : 120));
+  check("строка распродажи", pushLineText(plines[0]), "Хризантема, четвёртая категория — около 42 000 шт.: Altaj 180 ₸, Chik 120 ₸; от 1 000 шт. — 160 ₸");
+  check("блок подсказки бота есть", pushPromptBlock(plines).startsWith("РАСПРОДАЁМ В ПЕРВУЮ ОЧЕРЕДЬ"), true);
+  check("позиции нет на складе — блока нет", pushPromptBlock(pushLines(push, [], () => 0)), "");
+  const pushOffers = pickNudgeOffers({
+    stock: [...pstock, { flower: "chrysanthemum", variety: "Bacardy", grade: "Высшая", qty: 500 }],
+    priceOf: (f, v, g) => (g === "Высшая" ? 580 : v === "Altaj" ? 180 : 120),
+    mentioned: "",
+    isLiquid: (f, g) => g === "Высшая",
+    isPush: (f, g) => f === "chrysanthemum" && g === "Четвёртая",
+  });
+  check("дожим: распродажа первой, потом ходовая", pushOffers.map((o) => `${o.variety} ${o.grade}`), ["Altaj Четвёртая", "Bacardy Высшая"]);
   const lbl = (o: { variety: string; grade: string }) => `${o.variety}, ${o.grade}`;
   check("касание 1 — списком с ценами", nudgeText(1, offers, lbl).split("\n"), [
     "Здравствуйте! Сегодня свежий срез:",

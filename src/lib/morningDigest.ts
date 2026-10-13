@@ -58,6 +58,8 @@ export interface DigestInput {
   names: Record<string, string>;
   /** Остаток склада сейчас по цветкам. Пусто — блока «Склад» нет. */
   stock?: DigestStock[];
+  /** «Распродаём в первую очередь» (`salesPush.ts`) — готовые строки. Пусто — блока нет. */
+  push?: string[];
   /** День оформления заявки по Алматы (сервер передаёт свой `localDayKey`). */
   dayOf: (iso: string) => string;
   site: string;
@@ -252,6 +254,11 @@ export function digestParts(input: DigestInput): string[] {
         if (x.expired > 0) lines.push(`дольше срока: ${num(x.expired)} шт.`);
       });
     }
+  }
+  if (input.push && input.push.length) {
+    lines.push("");
+    lines.push("*Распродаём в первую очередь:*");
+    for (const p of input.push) lines.push(`• ${p}`);
   }
   lines.push("");
   lines.push(
