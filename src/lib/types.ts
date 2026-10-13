@@ -352,6 +352,8 @@ export interface WaMessage {
   senderName: string;
   /** webhook — пришло само; history — подтянуто из истории чата. */
   source: string;
+  /** Чей номер: пусто — рабочий, «leads» — номер Земфиры (`greenLeadsConfig`). */
+  line?: string;
 }
 
 /** Пункт чек-листа менеджера в разборе: yes / no / na (не к месту). */

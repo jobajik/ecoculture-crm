@@ -37,7 +37,7 @@ function refresh(leadId?: string) {
 async function analyzeLeadTalkActionInner(leadId: string): Promise<{ score: number | null; temperature: string; pulled: number }> {
   const { email, role } = await requireLeads();
   await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.WA_MESSAGES]);
-  const [leads, messages] = await Promise.all([listLeads(), listWaMessages()]);
+  const [leads, messages] = await Promise.all([listLeads(), listWaMessages({ lines: "all" })]);
   const lead = leads.find((l) => l.leadId === leadId);
   if (!lead) throw new Error("Лид не найден — возможно, его удалили в таблице");
   if (!canWorkLead(role, email, lead)) throw new Error("Разбирает переписку менеджер этого лида или РОП");
@@ -54,7 +54,7 @@ async function analyzeStaleTalksActionInner(): Promise<{ done: number; failed: s
   const { email, role } = await requireLeads();
   if (!canManageLeads(role)) throw new Error("Разбирать всё разом может РОП или админ");
   await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.LEAD_ANALYSES]);
-  const [leads, messages, analyses] = await Promise.all([listLeads(), listWaMessages(), listLeadAnalyses()]);
+  const [leads, messages, analyses] = await Promise.all([listLeads(), listWaMessages({ lines: "all" }), listLeadAnalyses()]);
   const infos = Array.from(talkInfoByLead(leads, messages, analyses).values());
   const report = buildTalkReport(infos, new Map(), new Date());
   // Кнопка в браузере ждёт ответа, поэтому по нажатию — немного: остальное по кругу.
@@ -82,7 +82,7 @@ async function importChatActionInner(
 ): Promise<{ added: number; total: number; analyzed: boolean; analysisError: string }> {
   const { email, role } = await requireLeads();
   await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.WA_MESSAGES]);
-  const [leads, messages] = await Promise.all([listLeads(), listWaMessages()]);
+  const [leads, messages] = await Promise.all([listLeads(), listWaMessages({ lines: "all" })]);
   const lead = leads.find((l) => l.leadId === leadId);
   if (!lead) throw new Error("Лид не найден — возможно, его удалили в таблице");
   if (!canWorkLead(role, email, lead)) throw new Error("Загружает переписку менеджер этого лида или РОП");

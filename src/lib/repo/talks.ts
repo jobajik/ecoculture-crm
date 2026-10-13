@@ -22,15 +22,23 @@ function toMessage(r: Record<string, string>): WaMessage {
     mediaUrl: r.MediaURL || "",
     senderName: r.SenderName || "",
     source: r.Source || "",
+    line: (r.Line || "").trim(),
   };
 }
 
-export async function listWaMessages(): Promise<WaMessage[]> {
+/**
+ * Сообщения WhatsApp. По умолчанию — только РАБОЧЕГО номера: на нём бот, рассылки и
+ * «тёплые» (кто нам писал). Номер Земфиры (`line: "leads"`) — отдельная линия: её
+ * переписку видят карточка лида, разбор и её «Написали» (`{ lines: "all" | "leads" }`).
+ */
+export async function listWaMessages(options: { lines?: "main" | "leads" | "all" } = {}): Promise<WaMessage[]> {
+  const lines = options.lines ?? "main";
   try {
     const table = await readTable(SHEET_TABS.WA_MESSAGES);
     return table.rows
       .map((row) => toMessage(rowToRecord(SHEET_TABS.WA_MESSAGES, row)))
-      .filter((m) => m.messageId && m.phone && m.at);
+      .filter((m) => m.messageId && m.phone && m.at)
+      .filter((m) => lines === "all" || (lines === "leads" ? m.line === "leads" : !m.line));
   } catch {
     return [];
   }
@@ -49,6 +57,7 @@ function messageRecord(m: WaMessage, nowIso: string): Record<string, unknown> {
     SenderName: m.senderName,
     Source: m.source,
     CreatedAt: nowIso,
+    Line: m.line ?? "",
   };
 }
 

@@ -1,4 +1,4 @@
-import { fetchChatHistory, downloadMedia, greenConfig } from "./greenApi";
+import { fetchChatHistory, downloadMedia, greenConfig, greenLeadsConfig } from "./greenApi";
 import { chatJson, openAiConfigured, transcribeAudio } from "./openai";
 import {
   ANALYSIS_SCHEMA,
@@ -38,11 +38,18 @@ export async function runTalkAnalysis(
 
   const stored = messagesForPhone(allMessages, lead.phone);
   const storedIds = new Set(stored.map((m) => m.messageId));
-  let pulled: WaMessage[] = [];
+  const pulled: WaMessage[] = [];
   const cfg = greenConfig();
-  if (cfg) {
+  // История — с рабочего номера и, если подключён, с номера Земфиры (её строки помечены line «leads»).
+  const lines: { cfg: ReturnType<typeof greenConfig>; line: string }[] = [
+    { cfg, line: "" },
+    { cfg: greenLeadsConfig(), line: "leads" },
+  ];
+  for (const l of lines) {
+    if (!l.cfg) continue;
     try {
-      pulled = (await fetchChatHistory(cfg, lead.phone, 150)).filter((m) => !storedIds.has(m.messageId));
+      const got = (await fetchChatHistory(l.cfg, lead.phone, 150)).filter((m) => !storedIds.has(m.messageId));
+      pulled.push(...got.map((m) => ({ ...m, line: l.line })));
     } catch (err) {
       // История не пришла — разбираем то, что уже есть; причину видно в журнале сервера.
       console.error("whatsapp history:", err instanceof Error ? err.message : err);
@@ -51,7 +58,7 @@ export async function runTalkAnalysis(
   let merged = mergeMessages([...stored, ...pulled]);
   if (merged.length < MIN_MESSAGES_FOR_ANALYSIS) {
     throw new Error(
-      cfg
+      cfg || greenLeadsConfig()
         ? "С этим номером в WhatsApp пока почти нет переписки — разбирать нечего."
         : "WhatsApp ещё не подключён, и сохранённой переписки с этим номером нет."
     );

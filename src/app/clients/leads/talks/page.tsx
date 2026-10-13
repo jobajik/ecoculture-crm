@@ -41,7 +41,7 @@ export default async function TalksPage() {
   const manage = canManageLeads(role);
 
   await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.USERS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.LEAD_ANALYSES]);
-  const [leads, users, messages, analyses] = await Promise.all([listLeads(), listUsers(), listWaMessages(), listLeadAnalyses()]);
+  const [leads, users, messages, analyses] = await Promise.all([listLeads(), listUsers(), listWaMessages({ lines: "all" }), listLeadAnalyses()]);
   const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
   const visible = leads.filter((l) => canSeeLead(role, email, l));
   const infos = Array.from(talkInfoByLead(visible, messages, analyses).values());

@@ -36,7 +36,7 @@ export async function GET(request: Request) {
   }
   try {
     await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.LEAD_ANALYSES]);
-    const [leads, messages, analyses] = await Promise.all([listLeads(), listWaMessages(), listLeadAnalyses()]);
+    const [leads, messages, analyses] = await Promise.all([listLeads(), listWaMessages({ lines: "all" }), listLeadAnalyses()]);
     const infos = Array.from(talkInfoByLead(leads, messages, analyses).values());
     const { stale } = buildTalkReport(infos, new Map(), new Date());
     const result = await runStaleAnalyses(leads, stale, messages, "cron", localDayKey(), {

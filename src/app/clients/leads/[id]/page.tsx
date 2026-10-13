@@ -65,7 +65,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
     listLeads(),
     listLeadTouches(),
     listUsers(),
-    listWaMessages(),
+    listWaMessages({ lines: "all" }),
     listLeadAnalyses(),
   ]);
   const lead = leads.find((l) => l.leadId === params.id);

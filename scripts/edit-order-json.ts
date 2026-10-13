@@ -16,7 +16,8 @@ dotenv.config();
  * Позицию можно указать без номера — `"match": { "variety": "Altaj", "grade": "Вторая" }` (должна
  * найтись ровно одна); `"priceFromList": true` — цена по действующему прайсу для новой градации;
  * `"add": [ { "flowerType": "eustoma", "variety": "…", "grade": "…", "quantity": 60 } ]` — новые позиции
- * (без `unitPrice` цена из прайса). Номер заявки можно дать коротким кодом («IIU0D»).
+ * (без `unitPrice` цена из прайса). `"remove": true` у позиции — убрать её из заявки (только неотгруженную).
+ * Номер заявки можно дать коротким кодом («IIU0D»).
  *
  *   npx tsx scripts/edit-order-json.ts <файл> [--yes]
  */
@@ -46,6 +47,7 @@ type Patch = {
   grade?: string;
   unitPrice?: number;
   priceFromList?: boolean;
+  remove?: boolean;
 };
 type Add = { flowerType: string; variety: string; grade: string; quantity: number; unitPrice?: number };
 
@@ -102,7 +104,7 @@ async function main() {
       continue;
     }
     const listPrice = (flowerType: string, variety: string, grade: string) => priceFor(prices, flowerType, variety, grade);
-    const next = order.items.map((i) => {
+    const next = order.items.filter((i) => !byId.get(i.itemId)?.remove).map((i) => {
       const p = byId.get(i.itemId);
       const variety = (p?.variety ?? i.variety).trim();
       const grade = gradeForVariety(i.flowerType, variety, (p?.grade ?? i.grade).trim());

@@ -29,6 +29,19 @@ export function greenConfig(): GreenConfig | null {
   return { url, instance, token };
 }
 
+/**
+ * Второй номер — WhatsApp Земфиры (лиды с рекламы, 13.10.2026): GREENAPI_LEADS_URL,
+ * GREENAPI_LEADS_INSTANCE, GREENAPI_LEADS_TOKEN (вводит владелец через zemfira-whatsapp-key.bat).
+ * С него ничего не отправляется: только переписка в CRM. Нет ключей — null.
+ */
+export function greenLeadsConfig(): GreenConfig | null {
+  const url = (process.env.GREENAPI_LEADS_URL || "https://api.green-api.com").trim().replace(/\/+$/, "");
+  const instance = (process.env.GREENAPI_LEADS_INSTANCE || "").trim();
+  const token = (process.env.GREENAPI_LEADS_TOKEN || "").trim();
+  if (!instance || !token) return null;
+  return { url, instance, token };
+}
+
 function endpoint(cfg: GreenConfig, method: string): string {
   return `${cfg.url}/waInstance${cfg.instance}/${method}/${cfg.token}`;
 }

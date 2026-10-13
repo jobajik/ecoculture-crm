@@ -452,6 +452,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "SenderName",
     "Source",
     "CreatedAt",
+    // Чей номер: пусто — рабочий (бот, рассылки), «leads» — номер Земфиры (лиды с рекламы, 13.10.2026).
+    "Line",
   ],
   [SHEET_TABS.BROADCASTS]: [
     "BroadcastID",

@@ -43,6 +43,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
 
+  // Номер Земфиры (`?line=leads`): только переписка в CRM — без бота, черновиков и статусов рассылок.
+  if (new URL(request.url).searchParams.get("line") === "leads") return leadsLine(body);
+
   const status = parseGreenStatus(body);
   if (status) {
     try {
@@ -88,6 +91,31 @@ export async function POST(request: Request) {
   if (!botAnswered) await draftFromIncoming(message);
   // Заодно — дожим молчащих и напоминания об оплате (не чаще раза в 25 мин, `botFollowUpRun.ts`).
   await kickFollowup(siteOrigin(request));
+  return NextResponse.json({ ok: true });
+}
+
+/** Сообщение с номера Земфиры: записать (голосовое — с расшифровкой) и ничего больше. */
+async function leadsLine(body: unknown) {
+  const message = parseGreenWebhook(body);
+  if (!message) return NextResponse.json({ ok: true, ignored: true });
+  message.line = "leads";
+  if (message.type === "voice" && message.mediaUrl && openAiConfigured()) {
+    try {
+      const file = await downloadMedia(message.mediaUrl);
+      if (file) {
+        const text = await transcribeAudio(file.data, file.mime);
+        if (text) message.text = [message.text, text].filter(Boolean).join(" · ");
+      }
+    } catch (err) {
+      console.error("whatsapp leads voice:", err instanceof Error ? err.message : err);
+    }
+  }
+  try {
+    await appendWaMessages([message]);
+  } catch (err) {
+    console.error("whatsapp leads webhook:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "temporary" }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }
 
