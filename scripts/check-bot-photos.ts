@@ -112,8 +112,13 @@ async function main() {
   console.log("\nИнфографика — ознакомительная, дальше живые фото");
   const info = ph("info", { variety: "Altaj", kind: "info", caption: "Altaj — все категории на одной картинке" });
   const withInfo = [...lib, info];
-  check("знакомство с сортом — сначала инфографика", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"))?.photoId, "info");
-  check("уже отправляли этому человеку — живое фото", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"), "", ["info"])?.photoId, "altaj2");
+  check("первое фото в разговоре — живое, не инфографика", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"))?.photoId, "altaj2");
+  check("только инфографика подходит, фото ещё не было — без фото", pickItemPhoto([info], item("chrysanthemum", "Altaj")), null);
+  check("живые сорта ушли — следующее живое (общее фото цветка), не инфографика", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"), "[фото: Хризантема Altaj — Altaj с крупными плотными соцветиями] [фото: Хризантема Altaj, Вторая — Altaj второй категории — ровный стебель]")?.photoId, "common");
+  const sentLive = "[фото: Хризантема Altaj — Altaj с крупными плотными соцветиями] [фото: Хризантема Altaj, Вторая — Altaj второй категории — ровный стебель] [фото: Хризантема — Хризантемы из нашей теплицы]";
+  check("все живые уже ушли — тогда инфографика", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"), sentLive)?.photoId, "info");
+  check("и только один раз", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"), sentLive, ["info"]), null);
+  check("живое есть — живое, даже после первого фото", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"), "[фото: Хризантема Bacardy]")?.photoId, "altaj2");
   check("о другом сорте — инфографику Altaj не шлём", pickItemPhoto(withInfo, item("chrysanthemum", "Momoko"))?.photoId, "common");
   check("общий вопрос о хризантеме — не инфографика", pickItemPhoto([info, lib[3]], item("chrysanthemum"))?.photoId, "common");
   check("в ротацию (дожим, рассылка) инфографика не идёт", pickRotationPhoto([info, ph("live", { lastSentAt: "2026-10-05T00:00:00Z" })])?.photoId, "live");

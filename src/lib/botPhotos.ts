@@ -14,9 +14,9 @@ import { FLOWER_TYPE_LABELS, formatGrade } from "./constants";
 // клиенты видят разные снимки, а не один и тот же.
 //
 // Инфографика (`kind = "info"`, 12.10.2026, владелец: «пусть бот чаще использует живые
-// фотографии, а эту инфографику — как ознакомительную»): в ротацию, каталог и дожим не
-// идёт; к ответу про позицию уходит ОДИН раз на человека — при первом знакомстве с этим
-// сортом, дальше только живые фото.
+// фотографии, а эту инфографику — как ознакомительную»; 13.10: «не в первых сообщениях,
+// лучше живые и настоящие»): в ротацию, каталог и дожим не идёт; к ответу про позицию —
+// только когда живые этому человеку уже уходили и подходящих живых не осталось, один раз.
 // Чистые правила — проверка `scripts/check-bot-photos.ts`.
 // ---------------------------------------------------------------------------
 
@@ -146,9 +146,11 @@ export function parseCaption(raw: unknown): string {
  * фото того же цветка, у которого сорт и категория либо совпадают, либо не
  * указаны (общее фото цветка). Точнее совпало — лучше; при равенстве — давнее
  * отправленное. Фото, чья подпись уже есть в переписке (`recent`), второй раз
- * этому человеку не шлём. Инфографика — только если её этому человеку ещё не
- * слали (`infoSent`), и тогда первой: она знакомит с сортом; дальше — живые
- * фото. Нет подходящего — null.
+ * этому человеку не шлём. Сначала — живые фото. Инфографика — никогда первым
+ * фото в разговоре (владелец, 13.10.2026: «не используй инфографику в первых
+ * сообщениях, лучше живые и настоящие фотки»), только когда живое этому
+ * человеку уже уходило и подходящих живых больше нет; и одна на человека
+ * (`infoSent`). Нет подходящего — null.
  */
 export function pickItemPhoto(
   photos: BotPhoto[],
@@ -163,6 +165,8 @@ export function pickItemPhoto(
     .filter((p) => p.active && p.fileId && p.flowerType === item.flowerType)
     .filter((p) => !(p.caption && recent.includes(p.caption.slice(0, 40))))
     .filter((p) => !(isInfoPhoto(p) && infoSent.includes(p.photoId)))
+    // Первое фото в разговоре — только живое: инфографика не раньше, чем ушло хоть одно фото.
+    .filter((p) => !(isInfoPhoto(p) && !recent.includes("[фото:")))
     .map((p) => {
       const pv = norm(p.variety);
       const pg = norm(p.grade);
@@ -175,6 +179,6 @@ export function pickItemPhoto(
   if (scored.length === 0) return null;
   const t = (iso: string) => Date.parse(iso || "") || 0;
   const info = (p: BotPhoto) => (isInfoPhoto(p) ? 1 : 0);
-  scored.sort((a, b) => info(b.p) - info(a.p) || b.score - a.score || t(a.p.lastSentAt) - t(b.p.lastSentAt) || a.p.sentCount - b.p.sentCount);
+  scored.sort((a, b) => info(a.p) - info(b.p) || b.score - a.score || t(a.p.lastSentAt) - t(b.p.lastSentAt) || a.p.sentCount - b.p.sentCount);
   return scored[0].p;
 }
