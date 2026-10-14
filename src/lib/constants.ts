@@ -835,12 +835,15 @@ export const MONEY_LOG_ACTIONS = {
   POINT_DAY: "point_day",
   // Склад исправил ошибочную приёмку: удалил или поправил нетронутую партию (`batchFix.ts`).
   BATCH_FIXED: "batch_fixed",
+  // Склад отгрузил подтверждённую заявку без полной оплаты (`canShipUnpaid`, 14.10.2026).
+  SHIPPED_UNPAID: "shipped_unpaid",
 } as const;
 export type MoneyLogAction = (typeof MONEY_LOG_ACTIONS)[keyof typeof MONEY_LOG_ACTIONS];
 
 export const MONEY_LOG_LABELS: Record<string, string> = {
   point_day: "Выручка точки на базаре",
   batch_fixed: "Исправлена приёмка",
+  shipped_unpaid: "Отгружено без полной оплаты",
   order_cancelled: "Заявка отменена",
   manager_confirmed: "Подтверждение менеджера",
   order_edited: "Заявка изменена",

@@ -25,8 +25,11 @@ export default function WholeOrderShip({
   lines,
   shortages,
   backHref = "/warehouse",
+  unpaidAck = false,
 }: {
   orderId: string;
+  /** Отгрузка без полной оплаты — склад это отметил (`canShipUnpaid`). */
+  unpaidAck?: boolean;
   /** Куда «← К очереди» после отгрузки: склад или офис. */
   backHref?: string;
   total: number;
@@ -57,7 +60,7 @@ export default function WholeOrderShip({
     setBusy(true);
     setError(null);
     try {
-      const r = unwrapValue(await shipWholeOrderAction({ orderId, expectedTotal: total }));
+      const r = unwrapValue(await shipWholeOrderAction({ orderId, expectedTotal: total, unpaidAck }));
       setDone(`Отгружено ${nf(r.total)} шт.`);
       router.refresh();
     } catch (e) {

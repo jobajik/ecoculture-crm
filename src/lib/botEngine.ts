@@ -1,3 +1,4 @@
+import { listSellableBatches } from "./repo/sellable";
 import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets";
 import { localDayKey } from "./timezone";
 import { getCurrentPrices } from "./repo/prices";
@@ -133,7 +134,7 @@ async function stockText(): Promise<{ text: string; storeNote: string }> {
   try {
     const now = new Date();
     const hour = almatyHourOf(now);
-    const [batches, settings] = await Promise.all([listBatches(), getSettings()]);
+    const [batches, settings] = await Promise.all([listSellableBatches(), getSettings()]);
     const office = inStore(batches, "office");
     const main = inStore(batches, "");
     const officeToday = botStoreFor(hour, stockMap(office, settings, now).size > 0) === "office";
@@ -153,7 +154,7 @@ async function pushText(): Promise<string> {
     const items = parsePush((await settingsMap())[SALES_PUSH_SETTING]);
     if (items.length === 0) return "";
     const now = new Date();
-    const [batches, settings, prices] = await Promise.all([listBatches(), getSettings(), getCurrentPrices(localDayKey())]);
+    const [batches, settings, prices] = await Promise.all([listSellableBatches(), getSettings(), getCurrentPrices(localDayKey())]);
     const stock = Array.from(stockMap(inStore(batches, ""), settings, now).values());
     return pushPromptBlock(pushLines(items, stock, (f, v, g) => priceFor(prices, f, v, g)));
   } catch {

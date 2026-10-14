@@ -1,3 +1,4 @@
+import { listSellableBatches } from "./repo/sellable";
 import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets";
 import { getOrderById, listOrdersWithItems } from "./repo/orders";
 import { listKaspiInvoices } from "./repo/kaspiInvoices";
@@ -247,7 +248,7 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
       .slice(0, limit);
     if (due.length === 0) return { sent, closed, errors };
     const [batches, shelf, prices, broadcasts, recipients] = await Promise.all([
-      listBatches(),
+      listSellableBatches(),
       getSettings(),
       getCurrentPrices(),
       listBroadcasts(),

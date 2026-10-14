@@ -1,3 +1,4 @@
+import { listSellableBatches } from "./repo/sellable";
 import { prefetchTables, SHEET_TABS, type WriteOp } from "./sheets";
 import { listBotPhotos, botPhotoSentWrite } from "./repo/botPhotos";
 import { getCurrentPrices } from "./repo/prices";
@@ -26,7 +27,7 @@ export interface PhotoContext {
 export async function loadPhotoContext(): Promise<PhotoContext> {
   await prefetchTables([SHEET_TABS.BOT_PHOTOS, SHEET_TABS.PRICE_HISTORY, SHEET_TABS.BATCHES, SHEET_TABS.SETTINGS]);
   const now = new Date();
-  const [photos, prices, batches, settings] = await Promise.all([listBotPhotos(true), getCurrentPrices(localDayKey(now)), listBatches(), getSettings()]);
+  const [photos, prices, batches, settings] = await Promise.all([listBotPhotos(true), getCurrentPrices(localDayKey(now)), listSellableBatches(), getSettings()]);
   return { photos, prices, stock: Array.from(stockMap(batches, settings, now).values()) };
 }
 

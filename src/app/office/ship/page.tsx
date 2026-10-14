@@ -17,7 +17,7 @@ import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
 import { officeTabsFor } from "../tabs";
 import { formatDay } from "@/lib/formatDate";
-import { isReadyToShip } from "@/lib/orderReady";
+import { canShipUnpaid, isReadyToShip } from "@/lib/orderReady";
 import { inStore, isOfficeRole } from "@/lib/officeStore";
 import { confirmRefusal } from "@/lib/orderRules";
 import ConfirmOrderButton from "@/components/ConfirmOrderButton";
@@ -183,6 +183,11 @@ export default async function OfficeShipPage() {
                     </td>
                     <td className="px-4 py-3" data-label="Чего ждём">
                       <OrderStageBadge stage={stageOf(o)} compact showActor />
+                      {canShipUnpaid(o) && (
+                        <Link href={`/warehouse/ship/${o.orderId}`} className="block mt-1 text-xs text-series-1 hover:underline">
+                          Уже уехал? Отгрузить без оплаты →
+                        </Link>
+                      )}
                       {!o.managerConfirmed && confirmRefusal(o, role, myEmail, true) === "" && (
                         <div className="mt-2">
                           <ConfirmOrderButton orderId={o.orderId} />

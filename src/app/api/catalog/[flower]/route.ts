@@ -1,3 +1,4 @@
+import { listSellableBatches } from "@/lib/repo/sellable";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
@@ -30,7 +31,7 @@ export async function GET(request: Request, { params }: { params: { flower: stri
 
   await prefetchTables([SHEET_TABS.PRICE_HISTORY, SHEET_TABS.BATCHES, SHEET_TABS.SETTINGS, SHEET_TABS.BOT_PHOTOS]);
   const now = new Date();
-  const [prices, batches, settings, photos] = await Promise.all([getCurrentPrices(localDayKey(now)), listBatches(), getSettings(), listBotPhotos()]);
+  const [prices, batches, settings, photos] = await Promise.all([getCurrentPrices(localDayKey(now)), listSellableBatches(), getSettings(), listBotPhotos()]);
   const page = catalogPage({ flowerType: flower, prices, stock: Array.from(stockMap(batches, settings, now).values()) });
   if (!page) return new NextResponse("Not found", { status: 404 });
 

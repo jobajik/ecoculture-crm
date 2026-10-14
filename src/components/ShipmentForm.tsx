@@ -40,8 +40,11 @@ export default function ShipmentForm({
   order,
   itemsWithBatches,
   backHref = "/warehouse",
+  unpaidAck = false,
 }: {
   order: OrderWithItems;
+  /** Отгрузка без полной оплаты — склад это отметил (`canShipUnpaid`). */
+  unpaidAck?: boolean;
   itemsWithBatches: ItemWithBatches[];
   /** Куда «← К очереди», когда всё отгружено: склад или офис. */
   backHref?: string;
@@ -60,7 +63,7 @@ export default function ShipmentForm({
         </div>
       )}
       {remainingItems.map((item) => (
-        <ItemShipRow key={item.itemId} orderId={order.orderId} item={item} onDone={() => router.refresh()} />
+        <ItemShipRow key={item.itemId} orderId={order.orderId} item={item} unpaidAck={unpaidAck} onDone={() => router.refresh()} />
       ))}
     </div>
   );
@@ -69,9 +72,11 @@ export default function ShipmentForm({
 function ItemShipRow({
   orderId,
   item,
+  unpaidAck,
   onDone,
 }: {
   orderId: string;
+  unpaidAck: boolean;
   item: ItemWithBatches;
   onDone: () => void;
 }) {
@@ -158,6 +163,7 @@ function ItemShipRow({
           orderId,
           itemId: item.itemId,
           parts: parts.map((p) => ({ batchId: p.batch.batchId, quantity: p.quantity })),
+          unpaidAck,
         })
       );
       setSuccess(

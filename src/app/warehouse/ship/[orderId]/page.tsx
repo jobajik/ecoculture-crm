@@ -15,7 +15,8 @@ import { orderStage } from "@/lib/orderStage";
 import { planWholeOrderShipment } from "@/lib/shipRules";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
-import { creditNote, isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { canShipUnpaid, creditNote, isReadyToShip, notReadyReason, unpaidRest } from "@/lib/orderReady";
+import UnpaidShipGate from "@/components/UnpaidShipGate";
 import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
 import ConfirmOrderButton from "@/components/ConfirmOrderButton";
@@ -64,6 +65,37 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
     (ownItems.length > 0 && ownItems.every((i) => i.shippedQuantity >= i.quantity));
   // Ручной выбор партий нужен, когда программе не хватило склада, — иначе он свёрнут.
   const manualOpen = whole.shortages.length > 0 || whole.total === 0;
+
+  // Раскладка «всей заявки» и ручной выбор партий — одни и те же для готовой заявки и для
+  // отгрузки без полной оплаты (там — после отметки, `UnpaidShipGate`).
+  const shipBlock = (unpaidAck: boolean) => (
+    <>
+      <WholeOrderShip
+        orderId={order.orderId}
+        backHref={backHref}
+        unpaidAck={unpaidAck}
+        total={whole.total}
+        lines={whole.lines.map((l) => {
+          const item = ownItems.find((i) => i.itemId === l.itemId)!;
+          return {
+            label: `${item.variety} ${formatGrade(item.grade)}`,
+            quantity: l.parts.reduce((sum, p) => sum + p.quantity, 0),
+            from: Array.from(new Set(l.parts.map((p) => batchById.get(p.batchId)?.harvestDate ?? ""))).filter(Boolean),
+          };
+        })}
+        shortages={whole.shortages.map((s) => {
+          const item = ownItems.find((i) => i.itemId === s.itemId)!;
+          return { label: `${item.variety} ${formatGrade(item.grade)}`, missing: s.missing };
+        })}
+      />
+      <details open={manualOpen} className="group">
+        <summary className="cursor-pointer select-none font-medium mb-3 text-ink-secondary">
+          Выбрать партии вручную
+        </summary>
+        <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} backHref={backHref} unpaidAck={unpaidAck} />
+      </details>
+    </>
+  );
 
   return (
     <div className="max-w-2xl">
@@ -122,31 +154,9 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
           </Link>
         </Section>
       ) : isReadyToShip(order) ? (
-        <>
-          <WholeOrderShip
-            orderId={order.orderId}
-            backHref={backHref}
-            total={whole.total}
-            lines={whole.lines.map((l) => {
-              const item = ownItems.find((i) => i.itemId === l.itemId)!;
-              return {
-                label: `${item.variety} ${formatGrade(item.grade)}`,
-                quantity: l.parts.reduce((sum, p) => sum + p.quantity, 0),
-                from: Array.from(new Set(l.parts.map((p) => batchById.get(p.batchId)?.harvestDate ?? ""))).filter(Boolean),
-              };
-            })}
-            shortages={whole.shortages.map((s) => {
-              const item = ownItems.find((i) => i.itemId === s.itemId)!;
-              return { label: `${item.variety} ${formatGrade(item.grade)}`, missing: s.missing };
-            })}
-          />
-          <details open={manualOpen} className="group">
-            <summary className="cursor-pointer select-none font-medium mb-3 text-ink-secondary">
-              Выбрать партии вручную
-            </summary>
-            <ShipmentForm order={order} itemsWithBatches={itemsWithBatches} backHref={backHref} />
-          </details>
-        </>
+        shipBlock(false)
+      ) : canShipUnpaid(order) ? (
+        <UnpaidShipGate rest={unpaidRest(order)}>{shipBlock(true)}</UnpaidShipGate>
       ) : (
         <Section
           tone="warn"

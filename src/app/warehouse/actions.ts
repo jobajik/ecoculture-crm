@@ -9,7 +9,7 @@ import { listVarietiesByType } from "@/lib/repo/varieties";
 import { getBatchById, listBatches } from "@/lib/repo/batches";
 import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getOrderById } from "@/lib/repo/orders";
-import { isReadyToShip, notReadyReason } from "@/lib/orderReady";
+import { isReadyToShip, shipGateRefusal, unpaidRest } from "@/lib/orderReady";
 import { createOrderShipments, createShipments, type ShipmentPart } from "@/lib/repo/shipments";
 import { planWholeOrderShipment } from "@/lib/shipRules";
 import { forgetReads } from "@/lib/sheets";
@@ -165,6 +165,8 @@ async function createShipmentActionInner(input: {
   orderId: string;
   itemId: string;
   parts: ShipmentPart[];
+  /** Склад отметил «Отгрузили без полной оплаты» (`canShipUnpaid`). */
+  unpaidAck?: boolean;
 }) {
   const { email, farm, role } = await requireWarehouse();
 
@@ -175,12 +177,9 @@ async function createShipmentActionInner(input: {
   if (!order) throw new Error("Заявка не найдена");
   const storeRefusal = shipStoreRefusal(role, order.store);
   if (storeRefusal) throw new Error(storeRefusal);
-  if (!isReadyToShip(order)) {
-    throw new Error(
-      `Отгружать пока нельзя: ${notReadyReason(order).toLowerCase()}. ` +
-        "Менеджер ставит свою галочку на заявке, оплату проводит бухгалтер."
-    );
-  }
+  const gate = shipGateRefusal(order, input.unpaidAck === true);
+  if (gate) throw new Error(gate);
+  const unpaid = !isReadyToShip(order);
 
   // Своё производство проверяем по ПОЗИЦИИ: партия обязана совпасть с ней по
   // цветку, сорту и длине (это проверяет shipmentPartsRefusal), значит чужую
@@ -189,7 +188,8 @@ async function createShipmentActionInner(input: {
   if (!item) throw new Error("Позиция заявки не найдена");
   assertOwnFlowerType(farm, item.flowerType);
 
-  const shipmentIds = await createShipments({ ...input, warehouseEmail: email });
+  const shipmentIds = await createShipments({ orderId: input.orderId, itemId: input.itemId, parts: input.parts, warehouseEmail: email });
+  if (unpaid) await logUnpaidShipment(email, order, input.parts.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0));
   revalidatePath("/office");
   revalidatePath("/office/ship");
   revalidatePath("/warehouse");
@@ -423,16 +423,32 @@ export async function createBatchAction(...args: Parameters<typeof createBatchAc
  * отгружать не то, что человек подтвердил, нельзя. Запись — одним атомарным
  * запросом (`createOrderShipments`).
  */
-async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal: number }) {
+/** Запись в журнал денег: цветок уехал без полной оплаты, остаток — долг (`canShipUnpaid`). */
+async function logUnpaidShipment(
+  email: string,
+  order: { orderId: string; clientName: string; totalAmount: number; paidAmount: number; paid: boolean },
+  stems: number
+) {
+  await logMoney({
+    actorEmail: email,
+    orderId: order.orderId,
+    action: MONEY_LOG_ACTIONS.SHIPPED_UNPAID,
+    details: `Отгрузили без полной оплаты: ${order.clientName}, ${stems} шт.; долг ${unpaidRest({ ...order, managerConfirmed: true }).toLocaleString("ru-RU")} ₸`,
+    amountBefore: order.paidAmount,
+    amountAfter: order.paidAmount,
+  });
+}
+
+async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal: number; unpaidAck?: boolean }) {
   const { email, farm, role } = await requireWarehouse();
   forgetReads();
   const order = await getOrderById(input.orderId);
   if (!order) throw new Error("Заявка не найдена");
   const storeRefusal = shipStoreRefusal(role, order.store);
   if (storeRefusal) throw new Error(storeRefusal);
-  if (!isReadyToShip(order)) {
-    throw new Error(`Отгружать пока нельзя: ${notReadyReason(order).toLowerCase()}.`);
-  }
+  const gate = shipGateRefusal(order, input.unpaidAck === true);
+  if (gate) throw new Error(gate);
+  const unpaid = !isReadyToShip(order);
   const own = order.items.filter((i) => !farm || getFarmFor(i.flowerType) === farm);
   // Только партии склада заявки (подсклад «Офис» — `officeStore.ts`).
   const plan = planWholeOrderShipment(own, inStore(await listBatches(), normalizeStore(order.store)));
@@ -444,6 +460,7 @@ async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal
     );
   }
   await createOrderShipments({ orderId: order.orderId, warehouseEmail: email, lines: plan.lines });
+  if (unpaid) await logUnpaidShipment(email, order, plan.total);
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
   revalidatePath("/warehouse/picklist");

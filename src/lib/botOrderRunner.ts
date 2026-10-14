@@ -1,3 +1,4 @@
+import { listSellableBatches } from "./repo/sellable";
 import { prefetchTables, SHEET_TABS } from "./sheets";
 import { localDayKey } from "./timezone";
 import { FARM_LABELS, MONEY_LOG_ACTIONS, ORDER_STATUSES, ROLES } from "./constants";
@@ -114,7 +115,7 @@ export async function placeBotOrder(input: {
       SHEET_TABS.ORDER_ITEMS,
     ]);
     const today = localDayKey();
-    const [allBatches, settings, prices, map] = await Promise.all([listBatches(), getSettings(), getCurrentPrices(today), settingsMap()]);
+    const [allBatches, settings, prices, map] = await Promise.all([listSellableBatches(), getSettings(), getCurrentPrices(today), settingsMap()]);
     const push = parsePush(map[SALES_PUSH_SETTING]);
     // После 12:00 заказ НА СЕГОДНЯ — из подсклада «Офис», остальное — основной
     // склад (`officeStore.ts`): то же деление, что бот видел в подсказке.

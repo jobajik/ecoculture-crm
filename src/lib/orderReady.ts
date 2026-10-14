@@ -99,6 +99,43 @@ export function isReadyToShip(order: ShipGateOrder): boolean {
 }
 
 /**
+ * Цветок уехал без полной оплаты (14.10.2026, владелец: «клиент не полностью закрывает счёт, а цветок всё равно
+ * отгружен — ты не отнимаешь это со склада, и у тебя неверный сток, который ты ещё и пытаешься продать; если
+ * клиенту всё равно отгрузили — отними это»). На складе висели ИП Алымкулова 5 000 и 4 800 Altaj с доставкой 2 и 8
+ * октября: цветок у клиента, а программа держала его на складе, потому что не было остатка оплаты.
+ *
+ * Правило «деньги вперёд» остаётся правилом для сборки, но не запирает факт: подтверждённую заявку склад может
+ * отгрузить и без оплаты, ОТМЕТИВ это явно («Отгрузили без полной оплаты»). Остаток уходит бухгалтеру в долги,
+ * в журнал денег — запись. Без галочки менеджера — по-прежнему нельзя.
+ */
+export function canShipUnpaid(order: ShipGateOrder): boolean {
+  if (order.status === "cancelled" || order.status === "shipped") return false;
+  if (!order.managerConfirmed) return false;
+  return waitsForMoney(order) && !order.paid && !isCreditTerms(order.clientPaymentTerms);
+}
+
+/** Сколько клиент останется должен при отгрузке без оплаты (целые тенге). */
+export function unpaidRest(order: ShipGateOrder): number {
+  return Math.max(0, Math.round(order.totalAmount - order.paidAmount));
+}
+
+/**
+ * Можно ли отгружать — для сервера. `unpaidAck` — склад отметил «отгрузили без полной оплаты».
+ * Пусто — можно; иначе — объяснение.
+ */
+export function shipGateRefusal(order: ShipGateOrder, unpaidAck = false): string {
+  if (isReadyToShip(order)) return "";
+  if (unpaidAck && canShipUnpaid(order)) return "";
+  if (canShipUnpaid(order)) {
+    return (
+      `Оплата не полная (остаток ${unpaidRest(order).toLocaleString("ru-RU")} ₸). ` +
+      "Если цветок уже уехал — отметьте «Отгрузили без полной оплаты»."
+    );
+  }
+  return `Отгружать пока нельзя: ${notReadyReason(order).toLowerCase()}.`;
+}
+
+/**
  * Чего именно не хватает — короткими кусками, чтобы собрать фразу.
  * Пустой список означает, что заявка готова.
  */

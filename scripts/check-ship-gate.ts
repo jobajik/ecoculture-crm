@@ -11,7 +11,12 @@
  *
  * Запуск: npx tsx scripts/check-ship-gate.ts
  */
+import { reservedStems, sellableBatches } from "../src/lib/sellableStock";
+import type { Batch } from "../src/lib/types";
 import {
+  canShipUnpaid,
+  shipGateRefusal,
+  unpaidRest,
   creditNote,
   isCreditTerms,
   isReadyToShip,
@@ -117,6 +122,36 @@ check(
     shipsOnCredit({ ...credit("Отсрочка 7 дней"), direction: "Пожарка" }),
     false
   );
+}
+
+// --- Отгрузили без полной оплаты (14.10.2026, ИП Алымкулова) ------------
+{
+  const alym = { ...order(true, false, 600_000, 1_400_000), status: "new" };
+  check("подтверждена, оплата частью — можно отгрузить с отметкой", canShipUnpaid(alym), true);
+  check("без отметки — отказ с подсказкой", shipGateRefusal(alym).includes("Отгрузили без полной оплаты"), true);
+  check("с отметкой — можно", shipGateRefusal(alym, true), "");
+  check("остаток долга", unpaidRest(alym), 800_000);
+  check("без галочки менеджера — нельзя и с отметкой", shipGateRefusal(order(false, false, 0), true) !== "", true);
+  check("отменённую — нельзя и с отметкой", shipGateRefusal({ ...alym, status: "cancelled" }, true) !== "", true);
+  check("оплаченную отметка не нужна", shipGateRefusal(order(true, true, 100_000)), "");
+  check("клиенту «По факту» отметка не нужна", canShipUnpaid({ ...order(true, false, 0), clientPaymentTerms: "По факту" }), false);
+}
+
+// --- Бот не продаёт обещанное ------------------------------------------
+{
+  const now = new Date("2026-10-14T07:00:00Z");
+  const batch = (id: string, date: string, qty: number, store = ""): Batch =>
+    ({ batchId: id, harvestDate: date, flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantityIn: qty, quantityRemaining: qty, store } as unknown as Batch);
+  const batches = [batch("B2", "2026-10-10", 3000), batch("B1", "2026-10-05", 4000), batch("O1", "2026-10-10", 500, "office")];
+  const orders = [
+    { status: "new", createdAt: "2026-10-01T05:00:00Z", store: "", items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantity: 5000, shippedQuantity: 0 }] },
+    { status: "cancelled", createdAt: "2026-10-12T05:00:00Z", store: "", items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantity: 900, shippedQuantity: 0 }] },
+    { status: "new", createdAt: "2026-08-01T05:00:00Z", store: "", items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantity: 900, shippedQuantity: 0 }] },
+  ];
+  check("обещано: отменённая и брошенная не держат", Array.from(reservedStems(orders, now).values()), [5000]);
+  const left = sellableBatches(batches, orders, now);
+  check("снимается со старых срезок", left.map((b) => [b.batchId, b.quantityRemaining]), [["B2", 2000], ["B1", 0], ["O1", 500]]);
+  check("исходные партии не меняются", batches.map((b) => b.quantityRemaining), [3000, 4000, 500]);
 }
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
