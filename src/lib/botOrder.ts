@@ -210,6 +210,23 @@ export interface InvoiceOutcome {
 // текста»): короткие блоки через пустую строку, позиции и варианты — списком «•»,
 // главное (номер заказа, сумма) — *жирным* (звёздочки — разметка WhatsApp).
 
+/**
+ * Название карточки нового клиента, если он его не назвал (14.10.2026, владелец со снимком: клиент написал «на сегодня,
+ * 100 штук», а бот вместо счёта спросил «заберёте или доставить?» — до этого бот требовал название точки и город).
+ * Заказ важнее анкеты: карточка заводится по имени WhatsApp или номеру, менеджер уточнит потом.
+ */
+export function newClientName(shopName: string, senderName: string, phone: string): string {
+  const own = shopName.trim();
+  if (own) return own;
+  const name = senderName.replace(/[^\p{L}\p{N}\s"«».,'-]/gu, "").replace(/\s+/g, " ").trim();
+  if (name && /\p{L}/u.test(name)) return name.slice(0, 80);
+  const digits = phone.replace(/\D/g, "");
+  return `Клиент WhatsApp ${digits.slice(-4) || "?"}`;
+}
+
+/** Город по умолчанию, если в разговоре не назван: офис и почти все клиенты — в Алматы. */
+export const BOT_DEFAULT_CITY = "Алматы";
+
 /** Подтверждение клиенту: номер заказа, позиции, сумма, счета. */
 export function botOrderText(input: {
   code: string;
@@ -219,6 +236,8 @@ export function botOrderText(input: {
   invoices: InvoiceOutcome[];
   /** Из подсклада «Офис» — отправляем такси/inDriver за счёт клиента (`officeStore.ts`). */
   office?: boolean;
+  /** Адрес известен (назвал клиент или есть в карточке). Нет — один вопрос ПОСЛЕ оформления, а не до. */
+  address?: string;
 }): string {
   const lines = input.items.map(
     (i) =>
@@ -234,6 +253,9 @@ export function botOrderText(input: {
     `Итого: *${money(total)}*`,
     `Доставка: ${dayText(input.deliveryDate)}${input.city ? `, ${input.city}` : ""}`,
     ...(input.office ? ["Отправим такси или inDriver — доставку оплачиваете вы."] : []),
+    ...(input.address !== undefined && !input.address.trim()
+      ? ["Напишите адрес доставки — или заберёте сами из офиса."]
+      : []),
     "",
   ];
   const many = input.invoices.length > 1;

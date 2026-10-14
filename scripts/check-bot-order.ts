@@ -7,6 +7,7 @@ import {
   botDeclinedText,
   botDeclinedReminderText,
   botCancelledText,
+  newClientName,
   toWhatsApp,
   normalizeGrade,
   parseBotOrder,
@@ -149,6 +150,20 @@ async function main() {
       { farmLabel: "Есентай Агро Хим", amount: 29000, result: "sent", phone: "87014050523" },
     ],
   });
+  // 14.10.2026: бот спросил «заберёте или доставить?» вместо счёта. Теперь адрес спрашивается ПОСЛЕ оформления.
+  const noAddr = botOrderText({
+    code: "K1531",
+    items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantity: 100, unitPrice: 580 }],
+    deliveryDate: "2026-10-14",
+    city: "Алматы",
+    invoices: [{ farmLabel: "Есентай Агро Хим", amount: 58000, result: "sent", phone: "87012761531" }],
+    address: "",
+  });
+  check("адреса нет — один вопрос в подтверждении", noAddr.includes("Напишите адрес доставки — или заберёте сами из офиса."), true);
+  check("адрес есть — не спрашиваем", botOrderText({ code: "K1", items: [], deliveryDate: "2026-10-14", city: "", invoices: [], address: "Абая 10" }).includes("адрес"), false);
+  check("новый клиент без названия — имя WhatsApp", newClientName("", "Айгуль 🌸", "+77012761531"), "Айгуль");
+  check("новый клиент без имени — по номеру", newClientName("", "", "77012761531"), "Клиент WhatsApp 1531");
+  check("названная точка важнее имени", newClientName("Цветы Рядом", "Айгуль", "77012761531"), "Цветы Рядом");
   check("две компании: касса не подключена — «пришлём отдельно»", mixed.includes("Счёт (Rose Farm) на *22 000 ₸* пришлём сюда же"), true);
   check("две компании: счёт Есентая с подписью", mixed.includes("Счёт Kaspi (Есентай Агро Хим) на *29 000 ₸* отправлен") && mixed.includes("= 22 000 ₸"), true);
   check("оплата полностью — на сборку", botPaidText({ code: "71YDW", amount: 27000, fullyPaid: true, deliveryDate: "2026-10-02" }).includes("передан на сборку, доставка 02.10"), true);

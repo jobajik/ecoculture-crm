@@ -24,7 +24,16 @@ import { issueKaspiInvoice } from "./kaspiIssue";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText, kaspiPhone, prettyKaspiPhone } from "./kaspiInvoice";
 import { stockMap } from "./botKnowledge";
 import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
-import { botCancelledText, botOrderText, botSaleAlertText, planBotOrder, type BotOrderDraft, type InvoiceOutcome } from "./botOrder";
+import {
+  BOT_DEFAULT_CITY,
+  botCancelledText,
+  botOrderText,
+  botSaleAlertText,
+  newClientName,
+  planBotOrder,
+  type BotOrderDraft,
+  type InvoiceOutcome,
+} from "./botOrder";
 import { notifyBotSale } from "./botSalesAlert";
 import type { KaspiInvoice, OrderWithItems } from "./types";
 
@@ -138,20 +147,17 @@ export async function placeBotOrder(input: {
       const key = phoneKey(phone);
       const lead = key ? (await listLeads()).find((l) => phoneKey(l.phone) === key && l.stage !== "lost") : undefined;
       if (lead) {
-        city = lead.city || draft.city;
-        if (!city) return { text: "В какой город доставить заказ?", orderId: "", note: "" };
+        city = lead.city || draft.city || BOT_DEFAULT_CITY;
         const linked = await ensureClientForLead(lead, BOT_MANAGER_EMAIL, { city });
         clientId = linked.clientId;
         clientName = lead.name;
       } else {
-        if (!draft.shopName || !draft.city) {
-          return { text: "Подскажите, как называется ваша точка и в каком городе доставка? Оформлю заказ.", orderId: "", note: "" };
-        }
-        city = draft.city;
-        clientName = draft.shopName;
+        // Название и город не повод откладывать заказ: карточка — по имени WhatsApp, город — Алматы, менеджер уточнит.
+        city = draft.city || BOT_DEFAULT_CITY;
+        clientName = newClientName(draft.shopName, input.senderName, phone);
         clientId = await createClient({
-          name: draft.shopName,
-          city: draft.city,
+          name: clientName,
+          city,
           shopName: "",
           clientType: "",
           contactPerson: input.senderName,
@@ -160,7 +166,9 @@ export async function placeBotOrder(input: {
           address: draft.address,
           paymentTerms: "",
           source: "Написали в WhatsApp",
-          note: "Клиента завёл бот WhatsApp",
+          note: draft.shopName && draft.city
+            ? "Клиента завёл бот WhatsApp"
+            : "Клиента завёл бот WhatsApp — уточнить название точки и город",
           managerEmail: BOT_MANAGER_EMAIL,
           paymentMethod: "Каспи",
           kaspiPay1: "",
@@ -220,7 +228,15 @@ export async function placeBotOrder(input: {
       for (const part of dueParts(order)) invoices.push(await invoicePart(order, part.farm, part.due, input.kaspiPhone || phone));
     }
     const code = orderCode(orderId);
-    let text = botOrderText({ code, items: plan.items, deliveryDate: plan.deliveryDate, city, invoices, office: store === "office" });
+    let text = botOrderText({
+      code,
+      items: plan.items,
+      deliveryDate: plan.deliveryDate,
+      city,
+      invoices,
+      office: store === "office",
+      address: draft.address || client?.address || "",
+    });
     if (invoices.some((i) => i.result === "failed" && !i.phone)) {
       text += "\nНапишите номер, к которому привязан ваш Kaspi, — выставлю счёт на него.";
     }
@@ -347,7 +363,11 @@ export async function botClientContext(phone: string): Promise<string> {
       if (client.paymentTerms) lines.push(`Условия оплаты по карточке: ${client.paymentTerms}.`);
     }
     else if (lead) lines.push(`Клиент есть в лидах: «${lead.name}», город ${lead.city || "не указан — спроси город доставки"}.`);
-    else lines.push("Клиента нет в базе — до оформления спроси название точки и город доставки (shopName, city).");
+    else
+      lines.push(
+        "Клиента нет в базе. Название точки и город НЕ спрашивай до заказа: назвал позицию и количество — оформляй сразу " +
+          "(shopName и city — если прозвучали в переписке, иначе пусто; карточка заведётся сама, город по умолчанию Алматы)."
+      );
     const mine = botOrdersOf(orders, phone, client?.clientId ?? "").slice(0, 5);
     for (const o of mine) {
       const items = o.items.map((i) => `${i.variety} ${i.grade} ${i.quantity} шт.`).join(", ");
