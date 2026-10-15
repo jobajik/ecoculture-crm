@@ -14,11 +14,14 @@ async function main() {
   if (!secret) throw new Error("Нет CRON_SECRET в .env.local");
   const at = process.argv.indexOf("--max");
   const max = at >= 0 ? Number(process.argv[at + 1]) || 5 : 5;
+  let offset = 0;
   for (let i = 1; i <= max; i++) {
-    const res = await fetch(`${SITE}/api/whatsapp/leads-setup?history=1`, { headers: { authorization: `Bearer ${secret}` } });
+    const res = await fetch(`${SITE}/api/whatsapp/leads-setup?history=1&offset=${offset}`, { headers: { authorization: `Bearer ${secret}` } });
     const body = await res.text();
     console.log(`--- проход ${i} (${res.status}) ---\n${body}`);
-    if (!res.ok || !/Осталось \d+ чатов/.test(body)) break;
+    const next = /offset=(\d+)/.exec(body);
+    if (!res.ok || !next) break;
+    offset = Number(next[1]);
   }
 }
 

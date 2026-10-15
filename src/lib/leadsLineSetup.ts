@@ -71,7 +71,7 @@ export async function setupLeadsLine(site: string, importDays = 0): Promise<stri
  * `budgetMs`; потом лидам с именем-заглушкой ставит имя из WhatsApp. Повторный запуск дотягивает
  * оставшееся, уже записанное не дублирует.
  */
-export async function pullLeadsHistory(budgetMs = 45000): Promise<string[]> {
+export async function pullLeadsHistory(budgetMs = 45000, offset = 0): Promise<string[]> {
   const out: string[] = [];
   const cfg = greenLeadsConfig();
   if (!cfg) return ["Нет ключей номера Земфиры."];
@@ -87,7 +87,9 @@ export async function pullLeadsHistory(budgetMs = 45000): Promise<string[]> {
     if (m.direction === "in") cur.hasIn = true;
     byKey.set(key, cur);
   }
-  const todo = Array.from(byKey.values()).filter((c) => !c.hasIn);
+  // Чаты, где клиент так и не ответил, остаются в списке и после проверки — `offset` сдвигает начало, чтобы
+  // следующий проход брал следующие чаты, а не те же 35 (15.10.2026: два прохода подряд проверили одни и те же).
+  const todo = Array.from(byKey.values()).filter((c) => !c.hasIn).slice(Math.max(0, offset));
   const fresh: WaMessage[] = [];
   let done = 0;
   for (const chat of todo) {
@@ -106,8 +108,8 @@ export async function pullLeadsHistory(budgetMs = 45000): Promise<string[]> {
     await new Promise((r) => setTimeout(r, 1100));
   }
   if (fresh.length) await appendWaMessages(fresh);
-  out.push(`История чатов: без ответов клиента было ${todo.length}, проверено ${done}, дописано сообщений ${fresh.length}.`);
-  if (done < todo.length) out.push(`Осталось ${todo.length - done} чатов — обновите страницу ещё раз.`);
+  out.push(`История чатов: к проверке ${todo.length} (с ${offset + 1}-го), проверено ${done}, дописано сообщений ${fresh.length}.`);
+  if (done < todo.length) out.push(`Осталось ${todo.length - done} чатов — откройте с &offset=${offset + done}.`);
 
   // Имена из WhatsApp лидам, заведённым до первого ответа клиента.
   const merged = [...line, ...fresh];

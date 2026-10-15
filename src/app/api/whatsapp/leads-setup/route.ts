@@ -26,7 +26,8 @@ export async function GET(request: Request) {
   try {
     // ?history=1 — дотянуть полную переписку чатов (журнал Green API до подключения пуст).
     if (new URL(request.url).searchParams.get("history") === "1") {
-      return text(["Номер Земфиры — история чатов", "", ...(await pullLeadsHistory(45000))].join("\n"));
+      const offset = Number(new URL(request.url).searchParams.get("offset")) || 0;
+      return text(["Номер Земфиры — история чатов", "", ...(await pullLeadsHistory(45000, offset))].join("\n"));
     }
     return text(["Номер Земфиры — подключение", "", ...(await setupLeadsLine(SITE, 3))].join("\n"));
   } catch (err) {
