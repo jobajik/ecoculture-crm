@@ -2,19 +2,22 @@ import { LEAD_ORIGIN_ADS, phoneKey } from "./leads";
 import { newClientName } from "./botOrder";
 import { messageText, prettyWaPhone } from "./whatsapp";
 import type { NewLead } from "./repo/leads";
-import type { AppUser, WaMessage } from "./types";
+import type { AppUser, Lead, WaMessage } from "./types";
 
 // ---------------------------------------------------------------------------
-// Номер Земфиры: кто НАПИСАЛ ей сам и кого нет ни в лидах, ни в клиентах,
-// сразу становится её лидом «с рекламы» (15.10.2026, владелец: «чтобы клиенты,
-// которые ей будут писать, автоматом заносились в базу»). Раньше такой номер
-// только висел в «Написали в WhatsApp» и ждал кнопки «Завести лидом».
+// Номер Земфиры: любой разговор с номером, которого нет ни в лидах, ни в
+// клиентах, сразу становится её лидом «с рекламы» (15.10.2026, владелец: «чтобы
+// клиенты, которые ей будут писать, автоматом заносились в базу»).
 //
-// Только входящие: если Земфира написала первой на чужой номер — это не лид сам
-// по себе (могут быть свои, поставщики, водители). Чистая функция — без таблиц.
+// И входящее, и её исходящее: живая переписка за 14–15.10 показала, что Земфира
+// почти всегда пишет ПЕРВОЙ («цветы для себя или для бизнеса?») — заявки приходят
+// из рекламы, а не сообщением; все 48 таких чатов — клиенты. Чистая функция.
 // ---------------------------------------------------------------------------
 
 export const WA_AUTO_LEAD_SOURCE = "Написали в WhatsApp";
+
+/** Имя, которое лид получает, пока клиент не написал сам: «Клиент WhatsApp 2030». */
+const PLACEHOLDER_NAME = /^Клиент WhatsApp \d{1,4}$/;
 
 /** Чья это линия: единственный активный «Лиды с рекламы», иначе первый по почте; нет — ничей. */
 export function leadsLineOwner(users: Pick<AppUser, "email" | "role" | "active">[]): string {
@@ -26,7 +29,7 @@ export function leadsLineOwner(users: Pick<AppUser, "email" | "role" | "active">
 }
 
 /**
- * Лид из первого входящего с незнакомого номера — или null.
+ * Лид из первого сообщения с незнакомым номером — или null.
  * `known` — ключи телефонов (`phoneKey`) всех лидов и клиентов.
  */
 export function autoLeadFromMessage(
@@ -35,11 +38,14 @@ export function autoLeadFromMessage(
   ownerEmail: string,
   day: string,
 ): NewLead | null {
-  if (message.direction !== "in") return null;
   const key = phoneKey(message.phone);
   if (!key || known.has(key)) return null;
-  const sender = (message.senderName || "").trim();
-  const first = messageText(message).replace(/\s+/g, " ").trim().slice(0, 300);
+  const incoming = message.direction === "in";
+  const sender = incoming ? (message.senderName || "").trim() : "";
+  const first = incoming ? messageText(message).replace(/\s+/g, " ").trim().slice(0, 300) : "";
+  const note = incoming
+    ? `Сам написал в WhatsApp Земфиры ${day}${first ? `: «${first}»` : ""}.`
+    : `Земфира написала в WhatsApp ${day}.`;
   return {
     name: newClientName("", sender, message.phone),
     city: "",
@@ -48,9 +54,23 @@ export function autoLeadFromMessage(
     clientType: "",
     source: WA_AUTO_LEAD_SOURCE,
     address: "",
-    note: `Сам написал в WhatsApp Земфиры ${day}${first ? `: «${first}»` : ""}. Заведён автоматически — уточните название точки и город.`,
+    note: `${note} Заведён автоматически — уточните название точки и город.`,
     createdByEmail: ownerEmail || "whatsapp",
     managerEmail: ownerEmail,
     origin: LEAD_ORIGIN_ADS,
   };
+}
+
+/**
+ * Лид заведён с именем-заглушкой («Клиент WhatsApp 2030»), а клиент написал под своим
+ * именем — имя и контакт лида берутся из WhatsApp. Иначе — null (своё имя не трогаем).
+ */
+export function namedFromWhatsApp(
+  lead: Pick<Lead, "name" | "contactPerson">,
+  message: Pick<WaMessage, "direction" | "senderName">,
+): { Name: string; ContactPerson: string } | null {
+  if (message.direction !== "in" || !PLACEHOLDER_NAME.test(lead.name.trim())) return null;
+  const name = newClientName("", message.senderName || "", "");
+  if (!name || name.startsWith("Клиент WhatsApp")) return null;
+  return { Name: name, ContactPerson: lead.contactPerson || (message.senderName || "").trim().slice(0, 80) };
 }

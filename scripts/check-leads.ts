@@ -3,7 +3,9 @@
  * списка, сводка и разбор файла с базой.
  * Запуск: npx tsx scripts/check-leads.ts
  */
-import { autoLeadFromMessage, leadsLineOwner } from "../src/lib/waAutoLead";
+import type { LeadRow } from "../src/lib/leads";
+import { isUntouchedCallBase, leadGroup, matchesQuery, matchesView, nextTouchLabel, originOf, sortLeadsForWork } from "../src/lib/leadsView";
+import { autoLeadFromMessage, leadsLineOwner, namedFromWhatsApp } from "../src/lib/waAutoLead";
 import {
   buildLeadRows,
   canSeeLead,
@@ -242,8 +244,42 @@ check("нет заголовков — понятная ошибка", !!parseLe
   ]);
   check("авто-лид: первое сообщение в заметке", !!auto && auto.note.includes("сколько хризантема"), true);
   check("номер уже есть у лида или клиента — не заводим", autoLeadFromMessage(msg, new Set([phoneKey("8 701 555 20 30")]), "z@x.kz", "2026-10-15"), null);
-  check("Земфира написала первой — не лид", autoLeadFromMessage({ ...msg, direction: "out" }, new Set(), "z@x.kz", "2026-10-15"), null);
+  const outLead = autoLeadFromMessage({ ...msg, direction: "out", senderName: "" }, new Set(), "z@x.kz", "2026-10-15");
+  check("Земфира написала первой — тоже лид, имя-заглушка", outLead && [outLead.name, outLead.note.startsWith("Земфира написала")], ["Клиент WhatsApp 2030", true]);
+  check("заглушка → имя из WhatsApp, когда клиент ответил", namedFromWhatsApp({ name: "Клиент WhatsApp 2030", contactPerson: "" }, { direction: "in", senderName: "Айгерим 🌸" }), { Name: "Айгерим", ContactPerson: "Айгерим 🌸" });
+  check("своё имя лида не трогаем", namedFromWhatsApp({ name: "Цветы Достык", contactPerson: "" }, { direction: "in", senderName: "Айгерим" }), null);
+  check("её исходящее имя не даёт", namedFromWhatsApp({ name: "Клиент WhatsApp 2030", contactPerson: "" }, { direction: "out", senderName: "" }), null);
   check("без имени — «Клиент WhatsApp 2030»", autoLeadFromMessage({ ...msg, senderName: "" }, new Set(), "", "2026-10-15")?.name, "Клиент WhatsApp 2030");
+}
+
+// --- Список «что делать сейчас»: группы срочности и база обзвона -----------------
+{
+  const base = (id: string, extra: Partial<LeadRow>): LeadRow =>
+    ({ leadId: id, name: id, city: "", contactPerson: "", phone: "", managerName: "", managerEmail: "", stage: "contact", touches: 1,
+       nextTouchAt: "2026-10-20", overdue: false, dueToday: false, campaign: "", origin: "", lastTouchAt: "", lastComment: "",
+       lastChannel: "", daysInStage: 0, lostReason: "", stageChangedAt: "", ...extra }) as LeadRow;
+  const rowsV = [
+    base("later", {}),
+    base("today", { dueToday: true, nextTouchAt: "2026-10-15" }),
+    base("late", { overdue: true, nextTouchAt: "2026-10-12" }),
+    base("wait", {}),
+    base("nodate", { nextTouchAt: "" }),
+    base("lost", { stage: "lost", lostReason: "Дорого" }),
+  ];
+  const talkV = { wait: { waitingMinutes: 90, temperature: "", score: null } };
+  check("порядок: ждут ответа → просрочено → сегодня → запланировано → без даты → закрытые",
+    sortLeadsForWork(rowsV, talkV).map((r) => r.leadId), ["wait", "late", "today", "later", "nodate", "lost"]);
+  check("закрытый лид, даже с ответом в ожидании, — в закрытых", leadGroup(rowsV[5], { waitingMinutes: 5, temperature: "", score: null }), "closed");
+  check("база обзвона без звонков — прячется", isUntouchedCallBase({ campaign: "Обзвон сентябрь", touches: 0, stage: "new" }), true);
+  check("после первого звонка — уже в общем списке", isUntouchedCallBase({ campaign: "Обзвон сентябрь", touches: 1, stage: "contact" }), false);
+  check("откуда: реклама / обзвон / остальные", [originOf({ origin: "ads", campaign: "" }), originOf({ origin: "", campaign: "X" }), originOf({ origin: "", campaign: "" })], ["ads", "calls", "other"]);
+  check("«новые» — только без касаний", [matchesView(base("n", { stage: "new", touches: 0 }), "new"), matchesView(base("n2", { stage: "new", touches: 1 }), "new")], [true, false]);
+  check("поиск по телефону в любом виде", matchesQuery(base("p", { phone: "+77015552030" }), "8 701 555 20 30"), true);
+  const fd = (iso: string) => iso.slice(8, 10) + "." + iso.slice(5, 7);
+  check("следующее касание словами", [
+    nextTouchLabel(rowsV[1], "2026-10-15", fd), nextTouchLabel(rowsV[2], "2026-10-15", fd), nextTouchLabel(rowsV[0], "2026-10-15", fd),
+    nextTouchLabel(rowsV[4], "2026-10-15", fd), nextTouchLabel(rowsV[5], "2026-10-15", fd),
+  ], ["сегодня", "просрочено 3 дн.", "20.10", "не назначено", "Дорого"]);
 }
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);

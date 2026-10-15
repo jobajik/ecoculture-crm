@@ -3,11 +3,11 @@ import { downloadMedia, webhookTokenOk } from "@/lib/greenApi";
 import { openAiConfigured, transcribeAudio } from "@/lib/openai";
 import { parseGreenWebhook } from "@/lib/whatsapp";
 import { appendWaMessages } from "@/lib/repo/talks";
-import { createLead, listLeads } from "@/lib/repo/leads";
+import { createLead, listLeads, updateLead } from "@/lib/repo/leads";
 import { listClients } from "@/lib/repo/clients";
 import { listUsers } from "@/lib/repo/users";
 import { phoneKey } from "@/lib/leads";
-import { autoLeadFromMessage, leadsLineOwner } from "@/lib/waAutoLead";
+import { autoLeadFromMessage, leadsLineOwner, namedFromWhatsApp } from "@/lib/waAutoLead";
 import { localDayKey } from "@/lib/timezone";
 import type { WaMessage } from "@/lib/types";
 import { appendWaStatuses } from "@/lib/repo/broadcasts";
@@ -132,13 +132,23 @@ async function leadsLine(body: unknown) {
   return NextResponse.json({ ok: true });
 }
 
-/** Написал Земфире незнакомый номер — сразу её лид «с рекламы» (`autoLeadFromMessage`). */
+/**
+ * Разговор с незнакомым номером на линии Земфиры — сразу её лид «с рекламы» (`autoLeadFromMessage`);
+ * лид с именем-заглушкой получает имя из WhatsApp, когда клиент напишет сам (`namedFromWhatsApp`).
+ */
 async function autoLead(message: WaMessage) {
-  if (message.direction !== "in" || !phoneKey(message.phone)) return;
+  const key = phoneKey(message.phone);
+  if (!key) return;
   // Лиды — свежие: клиент пишет тремя сообщениями подряд, лид должен завестись один раз.
-  const [leads, clients, users] = await Promise.all([listLeads({ fresh: true }), listClients(), listUsers()]);
+  const leads = await listLeads({ fresh: true });
+  const own = leads.find((l) => phoneKey(l.phone) === key);
+  if (own) {
+    const named = namedFromWhatsApp(own, message);
+    if (named) await updateLead(own.leadId, named);
+    return;
+  }
+  const [clients, users] = await Promise.all([listClients(), listUsers()]);
   const known = new Set<string>();
-  for (const l of leads) if (phoneKey(l.phone)) known.add(phoneKey(l.phone));
   for (const c of clients) for (const p of [c.phone, c.messenger, c.kaspiPay1, c.kaspiPay2]) if (phoneKey(p)) known.add(phoneKey(p));
   const day = localDayKey();
   const lead = autoLeadFromMessage(message, known, leadsLineOwner(users), day);

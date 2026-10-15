@@ -9,7 +9,6 @@ import { buildLeadRows, canManageLeads, canSeeLead, canUseLeads, compareLeadRows
 import { localDayKey } from "@/lib/timezone";
 import { isRetailRole } from "@/lib/retail";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
 import LeadsBoard from "@/components/LeadsBoard";
 import NewLeadForm from "@/components/NewLeadForm";
 import LeadImportForm from "@/components/LeadImportForm";
@@ -24,6 +23,7 @@ import { isClosedStage, phoneKey } from "@/lib/leads";
 import { CLIENT_SOURCES } from "@/lib/constants";
 import { clientsTabsFor } from "../tabs";
 import { withBotName } from "@/lib/botIdentity";
+import { canOpen } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -107,41 +107,53 @@ export default async function LeadsPage({
 
   return (
     <div className="space-y-4">
-      <PageHeader area="leads" title="Лиды" tabs={clientsTabsFor(undefined, role)} />
-
-      <p className="text-sm text-ink-secondary">
-        В работе {summary.open}
-        {summary.dueToday + summary.overdue > 0 && ` · касаться сегодня: ${summary.dueToday + summary.overdue}`}
-        {summary.overdue > 0 && <span className="text-status-critical"> · из них просрочено {summary.overdue}</span>}
-        {summary.unassigned > 0 && ` · ничьих: ${summary.unassigned}`}
-        {` · касаний за 7 дней: ${summary.touches7}`}
-        <Hint>
-          Лид — тот, кто ещё не покупал. Каждый разговор записывается касанием: как связывались, о чём
-          договорились и когда следующий раз. Чтобы оформить заявку, лида заводят клиентом — кнопкой в его
-          карточке. Менеджер видит свои лиды и ничьи; РОП — всех.
-        </Hint>
-      </p>
+      <PageHeader
+        area="leads"
+        title="Лиды"
+        subtitle={
+          <>
+            Те, кто ещё не покупал{summary.unassigned > 0 && manage ? ` · ничьих: ${summary.unassigned}` : ""} · касаний за 7 дней: {summary.touches7}
+            <Hint>
+              Каждый разговор — касание: как связывались, о чём договорились и когда следующий раз. Чтобы оформить
+              заявку, лида заводят клиентом — кнопкой в его карточке. Менеджер видит свои лиды и ничьи; РОП — всех.
+            </Hint>
+          </>
+        }
+        tabs={clientsTabsFor(undefined, role)}
+      />
 
       <div className="flex flex-wrap items-start gap-2">
         <NewLeadForm key={initial ? `${initial.phone}` : "blank"} canManage={manage} managers={managers} initial={initial} />
-        {manage && <LeadImportForm managers={managers} />}
+        {manage && (
+          <details className="group sm:ml-auto">
+            <summary className="btn-secondary !py-1.5 cursor-pointer list-none select-none">Загрузить базу файлом ▾</summary>
+            <div className="mt-2">
+              <LeadImportForm managers={managers} />
+            </div>
+          </details>
+        )}
       </div>
 
+      {/* Кто написал на номер Земфиры и ещё не заведён лидом; рабочий номер не показываем. */}
+      <WaInbox rows={inbox} />
+
+      <LeadsBoard
+        rows={rows}
+        myEmail={email}
+        canManage={manage}
+        leadgen={leadgen}
+        canOpenCalls={canOpen(role, "/clients/leads/calls")}
+        managers={managers}
+        talk={talk}
+        today={today}
+      />
+
       {manage && summary.byManager.length > 0 && (
-        <Section
-          tone="leads"
-          icon="client"
-          flush
-          className="!mb-0"
-          title={
-            <>
-              По менеджерам
-              <span className="normal-case tracking-normal">
-                <Hint>«Дошли до заказа» и «отказ» — за 30 дней по дню смены стадии.</Hint>
-              </span>
-            </>
-          }
-        >
+        <details className="card !p-0 overflow-hidden">
+          <summary className="px-4 py-3 cursor-pointer select-none font-medium">
+            Как работают менеджеры
+            <span className="text-ink-muted font-normal text-sm"> · просрочено у всех: {summary.overdue}</span>
+          </summary>
           <div className="table-cards border-t border-line-hairline">
             <table className="w-full text-sm">
               <thead>
@@ -170,13 +182,9 @@ export default async function LeadsPage({
               </tbody>
             </table>
           </div>
-        </Section>
+          <p className="px-4 py-2 text-xs text-ink-muted border-t border-line-hairline">«Дошли до заказа» и «отказ» — за 30 дней.</p>
+        </details>
       )}
-
-      {/* Кто написал на номер Земфиры и ещё не заведён лидом; рабочий номер не показываем. */}
-      <WaInbox rows={inbox} />
-
-      <LeadsBoard rows={rows} myEmail={email} canManage={manage} leadgen={leadgen} managers={managers} talk={talk} />
     </div>
   );
 }

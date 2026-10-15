@@ -84,6 +84,22 @@ export async function findLeadRow(leadId: string): Promise<{ lead: Lead; rowNumb
   return null;
 }
 
+/** Правка нескольких лидов одним запросом (имя из WhatsApp и т. п.): одно свежее чтение, одна запись. */
+export async function updateLeadsBatch(changes: { leadId: string; changes: Record<string, string> }[]): Promise<number> {
+  if (changes.length === 0) return 0;
+  const table = await readTable(SHEET_TABS.LEADS, { fresh: true });
+  const rowById = new Map<string, number>();
+  for (let i = 0; i < table.rows.length; i++) {
+    const id = toLead(rowToRecord(SHEET_TABS.LEADS, table.rows[i])).leadId;
+    if (id) rowById.set(id, table.rowNumbers[i]);
+  }
+  const ops = changes
+    .filter((c) => rowById.has(c.leadId) && Object.keys(c.changes).length > 0)
+    .map((c) => ({ kind: "update" as const, tab: SHEET_TABS.LEADS, rowNumber: rowById.get(c.leadId)!, changes: c.changes }));
+  if (ops.length) await commitAtomic(ops);
+  return ops.length;
+}
+
 export async function getLead(leadId: string, options: { fresh?: boolean } = {}): Promise<Lead | null> {
   if (options.fresh) return (await findLeadRow(leadId))?.lead ?? null;
   return (await listLeads()).find((l) => l.leadId === leadId) ?? null;
@@ -146,10 +162,10 @@ export async function createLead(input: NewLead, nextTouchAt = ""): Promise<stri
 }
 
 /** Пачка лидов из файла — одним запросом (грабли 1.15, 1.16). */
-export async function createLeads(inputs: NewLead[]): Promise<number> {
+export async function createLeads(inputs: NewLead[], nextTouchAt = ""): Promise<number> {
   if (inputs.length === 0) return 0;
   const now = new Date().toISOString();
-  await commitAtomic([{ kind: "append", tab: SHEET_TABS.LEADS, records: inputs.map((i) => leadRecord(i, now)) }]);
+  await commitAtomic([{ kind: "append", tab: SHEET_TABS.LEADS, records: inputs.map((i) => leadRecord(i, now, nextTouchAt)) }]);
   return inputs.length;
 }
 

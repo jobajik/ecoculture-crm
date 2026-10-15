@@ -1,5 +1,8 @@
-import { configureWebhook, getInstanceState, greenLeadsConfig } from "./greenApi";
-import { parseHistoryItem } from "./whatsapp";
+import { configureWebhook, fetchChatHistory, getInstanceState, greenLeadsConfig } from "./greenApi";
+import { mergeMessages, parseHistoryItem } from "./whatsapp";
+import { phoneKey } from "./leads";
+import { listLeads, updateLeadsBatch } from "./repo/leads";
+import { namedFromWhatsApp } from "./waAutoLead";
 import { appendWaMessages, listWaMessages } from "./repo/talks";
 import type { WaMessage } from "./types";
 
@@ -57,5 +60,68 @@ export async function setupLeadsLine(site: string, importDays = 0): Promise<stri
     .map((m) => ({ ...m, line: "leads" }));
   if (fresh.length) await appendWaMessages(fresh);
   out.push(`Переписка за ${days} дн.: в Green API ${items.length}, дописано в CRM ${fresh.length} (группы и служебные не берутся).`);
+  return out;
+}
+
+/**
+ * Дотянуть ПОЛНУЮ переписку чатов Земфиры из Green API (`getChatHistory`). Журнал Green API
+ * (`lastIncomingMessages`) пуст за время до подключения номера — 15.10.2026 из 540 подтянутых
+ * сообщений входящих не было ни одного, и все 48 чатов выглядели «писала только она». Берёт чаты,
+ * где ответов клиента ещё нет, по одному в 1,1 с (чаще Green API отвечает 429), пока не кончится
+ * `budgetMs`; потом лидам с именем-заглушкой ставит имя из WhatsApp. Повторный запуск дотягивает
+ * оставшееся, уже записанное не дублирует.
+ */
+export async function pullLeadsHistory(budgetMs = 45000): Promise<string[]> {
+  const out: string[] = [];
+  const cfg = greenLeadsConfig();
+  if (!cfg) return ["Нет ключей номера Земфиры."];
+  const started = Date.now();
+  const all = await listWaMessages({ lines: "all" });
+  const known = new Set(all.map((m) => m.messageId));
+  const line = all.filter((m) => m.line === "leads");
+  const byKey = new Map<string, { phone: string; hasIn: boolean }>();
+  for (const m of line) {
+    const key = phoneKey(m.phone);
+    if (!key) continue;
+    const cur = byKey.get(key) ?? { phone: m.phone, hasIn: false };
+    if (m.direction === "in") cur.hasIn = true;
+    byKey.set(key, cur);
+  }
+  const todo = Array.from(byKey.values()).filter((c) => !c.hasIn);
+  const fresh: WaMessage[] = [];
+  let done = 0;
+  for (const chat of todo) {
+    if (Date.now() - started > budgetMs) break;
+    try {
+      const history = await fetchChatHistory(cfg, chat.phone, 100);
+      for (const m of history) {
+        if (known.has(m.messageId)) continue;
+        known.add(m.messageId);
+        fresh.push({ ...m, line: "leads" });
+      }
+    } catch (err) {
+      out.push(`Чат …${chat.phone.slice(-4)}: ${err instanceof Error ? err.message : err}`);
+    }
+    done++;
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  if (fresh.length) await appendWaMessages(fresh);
+  out.push(`История чатов: без ответов клиента было ${todo.length}, проверено ${done}, дописано сообщений ${fresh.length}.`);
+  if (done < todo.length) out.push(`Осталось ${todo.length - done} чатов — обновите страницу ещё раз.`);
+
+  // Имена из WhatsApp лидам, заведённым до первого ответа клиента.
+  const merged = [...line, ...fresh];
+  const lastName = new Map<string, string>();
+  for (const m of mergeMessages(merged)) if (m.direction === "in" && m.senderName) lastName.set(phoneKey(m.phone), m.senderName);
+  const leads = await listLeads({ fresh: true });
+  const renames = leads
+    .map((l) => {
+      const sender = lastName.get(phoneKey(l.phone));
+      const named = sender ? namedFromWhatsApp(l, { direction: "in", senderName: sender }) : null;
+      return named ? { leadId: l.leadId, changes: named } : null;
+    })
+    .filter((x): x is { leadId: string; changes: { Name: string; ContactPerson: string } } => !!x);
+  const renamed = await updateLeadsBatch(renames);
+  out.push(`Лидам с именем «Клиент WhatsApp …» поставлено имя из WhatsApp: ${renamed}.`);
   return out;
 }

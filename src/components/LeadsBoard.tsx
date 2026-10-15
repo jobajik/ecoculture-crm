@@ -3,49 +3,67 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { LEAD_STAGES, isClosedStage, phoneKey, type LeadRow } from "@/lib/leads";
+import { LEAD_STAGES, isClosedStage, whatsappLink, type LeadRow } from "@/lib/leads";
+import {
+  LEAD_GROUP_LABELS,
+  isUntouchedCallBase,
+  leadGroup,
+  matchesQuery,
+  matchesView,
+  nextTouchLabel,
+  originOf,
+  sortLeadsForWork,
+  type LeadOrigin,
+  type LeadTalkMark,
+  type LeadView,
+} from "@/lib/leadsView";
 import { formatDay } from "@/lib/formatDate";
-import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import { prettyWaPhone } from "@/lib/whatsapp";
+import MoreToggle from "./MoreToggle";
 import LeadStageBadge from "./LeadStageBadge";
+import Icon from "./Icon";
 import { ScoreChip, TemperatureChip, WaitingChip } from "./TalkChips";
 
-type Who = "mine" | "free" | "all" | "handed";
-type When = "work" | "today" | "overdue" | "waiting" | "closed" | "any";
+export type { LeadTalkMark } from "@/lib/leadsView";
 
-/** Что известно о переписке лида: ждёт ли ответа, «температура», оценка менеджера. */
-export interface LeadTalkMark {
-  waitingMinutes: number | null;
-  temperature: string;
-  score: number | null;
-}
+type Who = "mine" | "free" | "all" | "handed";
+
+const PAGE = 40;
 
 /**
- * Список лидов. Открывается на «В работе» и отсортирован так, чтобы менеджер
- * шёл сверху вниз: просроченные касания, потом на сегодня, потом по дате
- * (`compareLeadRows`). Воронка стадий сверху — она же фильтр.
+ * Список лидов «что делать сейчас». Сверху — четыре плитки (они же фильтр): ждут ответа
+ * в WhatsApp, на сегодня, новые, все в работе. Ниже — поиск и отбор, потом лиды
+ * группами по срочности (`sortLeadsForWork`). База обзвона без единого звонка сюда не
+ * попадает — она во вкладке «Обзвон» (`isUntouchedCallBase`).
  */
 export default function LeadsBoard({
   rows,
   myEmail,
   canManage,
   leadgen = false,
+  canOpenCalls = false,
   managers,
   talk = {},
+  today,
 }: {
   rows: LeadRow[];
   myEmail: string;
   canManage: boolean;
   /** Земфира: «Мои» (ещё у неё) и «Передала» (у менеджеров, с итогом). */
   leadgen?: boolean;
+  /** Есть вкладка «Обзвон» — туда ведёт строка про базу без звонков. */
+  canOpenCalls?: boolean;
   managers: { email: string; name: string }[];
   talk?: Record<string, LeadTalkMark>;
+  today: string;
 }) {
-  const [stage, setStage] = useState<string>("");
+  const [view, setView] = useState<LeadView>("work");
   const [who, setWho] = useState<Who>(canManage ? "all" : "mine");
   const [manager, setManager] = useState("");
-  const [when, setWhen] = useState<When>("work");
+  const [stage, setStage] = useState("");
+  const [origin, setOrigin] = useState<LeadOrigin>("all");
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState(false);
+  const [limit, setLimit] = useState(PAGE);
 
   const byWho = useMemo(
     () =>
@@ -59,202 +77,289 @@ export default function LeadsBoard({
     [rows, who, manager, myEmail, canManage]
   );
 
-  const q = query.trim().toLowerCase();
-  const qPhone = phoneKey(query);
-  const list = byWho.filter((r) => {
-    if (stage && r.stage !== stage) return false;
-    if (!stage) {
-      if (when === "work" && isClosedStage(r.stage)) return false;
-      if (when === "today" && !(r.dueToday || r.overdue)) return false;
-      if (when === "overdue" && !r.overdue) return false;
-      if (when === "waiting" && talk[r.leadId]?.waitingMinutes == null) return false;
-      if (when === "closed" && !isClosedStage(r.stage)) return false;
-    }
-    if (q) {
-      const hay = `${r.name} ${r.city} ${r.contactPerson} ${r.managerName}`.toLowerCase();
-      const phoneHit = qPhone && phoneKey(r.phone).includes(qPhone.slice(-7));
-      if (!hay.includes(q) && !phoneHit) return false;
-    }
-    return true;
-  });
-  const filtered = !!(stage || q || when !== "work");
-  // Базы бывают на тысячи строк: даже отфильтрованный список рисуем кусками,
-  // иначе страница с 3 700 лидами открывается секундами.
-  const shown = expanded ? list.slice(0, 1000) : list.slice(0, filtered ? 200 : COLLAPSED_TABLE_SIZE * 2);
+  // База обзвона без звонков прячется, пока её не попросили (отбор «Обзвон» или поиск).
+  const showCallBase = origin === "calls" || !!query.trim();
+  const scoped = useMemo(
+    () =>
+      byWho.filter((r) => {
+        if (origin !== "all" && originOf(r) !== origin) return false;
+        if (!showCallBase && isUntouchedCallBase(r)) return false;
+        return true;
+      }),
+    [byWho, origin, showCallBase]
+  );
+  const hiddenCallBase = showCallBase ? 0 : byWho.filter(isUntouchedCallBase).length;
 
-  const counts = LEAD_STAGES.map((s) => ({ ...s, count: byWho.filter((r) => r.stage === s.key).length }));
-  const openCount = byWho.filter((r) => !isClosedStage(r.stage)).length;
-  const todayCount = byWho.filter((r) => r.dueToday || r.overdue).length;
-  const overdueCount = byWho.filter((r) => r.overdue).length;
-  const waitingCount = byWho.filter((r) => talk[r.leadId]?.waitingMinutes != null).length;
+  const count = (v: LeadView) => scoped.filter((r) => matchesView(r, v, talk[r.leadId])).length;
+  const tiles: { key: LeadView; label: string; hint: string; value: number; tone: "critical" | "warning" | "accent" | "plain" }[] = [
+    { key: "waiting", label: "Ждут ответа", hint: "клиент написал последним", value: count("waiting"), tone: "critical" },
+    {
+      key: "today",
+      label: "На сегодня",
+      hint: (() => {
+        const late = scoped.filter((r) => r.overdue && !isClosedStage(r.stage)).length;
+        return late > 0 ? `из них просрочено ${late}` : "касания на сегодня";
+      })(),
+      value: count("today"),
+      tone: "warning",
+    },
+    { key: "new", label: "Новые", hint: "ещё не связывались", value: count("new"), tone: "accent" },
+    { key: "work", label: "Все в работе", hint: "без закрытых", value: count("work"), tone: "plain" },
+  ];
+
+  const list = useMemo(() => {
+    const picked = scoped.filter((r) => matchesView(r, view, talk[r.leadId]) && (!stage || r.stage === stage) && matchesQuery(r, query));
+    return sortLeadsForWork(picked, talk);
+  }, [scoped, view, stage, query, talk]);
+  const shown = list.slice(0, limit);
+  const stageCounts = LEAD_STAGES.map((s) => ({ ...s, count: scoped.filter((r) => r.stage === s.key).length }));
+  const hasOrigins = byWho.some((r) => originOf(r) !== "other");
+
+  const pickView = (v: LeadView) => {
+    setView(view === v && v !== "work" ? "work" : v);
+    setLimit(PAGE);
+  };
 
   return (
     <section className="space-y-3">
-      {/* Воронка: сколько на каждой стадии. Нажатие — фильтр. */}
-      <div className="card !p-3">
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-          {counts.map((s) => (
+      {/* Плитки — что сделать сейчас. Нажатие — отбор, второе нажатие — обратно ко всем. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {tiles.map((t) => {
+          const active = view === t.key;
+          const hot = t.value > 0 && (t.tone === "critical" || t.tone === "warning");
+          return (
             <button
-              key={s.key}
+              key={t.key}
               type="button"
-              onClick={() => setStage(stage === s.key ? "" : s.key)}
+              onClick={() => pickView(t.key)}
+              aria-pressed={active}
               className={clsx(
-                "rounded-lg border px-3 py-2 text-left min-w-0 transition-colors",
-                stage === s.key ? "border-accent bg-accent/10" : "border-line-hairline hover:bg-surface-plane"
+                "rounded-xl border px-3 py-2.5 text-left transition-colors min-w-0 bg-surface",
+                active ? "border-accent ring-2 ring-accent/20" : "border-line-hairline hover:bg-surface-plane",
+                hot && !active && (t.tone === "critical" ? "border-status-critical/40 bg-status-critical/5" : "border-status-warning/50 bg-status-warning/5")
               )}
             >
-              <div className="text-xs text-ink-secondary truncate" title={s.label}>{s.short}</div>
-              <div className={clsx("text-lg font-semibold tabular-nums", s.key === "lost" && "text-ink-muted")}>{s.count}</div>
+              <div className="text-xs text-ink-secondary truncate">{t.label}</div>
+              <div
+                className={clsx(
+                  "font-display text-2xl font-extrabold tabular-nums leading-tight",
+                  hot && (t.tone === "critical" ? "text-status-critical" : "text-[#8a5a00]")
+                )}
+              >
+                {t.value}
+              </div>
+              <div className="text-xs text-ink-muted truncate">{t.hint}</div>
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Segment
-          value={when}
-          onChange={(v) => {
-            setWhen(v as When);
-            setStage("");
+      {/* Отбор: поиск первым — им пользуются чаще всего. */}
+      <div className="card !p-3 space-y-2">
+        <input
+          className="input !py-2"
+          placeholder="Найти: название, имя, город или телефон"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setLimit(PAGE);
           }}
-          options={[
-            { key: "work", label: `В работе · ${openCount}` },
-            { key: "today", label: `На сегодня · ${todayCount}` },
-            { key: "overdue", label: `Просрочено · ${overdueCount}`, warn: overdueCount > 0 },
-            // «Ждут ответа» — клиент написал в WhatsApp последним. Кнопка есть,
-            // только когда такие лиды есть: пустой фильтр — лишний шум.
-            ...(waitingCount > 0 ? [{ key: "waiting", label: `Ждут ответа · ${waitingCount}`, warn: true }] : []),
-            { key: "closed", label: "Закрытые" },
-          ]}
         />
-        <Segment
-          value={who}
-          onChange={(v) => setWho(v as Who)}
-          options={
-            leadgen
-              ? [
-                  { key: "mine", label: "Мои" },
-                  { key: "handed", label: "Передала" },
-                ]
-              : [
-                  { key: "mine", label: "Мои" },
-                  { key: "free", label: "Ничьи" },
-                  ...(canManage ? [{ key: "all", label: "Все" }] : []),
-                ]
-          }
-        />
-        {canManage && who === "all" && (
-          <select className="input !w-auto !py-1.5" value={manager} onChange={(e) => setManager(e.target.value)}>
-            <option value="">Все менеджеры</option>
-            {managers.map((m) => (
-              <option key={m.email} value={m.email}>
-                {m.name}
+        <div className="flex flex-wrap items-center gap-2">
+          <Segment
+            value={who}
+            onChange={(v) => {
+              setWho(v as Who);
+              setLimit(PAGE);
+            }}
+            options={
+              leadgen
+                ? [
+                    { key: "mine", label: "Мои" },
+                    { key: "handed", label: "Передала" },
+                  ]
+                : [
+                    { key: "mine", label: "Мои" },
+                    { key: "free", label: "Ничьи" },
+                    ...(canManage ? [{ key: "all", label: "Все" }] : []),
+                  ]
+            }
+          />
+          {canManage && who === "all" && (
+            <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={manager} onChange={(e) => setManager(e.target.value)} aria-label="Менеджер">
+              <option value="">Все менеджеры</option>
+              {managers.map((m) => (
+                <option key={m.email} value={m.email}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Стадия">
+            <option value="">Все стадии</option>
+            {stageCounts.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label} · {s.count}
               </option>
             ))}
           </select>
-        )}
-        <input
-          className="input !w-full sm:!w-64 sm:ml-auto !py-1.5"
-          placeholder="Поиск: название, город, телефон"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
-
-      <div className="card !p-0">
-        <div className="table-cards">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                <th className="px-4 py-2.5 font-medium">Лид</th>
-                <th className="px-3 py-2.5 font-medium">Стадия</th>
-                <th className="px-3 py-2.5 font-medium">Последнее касание</th>
-                <th className="px-3 py-2.5 font-medium">Следующее</th>
-                <th className="px-4 py-2.5 font-medium">Менеджер</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((r) => (
-                <tr key={r.leadId} className="border-b border-line-hairline/70 last:border-0 align-top">
-                  <td className="px-4 py-2.5 min-w-0">
-                    <Link href={`/clients/leads/${r.leadId}`} className="font-medium hover:underline">
-                      {r.name}
-                    </Link>
-                    <div className="text-xs text-ink-muted">
-                      {[r.city, r.contactPerson, r.phone].filter(Boolean).join(" · ")}
-                    </div>
-                    {r.origin === "ads" && (
-                      <div className="text-xs mt-0.5">
-                        <span className="rounded bg-section-leads-soft px-1.5 py-0.5 text-section-leads">с рекламы</span>
-                        {r.handedOverAt && <span className="text-ink-muted"> · передан {formatDay(r.handedOverAt)}</span>}
-                      </div>
-                    )}
-                    {talk[r.leadId] && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        <WaitingChip minutes={talk[r.leadId].waitingMinutes} />
-                        <TemperatureChip value={talk[r.leadId].temperature} />
-                        <ScoreChip score={talk[r.leadId].score} />
-                      </div>
-                    )}
-                  </td>
-                  <td data-label="Стадия" className="px-3 py-2.5 whitespace-nowrap">
-                    <LeadStageBadge stage={r.stage} />
-                    {r.daysInStage > 0 && !isClosedStage(r.stage) && (
-                      <div className="text-xs text-ink-muted mt-0.5">{r.daysInStage} дн. на стадии</div>
-                    )}
-                  </td>
-                  <td data-label="Последнее касание" className="px-3 py-2.5 max-w-[320px]">
-                    {r.touches > 0 ? (
-                      <>
-                        <div className="text-xs text-ink-muted">
-                          {formatDay(r.lastTouchAt)} · {r.lastChannel} · всего {r.touches}
-                        </div>
-                        <div className="line-clamp-2 text-ink-secondary">{r.lastComment}</div>
-                      </>
-                    ) : (
-                      <span className="text-ink-muted">ещё не было</span>
-                    )}
-                  </td>
-                  <td
-                    data-label="Следующее"
-                    className={clsx(
-                      "px-3 py-2.5 whitespace-nowrap tabular-nums",
-                      r.overdue ? "text-status-critical font-medium" : r.dueToday ? "text-[#8a5a00] font-medium" : "text-ink-secondary"
-                    )}
-                  >
-                    {isClosedStage(r.stage)
-                      ? r.stage === "lost"
-                        ? r.lostReason || "—"
-                        : "—"
-                      : r.nextTouchAt
-                        ? r.dueToday
-                          ? "сегодня"
-                          : `${formatDay(r.nextTouchAt)}${r.overdue ? " · просрочено" : ""}`
-                        : "не назначено"}
-                  </td>
-                  <td data-label="Менеджер" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                    {r.managerName || <span className="text-[#8a5a00]">ничей</span>}
-                  </td>
-                </tr>
-              ))}
-              {list.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-ink-muted">
-                    {rows.length === 0 ? "Лидов пока нет — добавьте первого или загрузите базу файлом." : "Под этот отбор ничего не попало."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {hasOrigins && !leadgen && (
+            <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={origin} onChange={(e) => setOrigin(e.target.value as LeadOrigin)} aria-label="Откуда">
+              <option value="all">Откуда: все</option>
+              <option value="ads">С рекламы</option>
+              <option value="calls">База обзвона</option>
+              <option value="other">Остальные</option>
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={() => pickView("closed")}
+            className={clsx("text-sm sm:ml-auto", view === "closed" ? "font-medium text-accent" : "text-ink-secondary hover:text-ink-primary")}
+          >
+            {view === "closed" ? "← К лидам в работе" : `Закрытые · ${count("closed")}`}
+          </button>
         </div>
       </div>
-      {list.length > shown.length || expanded ? (
-        <MoreToggle expanded={expanded} hidden={Math.min(list.length, 1000) - shown.length} onToggle={() => setExpanded(!expanded)} what="лидов" />
-      ) : null}
-      {expanded && list.length > 1000 && (
-        <p className="px-4 pb-3 text-xs text-ink-muted">Показаны первые 1 000 из {list.length} — сузьте поиском или фильтром.</p>
+
+      {hiddenCallBase > 0 && (
+        <p className="text-xs text-ink-muted px-1">
+          Ещё {hiddenCallBase.toLocaleString("ru-RU")} из базы обзвона ждут первого звонка —{" "}
+          {canOpenCalls ? (
+            <Link href="/clients/leads/calls" className="text-accent hover:underline">
+              они во вкладке «Обзвон»
+            </Link>
+          ) : (
+            "они во вкладке «Обзвон»"
+          )}
+          {" · "}
+          <button type="button" className="text-accent hover:underline" onClick={() => setOrigin("calls")}>
+            показать здесь
+          </button>
+        </p>
+      )}
+
+      <div className="card !p-0 overflow-hidden">
+        {list.length === 0 ? (
+          <p className="px-4 py-10 text-center text-ink-muted">
+            {rows.length === 0
+              ? "Лидов пока нет — добавьте первого."
+              : view === "waiting"
+                ? "Все ответили — никто не ждёт."
+                : view === "today"
+                  ? "На сегодня касаний нет."
+                  : "Под этот отбор ничего не попало."}
+          </p>
+        ) : (
+          <ol>
+            {shown.map((r, i) => {
+              const group = leadGroup(r, talk[r.leadId]);
+              const prev = i > 0 ? leadGroup(shown[i - 1], talk[shown[i - 1].leadId]) : null;
+              const groupCount = group !== prev ? list.filter((x) => leadGroup(x, talk[x.leadId]) === group).length : 0;
+              return (
+                <li key={r.leadId}>
+                  {group !== prev && (
+                    <div
+                      className={clsx(
+                        "px-4 py-1.5 text-xs font-semibold uppercase tracking-wide border-b border-line-hairline bg-surface-plane",
+                        i > 0 && "border-t",
+                        group === "waiting" || group === "overdue" ? "text-status-critical" : group === "today" ? "text-[#8a5a00]" : "text-ink-secondary"
+                      )}
+                    >
+                      {LEAD_GROUP_LABELS[group]} · {groupCount}
+                    </div>
+                  )}
+                  <LeadLine row={r} mark={talk[r.leadId]} today={today} last={i === shown.length - 1} />
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
+      {list.length > shown.length && (
+        <MoreToggle expanded={false} hidden={Math.min(list.length - shown.length, PAGE * 5)} onToggle={() => setLimit(limit + PAGE * 5)} what="лидов" />
       )}
     </section>
+  );
+}
+
+function LeadLine({ row: r, mark, today, last }: { row: LeadRow; mark?: LeadTalkMark; today: string; last: boolean }) {
+  const closed = isClosedStage(r.stage);
+  const wa = whatsappLink(r.phone);
+  const tel = r.phone.replace(/[^\d+]/g, "");
+  const phone = /^\+?\d{11}$/.test(tel) ? prettyWaPhone(tel) : r.phone;
+  const sub = [r.contactPerson && r.contactPerson !== r.name ? r.contactPerson : "", r.city, phone].filter(Boolean).join(" · ");
+  const next = (
+    <span
+      className={clsx(
+        "tabular-nums",
+        closed ? "text-ink-muted" : r.overdue ? "text-status-critical font-medium" : r.dueToday ? "text-[#8a5a00] font-medium" : "text-ink-secondary"
+      )}
+    >
+      {nextTouchLabel(r, today, formatDay)}
+    </span>
+  );
+  const manager = r.managerName || <span className="text-[#8a5a00]">ничей</span>;
+  return (
+    <div className={clsx("flex items-start gap-3 px-4 py-3", !last && "border-b border-line-hairline/70")}>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Link href={`/clients/leads/${r.leadId}`} className="font-semibold hover:underline break-words">
+            {r.name}
+          </Link>
+          {r.origin === "ads" && (
+            <span className="rounded bg-section-leads-soft px-1.5 py-0.5 text-[11px] text-section-leads">
+              с рекламы{r.handedOverAt ? ` · передан ${formatDay(r.handedOverAt)}` : ""}
+            </span>
+          )}
+          {mark && <WaitingChip minutes={mark.waitingMinutes} />}
+          {mark && !closed && <TemperatureChip value={mark.temperature} />}
+          {mark && <ScoreChip score={mark.score} />}
+        </div>
+        {sub && <div className="text-xs text-ink-muted mt-0.5 truncate">{sub}</div>}
+        <div className="text-sm text-ink-secondary mt-1 line-clamp-2 sm:line-clamp-1">
+          {r.touches > 0 ? (
+            <>
+              <span className="text-ink-muted">
+                {formatDay(r.lastTouchAt)} · {r.lastChannel}:
+              </span>{" "}
+              {r.lastComment}
+            </>
+          ) : (
+            <span className="text-ink-muted">Касаний ещё не было</span>
+          )}
+        </div>
+        {/* Телефон: стадия, следующее касание и менеджер — строкой под лидом, а не узкой колонкой. */}
+        <div className="sm:hidden mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <LeadStageBadge stage={r.stage} />
+          {next}
+          <span className="text-xs text-ink-muted">· {manager}</span>
+          {wa && (
+            <a href={wa} target="_blank" rel="noreferrer" className="ml-auto text-status-good text-sm font-medium">
+              WhatsApp
+            </a>
+          )}
+        </div>
+      </div>
+      <div className="hidden sm:block flex-none w-44 text-right space-y-1">
+        <LeadStageBadge stage={r.stage} />
+        <div className="text-sm">{next}</div>
+        <div className="text-xs text-ink-muted truncate">{manager}</div>
+      </div>
+      {(wa || tel) && (
+        <div className="flex-none hidden sm:flex flex-col gap-1">
+          {wa && (
+            <a href={wa} target="_blank" rel="noreferrer" title="Написать в WhatsApp" className="w-8 h-8 grid place-items-center rounded-lg border border-line-hairline text-status-good hover:bg-surface-plane">
+              <Icon name="message" />
+            </a>
+          )}
+          {tel && (
+            <a href={`tel:${tel}`} title="Позвонить" className="w-8 h-8 grid place-items-center rounded-lg border border-line-hairline text-ink-secondary hover:bg-surface-plane">
+              <Icon name="phone" />
+            </a>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -265,7 +370,7 @@ function Segment({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { key: string; label: string; warn?: boolean }[];
+  options: { key: string; label: string }[];
 }) {
   return (
     <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
@@ -278,8 +383,7 @@ function Segment({
           onClick={() => onChange(o.key)}
           className={clsx(
             "rounded-md px-3 py-1 text-sm whitespace-nowrap",
-            value === o.key ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary",
-            o.warn && value !== o.key && "text-status-critical"
+            value === o.key ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary"
           )}
         >
           {o.label}
