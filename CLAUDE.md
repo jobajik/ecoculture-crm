@@ -796,6 +796,11 @@ Google считает лимит по этому доступу. Значит, 6
   (`leadsLineOwner`; нет — ничей), касание — сегодня, в заметке первое сообщение. Лиды читаются свежими — три сообщения
   подряд дают один лид. Земфира написала первой — лид не заводится (свои, водители). Переписка за прошлые дни из
   `--import-days` лидами не становится — она в «Написали в WhatsApp» с кнопкой. Проверка — `check-leads`.
+- **подключить номер Земфиры без ПК** (15.10.2026, владелец был не дома, с ноутбука): ключи `GREENAPI_LEADS_URL /
+  _INSTANCE / _TOKEN` вписываются прямо в Vercel (Settings → Environment Variables, Production), сайт пересобирается, потом
+  админ открывает `https://www.crm-ecoculture.kz/api/whatsapp/leads-setup` — проверка QR, адрес уведомлений и переписка за
+  3 дня (`setupLeadsLine` в `src/lib/leadsLineSetup.ts`; её же зовёт `whatsapp-setup-leads.ts`). Повторять можно. В
+  `.env.local` ПК этих ключей тогда нет — `diag-zemfira-line.ts` с ПК покажет «НЕТ», это не значит, что сайт без них.
 
 **Обзвон базы** (сентябрь 2026, страница `/clients/leads/calls`, вкладка «Обзвон»; правила —
 `src/lib/calls.ts`, действия — `src/app/clients/leads/calls/actions.ts`, проверка `check-calls`).
