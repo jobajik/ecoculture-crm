@@ -14,9 +14,15 @@ const SITE = "https://www.crm-ecoculture.kz";
  * сообщения не дублируются. Подробности — `setupLeadsLine`.
  */
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return text("Войдите в CRM под админом и откройте страницу снова.", 401);
-  if (session.user.role !== "admin") return text("Только для админа.", 403);
+  // Админ из браузера — или скрипт с компьютера владельца с CRON_SECRET (как /api/broadcast/tick), чтобы
+  // дотянуть историю без участия владельца (15.10.2026).
+  const secret = process.env.CRON_SECRET;
+  const byCron = !!secret && request.headers.get("authorization") === `Bearer ${secret}`;
+  if (!byCron) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) return text("Войдите в CRM под админом и откройте страницу снова.", 401);
+    if (session.user.role !== "admin") return text("Только для админа.", 403);
+  }
   try {
     // ?history=1 — дотянуть полную переписку чатов (журнал Green API до подключения пуст).
     if (new URL(request.url).searchParams.get("history") === "1") {
