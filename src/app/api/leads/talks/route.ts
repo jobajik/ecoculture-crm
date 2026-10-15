@@ -39,7 +39,10 @@ export async function GET(request: Request) {
     const [leads, messages, analyses] = await Promise.all([listLeads(), listWaMessages({ lines: "all" }), listLeadAnalyses()]);
     const infos = Array.from(talkInfoByLead(leads, messages, analyses).values());
     const { stale } = buildTalkReport(infos, new Map(), new Date());
-    const result = await runStaleAnalyses(leads, stale, messages, "cron", localDayKey(), {
+    // Лиды с рекламы — первыми: по ним утром Земфира работает с «Решений ИИ».
+    const ads = new Set(leads.filter((l) => l.origin === "ads").map((l) => l.leadId));
+    const queue = [...stale.filter((s) => ads.has(s.leadId)), ...stale.filter((s) => !ads.has(s.leadId))];
+    const result = await runStaleAnalyses(leads, queue, messages, "cron", localDayKey(), {
       limit: 20,
       budgetMs: Math.max(5000, 45000 - (Date.now() - started)),
     });

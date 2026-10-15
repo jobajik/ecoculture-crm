@@ -189,7 +189,12 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
             </div>
           </Section>
         )}
-        {canHandover && <LeadHandoverForm leadId={lead.leadId} managers={managers} />}
+        {canHandover && (
+          // Якорь «#handover»: «Передать менеджеру →» на «Решениях ИИ» ведёт сразу сюда.
+          <div id="handover" className="scroll-mt-20">
+            <LeadHandoverForm leadId={lead.leadId} managers={managers} />
+          </div>
+        )}
         {(lead.history || lead.campaign) && (
           <Section tone="leads" icon="note" title="Что известно" className="!mb-0">
             <div className="space-y-1.5 text-sm">

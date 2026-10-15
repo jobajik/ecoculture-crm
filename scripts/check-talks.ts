@@ -30,7 +30,8 @@ import {
 } from "../src/lib/talkAnalysis";
 import { chatIdForPhone, webhookTokenOk } from "../src/lib/greenApi";
 import { exportToMessages, leadPhoneDigits, parseWhatsAppExport } from "../src/lib/whatsappExport";
-import type { Lead, LeadAnalysis, WaMessage } from "../src/lib/types";
+import type { Lead, LeadAnalysis, LeadTouch, WaMessage } from "../src/lib/types";
+import { buildDecisionBoard, decisionOf, decisionTouch, followUpDay, waLinkWithText } from "../src/lib/leadDecisions";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -187,7 +188,7 @@ const A = (extra: Partial<LeadAnalysis> = {}): LeadAnalysis => ({
   messagesFrom: "2026-09-25T09:00:00Z", messagesTo: "2026-09-25T12:00:00Z", messageCount: 6, model: "m",
   summary: "Кратко", needs: "", agreed: "500 шт. к пятнице", nextStep: "Выставить счёт", nextTouchDays: 3,
   suggestedStage: "offer", temperature: "hot", temperatureWhy: "", score: 80, checklist: [], objections: [],
-  lostReason: "", advice: "", replyMinutes: 20, ...extra,
+  lostReason: "", advice: "", replyMinutes: 20, decision: "", decisionWhy: "", draft: "", ...extra,
 });
 const pre = touchPrefill(A(), { stage: "contact", clientId: "" }, "2026-09-25");
 check("касание: канал, стадия, дата", [pre.channel, pre.stage, pre.nextTouchAt], ["WhatsApp", "offer", "2026-09-28"]);
@@ -196,6 +197,78 @@ check("«Пробный» без карточки клиента не стави
 check("«Пробный» с карточкой — можно", touchPrefill(A({ suggestedStage: "trial" }), { stage: "offer", clientId: "C1" }, "2026-09-25").stage, "trial");
 const lostPre = touchPrefill(A({ suggestedStage: "lost", lostReason: "" }), { stage: "offer", clientId: "" }, "2026-09-25");
 check("отказ без причины — «Другое», без даты", [lostPre.lostReason, lostPre.nextTouchAt], ["Другое", ""]);
+
+// --- Решения ИИ (15.10.2026) --------------------------------------------------------
+const pd = parseAnalysis({ ...raw, decision: "lost", decision_why: "Нужны растения с корнями", message_draft: "Здравствуйте", lost_reason: "" });
+check("решение: отказ без причины — «Другое», черновика нет", [pd.decision, pd.lostReason, pd.draft], ["lost", "Другое", ""]);
+check("решение: незнакомое — пусто", parseAnalysis({ ...raw, decision: "maybe" }).decision, "");
+check("решение: продать с черновиком", [parseAnalysis({ ...raw, decision: "sell", message_draft: "Добрый день!" }).draft], ["Добрый день!"]);
+check("в схеме есть решение", JSON.stringify(ANALYSIS_SCHEMA).includes("message_draft"), true);
+check("решение ИИ берётся как есть", decisionOf(A({ decision: "follow_up", nextTouchDays: 5 })), { decision: "follow_up", inferred: false, days: 5 });
+check("старый разбор: отказ по стадии", decisionOf(A({ suggestedStage: "lost" })).decision, "lost");
+check("старый разбор: горячий — продать", decisionOf(A({ temperature: "hot" })), { decision: "sell", inferred: true, days: 0 });
+check("старый разбор: тёплый — позже на N дней", decisionOf(A({ temperature: "warm", nextTouchDays: 0 })), { decision: "follow_up", inferred: true, days: 1 });
+const dayOf = (iso: string) => iso.slice(0, 10);
+check("день «позже» — от разбора, не раньше сегодня", [followUpDay("2026-10-10T08:00:00Z", 3, "2026-10-15", dayOf), followUpDay("2026-10-14T08:00:00Z", 3, "2026-10-15", dayOf)], ["2026-10-15", "2026-10-17"]);
+const tLost = decisionTouch(A({ decision: "lost", lostReason: "Не нужен наш цветок", decisionWhy: "Нужны с корнями" }), { stage: "offer", clientId: "" }, "2026-10-15", dayOf);
+check("касание отказа", [tLost.stage, tLost.lostReason, tLost.nextTouchAt, tLost.comment.startsWith("Решение ИИ — отказ: Нужны с корнями")], ["lost", "Не нужен наш цветок", "", true]);
+const tSell = decisionTouch(A({ decision: "sell", suggestedStage: "contact" }), { stage: "offer", clientId: "" }, "2026-10-15", dayOf);
+check("продать: касание сегодня, стадия назад не едет", [tSell.stage, tSell.nextTouchAt], ["offer", "2026-10-15"]);
+const tNew = decisionTouch(A({ decision: "follow_up", suggestedStage: "new", nextTouchDays: 3, createdAt: "2026-10-15T05:00:00Z" }), { stage: "new", clientId: "" }, "2026-10-15", dayOf);
+check("позже: «Новый» после переписки — «Контакт», дата +3", [tNew.stage, tNew.nextTouchAt], ["contact", "2026-10-18"]);
+const tOver = decisionTouch(A({ decision: "lost", lostReason: "Дорого" }), { stage: "contact", clientId: "" }, "2026-10-15", dayOf, { decision: "follow_up", days: 7 });
+check("человек выбрал другое: позже на 7 дней", [tOver.stage, tOver.nextTouchAt, tOver.lostReason], ["offer", "2026-10-22", ""]);
+check("ссылка WhatsApp с текстом", waLinkWithText("https://wa.me/77015552030", "Привет, да?"), "https://wa.me/77015552030?text=%D0%9F%D1%80%D0%B8%D0%B2%D0%B5%D1%82%2C%20%D0%B4%D0%B0%3F");
+
+const LD = (id: string, phone: string, extra: Partial<Lead> = {}): Lead => ({
+  leadId: id, createdAt: "2026-10-13T05:00:00Z", createdByEmail: "z@x", name: `Лид ${id}`, city: "", contactPerson: "", phone,
+  clientType: "", source: "", address: "", note: "", managerEmail: "z@x", stage: "contact", stageChangedAt: "", nextTouchAt: "",
+  lostReason: "", clientId: "", campaign: "", segment: "", history: "", firstSeenAt: "", pastOrders: 0, origin: "ads",
+  handedOverAt: "", handedOverBy: "", ...extra,
+});
+const MSG = (id: string, phone: string, at: string, direction: "in" | "out"): WaMessage => ({
+  messageId: id, at, chatId: "", phone, direction, type: "text", text: "т", mediaUrl: "", senderName: "", source: "", line: "leads",
+});
+const TOUCH = (leadId: string, createdAt: string): LeadTouch => ({
+  touchId: `T-${leadId}`, leadId, createdAt, managerEmail: "z@x", channel: "WhatsApp", comment: "к", stageFrom: "contact", stageTo: "contact", nextTouchAt: "", outcome: "",
+});
+const board = buildDecisionBoard({
+  leads: [
+    LD("a", "77010000001"),
+    LD("b", "77010000002"),
+    LD("c", "77010000003"),
+    LD("d", "77010000004"),
+    LD("e", "77010000005"),
+    LD("f", "77010000006", { stage: "lost" }),
+    LD("g", "77010000007"),
+  ],
+  messages: [
+    MSG("1", "77010000001", "2026-10-14T05:00:00Z", "out"), MSG("2", "77010000001", "2026-10-14T06:00:00Z", "in"),
+    MSG("3", "77010000002", "2026-10-14T05:00:00Z", "out"), MSG("4", "77010000002", "2026-10-14T06:00:00Z", "in"),
+    MSG("5", "77010000003", "2026-10-14T05:00:00Z", "out"),
+    MSG("6", "77010000004", "2026-10-14T05:00:00Z", "out"), MSG("7", "77010000004", "2026-10-14T06:00:00Z", "in"), MSG("8", "77010000004", "2026-10-15T06:00:00Z", "in"),
+    MSG("9", "77010000005", "2026-10-14T05:00:00Z", "out"), MSG("10", "77010000005", "2026-10-14T06:00:00Z", "in"),
+    MSG("11", "77010000007", "2026-10-14T05:00:00Z", "out"), MSG("12", "77010000007", "2026-10-14T06:00:00Z", "in"),
+  ],
+  analyses: [
+    A({ analysisId: "X1", leadId: "a", decision: "sell", createdAt: "2026-10-14T07:00:00Z", messagesTo: "2026-10-14T06:00:00Z" }),
+    A({ analysisId: "X2", leadId: "b", decision: "lost", createdAt: "2026-10-14T07:00:00Z", messagesTo: "2026-10-14T06:00:00Z" }),
+    A({ analysisId: "X4", leadId: "d", decision: "follow_up", createdAt: "2026-10-14T07:00:00Z", messagesTo: "2026-10-14T06:00:00Z" }),
+    A({ analysisId: "X5", leadId: "e", decision: "follow_up", createdAt: "2026-10-14T07:00:00Z", messagesTo: "2026-10-14T06:00:00Z" }),
+    A({ analysisId: "X7", leadId: "g", decision: "lost", createdAt: "2026-10-14T07:00:00Z", messagesTo: "2026-10-14T06:00:00Z" }),
+  ],
+  touches: [TOUCH("e", "2026-10-14T08:00:00Z"), TOUCH("g", "2026-10-13T08:00:00Z")],
+  today: "2026-10-15",
+  toDay: dayOf,
+});
+check(
+  "раскладка: продать / позже / отказ / не разобраны",
+  [board.groups.sell.map((r) => r.leadId), board.groups.follow_up.map((r) => r.leadId), board.groups.lost.map((r) => r.leadId), board.groups.none.map((r) => r.leadId)],
+  [["a"], ["d"], ["b", "g"], ["c"]]
+);
+check("касание после разбора — решение принято; закрытые считаются отдельно", [board.done.map((r) => r.leadId), board.closed], [["e"], 1]);
+check("ждут ИИ: новое сообщение после разбора; одно сообщение не разбираем", [board.toAnalyze, board.groups.none[0].tooShort], [["d"], true]);
+check("продать: клиент ждёт ответа", !!board.groups.sell[0].waitingSince, true);
 
 // --- Отчёт -------------------------------------------------------------------------
 const lead = (id: string, phone: string, extra: Partial<Lead> = {}): Lead => ({

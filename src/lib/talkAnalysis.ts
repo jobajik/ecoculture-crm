@@ -51,6 +51,19 @@ export const TEMPERATURES = [
 ] as const;
 export const temperatureLabel = (key: string) => TEMPERATURES.find((t) => t.key === key)?.label ?? "";
 
+/**
+ * Решение по лиду (15.10.2026, владелец: «по лидам от Земфиры пусть ИИ сам определяет, как дальше поступать с
+ * клиентом: отказ, перезвонить через 3 дня, продать»). Применяет человек кнопкой — ИИ только предлагает.
+ */
+export const DECISIONS = [
+  { key: "sell", label: "Продать сейчас", hint: "интерес есть — сегодня конкретное предложение или передать менеджеру" },
+  { key: "follow_up", label: "Написать позже", hint: "думает, молчит или просил позже — касание через N дней" },
+  { key: "lost", label: "Отказ", hint: "явный отказ, не оптовик, нужно то, чего у нас нет, неверный номер" },
+] as const;
+export type DecisionKey = (typeof DECISIONS)[number]["key"];
+export const DECISION_KEYS = DECISIONS.map((d) => d.key) as string[];
+export const decisionLabel = (key: string) => DECISIONS.find((d) => d.key === key)?.label ?? "";
+
 /** Меньше этого разбирать нечего: «Здравствуйте» и «добрый день» ни о чём не говорят. */
 export const MIN_MESSAGES_FOR_ANALYSIS = 2;
 
@@ -76,6 +89,9 @@ export const ANALYSIS_SCHEMA: Record<string, unknown> = {
     "lost_reason",
     "checklist",
     "advice",
+    "decision",
+    "decision_why",
+    "message_draft",
   ],
   properties: {
     summary: S("2–4 предложения: о чём переписка и где разговор сейчас"),
@@ -113,6 +129,9 @@ export const ANALYSIS_SCHEMA: Record<string, unknown> = {
       },
     },
     advice: S("Одна-две подсказки менеджеру, как продвинуть сделку"),
+    decision: { type: "string", enum: DECISION_KEYS },
+    decision_why: S("Одна фраза: почему такое решение — по фактам из переписки"),
+    message_draft: S("Готовое сообщение клиенту в WhatsApp для sell и follow_up; пусто для lost"),
   },
 };
 
@@ -137,6 +156,12 @@ export function buildPrompt(input: PromptInput): { system: string; user: string 
     `- чек-лист менеджера: ${checklist}. Отметь каждый пункт ровно один раз: yes — сделал, no — должен был и не сделал, na — не к месту (например, возражений не было);`,
     "- temperature: hot — готов заказать или просит счёт/доставку; warm — интерес есть; cold — отказ или долго молчит;",
     "- next_touch_in_days: когда разумно написать снова (0 — сегодня), null — если лид закрыт.",
+    "- decision — что делать с лидом дальше, одно из трёх:",
+    "  sell — клиент проявил интерес к покупке (спрашивал цену, наличие, объём, доставку, просил прайс или фото) и разговор не закрыт: сегодня написать с конкретным предложением или передать менеджеру; next_touch_in_days = 0;",
+    "  follow_up — интерес неясен, клиент думает, просил написать позже или не ответил на наше последнее сообщение: написать снова через next_touch_in_days (обычно 2–7 дней; «не сейчас», «после праздника», сезон — до 30);",
+    "  lost — клиент прямо отказался, ему нужен букет или розница, а не опт, нужно то, чего у нас нет (например, растения с корнями, горшечные), неверный номер, или клиент молчит после трёх и больше наших сообщений дольше недели; тогда suggested_stage = lost, next_touch_in_days = null и lost_reason обязателен;",
+    "- decision_why — одна фраза, почему так, по фактам;",
+    "- message_draft — для sell и follow_up готовое сообщение клиенту в WhatsApp от имени менеджера: 2–4 коротких предложения, на языке клиента, по-человечески, один вопрос в конце. Не выдумывай цены, наличие, скидки и сроки — если их не было в переписке, предложи прислать прайс и фото. Для lost — пустая строка.",
   ].join("\n");
   const user = [
     `Сегодня: ${input.today}.`,
@@ -170,6 +195,9 @@ export interface ParsedAnalysis {
   lostReason: string;
   checklist: ChecklistMark[];
   advice: string;
+  decision: DecisionKey | "";
+  decisionWhy: string;
+  draft: string;
 }
 
 /** Ответ модели → проверенный разбор. Всё незнакомое превращается в пустое. */
@@ -179,6 +207,8 @@ export function parseAnalysis(raw: unknown): ParsedAnalysis {
   const temp = String(r.temperature ?? "");
   const days = Number(r.next_touch_in_days);
   const lost = String(r.lost_reason ?? "");
+  const decisionRaw = String(r.decision ?? "");
+  const decision = (DECISION_KEYS.includes(decisionRaw) ? decisionRaw : "") as DecisionKey | "";
   const marks = new Map<string, ChecklistMark>();
   for (const item of Array.isArray(r.checklist) ? r.checklist : []) {
     const it = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
@@ -203,10 +233,14 @@ export function parseAnalysis(raw: unknown): ParsedAnalysis {
     temperature: temp === "hot" || temp === "warm" || temp === "cold" ? temp : "",
     temperatureWhy: str(r.temperature_why, 300),
     objections,
-    lostReason: (LEAD_LOST_REASONS as readonly string[]).includes(lost) ? lost : "",
+    // Отказ без причины — «Другое»: иначе его нельзя было бы записать (`touchRefusal`).
+    lostReason: (LEAD_LOST_REASONS as readonly string[]).includes(lost) ? lost : decision === "lost" ? "Другое" : "",
     // Порядок — наш, а не модели; пропущенный пункт — «не к месту», а не «нет».
     checklist: CHECKLIST_KEYS.map((key) => marks.get(key) ?? { key, mark: "na", comment: "" }),
     advice: str(r.advice, 400),
+    decision,
+    decisionWhy: str(r.decision_why, 300),
+    draft: decision === "lost" ? "" : str(r.message_draft, 1000),
   };
 }
 

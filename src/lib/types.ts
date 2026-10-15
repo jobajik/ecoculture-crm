@@ -396,6 +396,11 @@ export interface LeadAnalysis {
   advice: string;
   /** Медиана минут до ответа менеджера; null — не на что было отвечать. */
   replyMinutes: number | null;
+  /** Что делать с лидом: «sell» — продать сейчас, «follow_up» — написать позже, «lost» — отказ. Пусто — старый разбор. */
+  decision: "sell" | "follow_up" | "lost" | "";
+  decisionWhy: string;
+  /** Готовое сообщение клиенту в WhatsApp (для «продать» и «написать позже»). */
+  draft: string;
 }
 
 /** Счёт Kaspi Pay, выставленный через ApiPay, — вкладка KaspiInvoices. */

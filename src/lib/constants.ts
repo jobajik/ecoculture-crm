@@ -593,6 +593,10 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "LostReason",
     "Advice",
     "ReplyMinutes",
+    // Решение ИИ по лиду (15.10.2026, «Решения ИИ»): sell / follow_up / lost, почему и черновик сообщения.
+    "Decision",
+    "DecisionWhy",
+    "Draft",
   ],
 };
 

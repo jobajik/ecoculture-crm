@@ -7,10 +7,18 @@ export function clientsTabsFor(period?: string, role?: string | null) {
   if (role === "leadgen") {
     return [
       { href: "/clients/leads", label: "Лиды" },
+      // Решения ИИ по её лидам: продать сейчас, написать позже, отказ (15.10.2026).
+      { href: "/clients/leads/decide", label: "Решения ИИ" },
       { href: "/clients/leads/ads", label: "С рекламы" },
     ];
   }
-  const ads = role === "admin" || role === "sales_head" ? [{ href: "/clients/leads/ads", label: "С рекламы" }] : [];
+  const ads =
+    role === "admin" || role === "sales_head"
+      ? [
+          { href: "/clients/leads/decide", label: "Решения ИИ" },
+          { href: "/clients/leads/ads", label: "С рекламы" },
+        ]
+      : [];
   // Рассылки WhatsApp запускают только админ и РОП — остальным вкладка ни к чему.
   const broadcasts = role === "admin" || role === "sales_head" ? [{ href: "/clients/broadcasts", label: "Рассылки" }] : [];
   return [

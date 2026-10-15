@@ -210,6 +210,51 @@ export async function updateLead(leadId: string, changes: Record<string, string>
  * Касание и правка лида — ОДНИМ атомарным запросом (грабли 1.16): иначе при
  * отказе Google на втором шаге стадия сдвинулась бы без касания или наоборот.
  */
+/**
+ * Несколько касаний разом («Применить» у группы на «Решениях ИИ»): одно свежее чтение
+ * лидов и ОДНА атомарная запись (грабли 1.15–1.17) — по касанию на лид плюс правка строки.
+ */
+export async function addTouchesBatch(
+  items: {
+    leadId: string;
+    touch: Omit<LeadTouch, "touchId" | "leadId" | "createdAt" | "outcome">;
+    leadChanges: Record<string, string>;
+  }[],
+  nowIso: string
+): Promise<number> {
+  if (items.length === 0) return 0;
+  const table = await readTable(SHEET_TABS.LEADS, { fresh: true });
+  const rowById = new Map<string, number>();
+  for (let i = 0; i < table.rows.length; i++) {
+    const id = toLead(rowToRecord(SHEET_TABS.LEADS, table.rows[i])).leadId;
+    if (id) rowById.set(id, table.rowNumbers[i]);
+  }
+  const found = items.filter((it) => rowById.has(it.leadId));
+  if (found.length === 0) return 0;
+  await commitAtomic([
+    {
+      kind: "append",
+      tab: SHEET_TABS.LEAD_TOUCHES,
+      records: found.map((it) => ({
+        TouchID: generateId("TCH"),
+        LeadID: it.leadId,
+        CreatedAt: nowIso,
+        ManagerEmail: it.touch.managerEmail,
+        Channel: it.touch.channel,
+        Comment: it.touch.comment,
+        StageFrom: it.touch.stageFrom,
+        StageTo: it.touch.stageTo,
+        NextTouchAt: it.touch.nextTouchAt,
+        Outcome: "",
+      })),
+    },
+    ...found
+      .filter((it) => Object.keys(it.leadChanges).length > 0)
+      .map((it) => ({ kind: "update" as const, tab: SHEET_TABS.LEADS, rowNumber: rowById.get(it.leadId)!, changes: it.leadChanges })),
+  ]);
+  return found.length;
+}
+
 export async function addTouch(
   leadId: string,
   touch: Omit<LeadTouch, "touchId" | "leadId" | "createdAt" | "outcome"> & { outcome?: string },

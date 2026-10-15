@@ -87,6 +87,11 @@ function numOrNull(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function decisionOfCell(raw: string | undefined): LeadAnalysis["decision"] {
+  const d = (raw || "").trim();
+  return d === "sell" || d === "follow_up" || d === "lost" ? d : "";
+}
+
 function toAnalysis(r: Record<string, string>): LeadAnalysis {
   const t = (r.Temperature || "").trim();
   return {
@@ -113,6 +118,9 @@ function toAnalysis(r: Record<string, string>): LeadAnalysis {
     lostReason: r.LostReason || "",
     advice: r.Advice || "",
     replyMinutes: numOrNull(r.ReplyMinutes),
+    decision: decisionOfCell(r.Decision),
+    decisionWhy: r.DecisionWhy || "",
+    draft: r.Draft || "",
   };
 }
 
@@ -169,6 +177,9 @@ export async function saveLeadAnalysis(
           LostReason: analysis.lostReason,
           Advice: analysis.advice,
           ReplyMinutes: analysis.replyMinutes ?? "",
+          Decision: analysis.decision,
+          DecisionWhy: analysis.decisionWhy,
+          Draft: analysis.draft,
         },
       ],
     },
