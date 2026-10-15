@@ -79,6 +79,19 @@ export function pickRotationPhoto(photos: BotPhoto[], opts: { flowers?: string[]
   return [...list].sort((a, b) => t(a.lastSentAt) - t(b.lastSentAt) || a.sentCount - b.sentCount || (a.createdAt < b.createdAt ? 1 : -1))[0];
 }
 
+/**
+ * Какие цветы названы в тексте рассылки — фото из ротации берётся этого цветка (14.10.2026: рассылка про
+ * хризантему 4 категории шла с инфографикой, владелец: «почему опять отправляешь эту инфографику?»).
+ */
+export function flowersInText(text: string): string[] {
+  const t = String(text || "").toLowerCase().replace(/ё/g, "е");
+  const out: string[] = [];
+  if (/хризантем|altaj|алтай/.test(t)) out.push("chrysanthemum");
+  if (/(^|[^а-я])роз(а|ы|у|е|ой|ам|ами|ах)?([^а-я]|$)/.test(t)) out.push("rose");
+  if (/эустом/.test(t)) out.push("eustoma");
+  return out;
+}
+
 /** Фото цветка для каталога: свежие первыми; первое — большое, следующие три — галерея. */
 export function catalogPhotos(photos: BotPhoto[], flowerType: string): BotPhoto[] {
   return photos
@@ -161,12 +174,14 @@ export function pickItemPhoto(
   const norm = (s: string) => s.trim().toLowerCase().replace(/ё/g, "е");
   const v = norm(item.variety);
   const g = norm(item.grade);
+  const liveSent = photos.some((p) => !isInfoPhoto(p) && p.caption && recent.includes(p.caption.slice(0, 40)));
   const scored = photos
     .filter((p) => p.active && p.fileId && p.flowerType === item.flowerType)
     .filter((p) => !(p.caption && recent.includes(p.caption.slice(0, 40))))
     .filter((p) => !(isInfoPhoto(p) && infoSent.includes(p.photoId)))
-    // Первое фото в разговоре — только живое: инфографика не раньше, чем ушло хоть одно фото.
-    .filter((p) => !(isInfoPhoto(p) && !recent.includes("[фото:")))
+    // Инфографика — только после ЖИВОГО фото в этом разговоре (14.10.2026: «[фото:» в памяти было от прошлой
+    // переписки, и Динаре первым ушла инфографика — та же, что пришла ей рассылкой).
+    .filter((p) => !(isInfoPhoto(p) && !liveSent))
     .map((p) => {
       const pv = norm(p.variety);
       const pg = norm(p.grade);

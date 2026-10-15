@@ -5,7 +5,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { catalogFlowerOf, catalogFlowers, catalogPage, catalogPageHeight } from "../src/lib/catalog";
-import { catalogPhotos, nudgePhotoQuestion, parseCaption, photoLabel, photoMessage, photoRefusal, pickItemPhoto, pickRotationPhoto, ROTATION_FILE, type BotPhoto } from "../src/lib/botPhotos";
+import { catalogPhotos, nudgePhotoQuestion, parseCaption, photoLabel, photoMessage, photoRefusal, pickItemPhoto, flowersInText, pickRotationPhoto, ROTATION_FILE, type BotPhoto } from "../src/lib/botPhotos";
 import { photoPrices } from "../src/lib/botPhotoSend";
 import { botDecision } from "../src/lib/broadcast";
 import { loadCatalogFonts, renderCatalogJpeg } from "../src/lib/catalogImage";
@@ -123,6 +123,11 @@ async function main() {
   check("общий вопрос о хризантеме — не инфографика", pickItemPhoto([info, lib[3]], item("chrysanthemum"))?.photoId, "common");
   check("в ротацию (дожим, рассылка) инфографика не идёт", pickRotationPhoto([info, ph("live", { lastSentAt: "2026-10-05T00:00:00Z" })])?.photoId, "live");
   check("только инфографика — ротация пустая", pickRotationPhoto([info]), null);
+  check("в памяти чужое «[фото:» без живого — инфографику всё равно не шлём", pickItemPhoto([info], item("chrysanthemum", "Altaj"), "[фото: Хризантема — старый разговор]"), null);
+  check("инфографика ушла рассылкой — бот её не повторяет", pickItemPhoto(withInfo, item("chrysanthemum", "Altaj", "Вторая"), sentLive, ["info"])?.photoId ?? null, null);
+  check("цветок рассылки: хризантема 4 категории", flowersInText("Хризантема Altaj 4 категория от 160 ₸"), ["chrysanthemum"]);
+  check("цветок рассылки: розы и эустома", flowersInText("Свежие розы и эустома"), ["rose", "eustoma"]);
+  check("«розничный» — не роза", flowersInText("для розничных точек"), []);
   check("в каталог инфографика не идёт", catalogPhotos([info, ph("live")], "chrysanthemum").map((p) => p.photoId), ["live"]);
   check("бот: позиция для фото разбирается", botDecision({ reply: "Есть", photo: { flowerType: "chrysanthemum", variety: " Altaj ", grade: "Вторая" } }).photo, { flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая" });
   check("бот: мусор вместо цветка — без фото", botDecision({ reply: "Есть", photo: { flowerType: "тюльпан", variety: "X", grade: "" } }).photo.flowerType, "");

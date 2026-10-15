@@ -27,7 +27,7 @@ import { GreenError, sendFileByUrl, sendText, type GreenConfig } from "./greenAp
 import { checkGreenChannel } from "./greenChannel";
 import { MAX_CAPTION, greenFailureKind, greenFileName } from "./greenOut";
 import { publicFileUrl, safeFileName } from "./waFileSign";
-import { ROTATION_FILE, isSpecialFile } from "./botPhotos";
+import { ROTATION_FILE, flowersInText, isSpecialFile } from "./botPhotos";
 import { loadPhotoContext, rotationPhoto } from "./botPhotoSend";
 import { catalogFiles } from "./catalogFiles";
 import { phoneKey } from "./leads";
@@ -103,7 +103,7 @@ export async function deliver(cfg: GreenConfig, phone: string, text: string, fil
     let caption = text;
     if (file.id === ROTATION_FILE) {
       const ctx = await loadPhotoContext();
-      const r = rotationPhoto(ctx, { question: "Поставить вам на завтра?", caption: text || undefined });
+      const r = rotationPhoto(ctx, { flowers: flowersInText(text), question: "Поставить вам на завтра?", caption: text || undefined });
       if (r) {
         files.push({ url: r.url, name: greenFileName(safeFileName(r.name), "image/jpeg") });
         caption = r.caption;

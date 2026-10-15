@@ -545,12 +545,23 @@ async function catalogForChat(which: string): Promise<BotFile[]> {
   }
 }
 
+/** Файлы рассылок, которые ушли этому номеру. */
+async function broadcastFileIds(phone: string): Promise<Set<string>> {
+  const [list, recipients] = await Promise.all([listBroadcasts(), listRecipients()]);
+  const key = phoneKey(phone);
+  const sentTo = new Set(recipients.filter((r) => r.status === "sent" && phoneKey(r.phone) === key).map((r) => r.broadcastId));
+  return new Set(list.filter((b) => sentTo.has(b.broadcastId) && b.fileId).map((b) => b.fileId));
+}
+
 /** Фото позиции с ответом в подписи; отмечает отправку для ротации. Нет фото или сбой — null. */
 async function itemPhotoFor(chat: BotChat, item: { flowerType: string; variety: string; grade: string }, caption: string): Promise<BotFile | null> {
   try {
     const photos = await listBotPhotos();
     const recent = chat.context.map((m) => m.text).join("\n");
-    const photo = pickItemPhoto(photos, item, recent, chat.infoPhotos ?? []) as (BotPhoto & { rowNumber: number }) | null;
+    // Инфографика, пришедшая этому человеку РАССЫЛКОЙ, считается уже отправленной — второй раз бот её не шлёт.
+    const byBroadcast = await broadcastFileIds(chat.phone).catch(() => new Set<string>());
+    const infoSent = [...(chat.infoPhotos ?? []), ...photos.filter((p) => isInfoPhoto(p) && byBroadcast.has(p.fileId)).map((p) => p.photoId)];
+    const photo = pickItemPhoto(photos, item, recent, infoSent) as (BotPhoto & { rowNumber: number }) | null;
     if (!photo) return null;
     await commitAtomic([botPhotoSentWrite(photo)]).catch(() => undefined);
     // Инфографика — один раз на человека (память чата сохраняется после ответа).
