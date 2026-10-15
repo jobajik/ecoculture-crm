@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
 
-  // Номер Земфиры (`?line=leads`): только переписка в CRM — без бота, черновиков и статусов рассылок.
+  // Номер Земфиры (`?line=leads`): переписка в CRM и статусы её рассылок — без бота и черновиков.
   if (new URL(request.url).searchParams.get("line") === "leads") return leadsLine(body);
 
   const status = parseGreenStatus(body);
@@ -103,6 +103,17 @@ export async function POST(request: Request) {
 
 /** Сообщение с номера Земфиры: записать (голосовое — с расшифровкой) и ничего больше. */
 async function leadsLine(body: unknown) {
+  // Статусы сообщений рассылки с номера Земфиры (15.10.2026) — для «прочитали». С её телефона — нет (`sendByApi`).
+  const status = parseGreenStatus(body);
+  if (status) {
+    try {
+      await appendWaStatuses([status]);
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      console.error("whatsapp leads status:", err instanceof Error ? err.message : err);
+      return NextResponse.json({ error: "temporary" }, { status: 500 });
+    }
+  }
   const message = parseGreenWebhook(body);
   if (!message) return NextResponse.json({ ok: true, ignored: true });
   message.line = "leads";

@@ -37,6 +37,8 @@ export interface Broadcast {
   lastSendAt: string;
   updatedAt: string;
   note: string;
+  /** Чей номер шлёт: "" — рабочий, "leads" — номер Земфиры. */
+  line: string;
 }
 
 function toBroadcast(r: Record<string, string>): Broadcast {
@@ -55,6 +57,7 @@ function toBroadcast(r: Record<string, string>): Broadcast {
     lastSendAt: r.LastSendAt || "",
     updatedAt: r.UpdatedAt || "",
     note: r.Note || "",
+    line: (r.Line || "").trim(),
   };
 }
 
@@ -100,6 +103,10 @@ export async function createBroadcast(input: {
   fileName: string;
   audience: string;
   recipients: { phone: string; name: string; kind: string; refId: string; managerEmail: string }[];
+  /** "leads" — слать с номера Земфиры; по умолчанию рабочий номер. */
+  line?: string;
+  /** Сразу «идёт» (скрипт, владелец уже видел текст); по умолчанию черновик. */
+  status?: string;
 }): Promise<string> {
   const id = generateId("BC");
   const now = new Date().toISOString();
@@ -116,9 +123,11 @@ export async function createBroadcast(input: {
           Text: input.text,
           FileID: input.fileId,
           FileName: input.fileName,
-          Status: "draft",
+          Status: input.status || "draft",
           Audience: input.audience,
+          ...(input.status === "sending" ? { StartedAt: now } : {}),
           UpdatedAt: now,
+          Line: input.line || "",
         },
       ],
     },

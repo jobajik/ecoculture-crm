@@ -6,6 +6,7 @@ import {
   emptyBotChat,
   findBroadcastRow,
   listBotChats,
+  listBroadcasts,
   listRecipients,
   recipientUpdate,
   settingsMap,
@@ -13,6 +14,10 @@ import {
 import {
   BOT_MODES,
   BROADCAST_STATUSES,
+  LEADS_DEFAULT_DAILY_LIMIT,
+  LEADS_LINE,
+  MAX_DAILY_LIMIT,
+  paceFor,
   broadcastTextRefusal,
   effectiveDailyLimit,
   nextGapSeconds,
@@ -23,7 +28,7 @@ import {
   sendTooSoon,
 } from "./broadcast";
 import { listWaMessages } from "./repo/talks";
-import { GreenError, sendFileByUrl, sendText, type GreenConfig } from "./greenApi";
+import { GreenError, greenLeadsConfig, sendFileByUrl, sendText, type GreenConfig } from "./greenApi";
 import { checkGreenChannel } from "./greenChannel";
 import { MAX_CAPTION, greenFailureKind, greenFileName } from "./greenOut";
 import { publicFileUrl, safeFileName } from "./waFileSign";
@@ -159,13 +164,19 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   const result = (extra: { waitSeconds: number; note: string; sentTo?: string; remaining?: number }): SendStep => ({ status: b.status, remaining: remaining(), ...extra });
 
   if (b.status !== BROADCAST_STATUSES.SENDING) return result({ waitSeconds: 0, note: "" });
+  // Номер Земфиры — свой темп, свой дневной предел и свой счёт (15.10.2026); рабочий номер его не считает.
+  const isLeads = b.line === LEADS_LINE;
+  const pace = paceFor(b.line);
   const now = new Date();
-  if (sendTooSoon(b.lastSendAt, now)) return result({ waitSeconds: 20, note: "" });
+  if (sendTooSoon(b.lastSendAt, now, pace)) return result({ waitSeconds: 20, note: "" });
 
   const settings = await settingsMap();
   const today = localDayKey(now);
-  const limit = effectiveDailyLimit(settings.BroadcastDailyLimit, settings.BroadcastWarmupFrom, today);
-  const sentRows = all.filter((r) => r.status === "sent" && r.sentAt && localDayKey(new Date(r.sentAt)) === today);
+  const leadsLimit = Math.min(MAX_DAILY_LIMIT, Math.max(1, Number(settings.BroadcastLeadsDailyLimit) || LEADS_DEFAULT_DAILY_LIMIT));
+  const limit = isLeads ? leadsLimit : effectiveDailyLimit(settings.BroadcastDailyLimit, settings.BroadcastWarmupFrom, today);
+  const lineOf = new Map((await listBroadcasts()).map((x) => [x.broadcastId, x.line || ""]));
+  const sameLine = (r: { broadcastId: string }) => (lineOf.get(r.broadcastId) ?? "") === (b.line || "");
+  const sentRows = all.filter((r) => r.status === "sent" && r.sentAt && localDayKey(new Date(r.sentAt)) === today && sameLine(r));
   const sentToday = sentRows.length;
 
   const queued = mine.filter((r) => r.status === "queued");
@@ -177,14 +188,16 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
     return result({ waitSeconds: 1800, note: `На сегодня отправлено ${sentToday} из ${limit} — продолжим завтра` });
   }
   // Осторожно: только днём, не больше 15 в час, перерыв после каждых 10 — по ВСЕМ рассылкам сразу.
-  const wait = pacingWait({ now, minutes: now.getHours() * 60 + now.getMinutes(), sentTimes: sentRows.map((r) => Date.parse(r.sentAt)) });
+  const wait = pacingWait({ now, minutes: now.getHours() * 60 + now.getMinutes(), sentTimes: sentRows.map((r) => Date.parse(r.sentAt)), pace });
   if (wait) return result(wait);
 
   // Сначала тем, кто уже писал нам (и, после разогрева, покупал); остальным — не больше N в день (`warmthRules`).
+  // С номера Земфиры пишем только её собеседникам — «холодных» там нет.
   const rules = warmthRules(settings.BroadcastWarmupFrom, today);
-  const wrote = new Set((await listWaMessages()).filter((m) => m.direction === "in").map((m) => phoneKey(m.phone)));
-  const buyers = rules.buyersAreWarm ? await buyerClientIds() : new Set<string>();
-  const isWarm = (r: { phone: string; kind: string; refId: string }) => wrote.has(phoneKey(r.phone)) || (r.kind === "client" && buyers.has(r.refId));
+  const wrote = isLeads ? new Set<string>() : new Set((await listWaMessages()).filter((m) => m.direction === "in").map((m) => phoneKey(m.phone)));
+  const buyers = !isLeads && rules.buyersAreWarm ? await buyerClientIds() : new Set<string>();
+  const isWarm = (r: { phone: string; kind: string; refId: string }) =>
+    isLeads || wrote.has(phoneKey(r.phone)) || (r.kind === "client" && buyers.has(r.refId));
   const coldSentToday = sentRows.filter((r) => !isWarm(r)).length;
   const pick = pickNextRecipient(queued, isWarm, coldSentToday, rules.coldLimit, rules.buyersAreWarm ? "кто нам не писал и не покупал" : "кто нам ещё не писал в WhatsApp (идёт разогрев)");
   if (!pick.next) return result({ waitSeconds: 1800, note: pick.note });
@@ -200,7 +213,7 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
     return result({ waitSeconds: 1, note: "" });
   }
 
-  const channel = await checkGreenChannel();
+  const channel = await checkGreenChannel(isLeads ? greenLeadsConfig() : undefined);
   if (channel.action === "retry") {
     // Разовый сбой: рассылку НЕ останавливаем, этого же получателя — через минуту.
     await commitAtomic(writes);
@@ -217,12 +230,15 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   try {
     const ids = await deliver(cfg, next.phone, text, b.fileId ? { id: b.fileId, name: b.fileName, mime: mimeOf(b.fileName) } : null);
     writes.push(recipientUpdate(next.rowNumber, { Status: "sent", MessageID: ids[ids.length - 1], SentAt: now.toISOString(), Error: "" }));
-    // Номера наших сообщений — в память чата: бот поймёт, что это не менеджер написал.
-    const c = chat ?? emptyBotChat(next.phone);
-    const updated = { ...c, ourIds: [...c.ourIds, ...ids].slice(-20), name: c.name || next.name };
-    writes.push(botChatWrite(updated, chat?.rowNumber ?? null));
+    // Номера наших сообщений — в память чата: бот поймёт, что это не менеджер написал. На номере
+    // Земфиры бота нет — память бота не трогаем.
+    if (!isLeads) {
+      const c = chat ?? emptyBotChat(next.phone);
+      const updated = { ...c, ourIds: [...c.ourIds, ...ids].slice(-20), name: c.name || next.name };
+      writes.push(botChatWrite(updated, chat?.rowNumber ?? null));
+    }
     await commitAtomic(writes);
-    return result({ waitSeconds: nextGapSeconds(Math.random, sentToday + 1), note: "", sentTo: next.name || next.phone, remaining: remaining() - 1 });
+    return result({ waitSeconds: nextGapSeconds(Math.random, sentToday + 1, pace), note: "", sentTo: next.name || next.phone, remaining: remaining() - 1 });
   } catch (err) {
     const e = err instanceof GreenError ? err : null;
     const kind = e ? greenFailureKind(e.status) : "recipient";
@@ -238,6 +254,6 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
     }
     writes.push(recipientUpdate(next.rowNumber, { Status: "error", Error: (err instanceof Error ? err.message : "ошибка").slice(0, 200), SentAt: now.toISOString() }));
     await commitAtomic(writes);
-    return result({ waitSeconds: nextGapSeconds(), note: "", remaining: remaining() - 1 });
+    return result({ waitSeconds: nextGapSeconds(Math.random, 1, pace), note: "", remaining: remaining() - 1 });
   }
 }

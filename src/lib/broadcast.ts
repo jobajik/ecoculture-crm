@@ -36,6 +36,28 @@ export const HOURLY_LIMIT = 15;
 /** Рассылки уходят только днём по Алматы: [с, до). */
 export const SEND_FROM_HOUR = 10;
 export const SEND_TO_HOUR = 19;
+/** Темп рассылки: паузы, перерыв после каждых N, предел в час. */
+export interface SendPace {
+  gapMin: number;
+  gapMax: number;
+  breakEvery: number;
+  breakMin: number;
+  breakMax: number;
+  hourly: number;
+}
+/** Рабочий номер — после двух блокировок, осторожно. */
+export const MAIN_PACE: SendPace = { gapMin: 60, gapMax: 150, breakEvery: 10, breakMin: 600, breakMax: 1200, hourly: 15 };
+/**
+ * Номер Земфиры (15.10.2026, владелец: «клиенты сами писали на этот номер — можем ли увеличить частоту?»):
+ * получатели — её же собеседники, с этого номера массово не слали, поэтому чаще, но не залпом:
+ * 40–90 с, после каждых 20 — перерыв 5–10 мин, не больше 30 в час.
+ */
+export const LEADS_PACE: SendPace = { gapMin: 40, gapMax: 90, breakEvery: 20, breakMin: 300, breakMax: 600, hourly: 30 };
+/** Предел в сутки для номера Земфиры (настройка `BroadcastLeadsDailyLimit`, не больше `MAX_DAILY_LIMIT`). */
+export const LEADS_DEFAULT_DAILY_LIMIT = 100;
+export const LEADS_LINE = "leads";
+export const paceFor = (line: string | undefined): SendPace => (line === LEADS_LINE ? LEADS_PACE : MAIN_PACE);
+
 /** Тем, кто ни разу нам не писал, — не больше стольких в день: «холодные» чаще жалуются. */
 export const COLD_DAILY_LIMIT = 10;
 /**
@@ -216,11 +238,11 @@ export function prepareAudience(candidates: AudienceCandidate[], optedOut: Set<s
  * Пауза до следующего сообщения, секунды. `sentToday` — сколько уже ушло за день вместе с
  * только что отправленным: на каждом десятом — перерыв 10–20 минут. `rnd` — для проверки.
  */
-export function nextGapSeconds(rnd: () => number = Math.random, sentToday = 1): number {
-  if (sentToday > 0 && sentToday % BREAK_EVERY === 0) {
-    return Math.round(BREAK_MIN_SECONDS + (BREAK_MAX_SECONDS - BREAK_MIN_SECONDS) * rnd());
+export function nextGapSeconds(rnd: () => number = Math.random, sentToday = 1, pace: SendPace = MAIN_PACE): number {
+  if (sentToday > 0 && sentToday % pace.breakEvery === 0) {
+    return Math.round(pace.breakMin + (pace.breakMax - pace.breakMin) * rnd());
   }
-  return Math.round(SEND_GAP_MIN_SECONDS + (SEND_GAP_MAX_SECONDS - SEND_GAP_MIN_SECONDS) * rnd());
+  return Math.round(pace.gapMin + (pace.gapMax - pace.gapMin) * rnd());
 }
 
 /** Какой день разогрева сегодня (1 — первый). Даты «ГГГГ-ММ-ДД». Нет даты — 0 (разогрева нет). */
@@ -253,8 +275,9 @@ export function warmthRules(warmupFrom: string | null | undefined, today: string
  * ушедших сегодня по всем рассылкам; `minutes` — минуты от полуночи по Алматы.
  * Возвращает, сколько ждать и почему, или null — можно.
  */
-export function pacingWait(input: { now: Date; minutes: number; sentTimes: number[] }): { waitSeconds: number; note: string } | null {
+export function pacingWait(input: { now: Date; minutes: number; sentTimes: number[]; pace?: SendPace }): { waitSeconds: number; note: string } | null {
   const { now, minutes } = input;
+  const pace = input.pace ?? MAIN_PACE;
   const from = SEND_FROM_HOUR * 60, to = SEND_TO_HOUR * 60;
   const hours = `Рассылка идёт с ${SEND_FROM_HOUR}:00 до ${SEND_TO_HOUR}:00 — продолжим в ${SEND_FROM_HOUR}:00`;
   if (minutes < from) return { waitSeconds: (from - minutes) * 60, note: hours };
@@ -263,16 +286,16 @@ export function pacingWait(input: { now: Date; minutes: number; sentTimes: numbe
   const times = [...input.sentTimes].filter((x) => Number.isFinite(x) && x <= t).sort((a, b) => a - b);
   const last = times[times.length - 1];
   const hourAgo = times.filter((x) => x > t - 3600000);
-  if (hourAgo.length >= HOURLY_LIMIT) {
+  if (hourAgo.length >= pace.hourly) {
     const wait = Math.ceil((hourAgo[0] + 3600000 - t) / 1000) + 5;
-    return { waitSeconds: wait, note: `Не больше ${HOURLY_LIMIT} сообщений в час — продолжим через ${Math.ceil(wait / 60)} мин` };
+    return { waitSeconds: wait, note: `Не больше ${pace.hourly} сообщений в час — продолжим через ${Math.ceil(wait / 60)} мин` };
   }
   if (last !== undefined) {
     const since = (t - last) / 1000;
-    if (times.length % BREAK_EVERY === 0 && since < BREAK_MIN_SECONDS) {
-      return { waitSeconds: Math.ceil(BREAK_MIN_SECONDS - since), note: `Перерыв после каждых ${BREAK_EVERY} сообщений` };
+    if (times.length % pace.breakEvery === 0 && since < pace.breakMin) {
+      return { waitSeconds: Math.ceil(pace.breakMin - since), note: `Перерыв после каждых ${pace.breakEvery} сообщений` };
     }
-    if (since < SEND_GAP_MIN_SECONDS - 5) return { waitSeconds: Math.ceil(SEND_GAP_MIN_SECONDS - since), note: "" };
+    if (since < pace.gapMin - 5) return { waitSeconds: Math.ceil(pace.gapMin - since), note: "" };
   }
   return null;
 }
@@ -298,10 +321,10 @@ export function pickNextRecipient<T extends { phone: string }>(
 }
 
 /** Можно ли отправлять сейчас: не чаще паузы (защита от двух открытых вкладок). */
-export function sendTooSoon(lastSendAt: string, now: Date): boolean {
+export function sendTooSoon(lastSendAt: string, now: Date, pace: SendPace = MAIN_PACE): boolean {
   const t = Date.parse(lastSendAt || "");
   if (!Number.isFinite(t)) return false;
-  return now.getTime() - t < (SEND_GAP_MIN_SECONDS - 5) * 1000;
+  return now.getTime() - t < (pace.gapMin - 5) * 1000;
 }
 
 /** Предел на сутки из настройки: пусто или мусор — по умолчанию. */

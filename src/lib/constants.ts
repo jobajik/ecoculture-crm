@@ -470,6 +470,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "LastSendAt",
     "UpdatedAt",
     "Note",
+    // Чей номер шлёт: пусто — рабочий, «leads» — номер Земфиры (15.10.2026). Последней — грабли 1.1.
+    "Line",
   ],
   [SHEET_TABS.BROADCAST_RECIPIENTS]: [
     "BroadcastID",

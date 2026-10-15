@@ -28,6 +28,8 @@ import {
   deliveryByMessage,
   effectiveDailyLimit,
   pacingWait,
+  LEADS_PACE,
+  paceFor,
   pickNextRecipient,
   warmthRules,
   warmupDay,
@@ -180,6 +182,14 @@ check("после 10 сообщений — перерыв", pacingWait({ now: a
 check("перерыв прошёл — можно", pacingWait({ now: at, minutes: m(11), sentTimes: ten.map((x) => x - 600000) }), null);
 const fifteen = Array.from({ length: 15 }, (_, i) => ago(200 + i * 200));
 check("15 за час — ждём", pacingWait({ now: at, minutes: m(11), sentTimes: fifteen })?.note.startsWith("Не больше 15"), true);
+// Номер Земфиры — свой темп (15.10.2026): 40–90 с, перерыв после 20, до 30 в час.
+check("номер Земфиры: пауза 40–90 с", [nextGapSeconds(() => 0, 1, LEADS_PACE), nextGapSeconds(() => 1, 1, LEADS_PACE)], [40, 90]);
+check("номер Земфиры: перерыв после 20-го, не после 10-го", [nextGapSeconds(() => 0, 10, LEADS_PACE), nextGapSeconds(() => 0, 20, LEADS_PACE)], [40, 300]);
+check("номер Земфиры: через 50 с — можно (рабочему рано)", [sendTooSoon("2026-09-28T09:59:10Z", now, LEADS_PACE), sendTooSoon("2026-09-28T09:59:10Z", now)], [false, true]);
+check("номер Земфиры: 15 за час — ещё можно", pacingWait({ now: at, minutes: m(11), sentTimes: fifteen.map((x) => x + 150000), pace: LEADS_PACE }), null);
+const thirty = Array.from({ length: 30 }, (_, i) => ago(60 + i * 100));
+check("номер Земфиры: 30 за час — ждём", pacingWait({ now: at, minutes: m(11), sentTimes: thirty, pace: LEADS_PACE })?.note.startsWith("Не больше 30"), true);
+check("темп по номеру рассылки", [paceFor("leads").hourly, paceFor("").hourly, paceFor(undefined).hourly], [30, 15, 15]);
 const q = [{ phone: "77010000001", kind: "lead" }, { phone: "77010000002", kind: "lead" }, { phone: "77010000003", kind: "client" }];
 const wrote = (keys: string[]) => (r: { phone: string }) => keys.includes(r.phone.slice(-10));
 check("сначала тёплый, даже если он не первый", pickNextRecipient(q, wrote(["7010000003"]), 0).next?.phone, "77010000003");
