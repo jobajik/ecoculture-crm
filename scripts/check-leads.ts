@@ -3,6 +3,7 @@
  * списка, сводка и разбор файла с базой.
  * Запуск: npx tsx scripts/check-leads.ts
  */
+import { autoLeadFromMessage, leadsLineOwner } from "../src/lib/waAutoLead";
 import {
   buildLeadRows,
   canSeeLead,
@@ -223,6 +224,26 @@ check("нет заголовков — понятная ошибка", !!parseLe
   check("по менеджерам: m2 — двое, касаний в среднем 2,5", report.byManager.find((m) => m.email === "m2@x"), {
     email: "m2@x", handed: 2, avgTouches: 2.5, won: 0, lost: 0, orderSum: 0, noTouch: 1, few: 0, many: 1,
   });
+}
+
+// --- Номер Земфиры: написал сам незнакомый номер — сразу её лид ------------------
+{
+  const msg = { direction: "in" as const, phone: "77015552030", senderName: "Айгерим 🌸", type: "text", text: "Здравствуйте, сколько хризантема?", at: "2026-10-15T10:00:00Z" };
+  const users = [
+    { email: "Z@x.kz", role: "leadgen" as const, active: true },
+    { email: "old@x.kz", role: "leadgen" as const, active: false },
+    { email: "m1@x", role: "manager" as const, active: true },
+  ];
+  check("хозяйка линии — активная Земфира", leadsLineOwner(users), "z@x.kz");
+  check("нет Земфиры — лид ничей", leadsLineOwner([users[2]]), "");
+  const auto = autoLeadFromMessage(msg, new Set(), "z@x.kz", "2026-10-15");
+  check("авто-лид: имя из WhatsApp без значков, номер, источник, «с рекламы», на Земфиру", auto && [auto.name, auto.phone, auto.source, auto.origin, auto.managerEmail, auto.createdByEmail], [
+    "Айгерим", "+7 701 555 20 30", "Написали в WhatsApp", "ads", "z@x.kz", "z@x.kz",
+  ]);
+  check("авто-лид: первое сообщение в заметке", !!auto && auto.note.includes("сколько хризантема"), true);
+  check("номер уже есть у лида или клиента — не заводим", autoLeadFromMessage(msg, new Set([phoneKey("8 701 555 20 30")]), "z@x.kz", "2026-10-15"), null);
+  check("Земфира написала первой — не лид", autoLeadFromMessage({ ...msg, direction: "out" }, new Set(), "z@x.kz", "2026-10-15"), null);
+  check("без имени — «Клиент WhatsApp 2030»", autoLeadFromMessage({ ...msg, senderName: "" }, new Set(), "", "2026-10-15")?.name, "Клиент WhatsApp 2030");
 }
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);

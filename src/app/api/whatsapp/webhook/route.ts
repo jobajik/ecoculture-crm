@@ -3,6 +3,13 @@ import { downloadMedia, webhookTokenOk } from "@/lib/greenApi";
 import { openAiConfigured, transcribeAudio } from "@/lib/openai";
 import { parseGreenWebhook } from "@/lib/whatsapp";
 import { appendWaMessages } from "@/lib/repo/talks";
+import { createLead, listLeads } from "@/lib/repo/leads";
+import { listClients } from "@/lib/repo/clients";
+import { listUsers } from "@/lib/repo/users";
+import { phoneKey } from "@/lib/leads";
+import { autoLeadFromMessage, leadsLineOwner } from "@/lib/waAutoLead";
+import { localDayKey } from "@/lib/timezone";
+import type { WaMessage } from "@/lib/types";
 import { appendWaStatuses } from "@/lib/repo/broadcasts";
 import { botIncomingOf, parseGreenStatus } from "@/lib/greenOut";
 import { runBot } from "@/lib/botEngine";
@@ -116,7 +123,26 @@ async function leadsLine(body: unknown) {
     console.error("whatsapp leads webhook:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "temporary" }, { status: 500 });
   }
+  // Сообщение уже записано — сбой здесь не повод Green API слать его заново.
+  try {
+    await autoLead(message);
+  } catch (err) {
+    console.error("whatsapp leads auto-lead:", err instanceof Error ? err.message : err);
+  }
   return NextResponse.json({ ok: true });
+}
+
+/** Написал Земфире незнакомый номер — сразу её лид «с рекламы» (`autoLeadFromMessage`). */
+async function autoLead(message: WaMessage) {
+  if (message.direction !== "in" || !phoneKey(message.phone)) return;
+  // Лиды — свежие: клиент пишет тремя сообщениями подряд, лид должен завестись один раз.
+  const [leads, clients, users] = await Promise.all([listLeads({ fresh: true }), listClients(), listUsers()]);
+  const known = new Set<string>();
+  for (const l of leads) if (phoneKey(l.phone)) known.add(phoneKey(l.phone));
+  for (const c of clients) for (const p of [c.phone, c.messenger, c.kaspiPay1, c.kaspiPay2]) if (phoneKey(p)) known.add(phoneKey(p));
+  const day = localDayKey();
+  const lead = autoLeadFromMessage(message, known, leadsLineOwner(users), day);
+  if (lead) await createLead(lead, day);
 }
 
 /** Адрес сайта для своего же вызова: основной (с www), иначе — тот, куда пришёл вебхук. */
