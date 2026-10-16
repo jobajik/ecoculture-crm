@@ -523,7 +523,7 @@ Google считает лимит по этому доступу. Значит, 6
 Вкладки: `Users`, `Orders`, `OrderItems`, `Batches`, `Shipments`, `Writeoffs`, `PriceHistory`,
 `Varieties`, `Plans`, `ShipmentPlans`, `HarvestForecast`, `HarvestMix`, `Claims`, `MoneyLog`,
 `Clients`, `Settings`, `StaffTakeouts`, `Payments`, `Leads`, `LeadTouches`, `KaspiInvoices`, `WaMessages`,
-`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`, `PointSales`, `PointWriteoffs`, `WaOrderDrafts`, `DebtReminders`, `BotPhotos`, `StockMoves`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
+`LeadAnalyses`, `Broadcasts`, `BroadcastRecipients`, `WaStatuses`, `WaFiles`, `BotChats`, `BroadcastAnalyses`, `PointSales`, `PointWriteoffs`, `WaOrderDrafts`, `DebtReminders`, `BotPhotos`, `StockMoves`, `WaLines`, `AssistantLog`. Точный порядок колонок — `SHEET_HEADERS` в `src/lib/constants.ts`, он же источник
 истины (см. грабли 1.1).
 
 Новые вкладки создаёт `npm run setup-sheet`: он дописывает недостающие листы и проставляет
@@ -840,6 +840,42 @@ Google считает лимит по этому доступу. Значит, 6
   админ открывает `https://www.crm-ecoculture.kz/api/whatsapp/leads-setup` — проверка QR, адрес уведомлений и переписка за
   3 дня (`setupLeadsLine` в `src/lib/leadsLineSetup.ts`; её же зовёт `whatsapp-setup-leads.ts`). Повторять можно. В
   `.env.local` ПК этих ключей тогда нет — `diag-zemfira-line.ts` с ПК покажет «НЕТ», это не значит, что сайт без них.
+
+**Номера WhatsApp менеджеров и ИИ-помощник** (16.10.2026, владелец: «добавить Ильяса, Эмиля и Ильгара к системе лидов так
+же, как у Земфиры; ИИ-помощник при необходимости делает работу по продаже, рассылке и прочему; хочу видеть их переписки,
+разборы и разговоры»). Решения владельца: на каждого — свой новый инстанс Green API; ключи вписывает сам на сайте; помощник
+«подсказывает и отвечает при молчании». Правила — `src/lib/waLines.ts`, запись — `src/lib/repo/waLines.ts`, помощник —
+`src/lib/lineAssistant.ts`, проверка — `check-wa-lines`.
+
+- **линия сообщения** (`WaMessages.Line`): "" — основной номер (бот, рассылки), «leads» — Земфира, «m-<почта>» — номер
+  менеджера (`lineCodeFor`). Вкладка `WaLines` (код, менеджер, apiUrl, idInstance, **токен зашифрован** AES-GCM ключом из
+  `NEXTAUTH_SECRET` — `secretBox.ts`, режим помощника, телефон, состояние). Читается не чаще раза в минуту (вебхук спрашивает
+  её на каждое сообщение); `lineConfig(line)` отдаёт ключи любой линии;
+- **подключение** — «Настройки → WhatsApp менеджеров» (`WaLinesAdmin`, `src/app/admin/wa-lines-actions.ts`, только админ):
+  менеджер, idInstance, apiTokenInstance, apiUrl → «Подключить» (адрес уведомлений `…/webhook?line=m-…` и переписка за 3 дня —
+  `setupLine`, общая с Земфирой), «QR-код» прямо на странице (Green API `qr`), «Готово, отсканировал», «Подтянуть переписку»
+  (`pullLineHistory`), режим ИИ, «Выключить». Токен в браузер не возвращается. Инстанс основного номера или Земфиры не примет;
+- **вебхук `?line=m-…`**: запись (голосовые с расшифровкой), статусы рассылок, **авто-лид на менеджера — только ВХОДЯЩЕЕ** с
+  незнакомого номера (не лид, не клиент, не сотрудник, не наши номера), обычный лид (не «с рекламы»), в заметке «Сам написал в
+  WhatsApp Ильяса …» (`autoLeadFromMessage` с `line`). Исходящее менеджера лидом не становится: он пишет и поставщикам, и водителям.
+  Бота и черновиков заявок на этих номерах нет. Разбор переписки (`talkRunner`) дотягивает историю и с номера менеджера лида;
+- **ИИ-помощник** (`assistantVerdict`): отвечает сам, если клиент написал последним и ждёт **20+ минут в рабочее время**
+  (пн–сб 9–19 по Алматы) или **вечером и в выходные** (после серии, ~20 с: вебхук зовёт `/api/assistant/sweep?line=…&phone=…`
+  отдельной функцией), только 8:00–23:00; не отвечает на кивки, автоответы, сотрудникам, на сообщения старше 12 ч и после
+  **3 своих ответов подряд** без менеджера. Днём проход будят вебхуки любых номеров (`kickAssistant`, раз в 3 мин) и расписание
+  раз в час (`/api/bot/followup`). Цены и склад — те же, что у бота (`salesKnowledge` в `botEngine.ts`), модель — быстрая.
+  **Заказ и счёт помощник не оформляет**: подтверждает позицию, количество и сумму и оставляет записку «оформить заказ: …»
+  (`AssistantLog`, kind note); оплата не вперёд, скидки, документы, жалоба — тоже записка. Отправленное помощником — kind auto
+  (по номеру сообщения), из CRM — kind crm. Режим на номер: «on» (отвечает при молчании) или «off» (только подсказки);
+- **«Клиенты → Переписки»** (`/clients/chats`, `ChatsBoard`, доступ — `chatAccess.ts`): владелец и РОП — все номера (менеджеров,
+  Земфиру, основной), менеджер — свой, Земфира — свой. Слева чаты номера (поиск, «Ждут ответа», «Нужен менеджер», «Ответил ИИ»),
+  справа переписка (ответы ИИ помечены), записки ИИ с кнопкой «Сделано», «Предложить ответ (ИИ)» — черновик, «Отправить» — с
+  номера менеджера (сам менеджер или админ; записки чата закрываются), «Открыть в WhatsApp с этим текстом»;
+- **«Решения ИИ»** теперь и у менеджеров (свои лиды с перепиской), у владельца и РОПа — все лиды с перепиской и с рекламы, с
+  отбором по менеджеру (`decisionScope`); `/api/leads/decide` разбирает их же;
+- **рассылка с номера менеджера**: в «Новой рассылке» выбор «С какого номера» и галочка «только тем, кто переписывался с этим
+  номером»; темп `MANAGER_PACE` (60–120 с, перерыв после 10, до 20 в час), предел `BroadcastManagerDailyLimit` (50), «тёплые» —
+  собеседники номера, остальным до 10 в день; память бота не трогается.
 
 **Обзвон базы** (сентябрь 2026, страница `/clients/leads/calls`, вкладка «Обзвон»; правила —
 `src/lib/calls.ts`, действия — `src/app/clients/leads/calls/actions.ts`, проверка `check-calls`).
@@ -2979,7 +3015,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`, `check-wa-lines`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

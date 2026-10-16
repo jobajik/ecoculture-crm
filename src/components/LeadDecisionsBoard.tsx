@@ -38,6 +38,7 @@ export default function LeadDecisionsBoard({
   closed,
   groups,
   done,
+  showManager = false,
 }: {
   today: string;
   aiReady: boolean;
@@ -45,6 +46,8 @@ export default function LeadDecisionsBoard({
   closed: number;
   groups: Record<DecisionGroup, BoardRow[]>;
   done: BoardRow[];
+  /** Владельцу и РОПу — чей это лид. */
+  showManager?: boolean;
 }) {
   const [view, setView] = useState<DecisionGroup | "all">("all");
   const dueToday = groups.follow_up.filter((r) => r.dueDay <= today).length;
@@ -79,7 +82,7 @@ export default function LeadDecisionsBoard({
       <AnalyzeBar aiReady={aiReady} pending={toAnalyze} />
 
       {shown.map((g) => (
-        <GroupSection key={g.key} group={g} rows={groups[g.key]} today={today} />
+        <GroupSection key={g.key} group={g} rows={groups[g.key]} today={today} showManager={showManager} />
       ))}
 
       {(done.length > 0 || closed > 0) && (
@@ -120,8 +123,18 @@ function AnalyzeBar({ aiReady, pending }: { aiReady: boolean; pending: number })
     let total = 0;
     const failed: string[] = [];
     try {
+      let misses = 0;
       for (let round = 0; round < 40; round++) {
-        const r = unwrapValue(await analyzeDecisionsAction());
+        // Сервер не успел ответить (разбор длинной переписки) — разобранное уже записано, просто идём дальше.
+        let r: { done: number; failed: string[]; left: number };
+        try {
+          r = unwrapValue(await analyzeDecisionsAction());
+          misses = 0;
+        } catch (err) {
+          if (++misses >= 2 || stopRef.current) throw err;
+          setMsg({ ok: true, text: `Разобрано: ${total} · сервер задумался, продолжаю…` });
+          continue;
+        }
         total += r.done;
         failed.push(...r.failed);
         setMsg({ ok: true, text: `Разобрано: ${total}${r.left > 0 ? ` · осталось ${r.left}` : ""}` });
@@ -165,10 +178,12 @@ function GroupSection({
   group,
   rows,
   today,
+  showManager = false,
 }: {
   group: (typeof GROUPS)[number];
   rows: BoardRow[];
   today: string;
+  showManager?: boolean;
 }) {
   const router = useRouter();
   const [confirm, setConfirm] = useState(false);
@@ -223,7 +238,7 @@ function GroupSection({
       ) : (
         <div>
           {rows.slice(0, limit).map((r, i) => (
-            <DecisionCard key={r.leadId} row={r} today={today} last={i === Math.min(rows.length, limit) - 1} />
+            <DecisionCard key={r.leadId} row={r} today={today} last={i === Math.min(rows.length, limit) - 1} showManager={showManager} />
           ))}
           {rows.length > limit && (
             <button type="button" className="w-full px-4 py-2 text-sm text-section-leads hover:underline text-left" onClick={() => setLimit(limit + 30)}>
@@ -236,7 +251,7 @@ function GroupSection({
   );
 }
 
-function DecisionCard({ row: r, today, last }: { row: BoardRow; today: string; last: boolean }) {
+function DecisionCard({ row: r, today, last, showManager = false }: { row: BoardRow; today: string; last: boolean; showManager?: boolean }) {
   const router = useRouter();
   const ai: Choice | null = r.group === "none" ? null : r.group;
   const [choice, setChoice] = useState<Choice | null>(ai);
@@ -318,7 +333,7 @@ function DecisionCard({ row: r, today, last }: { row: BoardRow; today: string; l
           <span className="rounded bg-section-leads-soft px-1.5 py-0.5 text-[11px] text-section-leads">новых сообщений: {r.newMessages} — разобрать заново</span>
         )}
         {r.inferred && <span className="text-[11px] text-ink-muted">по старому разбору</span>}
-        {r.handedOver && <span className="text-[11px] text-ink-muted">у менеджера: {r.managerName || "—"}</span>}
+        {(r.handedOver || showManager) && <span className="text-[11px] text-ink-muted">{r.handedOver ? "у менеджера" : "менеджер"}: {r.managerName || "ничей"}</span>}
         {r.waLink && (
           <a href={r.waLink} target="_blank" rel="noreferrer" className="ml-auto text-sm text-status-good font-medium">
             WhatsApp ↗

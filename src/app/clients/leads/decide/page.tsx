@@ -1,13 +1,14 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prefetchTables } from "@/lib/sheets";
 import { ROLES, SHEET_TABS } from "@/lib/constants";
-import { canManageLeads, canSeeLead, canWorkLead, isAdsLead } from "@/lib/leads";
+import { canManageLeads, canWorkLead } from "@/lib/leads";
 import { listLeadTouches, listLeads } from "@/lib/repo/leads";
 import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
 import { listUsers } from "@/lib/repo/users";
-import { buildDecisionBoard } from "@/lib/leadDecisions";
+import { buildDecisionBoard, decisionScope } from "@/lib/leadDecisions";
 import { localDayKey } from "@/lib/timezone";
 import { openAiConfigured } from "@/lib/openai";
 import PageHeader from "@/components/PageHeader";
@@ -24,10 +25,10 @@ export const maxDuration = 60;
  * как дальше поступать с клиентом: отказ, перезвонить через 3 дня, продать — отдельной вкладкой»).
  * Лиды с рекламы по решению из разбора переписки (`src/lib/leadDecisions.ts`); применяет человек.
  */
-export default async function LeadDecisionsPage() {
+export default async function LeadDecisionsPage({ searchParams }: { searchParams?: { m?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
-  if (role !== ROLES.LEADGEN && !canManageLeads(role)) redirect("/clients/leads");
+  if (role !== ROLES.LEADGEN && role !== ROLES.MANAGER && !canManageLeads(role)) redirect("/clients/leads");
   const email = (session?.user?.email ?? "").toLowerCase();
   const today = localDayKey();
 
@@ -39,7 +40,14 @@ export default async function LeadDecisionsPage() {
     listWaMessages({ lines: "all" }),
     listUsers(),
   ]);
-  const mine = leads.filter((l) => isAdsLead(l) && canSeeLead(role, email, l));
+  const manage = canManageLeads(role);
+  const managerFilter = manage ? (searchParams?.m ?? "").toLowerCase() : "";
+  const mine = decisionScope({ role, email, leads, messages, analyses, manager: managerFilter });
+  // Отбор по менеджеру у владельца и РОПа: кто есть среди лидов с перепиской.
+  const scopeAll = manage ? decisionScope({ role, email, leads, messages, analyses }) : [];
+  const managerOptions = Array.from(new Set(scopeAll.map((l) => l.managerEmail).filter(Boolean)))
+    .map((e) => ({ email: e, name: users.find((u) => u.email.toLowerCase() === e)?.name || e }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ru"));
   const board = buildDecisionBoard({
     leads: mine,
     messages,
@@ -63,15 +71,31 @@ export default async function LeadDecisionsPage() {
           <span className="inline-flex items-center gap-2">
             Решения ИИ
             <Hint>
-              ИИ читает переписку с лидом с рекламы и предлагает одно из трёх: продать сейчас, написать позже через несколько
+              ИИ читает переписку с лидом и предлагает одно из трёх: продать сейчас, написать позже через несколько
               дней или закрыть отказом — с причиной и готовым сообщением клиенту. Решает человек: кнопка «Применить» записывает
               касание, стадию и дату следующего разговора. Новые переписки разбираются кнопкой и каждый вечер сами.
             </Hint>
           </span>
         }
-        subtitle="Лиды с рекламы: что ИИ советует сделать с каждым"
+        subtitle={role === ROLES.LEADGEN ? "Лиды с рекламы: что ИИ советует сделать с каждым" : "Лиды с перепиской в WhatsApp: что ИИ советует сделать с каждым"}
         tabs={clientsTabsFor(undefined, role)}
       />
+      {manage && managerOptions.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-sm">
+          {[{ email: "", name: "Все менеджеры" }, ...managerOptions].map((o) => (
+            <Link
+              key={o.email || "all"}
+              href={o.email ? `/clients/leads/decide?m=${encodeURIComponent(o.email)}` : "/clients/leads/decide"}
+              className={
+                "px-3 py-1.5 rounded-lg border transition-colors " +
+                (o.email === managerFilter ? "border-section-leads bg-section-leads-soft text-ink-primary font-medium" : "border-line-hairline text-ink-secondary hover:text-ink-primary")
+              }
+            >
+              {o.name}
+            </Link>
+          ))}
+        </div>
+      )}
       <LeadDecisionsBoard
         today={today}
         aiReady={openAiConfigured()}
@@ -84,6 +108,7 @@ export default async function LeadDecisionsPage() {
           none: board.groups.none.map(toRow),
         }}
         done={board.done.map(toRow)}
+        showManager={manage}
       />
     </div>
   );

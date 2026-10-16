@@ -37,14 +37,21 @@ export function autoLeadFromMessage(
   known: Set<string>,
   ownerEmail: string,
   day: string,
+  /**
+   * Номер менеджера (16.10.2026): чей номер в заметке («WhatsApp Ильяса»), лид обычный, не «с рекламы»,
+   * и только ВХОДЯЩЕЕ — менеджер пишет первым и поставщикам, и водителям, и своим, а это не лиды.
+   */
+  line?: { whose: string; origin: string; incomingOnly: boolean },
 ): NewLead | null {
   const key = phoneKey(message.phone);
   if (!key || known.has(key)) return null;
   const incoming = message.direction === "in";
+  if (line?.incomingOnly && !incoming) return null;
+  const whose = line?.whose || "Земфиры";
   const sender = incoming ? (message.senderName || "").trim() : "";
   const first = incoming ? messageText(message).replace(/\s+/g, " ").trim().slice(0, 300) : "";
   const note = incoming
-    ? `Сам написал в WhatsApp Земфиры ${day}${first ? `: «${first}»` : ""}.`
+    ? `Сам написал в WhatsApp ${whose} ${day}${first ? `: «${first}»` : ""}.`
     : `Земфира написала в WhatsApp ${day}.`;
   return {
     name: newClientName("", sender, message.phone),
@@ -57,7 +64,7 @@ export function autoLeadFromMessage(
     note: `${note} Заведён автоматически — уточните название точки и город.`,
     createdByEmail: ownerEmail || "whatsapp",
     managerEmail: ownerEmail,
-    origin: LEAD_ORIGIN_ADS,
+    origin: line ? line.origin : LEAD_ORIGIN_ADS,
   };
 }
 

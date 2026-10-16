@@ -10,6 +10,10 @@ import { localDayKey } from "@/lib/timezone";
 import { listBotPhotos } from "@/lib/repo/botPhotos";
 import PageHeader from "@/components/PageHeader";
 import BroadcastComposer from "@/components/BroadcastComposer";
+import { listWaLines } from "@/lib/repo/waLines";
+import { listWaMessages } from "@/lib/repo/talks";
+import { greenLeadsConfig } from "@/lib/greenApi";
+import { phoneKey } from "@/lib/leads";
 import { clientsTabsFor } from "../../tabs";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +34,23 @@ export default async function NewBroadcastPage() {
   const role = session?.user?.role;
   if (role !== ROLES.ADMIN && role !== ROLES.SALES_HEAD) redirect("/clients");
 
-  const [audience, users, prices, photos] = await Promise.all([loadAudience({ withOrders: true }), listUsers(), getCurrentPrices(localDayKey()), listBotPhotos()]);
+  const [audience, users, prices, photos, waLines, messages] = await Promise.all([
+    loadAudience({ withOrders: true }),
+    listUsers(),
+    getCurrentPrices(localDayKey()),
+    listBotPhotos(),
+    listWaLines(),
+    listWaMessages({ lines: "all" }),
+  ]);
+  // С какого номера (16.10.2026): основной, Земфира (если подключена), номера менеджеров.
+  const talkersOf = (code: string) => Array.from(new Set(messages.filter((m) => (m.line || "") === code).map((m) => phoneKey(m.phone)).filter(Boolean)));
+  const lines = [
+    { code: "", label: "Основной номер (бот)", talkers: [] as string[] },
+    ...(greenLeadsConfig() ? [{ code: "leads", label: "Номер Земфиры", talkers: talkersOf("leads") }] : []),
+    ...waLines
+      .filter((l) => l.active && l.tokenEnc)
+      .map((l) => ({ code: l.code, label: `Номер: ${users.find((u) => u.email.toLowerCase() === l.managerEmail)?.name || l.label}`, talkers: talkersOf(l.code) })),
+  ];
   const rows = audience.map((a) => ({
     kind: a.kind,
     refId: a.refId,
@@ -65,6 +85,7 @@ export default async function NewBroadcastPage() {
         clientTypes={distinct(rows.map((r) => r.clientType))}
         prices={priceMapForClient(prices)}
         photoCount={photos.filter((p) => p.active).length}
+        lines={lines}
       />
     </div>
   );

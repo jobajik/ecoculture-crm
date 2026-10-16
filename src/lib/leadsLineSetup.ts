@@ -1,4 +1,4 @@
-import { configureWebhook, fetchChatHistory, getInstanceState, greenLeadsConfig } from "./greenApi";
+import { configureWebhook, fetchChatHistory, getInstanceState, greenLeadsConfig, type GreenConfig } from "./greenApi";
 import { mergeMessages, parseHistoryItem } from "./whatsapp";
 import { phoneKey } from "./leads";
 import { listLeads, updateLeadsBatch } from "./repo/leads";
@@ -26,16 +26,26 @@ export async function setupLeadsLine(site: string, importDays = 0): Promise<stri
   }
   out.push(`Ключи номера Земфиры: есть (idInstance ${cfg.instance.length} цифр, адрес ${cfg.url}).`);
 
+  return [...out, ...(await setupLine(cfg, "leads", site, importDays))];
+}
+
+/**
+ * Подключить любую линию (номер Земфиры или номер менеджера, 16.10.2026): состояние, адрес уведомлений
+ * `…/api/whatsapp/webhook?line=<код>` с общим токеном и, по желанию, переписка за последние дни (до 3).
+ */
+export async function setupLine(cfg: GreenConfig, line: string, site: string, importDays = 0): Promise<string[]> {
+  const out: string[] = [];
   const state = await getInstanceState(cfg);
-  out.push(`Состояние номера: ${state}${state === "authorized" ? " — подключён" : " — отсканируйте QR-код телефоном Земфиры в кабинете Green API"}`);
+  out.push(`Состояние номера: ${state}${state === "authorized" ? " — подключён" : " — отсканируйте QR-код телефоном этого номера"}`);
 
   const token = (process.env.WHATSAPP_WEBHOOK_TOKEN || "").trim();
   if (!token) {
     out.push("Нет WHATSAPP_WEBHOOK_TOKEN — сначала рабочий номер.");
     return out;
   }
-  await configureWebhook(cfg, `${site}/api/whatsapp/webhook?line=leads`, token);
-  out.push(`Уведомления: ${site}/api/whatsapp/webhook?line=leads — прописано (заработает в течение 5 минут).`);
+  const hook = `${site}/api/whatsapp/webhook?line=${encodeURIComponent(line)}`;
+  await configureWebhook(cfg, hook, token);
+  out.push(`Уведомления: ${hook} — прописано (заработает в течение 5 минут).`);
 
   const days = Math.min(3, Math.max(0, importDays));
   if (!days || state !== "authorized") return out;
@@ -57,7 +67,7 @@ export async function setupLeadsLine(site: string, importDays = 0): Promise<stri
   const fresh: WaMessage[] = items
     .map(parseHistoryItem)
     .filter((m): m is WaMessage => !!m && !known.has(m.messageId))
-    .map((m) => ({ ...m, line: "leads" }));
+    .map((m) => ({ ...m, line }));
   if (fresh.length) await appendWaMessages(fresh);
   out.push(`Переписка за ${days} дн.: в Green API ${items.length}, дописано в CRM ${fresh.length} (группы и служебные не берутся).`);
   return out;
@@ -72,13 +82,18 @@ export async function setupLeadsLine(site: string, importDays = 0): Promise<stri
  * оставшееся, уже записанное не дублирует.
  */
 export async function pullLeadsHistory(budgetMs = 45000, offset = 0): Promise<string[]> {
-  const out: string[] = [];
   const cfg = greenLeadsConfig();
   if (!cfg) return ["Нет ключей номера Земфиры."];
+  return pullLineHistory(cfg, "leads", budgetMs, offset);
+}
+
+/** То же для любой линии: номер Земфиры или номер менеджера (16.10.2026). */
+export async function pullLineHistory(cfg: GreenConfig, lineCode: string, budgetMs = 45000, offset = 0): Promise<string[]> {
+  const out: string[] = [];
   const started = Date.now();
   const all = await listWaMessages({ lines: "all" });
   const known = new Set(all.map((m) => m.messageId));
-  const line = all.filter((m) => m.line === "leads");
+  const line = all.filter((m) => m.line === lineCode);
   const byKey = new Map<string, { phone: string; hasIn: boolean }>();
   for (const m of line) {
     const key = phoneKey(m.phone);
@@ -99,7 +114,7 @@ export async function pullLeadsHistory(budgetMs = 45000, offset = 0): Promise<st
       for (const m of history) {
         if (known.has(m.messageId)) continue;
         known.add(m.messageId);
-        fresh.push({ ...m, line: "leads" });
+        fresh.push({ ...m, line: lineCode });
       }
     } catch (err) {
       out.push(`Чат …${chat.phone.slice(-4)}: ${err instanceof Error ? err.message : err}`);

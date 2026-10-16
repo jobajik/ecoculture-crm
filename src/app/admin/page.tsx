@@ -12,6 +12,9 @@ import BotSalesPhonesForm from "@/components/BotSalesPhonesForm";
 import { BOT_SALES_SETTING } from "@/lib/botSalesAlert";
 import Hint from "@/components/Hint";
 import { settingsMap } from "@/lib/repo/broadcasts";
+import { listWaLines } from "@/lib/repo/waLines";
+import { listWaMessages } from "@/lib/repo/talks";
+import WaLinesAdmin from "@/components/WaLinesAdmin";
 import { DIGEST_SETTING } from "@/lib/morningDigest";
 import { DIGEST_LAST_RUN } from "@/lib/morningDigestRunner";
 import {
@@ -83,12 +86,32 @@ const ROLE_GUIDE: { code: string; does: string; farm: string }[] = [
 ];
 
 export default async function AdminPage() {
-  const [session, users, settings, map] = await Promise.all([
+  const [session, users, settings, map, waLines, waMessages] = await Promise.all([
     getServerSession(authOptions),
     listUsers(),
     getSettings(),
     settingsMap(),
+    listWaLines({ fresh: true }),
+    listWaMessages({ lines: "all" }),
   ]);
+  const nameOf = (e: string) => users.find((u) => u.email.toLowerCase() === e)?.name || "";
+  const lineRows = waLines.map((l) => ({
+    code: l.code,
+    managerEmail: l.managerEmail,
+    managerName: nameOf(l.managerEmail),
+    label: l.label,
+    phone: l.phone,
+    state: l.tokenEnc ? l.state : "nokey",
+    stateAt: l.stateAt,
+    active: l.active,
+    assistant: l.assistant,
+    hasKey: !!l.tokenEnc,
+    messages: waMessages.filter((m) => m.line === l.code).length,
+  }));
+  const lineManagers = users
+    .filter((u) => u.active && ["manager", "sales_head", "admin", "leadgen"].includes(u.role))
+    .map((u) => ({ email: u.email.toLowerCase(), name: u.name }))
+    .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "ru"));
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -137,6 +160,24 @@ export default async function AdminPage() {
         </div>
           </div>
         </details>
+      </Section>
+
+      <Section
+        tone="leads"
+        icon="message"
+        title={
+          <span className="inline-flex items-center">
+            WhatsApp менеджеров
+            <Hint>
+              У каждого менеджера свой номер, подключённый к Green API. Его переписка видна в «Клиенты → Переписки», новые
+              номера, написавшие менеджеру, сами становятся его лидами, ИИ разбирает разговоры, а ИИ-помощник подсказывает
+              ответы и отвечает сам, когда клиент ждёт дольше 20 минут, вечером и в выходные.
+            </Hint>
+          </span>
+        }
+        className="!mb-0"
+      >
+        <WaLinesAdmin lines={lineRows} managers={lineManagers} />
       </Section>
 
       <Section tone="admin" icon="leaf" title="Производства" className="!mb-0">

@@ -15,6 +15,11 @@ import { botIncomingOf, parseGreenStatus } from "@/lib/greenOut";
 import { runBot } from "@/lib/botEngine";
 import { draftFromIncoming } from "@/lib/waOrderRunner";
 import { kickFollowup } from "@/lib/botFollowUpRun";
+import { listWaLines } from "@/lib/repo/waLines";
+import { genitiveName, isManagerLine, isWorkTime, type WaLine } from "@/lib/waLines";
+import { kickAssistant, kickAssistantChat } from "@/lib/lineAssistant";
+import { staffPhoneKeys } from "@/lib/botSalesAlert";
+import { settingsMap } from "@/lib/repo/broadcasts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -51,7 +56,13 @@ export async function POST(request: Request) {
   }
 
   // Номер Земфиры (`?line=leads`): переписка в CRM и статусы её рассылок — без бота и черновиков.
-  if (new URL(request.url).searchParams.get("line") === "leads") return leadsLine(body);
+  const lineParam = new URL(request.url).searchParams.get("line") || "";
+  if (lineParam === "leads") {
+    await kickAssistant(siteOrigin(request));
+    return leadsLine(body);
+  }
+  // Номер менеджера (`?line=m-…`, 16.10.2026): переписка, авто-лид на него и ИИ-помощник.
+  if (isManagerLine(lineParam)) return managerLine(body, lineParam, request);
 
   const status = parseGreenStatus(body);
   if (status) {
@@ -98,6 +109,7 @@ export async function POST(request: Request) {
   if (!botAnswered) await draftFromIncoming(message);
   // Заодно — дожим молчащих и напоминания об оплате (не чаще раза в 25 мин, `botFollowUpRun.ts`).
   await kickFollowup(siteOrigin(request));
+  await kickAssistant(siteOrigin(request));
   return NextResponse.json({ ok: true });
 }
 
@@ -144,10 +156,64 @@ async function leadsLine(body: unknown) {
 }
 
 /**
+ * Сообщение с номера менеджера (16.10.2026): записать (голосовое — с расшифровкой), статусы его рассылок,
+ * авто-лид на менеджера (только входящее с незнакомого номера), а вне рабочего времени — ответ ИИ-помощника
+ * сразу после серии сообщений. Днём помощника будит проход (`kickAssistant`): он ответит, если менеджер молчит 20 минут.
+ */
+async function managerLine(body: unknown, code: string, request: Request) {
+  const line = (await listWaLines()).find((l) => l.code === code);
+  // Номер удалили или выключили — 200, чтобы Green API не повторял.
+  if (!line || !line.active) return NextResponse.json({ ok: true, ignored: "line off" });
+  const status = parseGreenStatus(body);
+  if (status) {
+    try {
+      await appendWaStatuses([status]);
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      console.error("whatsapp line status:", err instanceof Error ? err.message : err);
+      return NextResponse.json({ error: "temporary" }, { status: 500 });
+    }
+  }
+  const message = parseGreenWebhook(body);
+  if (!message) return NextResponse.json({ ok: true, ignored: true });
+  message.line = code;
+  if (message.type === "voice" && message.mediaUrl && openAiConfigured()) {
+    try {
+      const file = await downloadMedia(message.mediaUrl);
+      if (file) {
+        const text = await transcribeAudio(file.data, file.mime);
+        if (text) message.text = [message.text, text].filter(Boolean).join(" · ");
+      }
+    } catch (err) {
+      console.error("whatsapp line voice:", err instanceof Error ? err.message : err);
+    }
+  }
+  try {
+    await appendWaMessages([message]);
+  } catch (err) {
+    console.error("whatsapp line webhook:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "temporary" }, { status: 500 });
+  }
+  try {
+    if (message.direction === "in") await autoLead(message, line);
+  } catch (err) {
+    console.error("whatsapp line auto-lead:", err instanceof Error ? err.message : err);
+  }
+  if (message.direction === "in" && line.assistant === "on" && !isWorkTime(new Date())) {
+    // Вне рабочего времени — отдельной функцией (Green API не ждёт вебхук долго): она дождётся конца серии
+    // сообщений клиента и ответит этому чату.
+    await kickAssistantChat(siteOrigin(request), code, message.phone);
+  } else {
+    await kickAssistant(siteOrigin(request));
+  }
+  return NextResponse.json({ ok: true });
+}
+
+/**
  * Разговор с незнакомым номером на линии Земфиры — сразу её лид «с рекламы» (`autoLeadFromMessage`);
  * лид с именем-заглушкой получает имя из WhatsApp, когда клиент напишет сам (`namedFromWhatsApp`).
  */
-async function autoLead(message: WaMessage) {
+async function autoLead(message: WaMessage, line?: WaLine) {
   const key = phoneKey(message.phone);
   if (!key) return;
   // Лиды — свежие: клиент пишет тремя сообщениями подряд, лид должен завестись один раз.
@@ -162,6 +228,15 @@ async function autoLead(message: WaMessage) {
   const known = new Set<string>();
   for (const c of clients) for (const p of [c.phone, c.messenger, c.kaspiPay1, c.kaspiPay2]) if (phoneKey(p)) known.add(phoneKey(p));
   const day = localDayKey();
+  if (line) {
+    // Сотрудники и наши же номера лидами не становятся.
+    for (const k of Array.from(staffPhoneKeys(await settingsMap()))) known.add(k);
+    for (const l of await listWaLines()) if (l.phone) known.add(phoneKey(l.phone));
+    const name = users.find((u) => u.email.toLowerCase() === line.managerEmail)?.name || line.label;
+    const lead = autoLeadFromMessage(message, known, line.managerEmail, day, { whose: genitiveName(name), origin: "", incomingOnly: true });
+    if (lead) await createLead(lead, day);
+    return;
+  }
   const lead = autoLeadFromMessage(message, known, leadsLineOwner(users), day);
   if (lead) await createLead(lead, day);
 }

@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { guard } from "@/lib/actionResult";
+import { lineConfig } from "@/lib/repo/waLines";
 import { ROLES } from "@/lib/constants";
 import { localDayKey } from "@/lib/timezone";
 import { commitAtomic, SHEET_TABS } from "@/lib/sheets";
@@ -116,8 +117,12 @@ async function createBroadcastActionInner(input: {
   withOptOut: boolean;
   audience: string;
   refs: { kind: string; refId: string }[];
+  /** С какого номера (16.10.2026): "" — основной, "leads" — Земфира, "m-…" — менеджер. */
+  line?: string;
 }) {
   const { email } = await requireBroadcaster();
+  const line = String(input.line || "").trim();
+  if (line && !(await lineConfig(line))) throw new Error("Этот номер не подключён или выключен — выберите другой");
   const refusal = broadcastTextRefusal(input.text, !!input.fileId);
   if (refusal) throw new Error(refusal);
   const wanted = new Set((input.refs || []).map((r) => `${r.kind}:${r.refId}`));
@@ -147,6 +152,7 @@ async function createBroadcastActionInner(input: {
     fileName: String(input.fileName || ""),
     audience: String(input.audience || "").slice(0, 300),
     recipients,
+    line,
   });
   revalidatePath("/clients/broadcasts");
   return { broadcastId: id, count: recipients.length };
@@ -161,7 +167,8 @@ async function setBroadcastStatusActionInner(broadcastId: string, status: "sendi
   // Продолжить можно и при разовом сбое Green API — страница сама проверит снова
   // через минуту. Не пускаем, только если без человека не исправится.
   if (status === "sending") {
-    const c = await checkGreenChannel();
+    // Номер рассылки — её собственный (основной, Земфиры или менеджера).
+    const c = await checkGreenChannel(found.broadcast.line ? await lineConfig(found.broadcast.line) : undefined);
     if (c.action === "pause") throw new Error(c.text);
   }
   const changes: Record<string, unknown> = { Status: status, Note: "" };

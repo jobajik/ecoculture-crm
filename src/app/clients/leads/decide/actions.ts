@@ -19,7 +19,7 @@ import {
 } from "@/lib/leads";
 import { addTouch, addTouchesBatch, getLead, listLeadTouches, listLeads } from "@/lib/repo/leads";
 import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
-import { buildDecisionBoard, decisionTouch } from "@/lib/leadDecisions";
+import { buildDecisionBoard, decisionScope, decisionTouch } from "@/lib/leadDecisions";
 import { latestByLead, type DecisionKey } from "@/lib/talkAnalysis";
 import { runStaleAnalyses } from "@/lib/talkRunner";
 import { openAiConfigured } from "@/lib/openai";
@@ -33,7 +33,7 @@ async function requireDecider() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role;
-  if (role !== ROLES.LEADGEN && !canManageLeads(role)) throw new Error("Решения ИИ — у Земфиры, РОПа и админа");
+  if (role !== ROLES.LEADGEN && role !== ROLES.MANAGER && !canManageLeads(role)) throw new Error("Решения ИИ — у менеджеров, Земфиры, РОПа и админа");
   return { email: session.user.email.trim().toLowerCase(), role };
 }
 
@@ -60,7 +60,6 @@ async function applyDecisionActionInner(leadId: string, override?: { decision?: 
   const { email, role } = await requireDecider();
   const lead = await getLead(leadId, { fresh: true });
   if (!lead) throw new Error("Лид не найден");
-  if (!isAdsLead(lead)) throw new Error("Это не лид с рекламы");
   if (!canWorkLead(role, email, lead)) throw new Error("Лид уже у менеджера — решение за ним");
   const analysis = latestByLead(await listLeadAnalyses()).get(leadId);
   if (!analysis) throw new Error("Переписку ещё не разбирали — сначала «Разобрать»");
@@ -101,7 +100,7 @@ async function applyDecisionsActionInner(leadIds: string[]): Promise<{ applied: 
     const lead = byId.get(id);
     if (!lead) continue;
     const a = latest.get(id);
-    if (!isAdsLead(lead) || !canWorkLead(role, email, lead) || !a) {
+    if (!canWorkLead(role, email, lead) || !a) {
       skipped.push(`${lead.name}: ${!a ? "нет разбора" : "лид уже у менеджера"}`);
       continue;
     }
@@ -126,10 +125,6 @@ export async function applyDecisionsAction(leadIds: string[]) {
   return guard(() => applyDecisionsActionInner(leadIds));
 }
 
-function visibleAdsLeads(role: string | null | undefined, email: string, leads: Lead[]): Lead[] {
-  return leads.filter((l) => isAdsLead(l) && canSeeLead(role, email, l));
-}
-
 /** «Разобрать»: несколько лидов за нажатие (функция живёт минуту), сначала ни разу не разобранные. */
 async function analyzeDecisionsActionInner(): Promise<{ done: number; failed: string[]; left: number }> {
   const { email, role } = await requireDecider();
@@ -141,13 +136,15 @@ async function analyzeDecisionsActionInner(): Promise<{ done: number; failed: st
     listLeadAnalyses(),
     listLeadTouches(),
   ]);
-  const mine = visibleAdsLeads(role, email, leads);
+  const mine = decisionScope({ role, email, leads, messages, analyses });
   const board = buildDecisionBoard({ leads: mine, messages, analyses, touches, today: localDayKey(), toDay });
   const analysed = new Set(latestByLead(analyses).keys());
   const queue = [...board.toAnalyze.filter((id) => !analysed.has(id)), ...board.toAnalyze.filter((id) => analysed.has(id))];
   const result = await runStaleAnalyses(mine, queue.map((leadId) => ({ leadId })), messages, email, localDayKey(), {
-    limit: 6,
-    budgetMs: 40000,
+    // Новый разбор начинаем, только пока прошло меньше 22 с: один разбор идёт до 25 с, а функция живёт минуту.
+    // 16.10.2026 при 40 с запрос обрывался посреди шестого разбора, и страница писала «сохранение не дошло».
+    limit: 4,
+    budgetMs: 22000,
   });
   refresh();
   return result;

@@ -72,6 +72,8 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // карточки клиентов и всё остальное ей закрыты. Узкие адреса — выше общего «/clients/leads».
   { prefix: "/clients/leads/calls", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
   { prefix: "/clients/leads/talks", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
+  // Переписки WhatsApp по номерам (16.10.2026): какой номер кому виден — `chatAccess.ts`.
+  { prefix: "/clients/chats", roles: ["manager", "sales_head", "admin", "leadgen"] },
   {
     prefix: "/clients/leads",
     roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions", "leadgen"],

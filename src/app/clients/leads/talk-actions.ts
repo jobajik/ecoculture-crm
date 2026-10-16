@@ -58,7 +58,7 @@ async function analyzeStaleTalksActionInner(): Promise<{ done: number; failed: s
   const infos = Array.from(talkInfoByLead(leads, messages, analyses).values());
   const report = buildTalkReport(infos, new Map(), new Date());
   // Кнопка в браузере ждёт ответа, поэтому по нажатию — немного: остальное по кругу.
-  const result = await runStaleAnalyses(leads, report.stale, messages, email, localDayKey(), { limit: 4, budgetMs: 35000 });
+  const result = await runStaleAnalyses(leads, report.stale, messages, email, localDayKey(), { limit: 4, budgetMs: 22000 });
   refresh();
   return result;
 }

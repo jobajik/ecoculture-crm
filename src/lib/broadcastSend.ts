@@ -16,6 +16,8 @@ import {
   BROADCAST_STATUSES,
   LEADS_DEFAULT_DAILY_LIMIT,
   LEADS_LINE,
+  MANAGER_DEFAULT_DAILY_LIMIT,
+  COLD_DAILY_LIMIT,
   MAX_DAILY_LIMIT,
   paceFor,
   broadcastTextRefusal,
@@ -30,6 +32,7 @@ import {
 import { listWaMessages } from "./repo/talks";
 import { GreenError, greenLeadsConfig, sendFileByUrl, sendText, type GreenConfig } from "./greenApi";
 import { checkGreenChannel } from "./greenChannel";
+import { lineConfig } from "./repo/waLines";
 import { MAX_CAPTION, greenFailureKind, greenFileName } from "./greenOut";
 import { publicFileUrl, safeFileName } from "./waFileSign";
 import { ROTATION_FILE, flowersInText, isSpecialFile } from "./botPhotos";
@@ -166,6 +169,8 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   if (b.status !== BROADCAST_STATUSES.SENDING) return result({ waitSeconds: 0, note: "" });
   // Номер Земфиры — свой темп, свой дневной предел и свой счёт (15.10.2026); рабочий номер его не считает.
   const isLeads = b.line === LEADS_LINE;
+  // Номер менеджера (16.10.2026): свой темп, предел, счёт и «тёплые» — его собеседники.
+  const isManager = (b.line || "").startsWith("m-");
   const pace = paceFor(b.line);
   const now = new Date();
   if (sendTooSoon(b.lastSendAt, now, pace)) return result({ waitSeconds: 20, note: "" });
@@ -173,7 +178,8 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   const settings = await settingsMap();
   const today = localDayKey(now);
   const leadsLimit = Math.min(MAX_DAILY_LIMIT, Math.max(1, Number(settings.BroadcastLeadsDailyLimit) || LEADS_DEFAULT_DAILY_LIMIT));
-  const limit = isLeads ? leadsLimit : effectiveDailyLimit(settings.BroadcastDailyLimit, settings.BroadcastWarmupFrom, today);
+  const managerLimit = Math.min(MAX_DAILY_LIMIT, Math.max(1, Number(settings.BroadcastManagerDailyLimit) || MANAGER_DEFAULT_DAILY_LIMIT));
+  const limit = isLeads ? leadsLimit : isManager ? managerLimit : effectiveDailyLimit(settings.BroadcastDailyLimit, settings.BroadcastWarmupFrom, today);
   const lineOf = new Map((await listBroadcasts()).map((x) => [x.broadcastId, x.line || ""]));
   const sameLine = (r: { broadcastId: string }) => (lineOf.get(r.broadcastId) ?? "") === (b.line || "");
   const sentRows = all.filter((r) => r.status === "sent" && r.sentAt && localDayKey(new Date(r.sentAt)) === today && sameLine(r));
@@ -194,12 +200,22 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   // Сначала тем, кто уже писал нам (и, после разогрева, покупал); остальным — не больше N в день (`warmthRules`).
   // С номера Земфиры пишем только её собеседникам — «холодных» там нет.
   const rules = warmthRules(settings.BroadcastWarmupFrom, today);
-  const wrote = isLeads ? new Set<string>() : new Set((await listWaMessages()).filter((m) => m.direction === "in").map((m) => phoneKey(m.phone)));
-  const buyers = !isLeads && rules.buyersAreWarm ? await buyerClientIds() : new Set<string>();
+  const wrote = isLeads
+    ? new Set<string>()
+    : isManager
+      ? new Set((await listWaMessages({ lines: "all" })).filter((m) => m.line === b.line).map((m) => phoneKey(m.phone)))
+      : new Set((await listWaMessages()).filter((m) => m.direction === "in").map((m) => phoneKey(m.phone)));
+  const buyers = !isLeads && !isManager && rules.buyersAreWarm ? await buyerClientIds() : new Set<string>();
   const isWarm = (r: { phone: string; kind: string; refId: string }) =>
     isLeads || wrote.has(phoneKey(r.phone)) || (r.kind === "client" && buyers.has(r.refId));
   const coldSentToday = sentRows.filter((r) => !isWarm(r)).length;
-  const pick = pickNextRecipient(queued, isWarm, coldSentToday, rules.coldLimit, rules.buyersAreWarm ? "кто нам не писал и не покупал" : "кто нам ещё не писал в WhatsApp (идёт разогрев)");
+  const pick = pickNextRecipient(
+    queued,
+    isWarm,
+    coldSentToday,
+    isManager ? COLD_DAILY_LIMIT : rules.coldLimit,
+    isManager ? "кто ещё не переписывался с этим номером" : rules.buyersAreWarm ? "кто нам не писал и не покупал" : "кто нам ещё не писал в WhatsApp (идёт разогрев)"
+  );
   if (!pick.next) return result({ waitSeconds: 1800, note: pick.note });
   const next = pick.next;
 
@@ -213,7 +229,7 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
     return result({ waitSeconds: 1, note: "" });
   }
 
-  const channel = await checkGreenChannel(isLeads ? greenLeadsConfig() : undefined);
+  const channel = await checkGreenChannel(isLeads ? greenLeadsConfig() : isManager ? await lineConfig(b.line) : undefined);
   if (channel.action === "retry") {
     // Разовый сбой: рассылку НЕ останавливаем, этого же получателя — через минуту.
     await commitAtomic(writes);
@@ -232,7 +248,7 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
     writes.push(recipientUpdate(next.rowNumber, { Status: "sent", MessageID: ids[ids.length - 1], SentAt: now.toISOString(), Error: "" }));
     // Номера наших сообщений — в память чата: бот поймёт, что это не менеджер написал. На номере
     // Земфиры бота нет — память бота не трогаем.
-    if (!isLeads) {
+    if (!isLeads && !isManager) {
       const c = chat ?? emptyBotChat(next.phone);
       const updated = { ...c, ourIds: [...c.ourIds, ...ids].slice(-20), name: c.name || next.name };
       writes.push(botChatWrite(updated, chat?.rowNumber ?? null));

@@ -65,6 +65,10 @@ export const SHEET_TABS = {
   // Перемещения между основным складом и подскладом «Офис» (`officeStore.ts`):
   // строка на партию, только дописывается.
   STOCK_MOVES: "StockMoves",
+  // Номера WhatsApp менеджеров (16.10.2026): ключи Green API (токен зашифрован) и режим ИИ-помощника.
+  WA_LINES: "WaLines",
+  // Что сделал ИИ-помощник и что ушло из CRM на номерах менеджеров; записки «нужен менеджер».
+  ASSISTANT_LOG: "AssistantLog",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -527,6 +531,33 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   ],
   // Перемещение основной склад ⇄ офис: строка на партию. Direction — «to_office»
   // или «to_main»; FromBatchID → ToBatchID — откуда и куда ушли стебли.
+  [SHEET_TABS.WA_LINES]: [
+    "Code",
+    "ManagerEmail",
+    "Label",
+    "Url",
+    "Instance",
+    "TokenEnc",
+    "Active",
+    "Assistant",
+    "CreatedAt",
+    "UpdatedAt",
+    "Phone",
+    "State",
+    "StateAt",
+  ],
+  [SHEET_TABS.ASSISTANT_LOG]: [
+    "LogID",
+    "At",
+    "Line",
+    "Phone",
+    "Kind",
+    "MessageID",
+    "Text",
+    "Note",
+    "ByEmail",
+    "DoneAt",
+  ],
   [SHEET_TABS.STOCK_MOVES]: [
     "MoveID",
     "CreatedAt",

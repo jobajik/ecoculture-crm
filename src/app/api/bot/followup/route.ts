@@ -1,3 +1,4 @@
+import { kickAssistant } from "@/lib/lineAssistant";
 import { remindBotInvoices, runBotNudges } from "@/lib/botFollowUp";
 import { settingsMap } from "@/lib/repo/broadcasts";
 import { saveSettings } from "@/lib/repo/settings";
@@ -37,6 +38,8 @@ export async function GET(request: Request) {
     if (!followupRunDue(map[FOLLOWUP_LAST_RUN], now)) return Response.json({ ok: true, skipped: "недавно" });
   }
   const source = fromWebhook ? "вебхук" : "расписание";
+  // Расписание раз в час будит и ИИ-помощника менеджеров (16.10.2026): днём его будят вебхуки, а в тишину — это.
+  if (!fromWebhook) await kickAssistant((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
   // Отметка ДО работы: второй вебхук через секунду увидит её и не задвоит касания.
   await saveSettings({ [FOLLOWUP_LAST_RUN]: followupRunText(now, source, "идёт") }).catch(() => undefined);
   const reminders = await remindBotInvoices();

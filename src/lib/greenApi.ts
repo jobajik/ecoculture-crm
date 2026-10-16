@@ -147,10 +147,10 @@ export function chatIdForPhone(phone: string): string {
 }
 
 /** Последние `count` сообщений чата с номером — от старых к новым. */
-export async function fetchChatHistory(cfg: GreenConfig, phone: string, count = 150): Promise<WaMessage[]> {
+export async function fetchChatHistory(cfg: GreenConfig, phone: string, count = 150, timeoutMs = 20000): Promise<WaMessage[]> {
   const chatId = chatIdForPhone(phone);
   if (!chatId) return [];
-  const items = await call<unknown[]>(cfg, "getChatHistory", { chatId, count });
+  const items = await call<unknown[]>(cfg, "getChatHistory", { chatId, count }, timeoutMs);
   return (Array.isArray(items) ? items : [])
     .map(parseHistoryItem)
     .filter((m): m is WaMessage => !!m)
@@ -160,6 +160,21 @@ export async function fetchChatHistory(cfg: GreenConfig, phone: string, count = 
 export async function getInstanceState(cfg: GreenConfig): Promise<string> {
   const r = await call<{ stateInstance?: string }>(cfg, "getStateInstance");
   return String(r?.stateInstance || "unknown");
+}
+
+/**
+ * QR-код для привязки номера (16.10.2026: номера менеджеров подключаются со страницы «Настройки»).
+ * `type` — qrCode (в `message` картинка base64), alreadyLogged (номер уже привязан) или error.
+ */
+export async function getQrCode(cfg: GreenConfig): Promise<{ type: string; message: string }> {
+  const r = await call<{ type?: string; message?: string }>(cfg, "qr");
+  return { type: String(r?.type || "error"), message: String(r?.message || "") };
+}
+
+/** Номер телефона, привязанный к инстансу (`wid` из настроек: «77011234567@c.us») — цифрами; не привязан — "". */
+export async function getInstancePhone(cfg: GreenConfig): Promise<string> {
+  const r = await call<{ wid?: string }>(cfg, "getSettings");
+  return String(r?.wid || "").replace(/@.*$/, "").replace(/\D/g, "");
 }
 
 /**

@@ -9,6 +9,7 @@ import {
 } from "./talkAnalysis";
 import { mergeMessages, messagesForPhone, replyStats, transcriptForAi } from "./whatsapp";
 import { saveLeadAnalysis } from "./repo/talks";
+import { listWaLines, managerLineConfig } from "./repo/waLines";
 import type { Lead, LeadAnalysis, WaMessage } from "./types";
 
 /** Голосовых за один разбор расшифровываем не больше — иначе не уложимся в минуту. */
@@ -45,20 +46,39 @@ export async function runTalkAnalysis(
     { cfg, line: "" },
     { cfg: greenLeadsConfig(), line: "leads" },
   ];
-  for (const l of lines) {
-    if (!l.cfg) continue;
-    try {
-      const got = (await fetchChatHistory(l.cfg, lead.phone, 150)).filter((m) => !storedIds.has(m.messageId));
-      pulled.push(...got.map((m) => ({ ...m, line: l.line })));
-    } catch (err) {
-      // История не пришла — разбираем то, что уже есть; причину видно в журнале сервера.
-      console.error("whatsapp history:", err instanceof Error ? err.message : err);
-    }
+  // И с номера менеджера этого лида (16.10.2026: номера Ильяса, Эмиля, Ильгара).
+  try {
+    const own = (await listWaLines()).find((l) => l.active && l.managerEmail && l.managerEmail === lead.managerEmail);
+    if (own) lines.push({ cfg: managerLineConfig(own), line: own.code });
+  } catch {
+    /* без номера менеджера — разбираем то, что есть */
+  }
+  // Все номера разом и не дольше 8 с: разбор из «Разобрать переписки» должен уложиться в минуту функции
+  // (16.10.2026: последовательные запросы по трём номерам с ожиданием 20 с на каждый обрывали разбор).
+  const got = await Promise.all(
+    lines.map(async (l) => {
+      if (!l.cfg) return [] as WaMessage[];
+      try {
+        return (await fetchChatHistory(l.cfg, lead.phone, 150, 8000))
+          .filter((m) => !storedIds.has(m.messageId))
+          .map((m) => ({ ...m, line: l.line }));
+      } catch (err) {
+        // История не пришла — разбираем то, что уже есть; причину видно в журнале сервера.
+        console.error("whatsapp history:", err instanceof Error ? err.message : err);
+        return [] as WaMessage[];
+      }
+    })
+  );
+  const seen = new Set<string>();
+  for (const m of got.flat()) {
+    if (seen.has(m.messageId)) continue;
+    seen.add(m.messageId);
+    pulled.push(m);
   }
   let merged = mergeMessages([...stored, ...pulled]);
   if (merged.length < MIN_MESSAGES_FOR_ANALYSIS) {
     throw new Error(
-      cfg || greenLeadsConfig()
+      lines.some((l) => l.cfg)
         ? "С этим номером в WhatsApp пока почти нет переписки — разбирать нечего."
         : "WhatsApp ещё не подключён, и сохранённой переписки с этим номером нет."
     );

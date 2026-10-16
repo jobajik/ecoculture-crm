@@ -53,6 +53,7 @@ export default function BroadcastComposer({
   clientTypes,
   prices,
   photoCount,
+  lines = [],
 }: {
   rows: Row[];
   managers: { email: string; name: string }[];
@@ -66,6 +67,11 @@ export default function BroadcastComposer({
   prices: Record<string, number>;
   /** Сколько фото включено в ротацию («Фото и каталог»). */
   photoCount: number;
+  /**
+   * С какого номера слать (16.10.2026): основной, Земфиры, номера менеджеров. `talkers` — последние 10 цифр
+   * номеров, с кем этот номер уже переписывался: с номера менеджера слать лучше только им.
+   */
+  lines?: { code: string; label: string; talkers: string[] }[];
 }) {
   const router = useRouter();
   const [useClients, setUseClients] = useState(true);
@@ -82,6 +88,9 @@ export default function BroadcastComposer({
   const [search, setSearch] = useState("");
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
+  const [line, setLine] = useState("");
+  const [onlyTalkers, setOnlyTalkers] = useState(true);
+  const talkers = useMemo(() => new Set(lines.find((l) => l.code === line)?.talkers ?? []), [lines, line]);
 
   const [title, setTitle] = useState("");
   const [text, setText] = useState("Здравствуйте, {имя}! ");
@@ -111,9 +120,11 @@ export default function BroadcastComposer({
         if (segment && r.segment !== segment) return false;
       }
       if (q && !`${r.name} ${r.contactPerson} ${r.waPhone} ${r.city}`.toLowerCase().includes(q)) return false;
+      // С номера менеджера или Земфиры — только тем, кто с этим номером уже переписывался.
+      if (line && onlyTalkers && !talkers.has(String(r.waPhone || "").replace(/\D/g, "").slice(-10))) return false;
       return true;
     });
-  }, [rows, useClients, useLeads, city, manager, clientType, orders, bought, stage, campaign, segment, search]);
+  }, [rows, useClients, useLeads, city, manager, clientType, orders, bought, stage, campaign, segment, search, line, onlyTalkers, talkers]);
 
   const key = (r: Row) => `${r.kind}:${r.refId}`;
   const sendable = filtered.filter((r) => !r.excluded);
@@ -210,8 +221,9 @@ export default function BroadcastComposer({
             fileId: file?.id ?? "",
             fileName: file?.name ?? "",
             withOptOut,
-            audience,
+            audience: line ? `${audience}${audience ? " · " : ""}с номера: ${lines.find((l) => l.code === line)?.label ?? line}` : audience,
             refs: chosen.map((c) => ({ kind: c.kind, refId: c.refId })),
+            line,
           })
         );
         router.push(`/clients/broadcasts/${r.broadcastId}`);
@@ -229,6 +241,27 @@ export default function BroadcastComposer({
     <div className="space-y-6">
       <section className="card space-y-4">
         <h2 className="font-display text-lg font-bold">1. Кому</h2>
+        {lines.length > 1 && (
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2">
+              <span className="text-ink-secondary">С какого номера:</span>
+              <select className="input !py-1 !min-h-0 w-auto" value={line} onChange={(e) => setLine(e.target.value)}>
+                {lines.map((l) => (
+                  <option key={l.code || "main"} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {line && (
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={onlyTalkers} onChange={(e) => setOnlyTalkers(e.target.checked)} />
+                Только тем, кто уже переписывался с этим номером ({talkers.size})
+              </label>
+            )}
+            {line && <span className="text-xs text-ink-muted">Темп осторожный: до 20 в час, 10:00–19:00; незнакомым — не больше 10 в день.</span>}
+          </div>
+        )}
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={useClients} onChange={(e) => setUseClients(e.target.checked)} />

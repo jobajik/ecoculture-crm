@@ -251,3 +251,34 @@ export function decisionTouch(
   const finalStage = isClosedStage(stage) || stage === "new" ? "contact" : stage;
   return { channel: "WhatsApp", comment, stage: finalStage, nextTouchAt, lostReason: "" };
 }
+
+/**
+ * Чьи лиды на «Решениях ИИ» (16.10.2026: к Земфире добавились номера менеджеров). Земфира — свои лиды с
+ * рекламы; менеджер — свои лиды, у которых есть переписка или разбор; РОП и админ — лиды с рекламы и все
+ * лиды с перепиской (`manager` — отбор по менеджеру). База обзвона без переписки сюда не идёт.
+ */
+export function decisionScope(input: {
+  role: string | null | undefined;
+  email: string;
+  leads: Lead[];
+  messages: WaMessage[];
+  analyses: LeadAnalysis[];
+  manager?: string;
+}): Lead[] {
+  const me = input.email.toLowerCase();
+  const talked = new Set<string>();
+  for (const m of input.messages) {
+    const k = phoneKey(m.phone);
+    if (k) talked.add(k);
+  }
+  const analysed = new Set(input.analyses.map((a) => a.leadId));
+  const hasTalk = (l: Lead) => analysed.has(l.leadId) || talked.has(phoneKey(l.phone));
+  const ads = (l: Lead) => l.origin === "ads";
+  if (input.role === "leadgen") return input.leads.filter((l) => ads(l) && (l.createdByEmail === me || l.managerEmail === me || l.handedOverBy === me));
+  if (input.role === "admin" || input.role === "sales_head") {
+    const all = input.leads.filter((l) => ads(l) || hasTalk(l));
+    return input.manager ? all.filter((l) => l.managerEmail === input.manager) : all;
+  }
+  if (input.role === "manager") return input.leads.filter((l) => l.managerEmail === me && hasTalk(l));
+  return [];
+}

@@ -172,6 +172,53 @@ async function broadcastText(phone: string): Promise<string> {
 }
 
 /**
+ * То же знание, что у бота (прайс, свободный склад, срезка, распродажа) — для ИИ-помощника менеджера
+ * (`lineAssistant.ts`, 16.10.2026): цены и наличие у помощника берутся из тех же мест, что у бота.
+ */
+export async function salesKnowledge(phone: string): Promise<{
+  prices: string;
+  stock: string;
+  storeNote: string;
+  harvest: string;
+  push: string;
+  client: string;
+  instructions: string;
+  today: string;
+}> {
+  await prefetchTables([
+    SHEET_TABS.BATCHES,
+    SHEET_TABS.PRICE_HISTORY,
+    SHEET_TABS.CLIENTS,
+    SHEET_TABS.LEADS,
+    SHEET_TABS.ORDERS,
+    SHEET_TABS.ORDER_ITEMS,
+    SHEET_TABS.KASPI_INVOICES,
+    SHEET_TABS.HARVEST_FORECAST,
+    SHEET_TABS.SETTINGS,
+  ]).catch(() => undefined);
+  const [prices, stockInfo, client, harvest, push, map] = await Promise.all([
+    priceText(),
+    stockText(),
+    botClientContext(phone).catch(() => ""),
+    listHarvestForecast()
+      .then((rows) => harvestForBot(rows, localDayKey()))
+      .catch(() => ""),
+    pushText(),
+    settingsMap().catch(() => ({}) as Record<string, string>),
+  ]);
+  return {
+    prices,
+    stock: stockInfo.text,
+    storeNote: stockInfo.storeNote,
+    harvest,
+    push,
+    client,
+    instructions: (map.BotInstructions || "").trim(),
+    today: localDayKey(),
+  };
+}
+
+/**
  * Бот продаёт САМ, до конца (владелец, 01.10.2026: «твой бот не должен
  * переключать на менеджеров, он должен продать… сделай его максимально
  * продажным»). Менеджер получает только записку: собранный заказ или тревогу.

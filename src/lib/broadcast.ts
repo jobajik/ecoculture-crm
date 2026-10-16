@@ -56,7 +56,14 @@ export const LEADS_PACE: SendPace = { gapMin: 40, gapMax: 90, breakEvery: 20, br
 /** Предел в сутки для номера Земфиры (настройка `BroadcastLeadsDailyLimit`, не больше `MAX_DAILY_LIMIT`). */
 export const LEADS_DEFAULT_DAILY_LIMIT = 100;
 export const LEADS_LINE = "leads";
-export const paceFor = (line: string | undefined): SendPace => (line === LEADS_LINE ? LEADS_PACE : MAIN_PACE);
+/**
+ * Номер менеджера (16.10.2026): новый номер, рассылки с него ещё не было — осторожно: 60–120 с, перерыв
+ * 10–15 мин после каждых 10, не больше 20 в час. Предел в сутки — `BroadcastManagerDailyLimit` (по умолчанию 50).
+ */
+export const MANAGER_PACE: SendPace = { gapMin: 60, gapMax: 120, breakEvery: 10, breakMin: 600, breakMax: 900, hourly: 20 };
+export const MANAGER_DEFAULT_DAILY_LIMIT = 50;
+export const paceFor = (line: string | undefined): SendPace =>
+  line === LEADS_LINE ? LEADS_PACE : (line || "").startsWith("m-") ? MANAGER_PACE : MAIN_PACE;
 
 /** Тем, кто ни разу нам не писал, — не больше стольких в день: «холодные» чаще жалуются. */
 export const COLD_DAILY_LIMIT = 10;

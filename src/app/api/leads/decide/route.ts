@@ -1,10 +1,9 @@
 import { SHEET_TABS } from "@/lib/constants";
 import { prefetchTables } from "@/lib/sheets";
 import { localDayKey } from "@/lib/timezone";
-import { isAdsLead } from "@/lib/leads";
 import { listLeadTouches, listLeads } from "@/lib/repo/leads";
 import { listLeadAnalyses, listWaMessages } from "@/lib/repo/talks";
-import { buildDecisionBoard } from "@/lib/leadDecisions";
+import { buildDecisionBoard, decisionScope } from "@/lib/leadDecisions";
 import { latestByLead } from "@/lib/talkAnalysis";
 import { runStaleAnalyses } from "@/lib/talkRunner";
 import { openAiConfigured } from "@/lib/openai";
@@ -31,7 +30,8 @@ export async function GET(request: Request) {
       listLeadAnalyses(),
       listLeadTouches(),
     ]);
-    const ads = leads.filter(isAdsLead);
+    // Лиды с рекламы и все лиды с перепиской (номера менеджеров, 16.10.2026).
+    const ads = decisionScope({ role: "admin", email: "", leads, messages, analyses });
     const board = buildDecisionBoard({
       leads: ads,
       messages,
@@ -43,8 +43,9 @@ export async function GET(request: Request) {
     const analysed = new Set(latestByLead(analyses).keys());
     const queue = [...board.toAnalyze.filter((id) => !analysed.has(id)), ...board.toAnalyze.filter((id) => analysed.has(id))];
     const result = await runStaleAnalyses(ads, queue.map((leadId) => ({ leadId })), messages, "cron", localDayKey(), {
-      limit: 12,
-      budgetMs: 42000,
+      // Новый разбор — пока прошло меньше 25 с (один идёт до 25 с, функция живёт минуту): при 42 с проход обрывался 504.
+      limit: 8,
+      budgetMs: 25000,
     });
     const groups = Object.fromEntries(Object.entries(board.groups).map(([k, v]) => [k, v.length]));
     return Response.json({ ok: true, ...result, queue: queue.length, groups });
