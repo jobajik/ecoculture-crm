@@ -476,6 +476,9 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Note",
     // Чей номер шлёт: пусто — рабочий, «leads» — номер Земфиры (15.10.2026). Последней — грабли 1.1.
     "Line",
+    // Автопилот рассылок (17.10.2026): правило (leads / sleeping / push / fresh) и день плана. В конце — грабли 1.1.
+    "Auto",
+    "PlannedFor",
   ],
   [SHEET_TABS.BROADCAST_RECIPIENTS]: [
     "BroadcastID",
@@ -489,6 +492,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "SentAt",
     "Error",
     "UpdatedAt",
+    // Личный текст получателя (автопилот: «в прошлый раз брали…»); пусто — текст рассылки. Последней — грабли 1.1.
+    "Text",
   ],
   [SHEET_TABS.WA_STATUSES]: ["MessageID", "At", "Status", "Error", "CreatedAt"],
   [SHEET_TABS.WA_FILES]: ["FileID", "CreatedAt", "CreatedByEmail", "Name", "Mime", "Size", "Part", "Data"],

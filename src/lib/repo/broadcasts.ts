@@ -39,6 +39,10 @@ export interface Broadcast {
   note: string;
   /** Чей номер шлёт: "" — рабочий, "leads" — номер Земфиры. */
   line: string;
+  /** Автопилот (17.10.2026): правило — leads / sleeping / push / fresh; пусто — рассылка человека. */
+  auto: string;
+  /** День плана автопилота (ГГГГ-ММ-ДД): в другой день такая рассылка не шлёт. */
+  plannedFor: string;
 }
 
 function toBroadcast(r: Record<string, string>): Broadcast {
@@ -58,6 +62,8 @@ function toBroadcast(r: Record<string, string>): Broadcast {
     updatedAt: r.UpdatedAt || "",
     note: r.Note || "",
     line: (r.Line || "").trim(),
+    auto: (r.Auto || "").trim(),
+    plannedFor: (r.PlannedFor || "").trim().slice(0, 10),
   };
 }
 
@@ -66,6 +72,13 @@ export async function listBroadcasts(fresh = false): Promise<Broadcast[]> {
     .map((r) => toBroadcast(r.record))
     .filter((b) => b.broadcastId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+/** Все рассылки с номерами строк — для правки пачкой (автопилот). */
+export async function listBroadcastRows(fresh = true): Promise<{ broadcast: Broadcast; rowNumber: number }[]> {
+  return (await rows(SHEET_TABS.BROADCASTS, fresh))
+    .map((r) => ({ broadcast: toBroadcast(r.record), rowNumber: r.rowNumber }))
+    .filter((x) => x.broadcast.broadcastId);
 }
 
 export async function findBroadcastRow(broadcastId: string, fresh = true) {
@@ -85,6 +98,7 @@ function toRecipient(r: Record<string, string>): RecipientRow {
     messageId: r.MessageID || "",
     sentAt: r.SentAt || "",
     error: r.Error || "",
+    text: r.Text || "",
   };
 }
 
@@ -102,11 +116,14 @@ export async function createBroadcast(input: {
   fileId: string;
   fileName: string;
   audience: string;
-  recipients: { phone: string; name: string; kind: string; refId: string; managerEmail: string }[];
+  recipients: { phone: string; name: string; kind: string; refId: string; managerEmail: string; text?: string }[];
   /** "leads" — слать с номера Земфиры; по умолчанию рабочий номер. */
   line?: string;
   /** Сразу «идёт» (скрипт, владелец уже видел текст); по умолчанию черновик. */
   status?: string;
+  /** Автопилот: правило и день плана. */
+  auto?: string;
+  plannedFor?: string;
 }): Promise<string> {
   const id = generateId("BC");
   const now = new Date().toISOString();
@@ -128,6 +145,8 @@ export async function createBroadcast(input: {
           ...(input.status === "sending" ? { StartedAt: now } : {}),
           UpdatedAt: now,
           Line: input.line || "",
+          Auto: input.auto || "",
+          PlannedFor: input.plannedFor || "",
         },
       ],
     },
@@ -143,6 +162,7 @@ export async function createBroadcast(input: {
         ManagerEmail: r.managerEmail,
         Status: "queued",
         UpdatedAt: now,
+        Text: r.text || "",
       })),
     },
   ]);

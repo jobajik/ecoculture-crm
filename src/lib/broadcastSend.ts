@@ -140,6 +140,14 @@ export async function deliver(cfg: GreenConfig, phone: string, text: string, fil
   return ids;
 }
 
+/** Метка «шлю я»: записать время, через 1,2 с перечитать свежим — осталась своя метка, значит шлём. */
+async function claimSend(rowNumber: number, broadcastId: string, stamp: string): Promise<boolean> {
+  await commitAtomic([broadcastUpdate(rowNumber, { LastSendAt: stamp })]);
+  await new Promise((r) => setTimeout(r, 1200));
+  const again = await findBroadcastRow(broadcastId, true);
+  return !!again && again.broadcast.lastSendAt === stamp && again.broadcast.status === BROADCAST_STATUSES.SENDING;
+}
+
 /** Тип файла по имени — для расширения, если в имени его нет. */
 export function mimeOf(name: string): string {
   const n = (name || "").toLowerCase();
@@ -167,6 +175,13 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   const result = (extra: { waitSeconds: number; note: string; sentTo?: string; remaining?: number }): SendStep => ({ status: b.status, remaining: remaining(), ...extra });
 
   if (b.status !== BROADCAST_STATUSES.SENDING) return result({ waitSeconds: 0, note: "" });
+  // План автопилота живёт один день: вчерашние тексты и цены сегодня не уходят (17.10.2026).
+  if (b.auto && b.plannedFor && b.plannedFor !== localDayKey()) {
+    await commitAtomic([
+      broadcastUpdate(found.rowNumber, { Status: BROADCAST_STATUSES.CANCELLED, FinishedAt: new Date().toISOString(), Note: `План автопилота на ${b.plannedFor} — в другой день не шлём` }),
+    ]);
+    return { status: BROADCAST_STATUSES.CANCELLED, remaining: remaining(), waitSeconds: 0, note: "План автопилота устарел", changed: true };
+  }
   // Номер Земфиры — свой темп, свой дневной предел и свой счёт (15.10.2026); рабочий номер его не считает.
   const isLeads = b.line === LEADS_LINE;
   // Номер менеджера (16.10.2026): свой темп, предел, счёт и «тёплые» — его собеседники.
@@ -228,6 +243,22 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
     await commitAtomic(writes);
     return result({ waitSeconds: 1, note: "" });
   }
+  // Автопилот: с человеком заговорили после утреннего плана — заготовленный текст ему уже не к месту.
+  if (b.auto) {
+    const key = phoneKey(next.phone);
+    const talked = (await listWaMessages({ lines: "all" })).some((m) => phoneKey(m.phone) === key && m.at > b.createdAt);
+    if (talked) {
+      writes.push(recipientUpdate(next.rowNumber, { Status: "skipped", Error: "переписка после плана" }));
+      await commitAtomic(writes);
+      return result({ waitSeconds: 1, note: "" });
+    }
+  }
+
+  // Два отправителя одной рассылки (страница, компьютер, автопилот сайта) не должны взять одного получателя:
+  // ставим метку времени, ждём и перечитываем — чья метка осталась, тот и шлёт.
+  if (!(await claimSend(found.rowNumber, broadcastId, now.toISOString()))) {
+    return result({ waitSeconds: 20, note: "" });
+  }
 
   const channel = await checkGreenChannel(isLeads ? greenLeadsConfig() : isManager ? await lineConfig(b.line) : undefined);
   if (channel.action === "retry") {
@@ -242,7 +273,7 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   }
   const cfg = channel.cfg;
 
-  const text = personalize(b.text, next.name, false);
+  const text = personalize(next.text || b.text, next.name, false);
   try {
     const ids = await deliver(cfg, next.phone, text, b.fileId ? { id: b.fileId, name: b.fileName, mime: mimeOf(b.fileName) } : null);
     writes.push(recipientUpdate(next.rowNumber, { Status: "sent", MessageID: ids[ids.length - 1], SentAt: now.toISOString(), Error: "" }));

@@ -34,6 +34,9 @@ export default async function BroadcastsPage() {
         tabs={clientsTabsFor(undefined, role)}
         actions={
           <div className="flex flex-wrap gap-2">
+            <Link href="/clients/broadcasts/auto" className="btn-secondary">
+              Автопилот
+            </Link>
             <Link href="/clients/broadcasts/bot" className="btn-secondary">
               Бот
             </Link>
@@ -82,7 +85,10 @@ export default async function BroadcastsPage() {
                       <Link href={`/clients/broadcasts/${b.broadcastId}`} className="text-series-1 font-medium">
                         {b.title}
                       </Link>
-                      <div className="text-xs text-ink-muted">{formatMoment(b.createdAt)}</div>
+                      <div className="text-xs text-ink-muted">
+                        {formatMoment(b.createdAt)}
+                        {b.auto ? " · автопилот" : ""}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5" data-label="Статус">
                       {BROADCAST_STATUS_LABELS[b.status] ?? b.status}

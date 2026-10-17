@@ -132,7 +132,7 @@ export function harvestForBot(
 }
 
 type BroadcastLite = { broadcastId?: string; title: string; text: string; startedAt: string; createdAt: string };
-type RecipientLite = { broadcastId: string; phone: string; status: string; sentAt: string };
+type RecipientLite = { broadcastId: string; phone: string; status: string; sentAt: string; text?: string };
 
 /**
  * О чём мы написали этому клиенту: последняя рассылка, которая ему УШЛА. Номер
@@ -147,11 +147,16 @@ export function lastBroadcastForBot(list: BroadcastLite[], recipients: Recipient
   const sent = recipients.filter((r) => r.status === "sent");
   const key = phoneKey(phone);
   let chosen: BroadcastLite | null = null;
+  // Автопилот пишет каждому свой текст (17.10.2026) — бот должен знать именно его, а не образец рассылки.
+  let personal = "";
   if (key) {
     const mine = sent.filter((r) => phoneKey(r.phone) === key).sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
     for (const r of mine) {
       chosen = started.find((b) => b.broadcastId === r.broadcastId) ?? null;
-      if (chosen) break;
+      if (chosen) {
+        personal = (r.text || "").trim();
+        break;
+      }
     }
   }
   if (!chosen) {
@@ -160,7 +165,7 @@ export function lastBroadcastForBot(list: BroadcastLite[], recipients: Recipient
     const real = started.filter((b) => (counts.get(b.broadcastId ?? "") ?? 0) >= 3);
     chosen = latest(real.length > 0 ? real : started);
   }
-  const text = chosen.text.replace(/\{\s*имя\s*\}/gi, "").replace(/[ \t]+\n/g, "\n").trim();
+  const text = (personal || chosen.text).replace(/\{\s*имя\s*\}/gi, "").replace(/[ \t]+\n/g, "\n").trim();
   return `«${chosen.title}», отправлена ${chosen.startedAt.slice(0, 10)}:\n${text.slice(0, 2500)}`;
 }
 

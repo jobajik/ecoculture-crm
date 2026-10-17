@@ -1,5 +1,6 @@
 import { digestResultText, recordDigestRun, sendMorningDigest } from "@/lib/morningDigestRunner";
 import { remindBotInvoices } from "@/lib/botFollowUp";
+import { kickBroadcast } from "@/lib/autoBroadcastRunner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,6 +22,8 @@ export async function GET(request: Request) {
   try {
     const result = await sendMorningDigest();
     await recordDigestRun(source, digestResultText(result));
+    // Следом — план авторассылок на день (своей функцией: `/api/broadcast/auto`).
+    await kickBroadcast((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
     return Response.json({ ok: true, sent: result.sent.length, failed: result.failed.length, note: result.note, reminders });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

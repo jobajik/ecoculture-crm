@@ -354,6 +354,8 @@ export interface RecipientRow {
   messageId: string;
   sentAt: string;
   error: string;
+  /** Личный текст (автопилот); пусто — текст рассылки. */
+  text?: string;
 }
 
 export interface WaStatusRow {

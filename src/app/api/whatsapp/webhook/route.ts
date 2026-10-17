@@ -20,6 +20,9 @@ import { genitiveName, isManagerLine, isWorkTime, type WaLine } from "@/lib/waLi
 import { kickAssistant, kickAssistantChat } from "@/lib/lineAssistant";
 import { staffPhoneKeys } from "@/lib/botSalesAlert";
 import { settingsMap } from "@/lib/repo/broadcasts";
+import { cancelFromWhatsApp, kickBroadcast } from "@/lib/autoBroadcastRunner";
+import { isCancelText } from "@/lib/autoBroadcast";
+import { greenConfig, sendText } from "@/lib/greenApi";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,6 +60,8 @@ export async function POST(request: Request) {
 
   // Номер Земфиры (`?line=leads`): переписка в CRM и статусы её рассылок — без бота и черновиков.
   const lineParam = new URL(request.url).searchParams.get("line") || "";
+  // Автопилот рассылок шлёт с сайта; любое уведомление днём будит его цепочку (не чаще раза в 2 мин).
+  await kickBroadcast(siteOrigin(request));
   if (lineParam === "leads") {
     await kickAssistant(siteOrigin(request));
     return leadsLine(body);
@@ -104,6 +109,20 @@ export async function POST(request: Request) {
   // промолчал (выключен, в чате пишет менеджер), заказ из сообщения становится
   // черновиком заявки для менеджера (`waOrder.ts`) — иначе вышло бы две заявки.
   // Оба ничего не бросают.
+  // Сотрудник ответил на утренний план авторассылок «ОТМЕНА» — останавливаем сегодняшние (17.10.2026).
+  if (message.direction === "in" && isCancelText(message.text)) {
+    try {
+      if (staffPhoneKeys(await settingsMap(true)).has(phoneKey(message.phone))) {
+        const reply = await cancelFromWhatsApp(message.phone);
+        const cfg = greenConfig();
+        if (cfg) await sendText(cfg, message.phone, reply).catch(() => undefined);
+        return NextResponse.json({ ok: true, cancelled: true });
+      }
+    } catch (err) {
+      console.error("auto broadcast cancel:", err instanceof Error ? err.message : err);
+    }
+  }
+
   const incoming = botIncomingOf(body, message);
   const botAnswered = incoming ? await runBot([incoming]) : false;
   if (!botAnswered) await draftFromIncoming(message);
