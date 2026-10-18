@@ -34,6 +34,7 @@ import {
 } from "../src/lib/autoBroadcast";
 import { OPT_OUT_LINE } from "../src/lib/broadcast";
 import { lastBroadcastForBot } from "../src/lib/botKnowledge";
+import { chainDrives } from "../src/lib/autoBroadcastRunner";
 import type { Lead, WaMessage } from "../src/lib/types";
 
 let failed = 0;
@@ -248,6 +249,16 @@ const botKnows = lastBroadcastForBot(
   "87010000005"
 );
 check("бот: личный текст получателя", botKnows.includes("В прошлый раз брали Altaj") && !botKnows.includes("Образец"), true);
+
+// --- Что сайт ведёт сам ---------------------------------------------------------------------------
+const nowD = new Date("2026-10-18T08:00:00Z");
+const bc = (x: Partial<{ status: string; auto: string; plannedFor: string; startedAt: string; createdAt: string }>) =>
+  ({ status: "sending", auto: "", plannedFor: "", startedAt: "", createdAt: "", ...x });
+check("ведёт: сегодняшний автопилот", chainDrives(bc({ auto: "sleeping", plannedFor: "2026-10-18" }), "2026-10-18", nowD), true);
+check("ведёт: вчерашний автопилот — нет", chainDrives(bc({ auto: "sleeping", plannedFor: "2026-10-17" }), "2026-10-18", nowD), false);
+check("ведёт: рассылка человека, запущена сегодня", chainDrives(bc({ startedAt: "2026-10-18T05:00:00Z" }), "2026-10-18", nowD), true);
+check("ведёт: брошенная рассылка от 02.10 — нет", chainDrives(bc({ startedAt: "2026-10-02T06:55:06Z" }), "2026-10-18", nowD), false);
+check("ведёт: на паузе — нет", chainDrives(bc({ status: "paused", startedAt: "2026-10-18T05:00:00Z" }), "2026-10-18", nowD), false);
 
 // --- Цепочка -----------------------------------------------------------------------------------------
 check("ожидание: минимальное", chainWait([90, 20, 1800]), 20);

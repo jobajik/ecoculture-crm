@@ -485,6 +485,21 @@ async function writeLock(token: string, note: string): Promise<void> {
   await saveSettings({ [CHAIN_SETTING]: JSON.stringify({ token, at: token ? new Date().toISOString() : "", note: `${new Date().toISOString()} · ${note}` }) });
 }
 
+/** Свежая рассылка человека: запущена не раньше, чем столько дней назад. Старые «идущие» сайт сам не досылает. */
+const MANUAL_FRESH_DAYS = 2;
+
+/**
+ * Какие рассылки ведёт сайт сам: сегодняшний план автопилота и рассылки людей, запущенные за последние 2 дня.
+ * 18.10.2026: цепочка подхватила «Пятничную рассылку» от 02.10, брошенную в «идёт», и разослала 40 сообщений
+ * двухнедельным текстом. Старую рассылку по-прежнему можно вести со страницы или с компьютера.
+ */
+export function chainDrives(b: { status: string; auto: string; plannedFor: string; startedAt: string; createdAt: string }, today: string, now: Date): boolean {
+  if (b.status !== BROADCAST_STATUSES.SENDING) return false;
+  if (b.auto) return b.plannedFor === today;
+  const started = Date.parse(b.startedAt || b.createdAt);
+  return Number.isFinite(started) && now.getTime() - started < MANUAL_FRESH_DAYS * 86400000;
+}
+
 /** Есть ли сейчас работа: собрать план, запустить план или идущая рассылка. Одно чтение. */
 async function workExists(now: Date): Promise<{ plan: boolean; activate: boolean; sending: boolean; map: Record<string, string> }> {
   await prefetchTables([SHEET_TABS.SETTINGS, SHEET_TABS.BROADCASTS]);
@@ -493,7 +508,8 @@ async function workExists(now: Date): Promise<{ plan: boolean; activate: boolean
   return {
     plan: planDue(now, plan, parseAutoConfig(map[AUTO_SETTING])),
     activate: activationDue(now, plan),
-    sending: broadcasts.some((b) => b.status === BROADCAST_STATUSES.SENDING),
+    // Идущий автопилот — работа всегда (сегодняшний шлём, вчерашний отменяем); рассылка человека — только свежая.
+    sending: broadcasts.some((b) => b.status === BROADCAST_STATUSES.SENDING && (!!b.auto || chainDrives(b, almatyParts(now).day, now))),
     map,
   };
 }
@@ -540,26 +556,40 @@ export async function runBroadcastChain(input: { token?: string; origin: string 
     }
     if (work.activate || activationDue(now, parsePlanRecord(work.map[AUTO_PLAN_SETTING]))) result.activated = await activateDuePlan(now);
 
-    const sending = (await listBroadcasts(true)).filter((b) => b.status === BROADCAST_STATUSES.SENDING);
+    const today = almatyParts(now).day;
+    const allRows = await listBroadcastRows(true);
+    // Вчерашний план автопилота не досылаем: тексты и цены были на тот день.
+    await cancelRows(
+      allRows.filter((r) => r.broadcast.auto && r.broadcast.plannedFor && r.broadcast.plannedFor < today && ACTIVE_STATUSES.has(r.broadcast.status)),
+      "План автопилота на прошлый день — не досылаем"
+    );
+    const sending = allRows.map((r) => r.broadcast).filter((b) => chainDrives(b, today, now));
     if (!sending.length) {
       await writeLock("", "отправлять нечего");
       return { ...result, nextIn: 0 };
     }
-    // По одной рассылке на номер — первая запущенная; номера — параллельно.
-    const byLine = new Map<string, (typeof sending)[number]>();
+    // На номер — сначала сегодняшний автопилот, потом свежие рассылки людей по времени запуска; номера — параллельно.
+    // Первая упёрлась не в темп, а в своих получателей (остались «холодные», предел) — пробуем следующую на том же номере.
+    const byLine = new Map<string, (typeof sending)[number][]>();
     const order = (a: (typeof sending)[number], c: (typeof sending)[number]) =>
-      (a.startedAt || a.createdAt).localeCompare(c.startedAt || c.createdAt) || a.createdAt.localeCompare(c.createdAt);
-    for (const b of sending.sort(order)) {
-      if (!byLine.has(b.line || "")) byLine.set(b.line || "", b);
-    }
+      Number(!a.auto) - Number(!c.auto) ||
+      (a.startedAt || a.createdAt).localeCompare(c.startedAt || c.createdAt) ||
+      a.createdAt.localeCompare(c.createdAt);
+    for (const b of sending.sort(order)) byLine.set(b.line || "", [...(byLine.get(b.line || "") ?? []), b]);
     const steps = await Promise.all(
-      Array.from(byLine.values()).map(async (b) => {
-        try {
-          return { broadcastId: b.broadcastId, line: b.line || "", step: await sendNextBroadcastMessage(b.broadcastId) };
-        } catch (err) {
-          console.error("broadcast chain:", err instanceof Error ? err.message : err);
-          return { broadcastId: b.broadcastId, line: b.line || "", step: { status: b.status, remaining: 0, waitSeconds: 60, note: "ошибка шага" } as SendStep };
+      Array.from(byLine.values()).map(async (list) => {
+        let last: { broadcastId: string; line: string; step: SendStep } | null = null;
+        for (const b of list.slice(0, 3)) {
+          try {
+            last = { broadcastId: b.broadcastId, line: b.line || "", step: await sendNextBroadcastMessage(b.broadcastId) };
+          } catch (err) {
+            console.error("broadcast chain:", err instanceof Error ? err.message : err);
+            last = { broadcastId: b.broadcastId, line: b.line || "", step: { status: b.status, remaining: 0, waitSeconds: 60, note: "ошибка шага" } as SendStep };
+          }
+          const blockedByRecipients = !last.step.sentTo && last.step.waitSeconds >= 1800 && !/На сегодня отправлено/.test(last.step.note);
+          if (!blockedByRecipients) break;
         }
+        return last!;
       })
     );
     result.steps = steps;
