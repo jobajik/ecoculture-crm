@@ -156,6 +156,7 @@ check("память из переписки номера", [mem.phone, mem.name,
 const persona = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-19", managerName: "Ильяс" });
 const botP = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-19" });
 check("подсказка помощника: от имени Ильяса, в мужском роде", [persona.startsWith("Ты — Ильяс, менеджер"), persona.includes("передала"), persona.includes("наберу вас")], [true, false, true]);
+check("подсказка помощника: не клиент (семья, водитель, коллега) — молчать", persona.includes("silent=true, если собеседник — не покупатель цветов"), true);
 check("подсказка бота — прежняя", [botP.startsWith("Ты — сильный продавец"), botP.includes("передала руководителю")], [true, true]);
 
 const N = (id: string, at: string, d: "in" | "out", text = "Почём хризантема?") => M(id, at, d, text);
