@@ -25,7 +25,9 @@ import Icon, { type IconName } from "@/components/Icon";
 import { orderCode } from "@/lib/paymentStage";
 import { canSeeShop, isOwnShop, isRetailRole } from "@/lib/retail";
 import { withBotName } from "@/lib/botIdentity";
-import { canCreateClientOrder, newClientOrderHref } from "@/lib/repeatOrder";
+import { canCreateClientOrder, canRepeatFrom, newClientOrderHref } from "@/lib/repeatOrder";
+import { dueDateOf } from "@/lib/debtReminder";
+import KpiTile from "@/components/KpiTile";
 
 export const dynamic = "force-dynamic";
 
@@ -121,6 +123,27 @@ export default async function ClientDetailPage({
     else money3.waiting += p.debt;
   }
   const moneyTotal = money3.paid + money3.waiting + money3.overdue;
+
+  // Четыре плитки сверху (19.10.2026, макет принят владельцем): за 30 дней (и к прошлым 30), долг и ближайший срок,
+  // последняя заявка и её этап, «обычно берёт». Всё — из уже прочитанных заявок, без новых чтений.
+  const dayMs = 86_400_000;
+  const since = (days: number) => new Date(Date.now() - days * dayMs).toISOString().slice(0, 10);
+  const saleOrders = myOrders.filter((o) => payOf.get(o.orderId)?.sale);
+  const sumIn = (from: string, to: string) =>
+    saleOrders.filter((o) => o.createdAt.slice(0, 10) >= from && o.createdAt.slice(0, 10) < to).reduce((sum, o) => sum + o.totalAmount, 0);
+  const last30 = sumIn(since(30), "9999");
+  const prev30 = sumIn(since(60), since(30));
+  const delta30 = prev30 > 0 ? Math.round(((last30 - prev30) / prev30) * 100) : null;
+  const debtNow = money3.waiting + money3.overdue;
+  const nearestDue = saleOrders
+    .filter((o) => (payOf.get(o.orderId)?.debt ?? 0) > 0)
+    .map((o) => dueDateOf(o))
+    .filter(Boolean)
+    .sort()[0];
+  const lastOrder = myOrders.find((o) => o.status !== "cancelled") ?? myOrders[0];
+  const lastStage = lastOrder ? orderStage(lastOrder, today) : null;
+  const repeatHref =
+    lastOrder && canRepeatFrom(lastOrder, role, email) ? newClientOrderHref(role, client.clientId, lastOrder.orderId) : "";
   const share = (v: number) => (moneyTotal > 0 ? (v / moneyTotal) * 100 : 0);
   const status = !row
     ? null
@@ -195,6 +218,11 @@ export default async function ClientDetailPage({
                 WhatsApp
               </a>
             )}
+            {repeatHref && (
+              <Link href={repeatHref} className="btn-secondary">
+                Повторить последнюю
+              </Link>
+            )}
             {newOrderHref && (
               <Link href={newOrderHref} className="btn-primary">
                 + Новая заявка
@@ -203,6 +231,49 @@ export default async function ClientDetailPage({
           </>
         }
       />
+
+      {row && !editing && !shop && (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+          <KpiTile
+            icon="wallet"
+            label="За 30 дней"
+            value={money(last30)}
+            hint={delta30 === null ? (prev30 === 0 && last30 > 0 ? "раньше не заказывал" : "за прошлые 30 дней — ничего") : `${delta30 >= 0 ? "+" : ""}${delta30} % к прошлым 30 дням`}
+            tone={delta30 !== null && delta30 < 0 ? "warn" : delta30 !== null && delta30 > 0 ? "good" : undefined}
+          />
+          <KpiTile
+            icon="clock"
+            label="Долг"
+            value={debtNow > 0 ? money(debtNow) : "нет"}
+            hint={
+              money3.overdue > 0
+                ? `просрочено ${money(money3.overdue)}`
+                : nearestDue
+                  ? nearestDue < today
+                    ? "срок вышел"
+                    : nearestDue === today
+                      ? "срок оплаты сегодня"
+                      : `срок оплаты ${formatDay(nearestDue)}`
+                  : "всё оплачено"
+            }
+            tone={money3.overdue > 0 ? "bad" : debtNow > 0 ? "warn" : "good"}
+            href={debtNow > 0 ? "/finance/debts" : undefined}
+          />
+          <KpiTile
+            icon="order"
+            label="Последняя заявка"
+            value={lastOrder ? formatDay(lastOrder.createdAt) : "—"}
+            hint={lastOrder && lastStage ? `№ ${orderCode(lastOrder.orderId)} · ${lastStage.label.toLowerCase()}` : "заявок ещё не было"}
+            href={lastOrder ? `/orders/${lastOrder.orderId}` : undefined}
+          />
+          <KpiTile
+            icon="leaf"
+            label="Обычно берёт"
+            value={<span className="text-[16px] sm:text-[18px] leading-snug">{row.topPosition || "—"}</span>}
+            hint={row.orders > 0 ? `${row.orders} заявок · средний чек ${money(row.avgCheck)}` : "ещё не заказывал"}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col lg:flex-row gap-5 items-start">
         {/* Слева — кто это (прототип владельца): о клиенте, доставка, номера Kaspi. Анкета целиком — по «Действиям». */}
