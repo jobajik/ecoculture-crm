@@ -13,6 +13,7 @@ import { formatDay } from "@/lib/formatDate";
 import Pill from "@/components/Pill";
 import { orderPayState } from "@/lib/orderPay";
 import PageHeader from "@/components/PageHeader";
+import Watermark from "@/components/Watermark";
 import ClientOrdersPanel, { type PanelKaspi, type PanelMessage, type PanelOrder, type PanelPayment } from "@/components/ClientOrdersPanel";
 import { prefetchTables } from "@/lib/sheets";
 import { listPayments } from "@/lib/repo/payments";
@@ -310,8 +311,9 @@ export default async function ClientDetailPage({
             </>
           ) : (
             <>
-              <div className="card !p-0">
-                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
+              <div className="card !p-0 relative overflow-hidden">
+                <Watermark />
+                <div className="relative flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
                   <span className="w-8 h-8 rounded-lg grid place-items-center bg-section-client-soft text-section-client flex-none">
                     <Icon name="client" className="w-4 h-4" />
                   </span>

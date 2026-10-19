@@ -8,6 +8,7 @@ import { availableBatchesFor, listBatches } from "@/lib/repo/batches";
 import ShipmentForm from "@/components/ShipmentForm";
 import Hint from "@/components/Hint";
 import PageHeader from "@/components/PageHeader";
+import Watermark from "@/components/Watermark";
 import Section from "@/components/Section";
 import OrderStageBadge from "@/components/OrderStageBadge";
 import WholeOrderShip from "@/components/WholeOrderShip";
@@ -172,8 +173,9 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
         <aside className="space-y-4 xl:order-2 xl:sticky xl:top-4">
-          <div className="card !p-0 overflow-hidden">
-            <div className="px-4 sm:px-5 py-4 border-b border-line-hairline">
+          <div className="card !p-0 overflow-hidden relative">
+            <Watermark size="sm" />
+            <div className="relative px-4 sm:px-5 py-4 border-b border-line-hairline">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-display font-bold text-[17px] truncate" title={order.clientName}>

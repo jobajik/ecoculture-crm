@@ -1,3 +1,4 @@
+import Watermark from "./Watermark";
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { CashByFlower } from "@/lib/cashByFlower";
 import Hint from "./Hint";
@@ -33,7 +34,8 @@ export default function CashByFlowerCard({
   const rows = cash.rows.filter((r) => r.amount > 0);
 
   return (
-    <div className="card !p-0 overflow-hidden">
+    <div className="card !p-0 overflow-hidden relative">
+      <Watermark />
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3.5 border-b border-line-hairline">
         <h3 className="font-semibold font-display text-[15px]">
           Касса по цветкам

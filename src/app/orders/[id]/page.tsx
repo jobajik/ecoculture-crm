@@ -55,6 +55,7 @@ import { adminDeleteSummary } from "@/lib/orderDelete";
 import { listPayments } from "@/lib/repo/payments";
 import PaymentPanel from "@/components/PaymentPanel";
 import PageHeader from "@/components/PageHeader";
+import Watermark from "@/components/Watermark";
 import Section, { Fact, SECTION_TONE, type SectionTone } from "@/components/Section";
 import Icon from "@/components/Icon";
 import clsx from "clsx";
@@ -325,8 +326,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
       <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)] items-start">
       <div className="min-w-0">
-      <div className="card mb-5">
-        <div className="flex items-start justify-between gap-3">
+      <div className="card mb-5 relative overflow-hidden">
+        <Watermark />
+        <div className="relative flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-xs text-ink-muted">{region ? "Объём" : "Сумма"}</div>
             <div className="font-display text-[30px] leading-tight font-extrabold tabular-nums">

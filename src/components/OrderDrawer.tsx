@@ -19,6 +19,7 @@ import { setManagerConfirmedAction } from "@/app/finance/actions";
 import { unwrap } from "@/lib/actionResult";
 import Pill from "./Pill";
 import Icon from "./Icon";
+import Watermark from "./Watermark";
 
 /**
  * Карточка заявки СБОКУ от списка (19.10.2026, макет принят владельцем: «открыл заявку из списка — она открывается
@@ -105,7 +106,8 @@ export default function OrderDrawer({
       aria-label={`Заявка ${orderCode(order.orderId)}`}
       className="card !p-0 overflow-hidden flex flex-col max-h-[calc(100vh-2rem)] xl:max-h-[calc(100vh-7rem)] xl:sticky xl:top-[88px]"
     >
-      <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-line-hairline">
+      <div className="relative overflow-hidden flex items-start gap-3 px-5 pt-4 pb-3 border-b border-line-hairline">
+        <Watermark size="sm" className="!-top-6 !-right-6" />
         <div className="min-w-0 flex-1">
           <div className="text-xs text-ink-muted">
             Заявка · {formatDay(order.createdAt)} · {managerName}
