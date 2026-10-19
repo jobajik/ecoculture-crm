@@ -14,6 +14,7 @@ import Providers from "./providers";
 import Nav from "@/components/Nav";
 import MobileNav from "@/components/MobileNav";
 import NavProgress from "@/components/NavProgress";
+import CommandPalette from "@/components/CommandPalette";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
@@ -34,6 +35,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Новый вид (19.10.2026, образец владельца): меню колонкой слева на компьютере (Nav), на телефоне —
               полоска с ☰ и выезжающее меню (MobileNav). Серый холст, белые карточки. Каркас один и тот же со
               входом и без — иначе страница перерисовывалась бы целиком, когда подгрузится вход. */}
+          {/* Общий поиск (Ctrl K) — один на весь сайт. */}
+          <CommandPalette />
           <div className="lg:flex min-h-screen">
             <Nav />
             <div className="flex-1 min-w-0">

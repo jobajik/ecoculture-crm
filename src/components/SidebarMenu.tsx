@@ -8,34 +8,34 @@ import clsx from "clsx";
 import Icon, { type IconName } from "./Icon";
 import { areaForPath } from "@/lib/areas";
 import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
-import { navLinksFor, isActive, type NavLink } from "./navLinks";
-import { isTabActive, useShellTabs } from "./ShellTabs";
+import { navLinksFor, isActive, activeSub, type NavLink } from "./navLinks";
 
 /**
  * Боковое меню (19.10.2026, владелец прислал образец: «такой дизайн нам нужен — удобный и лаконичный; давай всё
  * переделывать под такой и цветовую гамму под каждый раздел»). Одно содержимое на два места: колонка слева на
  * компьютере (`Nav`) и выезжающая панель на телефоне (`MobileNav`).
  *
- * Активный раздел — сплошной заливкой ЦВЕТА РАЗДЕЛА (`src/lib/areas.ts`), под ним вкладки раздела подпунктами
- * (их сообщает страница — `ShellTabs`). Порядок пунктов — `navLinksFor` (у каждой роли своё «первым»).
+ * Разделов пять-шесть на роль (`navLinksFor`), активный — сплошной заливкой ЦВЕТА РАЗДЕЛА (`src/lib/areas.ts`),
+ * под ним вкладки раздела подпунктами. Вкладки раздел знает сам (`subs`), поэтому они видны и на карточке клиента,
+ * и на странице заявки — страница их не сообщает.
  */
 
 /** Значок пункта: обычно — значок раздела, «Офис» отличается от «Склада». */
 function iconFor(link: NavLink): IconName {
+  if (link.href === "/") return "home";
   if (link.href.startsWith("/office")) return "store";
-  return areaForPath(link.match ?? link.href).icon;
+  return areaForPath(link.match[0] ?? link.href).icon;
 }
 
 export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void }) {
   const { data: session } = useSession();
   const pathname = usePathname();
-  const tabs = useShellTabs();
   if (!session) return null;
 
   const role = session.user?.role ?? "manager";
   const links = navLinksFor(role);
-  const work = links.filter((l) => l.href !== "/admin");
-  const other = links.filter((l) => l.href === "/admin");
+  const work = links.filter((l) => !l.other);
+  const other = links.filter((l) => l.other);
   const initials = (session.user?.name ?? "?")
     .split(" ")
     .slice(0, 2)
@@ -43,9 +43,10 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
     .join("");
 
   const item = (l: NavLink) => {
-    const active = isActive(l, pathname);
-    const area = areaForPath(l.match ?? l.href);
-    const subs = active && tabs.length > 1 ? tabs : [];
+    const active = isActive(l, pathname, links);
+    const area = areaForPath(l.match[0] ?? l.href);
+    const subs = active ? l.subs : [];
+    const current = activeSub(subs, pathname);
     return (
       <div key={l.href}>
         <Link
@@ -59,7 +60,7 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
         >
           <Icon name={iconFor(l)} className="w-[18px] h-[18px] flex-none" />
           <span className="truncate">{l.label}</span>
-          {l.href !== "/" && (
+          {l.subs.length > 0 && (
             <svg
               viewBox="0 0 24 24"
               aria-hidden="true"
@@ -77,7 +78,7 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
         {subs.length > 0 && (
           <div className="ml-[22px] mt-1 mb-2 border-l border-line-hairline pl-3 space-y-0.5">
             {subs.map((t) => {
-              const on = isTabActive(t, pathname);
+              const on = current === t;
               return (
                 <Link
                   key={t.href}

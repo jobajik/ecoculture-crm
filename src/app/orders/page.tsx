@@ -2,15 +2,9 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { listOrdersWithItems } from "@/lib/repo/orders";
-import { ROLES, farmLabel, getFarmFor, retailLabel } from "@/lib/constants";
-import {
-  farmScopeFor,
-  isOwnClientOrder,
-  isRetailOrder,
-  isRetailRole,
-  retailTerritoryFor,
-} from "@/lib/retail";
-import { isRegionOrder } from "@/lib/orderKind";
+import { ROLES, farmLabel, retailLabel } from "@/lib/constants";
+import { isRetailRole, retailTerritoryFor } from "@/lib/retail";
+import { visibleOrdersFor } from "@/lib/orderVisibility";
 import { newOrderLinkFor, newOrderLinksFor } from "@/lib/newOrder";
 import OrdersTable from "@/components/OrdersTable";
 import PageHeader from "@/components/PageHeader";
@@ -35,41 +29,10 @@ export default async function OrdersPage({
   const all = await listOrdersWithItems();
   const role = session?.user?.role;
 
-  // Зав. складом видит только свой цветок — и в списке заявок тоже.
-  // Позиции чужого производства вырезаются, а заявки, где своего цветка нет,
-  // не показываются вовсе. Сумма пересчитывается по оставшимся позициям,
-  // иначе в списке висела бы чужая выручка.
+  // Кто какие заявки видит — одно правило на список, поиск и «Мой день» (`orderVisibility.ts`).
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
-
-  // Розница и продажи наружу — два разных потока, и мешать их в одном списке
-  // нельзя. Менеджер розницы видит только своё направление; менеджер и
-  // бухгалтер розницу не видят вовсе (делать им там нечего: ни своей заявки,
-  // ни денег). Склад видит всё — он собирает и то, и другое.
+  const orders = visibleOrdersFor(all, { role, email: myEmail, farm: session?.user?.farm });
   const territory = retailTerritoryFor(role);
-  const visible = all.filter((o) => {
-    // Плюс свои клиентские заявки: менеджер розницы продаёт и мелким клиентам.
-    if (territory) return (isRetailOrder(o) && o.retail === territory) || isOwnClientOrder(o, myEmail);
-    // Менеджеру городская заявка не нужна: она не его и клиента в ней нет.
-    // Бухгалтеру нужна — по ней она подтверждает поступления.
-    if (role === ROLES.MANAGER) return !isRetailOrder(o) && !isRegionOrder(o);
-    if (role === ROLES.ACCOUNTANT) return !isRetailOrder(o);
-    return true;
-  });
-
-  // Резать по производству нужно у зав. складом — но НЕ её собственную заявку в
-  // регион: её она составила сама, вместе с чужим цветком (`farmScopeFor`).
-  const orders = visible
-    .map((order) => {
-      const scope = farmScopeFor({ role, farm: session?.user?.farm, order, email: myEmail });
-      if (!scope) return order;
-      const items = order.items.filter((i) => getFarmFor(i.flowerType) === scope);
-      const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
-      // Полученное — пропорционально своей доле, как на странице заявки: иначе
-      // «ждёт остатка оплаты» в списке называл бы сумму, которой не бывает.
-      const share = order.totalAmount > 0 ? totalAmount / order.totalAmount : 0;
-      return { ...order, items, totalAmount, paidAmount: order.paidAmount * share };
-    })
-    .filter((order) => order.items.length > 0);
 
   // Имена сотрудников — чтобы в колонке «Менеджер» стояла фамилия, а не
   // почтовый адрес. Список кэшируется на минуту, лишнего чтения таблицы нет.

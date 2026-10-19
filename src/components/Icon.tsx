@@ -28,7 +28,8 @@ export type IconName =
   | "list"
   | "upload"
   | "check"
-  | "message";
+  | "message"
+  | "search";
 
 const PATHS: Record<IconName, string> = {
   order: "M7 3h7l5 5v13H7z M14 3v5h5 M10 12h6 M10 16h6",
@@ -55,6 +56,7 @@ const PATHS: Record<IconName, string> = {
   upload: "M12 16V4 M7 9l5-5 5 5 M4 16v4h16v-4",
   check: "M5 12l5 5 9-10",
   message: "M4 5h16v11H9l-5 4z M8 9h8 M8 12h5",
+  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M21 21l-5-5",
 };
 
 export default function Icon({ name, className = "w-4 h-4" }: { name: IconName; className?: string }) {

@@ -9,7 +9,8 @@ import clsx from "clsx";
 import Icon from "./Icon";
 import SidebarMenu from "./SidebarMenu";
 import { areaForPath } from "@/lib/areas";
-import { isTabActive, useShellTabs } from "./ShellTabs";
+import { navLinksFor, isActive, activeSub } from "./navLinks";
+import SearchTrigger from "./SearchTrigger";
 
 /**
  * Телефон и планшет: верхняя полоска с кнопкой ☰ и выезжающее слева меню (19.10.2026, владелец выбрал «выезжающее
@@ -19,7 +20,6 @@ import { isTabActive, useShellTabs } from "./ShellTabs";
 export default function MobileNav() {
   const { data: session } = useSession();
   const pathname = usePathname();
-  const tabs = useShellTabs();
   const [open, setOpen] = useState(false);
 
   // Переход по ссылке закрывает панель — иначе она висит поверх новой страницы.
@@ -40,7 +40,11 @@ export default function MobileNav() {
 
   if (!session) return null;
   const area = areaForPath(pathname);
-  const tab = tabs.length > 1 ? tabs.find((t) => isTabActive(t, pathname)) : undefined;
+  // Где человек сейчас: раздел и его вкладка — из того же списка, что и боковое меню.
+  const links = navLinksFor(session.user?.role ?? "manager");
+  const link = links.find((l) => isActive(l, pathname, links));
+  const tab = link ? activeSub(link.subs, pathname) : undefined;
+  const title = link?.label ?? area.label;
 
   return (
     <>
@@ -64,11 +68,12 @@ export default function MobileNav() {
               <Icon name={area.icon} className="w-4 h-4" />
             </span>
             <div className="min-w-0 leading-tight">
-              <div className="text-[14px] font-semibold font-display truncate">{area.label}</div>
+              <div className="text-[14px] font-semibold font-display truncate">{title}</div>
               {tab && <div className="text-[11.5px] text-ink-muted truncate">{tab.label}</div>}
             </div>
           </div>
-          <Link href="/" className="ml-auto flex-none" aria-label="Главная">
+          <SearchTrigger compact className="ml-auto flex-none" />
+          <Link href="/" className="flex-none" aria-label="Мой день">
             <Image src="/logo-mark.png" alt="" width={28} height={28} className="w-7 h-7 object-contain" />
           </Link>
         </div>

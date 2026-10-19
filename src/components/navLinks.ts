@@ -1,156 +1,169 @@
+import { clientsTabsFor } from "@/app/clients/tabs";
+import { financeTabsFor } from "@/app/finance/tabs";
+import { WAREHOUSE_TABS } from "@/app/warehouse/tabs";
+import { plansTabsFor } from "@/app/plans/tabs";
+import { salesTabsFor } from "@/app/sales/tabs";
+import { officeTabsFor } from "@/app/office/tabs";
+import { retailTabsFor } from "@/app/retail/tabs";
+import { analyticsTabsFor } from "@/app/analytics/tabs";
+
 /**
- * Разделы верхнего меню — один список на две навигации: шапку (компьютер) и
- * нижнюю панель (телефон).
+ * Разделы бокового меню — ПЯТЬ-ШЕСТЬ на роль, под активным разделом его вкладки.
  *
- * Файл отдельный и БЕЗ «use client» намеренно: список нужен обоим клиентским
- * компонентам, и если положить его в один из них, второй потащит из первого
- * значение — ровно те грабли 1.8, на которых проект уже дважды падал.
+ * 19.10.2026, владелец принял макет: «у каждой роли свой экран „Мой день“, разделов пять, всё остальное — вкладки
+ * внутри». До этого в меню было до одиннадцати пунктов (Клиенты, Лиды, Переписки, Рассылки — четыре входа в одно и то
+ * же; Склад и Офис — два входа в «где лежит цветок»), а вкладки раздела показывала сама страница. Теперь раздел знает
+ * свои вкладки заранее (`subs`): меню показывает их под активным пунктом, не дожидаясь страницы, и на любой странице
+ * раздела (карточка клиента, страница заявки) видно, где ты и куда ещё можно.
  *
- * Порядок важен: на телефоне первые четыре пункта попадают в нижнюю панель, а
- * остальные — в шторку «Ещё». Поэтому сверху то, что открывают каждый день.
+ * Списки вкладок по-прежнему живут рядом со страницами (`tabs.ts` разделов) — здесь они только собираются по ролям,
+ * второй копии правил нет. Файл без «use client»: его читают оба меню (грабли 1.8).
  */
+export interface NavSub {
+  href: string;
+  label: string;
+  /** Адреса, на которых вкладка горит (без него — её `href` и всё, что начинается с него). */
+  match?: string[];
+}
+
 export interface NavLink {
   href: string;
   label: string;
-  /** Короткая подпись для нижней панели: там на пункт ~70 px. */
+  /** Короткая подпись для узких мест. */
   short?: string;
-  roles?: string[];
   /**
-   * По какому началу адреса пункт считается активным. Обычно это сам `href`,
-   * но у «Аналитики» администратора адрес ведёт на календарь, а подсвечиваться
-   * пункт обязан и на отчёте — иначе, стоя на отчёте, человек видит меню без
-   * единого выделенного раздела и не понимает, где он.
+   * Начала адресов, на которых раздел считается активным. Нужны, потому что в один раздел теперь входят страницы с
+   * разными адресами: «Планы и цифры» — это /plans, /prices, /sales, /forecast и /analytics.
    */
-  match?: string;
+  match: string[];
+  subs: NavSub[];
+  /** Пункт из группы «Прочее» (Настройки). */
+  other?: boolean;
 }
 
-// В шапке — только разделы, по одному пункту на область работы. Всё, что внутри
-// раздела, живёт во вкладках на самой странице (SectionTabs). Иначе у админа
-// набегало десять пунктов и меню переставало читаться.
-export const NAV_LINKS: NavLink[] = [
-  { href: "/", label: "Главная" },
-  { href: "/orders", label: "Заявки" },
-  // Клиентская база — рабочий инструмент продаж, поэтому стоит рядом с
-  // заявками. Складу и агроному она не нужна.
-  { href: "/clients", label: "Клиенты", roles: ["manager", "sales_head", "accountant", "admin"] },
-  // Земфира (лиды с рекламы): её раздел — лиды, без клиентской базы.
-  { href: "/clients/leads", label: "Лиды", roles: ["leadgen"] },
-  // Собственная розница — свой раздел, а не вкладка в клиентах: у менеджера
-  // розницы это единственное рабочее место, и прятать его внутрь чужого
-  // раздела значило бы заставлять его каждый раз проходить мимо клиентов.
-  {
-    href: "/retail",
-    label: "Розница",
-    roles: ["retail_almaty", "retail_regions", "sales_head", "admin", "warehouse", "office_retail"],
-    match: "/retail",
-  },
-  { href: "/warehouse", label: "Склад", roles: ["warehouse", "admin"] },
-  // Подсклад «Офис»: склад офиса там работает, РОП перемещает цветок (`officeStore.ts`).
-  { href: "/office", label: "Офис", roles: ["office", "office_retail", "sales_head", "admin"] },
-  { href: "/sales", label: "Продажи", roles: ["manager", "sales_head", "admin"] },
-  // РОП заходит сюда смотреть, а не работать: долги по его заявкам — часть
-  // разговора о продажах. Менять он ничего не может (financeAccess.ts).
-  { href: "/finance", label: "Оплаты", roles: ["accountant", "admin", "sales_head"] },
-  { href: "/plans", label: "Планы", roles: ["sales_head", "admin"] },
-  // У администратора прогноз срезки живёт вкладкой внутри «Планов» — иначе
-  // верхнее меню снова разрастается до девяти пунктов.
-  { href: "/forecast", label: "Прогноз срезки", short: "Срезка", roles: ["agronomist"] },
-  // Менеджеру розницы аналитика хозяйства не нужна: его цифры — в его разделе.
-  {
-    href: "/analytics",
-    label: "Аналитика",
-    short: "Аналит.",
-    roles: ["manager", "warehouse", "accountant", "sales_head", "admin"],
-  },
-  { href: "/admin", label: "Настройки", short: "Настр.", roles: ["admin"] },
-];
+const path = (href: string) => href.split("?")[0];
 
-/**
- * У администратора «Аналитика» открывается на КАЛЕНДАРЕ, а не на отчёте.
- *
- * Так решил владелец: отчёт отвечает на вопрос «сколько за тридцать дней»,
- * календарь — «а что было во вторник», и разбираться обычно начинают со
- * второго. Календарь стоит первой вкладкой раздела, и раз он первый — на нём
- * и надо оказываться, иначе получается странно: первая вкладка есть, а
- * попадаешь всегда на вторую.
- *
- * Подменяется именно адрес пункта меню, а не содержимое `/analytics`:
- * у остальных ролей вкладок нет, и отчёт для них должен остаться там же, где
- * был. Подсветка активного пункта работает по началу адреса, поэтому
- * `/analytics/calendar` подсвечивает «Аналитику» так же, как `/analytics`.
- */
-const ANALYTICS_HREF_BY_ROLE: Record<string, string> = {
-  admin: "/analytics/calendar",
+/** Раздел из вкладок: активен на адресах всех своих вкладок (и на всём, что начинается с них). */
+function section(href: string, label: string, subs: NavSub[], extraMatch: string[] = [], other = false): NavLink {
+  const match = Array.from(new Set([path(href), ...subs.map((s) => path(s.href)), ...extraMatch]));
+  return { href, label, match, subs: subs.length > 1 ? subs : [], other };
+}
+
+const DAY: NavLink = { href: "/", label: "Мой день", match: ["/"], subs: [] };
+const ORDERS: NavLink = { href: "/orders", label: "Заявки", match: ["/orders"], subs: [] };
+const ANALYTICS = (role: string): NavSub[] => {
+  const tabs = analyticsTabsFor(role);
+  return tabs.length > 0 ? tabs : [{ href: "/analytics", label: "Аналитика хозяйства" }];
 };
 
-/**
- * У зав. складом производства «Розница» открывается сразу на «Регионах».
- *
- * Первая вкладка раздела — заявка по магазинам Алматы, а её она не ведёт: без
- * подмены адреса пункт меню вёл бы на страницу, которая её же и разворачивает.
- * Подсветка работает по началу адреса, поэтому `match` оставляем прежним.
- */
-const RETAIL_HREF_BY_ROLE: Record<string, string> = {
-  warehouse: "/retail/regions",
-};
-
-/**
- * Склад офиса каждый день открывает «Офис» ради очереди отгрузки — туда пункт
- * и ведёт. Подсветка — по началу адреса, как у «Розницы».
- */
-const OFFICE_HREF_BY_ROLE: Record<string, string> = {
-  office: "/office/ship",
-  office_retail: "/office/ship",
-};
-
-/**
- * Что у роли идёт ПЕРВЫМ. На телефоне в нижнюю панель помещаются четыре пункта,
- * остальное уходит под «Ещё», — и аудит сентября нашёл, что у владельца под
- * «Ещё» оказались Оплаты и Склад, у склада «Розница» стояла раньше «Склада», а у
- * бухгалтера «Клиенты» раньше «Оплат». Порядок здесь — по тому, что человек
- * открывает каждый день; не упомянутые пункты идут следом в общем порядке.
- */
-const FIRST_BY_ROLE: Record<string, string[]> = {
-  admin: ["/", "/orders", "/finance", "/warehouse"],
-  warehouse: ["/", "/warehouse", "/orders", "/retail"],
-  accountant: ["/", "/finance", "/orders", "/clients"],
-  sales_head: ["/", "/orders", "/sales", "/finance"],
-  office: ["/office", "/"],
-  office_retail: ["/office", "/retail", "/orders", "/"],
-  leadgen: ["/clients/leads"],
-};
-
+/** Разделы роли — в порядке, в котором их открывают каждый день. */
 export function navLinksFor(role: string): NavLink[] {
-  const first = FIRST_BY_ROLE[role] ?? [];
-  const rank = (l: NavLink) => {
-    const i = first.indexOf(l.href);
-    return i === -1 ? first.length + NAV_LINKS.indexOf(l) : i;
-  };
-  return NAV_LINKS.filter((l) => !l.roles || l.roles.includes(role))
-    // У Земфиры главной нет — её работа целиком в лидах (главная её туда и уводит).
-    .filter((l) => !(role === "leadgen" && l.href === "/"))
-    .sort((a, b) => rank(a) - rank(b))
-    .map((link) => {
-    if (link.href === "/analytics" && ANALYTICS_HREF_BY_ROLE[role]) {
-      return { ...link, href: ANALYTICS_HREF_BY_ROLE[role], match: "/analytics" };
-    }
-    if (link.href === "/retail" && RETAIL_HREF_BY_ROLE[role]) {
-      return { ...link, href: RETAIL_HREF_BY_ROLE[role], match: "/retail" };
-    }
-    if (link.href === "/office" && OFFICE_HREF_BY_ROLE[role]) {
-      return { ...link, href: OFFICE_HREF_BY_ROLE[role], match: "/office" };
-    }
-    return link;
-  });
+  switch (role) {
+    case "manager":
+      return [
+        DAY,
+        ORDERS,
+        section("/clients", "Клиенты", clientsTabsFor(undefined, role)),
+        section("/sales", "Продажи", [...salesTabsFor(role), ...ANALYTICS(role)], ["/analytics", "/prices"]),
+      ];
+    case "accountant":
+      return [
+        DAY,
+        section("/finance", "Оплаты", financeTabsFor(role)),
+        ORDERS,
+        section("/clients", "Клиенты", clientsTabsFor(undefined, role)),
+        section("/analytics", "Аналитика", ANALYTICS(role), ["/sales"]),
+      ];
+    case "warehouse":
+      return [
+        DAY,
+        section("/warehouse", "Склад", WAREHOUSE_TABS),
+        ORDERS,
+        // Зав. складом производства в «Рознице» ведёт только регионы — пункт ведёт сразу туда.
+        section("/retail/regions", "Розница", retailTabsFor(role), ["/retail"]),
+        section("/analytics", "Аналитика", ANALYTICS(role)),
+      ];
+    case "office":
+      return [DAY, section("/office/ship", "Офис", officeTabsFor(role), ["/office", "/warehouse/ship"])];
+    case "office_retail":
+      return [
+        DAY,
+        section("/office/ship", "Офис", officeTabsFor(role), ["/office", "/warehouse/ship"]),
+        section("/retail", "Розница", retailTabsFor(role)),
+        ORDERS,
+      ];
+    case "retail_almaty":
+    case "retail_regions":
+      return [DAY, section("/retail", "Розница", retailTabsFor(role)), ORDERS];
+    case "sales_head":
+      return [
+        DAY,
+        ORDERS,
+        section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
+        section("/office", "Склад", officeTabsFor(role), ["/warehouse"]),
+        section("/finance", "Деньги", financeTabsFor(role)),
+        section(
+          "/plans",
+          "Планы и цифры",
+          [...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)],
+          ["/sales", "/prices", "/analytics", "/forecast"]
+        ),
+      ];
+    case "agronomist":
+      return [DAY, section("/forecast", "Прогноз срезки", [], ["/forecast"])];
+    case "leadgen":
+      // Земфира: её работа целиком в лидах, главной у неё нет — та и уводит в лиды.
+      return [section("/clients/leads", "Лиды", clientsTabsFor(undefined, role), ["/clients"])];
+    case "admin":
+      return [
+        DAY,
+        ORDERS,
+        section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
+        section("/warehouse", "Склад", [...WAREHOUSE_TABS, { href: "/office", label: "Офис" }], ["/office"]),
+        section("/finance", "Деньги", financeTabsFor(role)),
+        section(
+          "/plans",
+          "Планы и цифры",
+          [...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)],
+          ["/sales", "/prices", "/analytics", "/forecast"]
+        ),
+        { href: "/admin", label: "Настройки", match: ["/admin"], subs: [], other: true },
+      ];
+    default:
+      return [DAY, ORDERS];
+  }
 }
 
 /**
- * Активен ли пункт меню на этом адресе. Одна функция на обе навигации —
- * шапку и нижнюю панель: разъедься эта проверка по двум компонентам, и
- * подсветка рано или поздно начнёт вести себя по-разному на компьютере и на
- * телефоне. Живёт здесь же, в модуле без «use client» (грабли 1.8).
+ * Активен ли раздел на этом адресе. Одна функция на оба меню (компьютер и телефон): разъедься она по двум
+ * компонентам — подсветка начнёт вести себя по-разному. Побеждает раздел с САМЫМ ДЛИННЫМ подходящим началом адреса:
+ * у РОПа «/clients/leads» входит и в «Клиенты», и — у Земфиры — в «Лиды», а «/warehouse/ship» у склада офиса —
+ * в «Офис», а не в «Склад».
  */
-export function isActive(link: NavLink, pathname: string): boolean {
-  const base = link.match ?? link.href;
-  return base === "/" ? pathname === "/" : pathname.startsWith(base);
+export function isActive(link: NavLink, pathname: string, all?: NavLink[]): boolean {
+  const score = (l: NavLink) =>
+    l.match.reduce((best, m) => {
+      const hit = m === "/" ? pathname === "/" : pathname === m || pathname.startsWith(m + "/") || pathname.startsWith(m + "?");
+      return hit && m.length > best ? m.length : best;
+    }, 0);
+  const mine = score(link);
+  if (mine === 0) return false;
+  if (!all) return true;
+  return all.every((l) => l === link || score(l) <= mine);
+}
+
+/** Какая вкладка раздела открыта: точное совпадение из `match`, иначе самое длинное подходящее начало адреса. */
+export function activeSub(subs: NavSub[], pathname: string): NavSub | undefined {
+  const exact = subs.find((s) => (s.match ? s.match.includes(pathname) : path(s.href) === pathname));
+  if (exact) return exact;
+  let best: NavSub | undefined;
+  let bestLen = 0;
+  for (const s of subs) {
+    const p = path(s.href);
+    if ((pathname.startsWith(p + "/") || pathname === p) && p.length > bestLen) {
+      best = s;
+      bestLen = p.length;
+    }
+  }
+  return best;
 }

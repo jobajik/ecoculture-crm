@@ -48,7 +48,7 @@ export interface Area {
 export const AREAS: Record<AreaKey, Area> = {
   home: {
     key: "home",
-    label: "Главная",
+    label: "Мой день",
     icon: "home",
     text: "text-accent",
     solid: "bg-accent",

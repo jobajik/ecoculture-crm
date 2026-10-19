@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import Icon, { type IconName } from "./Icon";
 import SectionTabs from "./SectionTabs";
 import Crumbs from "./Crumbs";
+import SearchTrigger from "./SearchTrigger";
 import { AREAS, type AreaKey } from "@/lib/areas";
 
 /**
@@ -52,8 +53,8 @@ export default function PageHeader({
           className
         )}
       >
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex items-center gap-3 min-w-0 mr-auto">
             <span className={clsx("w-10 h-10 rounded-xl grid place-items-center flex-none", a.soft, a.text)}>
               <Icon name={icon ?? a.icon} className="w-5 h-5" />
             </span>
@@ -66,6 +67,10 @@ export default function PageHeader({
               </div>
               {subtitle && <div className="text-sm text-ink-secondary mt-0.5">{subtitle}</div>}
             </div>
+          </div>
+          {/* Общий поиск по сайту — в середине шапки на компьютере (на телефоне он в верхней полоске). */}
+          <div className="hidden lg:block flex-1 max-w-[460px]">
+            <SearchTrigger />
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
