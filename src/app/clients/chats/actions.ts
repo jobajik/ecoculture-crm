@@ -9,7 +9,9 @@ import { phoneKey } from "@/lib/leads";
 import { canSeeLine } from "@/lib/chatAccess";
 import { listWaMessages } from "@/lib/repo/talks";
 import { closeAssistantNotes, listAssistantLog, listWaLines } from "@/lib/repo/waLines";
-import { assistantAnswer, DRAFT_TASK, sendFromLine } from "@/lib/lineAssistant";
+import { assistantAnswer, DRAFT_TASK, sendFromLine, sendOnLine } from "@/lib/lineAssistant";
+import { greenLeadsConfig } from "@/lib/greenApi";
+import { canSendOnLeadsLine } from "@/lib/chatAccess";
 import { isManagerLine } from "@/lib/waLines";
 import { listUsers } from "@/lib/repo/users";
 
@@ -46,12 +48,22 @@ async function sendReplyActionInner(line: string, phone: string, text: string): 
   const clean = String(text || "").replace(/\r/g, "").trim();
   if (!clean) throw new Error("Пустое сообщение");
   if (clean.length > 3000) throw new Error("Слишком длинное сообщение");
-  if (!isManagerLine(line)) throw new Error("Отсюда можно писать только с номеров менеджеров");
-  const l = (await listWaLines({ fresh: true })).find((x) => x.code === line);
-  if (!l) throw new Error("Номер не найден");
-  if (role !== ROLES.ADMIN && l.managerEmail !== email) throw new Error("Писать с этого номера может его менеджер или администратор");
-  const chat = await chatOf(line, phone);
-  const id = await sendFromLine(l, chat[chat.length - 1].phone, clean, "crm", email);
+  let id: string;
+  if (line === "leads") {
+    // Номер Земфиры: пишет она сама, РОП и админ (19.10.2026, владелец: «нажать „предложить ответ“ и реально отправить»).
+    if (!canSendOnLeadsLine(role)) throw new Error("С номера Земфиры пишут она, РОП и администратор");
+    const cfg = greenLeadsConfig();
+    if (!cfg) throw new Error("Номер Земфиры не подключён (ключи GREENAPI_LEADS_* не заданы)");
+    const chat = await chatOf(line, phone);
+    id = await sendOnLine("leads", cfg, chat[chat.length - 1].phone, clean, "crm", email);
+  } else {
+    if (!isManagerLine(line)) throw new Error("С основного номера отвечает бот — писать отсюда можно с номеров менеджеров и Земфиры");
+    const l = (await listWaLines({ fresh: true })).find((x) => x.code === line);
+    if (!l) throw new Error("Номер не найден");
+    if (role !== ROLES.ADMIN && l.managerEmail !== email) throw new Error("Писать с этого номера может его менеджер или администратор");
+    const chat = await chatOf(line, phone);
+    id = await sendFromLine(l, chat[chat.length - 1].phone, clean, "crm", email);
+  }
   // Ответили — записки «нужен менеджер» по этому чату закрыты.
   const notes = (await listAssistantLog({ fresh: true })).filter((r) => r.kind === "note" && !r.doneAt && r.line === line && phoneKey(r.phone) === phoneKey(phone));
   await closeAssistantNotes(notes.map((n) => n.rowNumber), new Date().toISOString());

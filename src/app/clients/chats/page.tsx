@@ -13,7 +13,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listWaMessages } from "@/lib/repo/talks";
 import { listUsers } from "@/lib/repo/users";
 import { listAssistantLog } from "@/lib/repo/waLines";
-import { visibleLines } from "@/lib/chatAccess";
+import { canSendOnLeadsLine, visibleLines } from "@/lib/chatAccess";
 import { buildChatList, isManagerLine, assistantVerdict, type ChatPartyInfo } from "@/lib/waLines";
 import { mergeMessages } from "@/lib/whatsapp";
 import { openAiConfigured } from "@/lib/openai";
@@ -159,7 +159,10 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
       verdict = current.line.assistant === "off" ? "ИИ на этом номере только подсказывает" : v.due ? "ИИ скоро ответит сам: клиент ждёт" : `ИИ сам не отвечает: ${v.reason}`;
     }
   }
-  const canSend = !!current && isManagerLine(current.code) && !!current.line && (role === "admin" || current.line.managerEmail === email);
+  const canSend =
+    !!current &&
+    ((isManagerLine(current.code) && !!current.line && (role === "admin" || current.line.managerEmail === email)) ||
+      (current.code === "leads" && canSendOnLeadsLine(role)));
 
   return (
     <div>

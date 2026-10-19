@@ -1,7 +1,7 @@
 import { chatJson, openAiConfigured } from "./openai";
 import { salesKnowledge } from "./botEngine";
 import { toWhatsApp } from "./botOrder";
-import { sendText } from "./greenApi";
+import { sendText, type GreenConfig } from "./greenApi";
 import { ourPhoneKeys } from "./lineNotify";
 import { phoneKey } from "./leads";
 import { mergeMessages, messageText } from "./whatsapp";
@@ -150,6 +150,15 @@ async function managerNameOf(email: string): Promise<string> {
 export async function sendFromLine(line: WaLine, phone: string, text: string, kind: "auto" | "crm", byEmail: string, note = ""): Promise<string> {
   const cfg = managerLineConfig(line);
   if (!cfg) throw new Error("Номер не подключён или выключен — проверьте в «Настройках → WhatsApp менеджеров».");
+  return sendOnLine(line.code, cfg, phone, text, kind, byEmail, note);
+}
+
+/**
+ * Отправить с любой линии по её ключам (номер менеджера, номер Земфиры) и записать в переписку и журнал — чтобы
+ * сообщение из CRM сразу было видно в чате, не дожидаясь уведомления Green API (19.10.2026: «Отправить» и на номере
+ * Земфиры — владелец: «нажать „предложить ответ“ и реально отправить»).
+ */
+export async function sendOnLine(code: string, cfg: GreenConfig, phone: string, text: string, kind: "auto" | "crm", byEmail: string, note = ""): Promise<string> {
   const id = await sendText(cfg, phone, text);
   const now = new Date().toISOString();
   const msg: WaMessage = {
@@ -163,10 +172,10 @@ export async function sendFromLine(line: WaLine, phone: string, text: string, ki
     mediaUrl: "",
     senderName: "",
     source: kind === "auto" ? "assistant" : "crm",
-    line: line.code,
+    line: code,
   };
   await appendWaMessages([msg]);
-  await appendAssistantLog([{ at: now, line: line.code, phone, kind, messageId: id, text, note, byEmail }]);
+  await appendAssistantLog([{ at: now, line: code, phone, kind, messageId: id, text, note, byEmail }]);
   return id;
 }
 

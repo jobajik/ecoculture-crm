@@ -27,3 +27,8 @@ export async function canSeeLine(role: string | null | undefined, email: string,
   if (!isManagerLine(line)) return false;
   return (await listWaLines()).some((l) => l.code === line && l.managerEmail === email.toLowerCase());
 }
+
+/** С номера Земфиры из CRM пишут она сама, РОП и администратор. */
+export function canSendOnLeadsLine(role: string | null | undefined): boolean {
+  return role === ROLES.LEADGEN || canManageLeads(role);
+}
