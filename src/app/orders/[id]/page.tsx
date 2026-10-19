@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getOrderById } from "@/lib/repo/orders";
@@ -55,6 +54,7 @@ import { directionEditRefusal, directionForCity } from "@/lib/direction";
 import { adminDeleteSummary } from "@/lib/orderDelete";
 import { listPayments } from "@/lib/repo/payments";
 import PaymentPanel from "@/components/PaymentPanel";
+import PageHeader from "@/components/PageHeader";
 import Section, { Fact, SECTION_TONE, type SectionTone } from "@/components/Section";
 import Icon from "@/components/Icon";
 import clsx from "clsx";
@@ -294,93 +294,78 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const stems = order.items.reduce((s, i) => s + i.quantity, 0);
 
   return (
-    <div className="max-w-3xl">
-      {/* «Лицо» заявки: номер, клиент и сумма крупно, этап рядом. Владелец:
-          «визуально выделять… на заказ использовать специальный шрифт и
-          оформление, а то сейчас как белый фон всё». */}
-      <header className="relative overflow-hidden rounded-2xl border border-accent/15 bg-gradient-to-br from-accent-soft via-surface to-surface shadow-card mb-5">
-        {/* Соцветие Ecoculture — водяным знаком в углу (просьба владельца
-            «сюда было бы здорово лого»), полный логотип — над номером. */}
-        <Image
-          src="/logo-mark.png"
-          alt=""
-          aria-hidden="true"
-          width={260}
-          height={260}
-          className="absolute -right-14 -bottom-16 w-64 h-64 object-contain opacity-[0.13] pointer-events-none select-none"
-        />
-        <div className="relative p-5 sm:p-6 grid sm:grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-4">
+    <div>
+      {/* Новый вид по прототипу владельца (19.10.2026): белая полоса сверху с номером и кнопками, ниже две колонки —
+          слева сводка заявки и что делать дальше, справа позиции, деньги и отгрузки. */}
+      <PageHeader
+        area="orders"
+        title={`№ ${orderCode(order.orderId)}`}
+        eyebrow={region ? "Опт в регион" : retail ? "Заявка магазину" : undefined}
+        subtitle={
+          <>
+            {retail && `${retailLabel(order.retail)} · наш магазин · `}
+            Создана {formatMoment(order.createdAt)} · {personName(order.managerEmail, managerNames)}
+          </>
+        }
+        actions={
+          <>
+            {repeatHref && (
+              <Link href={repeatHref} className="btn-secondary" title="Новая заявка с теми же позициями">
+                Повторить
+              </Link>
+            )}
+            {canEdit && (
+              <Link href={`/orders/${order.orderId}/edit`} className="btn-secondary">
+                Изменить
+              </Link>
+            )}
+          </>
+        }
+      />
+
+      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)] items-start">
+      <div className="min-w-0">
+      <div className="card mb-5">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <Image src="/logo.png" alt="Ecoculture" width={136} height={79} className="h-11 w-auto" />
-              <span className="h-5 w-px bg-line-strong" aria-hidden="true" />
-              <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
-                <Icon name="order" className="w-4 h-4" />
-                {region ? "Опт в регион" : retail ? "Заявка магазину" : "Заявка"}
+            <div className="text-xs text-ink-muted">{region ? "Объём" : "Сумма"}</div>
+            <div className="font-display text-[30px] leading-tight font-extrabold tabular-nums">
+              {region ? `${stems.toLocaleString("ru-RU")} шт.` : `${Math.round(order.totalAmount).toLocaleString("ru-RU")} ₸`}
+            </div>
+            {hasInvoice && (
+              <span className={clsx("badge mt-1", SECTION_TONE[moneyTone].chip)}>
+                {moneyTone === "good"
+                  ? "оплачено"
+                  : isConsignment(order)
+                    ? "на точку"
+                    : order.paidAmount > 0
+                      ? `остаток ${Math.round(leftToPay).toLocaleString("ru-RU")} ₸`
+                      : moneyTone === "bad"
+                        ? `не оплачено · ${debtDays} дн.`
+                        : "не оплачено"}
               </span>
-            </div>
-            <div className="font-display text-[34px] leading-tight font-extrabold tracking-tight mt-1">
-              № {orderCode(order.orderId)}
-            </div>
-            <div className="text-xs text-ink-muted font-mono">{order.orderId}</div>
-            <div className="mt-3 font-display text-xl font-bold leading-snug">
-              {region ? (
-                order.direction || "—"
-              ) : order.clientId ? (
-                <Link href={`/clients/${order.clientId}`} className="hover:text-accent">
-                  {order.clientName}
-                </Link>
-              ) : (
-                order.clientName
-              )}
-            </div>
-            <p className="text-sm text-ink-secondary mt-0.5">
-              {retail && `${retailLabel(order.retail)} · наш магазин · `}
-              Создана {formatMoment(order.createdAt)} · {personName(order.managerEmail, managerNames)}
-            </p>
-            {farm && (
-              <p className="text-xs text-ink-muted mt-1">показаны только позиции {farmLabel(farm)}</p>
             )}
           </div>
-          <div className="flex flex-col items-start sm:items-end gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {repeatHref && (
-                <Link href={repeatHref} className="btn-secondary !py-1.5 !min-h-0" title="Новая заявка с теми же позициями">
-                  Повторить
-                </Link>
-              )}
-              {canEdit && (
-                <Link href={`/orders/${order.orderId}/edit`} className="btn-secondary !py-1.5 !min-h-0">
-                  Изменить
-                </Link>
-              )}
-              <OrderStageBadge stage={stage} />
-            </div>
-            <div className="sm:text-right">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-ink-muted">
-                {region ? "Объём" : "Сумма"}
-              </div>
-              <div className="font-display text-[34px] leading-tight font-extrabold tabular-nums">
-                {region ? `${stems.toLocaleString("ru-RU")} шт.` : `${Math.round(order.totalAmount).toLocaleString("ru-RU")} ₸`}
-              </div>
-              {hasInvoice && (
-                <span className={clsx("badge mt-1", SECTION_TONE[moneyTone].chip)}>
-                  {moneyTone === "good"
-                    ? "оплачено"
-                    : isConsignment(order)
-                      ? "на точку"
-                      : order.paidAmount > 0
-                        ? `остаток ${Math.round(leftToPay).toLocaleString("ru-RU")} ₸`
-                        : moneyTone === "bad"
-                          ? `не оплачено · ${debtDays} дн.`
-                          : "не оплачено"}
-                </span>
-              )}
-            </div>
+          <OrderStageBadge stage={stage} />
+        </div>
+        <div className="mt-4 pt-4 border-t border-line-hairline">
+          <div className="text-xs text-ink-muted">{region ? "Регион" : "Клиент"}</div>
+          <div className="font-display text-[17px] font-bold leading-snug mt-0.5 break-words">
+            {region ? (
+              order.direction || "—"
+            ) : order.clientId ? (
+              <Link href={`/clients/${order.clientId}`} className="hover:text-accent">
+                {order.clientName}
+              </Link>
+            ) : (
+              order.clientName
+            )}
           </div>
+          <div className="text-xs text-ink-muted font-mono mt-1">{order.orderId}</div>
+          {farm && <p className="text-xs text-ink-muted mt-1">показаны только позиции {farmLabel(farm)}</p>}
         </div>
         {canEdit && !order.deliveryDate && (
-          <div className="relative border-t border-status-warning/30 bg-status-warning/10 px-5 sm:px-6 py-2.5 text-sm text-[#8a5a00] flex items-center gap-2">
+          <div className="mt-4 rounded-xl bg-status-warning/10 px-3 py-2.5 text-sm text-[#8a5a00] flex items-center gap-2">
             <Icon name="calendar" className="w-4 h-4 flex-none" />
             <span>
               Нет даты доставки — склад не увидит заявку.{" "}
@@ -390,7 +375,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             </span>
           </div>
         )}
-      </header>
+      </div>
 
       {/* Где заявка и чей ход — одной строкой над всем остальным. Раньше
           статус «Новая» стоял у каждой заявки, а что мешает её собрать и от
@@ -535,6 +520,23 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </div>
       </Section>
 
+      {(canCancel || canDelete) && (
+        <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
+          {canCancel && <CancelOrder orderId={order.orderId} />}
+          {canDelete && (
+            <DeleteOrder
+              orderId={order.orderId}
+              paidAmount={deleteInfo.paidAmount}
+              payments={deleteInfo.payments}
+              claims={deleteInfo.claims}
+              shippedStems={deleteInfo.shippedStems}
+            />
+          )}
+        </div>
+      )}
+      </div>
+
+      <div className="min-w-0">
       <Section
         tone="stock"
         icon="box"
@@ -823,21 +825,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </table>
       </div>
       </Section>
-      {(canCancel || canDelete) && (
-        <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
-          {canCancel && <CancelOrder orderId={order.orderId} />}
-          {canDelete && (
-            <DeleteOrder
-              orderId={order.orderId}
-              paidAmount={deleteInfo.paidAmount}
-              payments={deleteInfo.payments}
-              claims={deleteInfo.claims}
-              shippedStems={deleteInfo.shippedStems}
-            />
-          )}
-        </div>
-      )}
 
+      </div>
+      </div>
     </div>
   );
 }

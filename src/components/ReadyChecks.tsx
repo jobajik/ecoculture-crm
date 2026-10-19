@@ -118,7 +118,7 @@ export default function ReadyChecks({
         </div>
       </div>
 
-      <div className={clsx("grid gap-3 mt-4", !noInvoice && "sm:grid-cols-2")}>
+      <div className={clsx("grid gap-3 mt-4", !noInvoice && "sm:grid-cols-2 lg:grid-cols-1")}>
         <div className="flex items-start gap-3 rounded-lg border border-line-hairline p-3">
           <span
             className={clsx(
