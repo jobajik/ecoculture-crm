@@ -115,7 +115,7 @@ export const AREAS: Record<AreaKey, Area> = {
   sales: {
     key: "sales",
     label: "Продажи",
-    icon: "chart",
+    icon: "trophy",
     text: "text-section-sales",
     solid: "bg-section-sales",
     soft: "bg-section-sales-soft",
@@ -170,7 +170,7 @@ export const AREAS: Record<AreaKey, Area> = {
   admin: {
     key: "admin",
     label: "Настройки",
-    icon: "note",
+    icon: "gear",
     text: "text-section-admin",
     solid: "bg-section-admin",
     soft: "bg-section-admin-soft",

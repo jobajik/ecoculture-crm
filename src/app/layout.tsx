@@ -31,13 +31,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Suspense fallback={null}>
             <NavProgress />
           </Suspense>
-          <Nav />
-          {/* Отступ снизу — под нижнюю панель на телефоне, иначе она закрывает
-              последнюю строку списка. */}
-          <main className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 pb-24 sm:pb-7">
-            {children}
-          </main>
-          <MobileNav />
+          {/* Новый вид (19.10.2026, образец владельца): меню колонкой слева на компьютере (Nav), на телефоне —
+              полоска с ☰ и выезжающее меню (MobileNav). Серый холст, белые карточки. Каркас один и тот же со
+              входом и без — иначе страница перерисовывалась бы целиком, когда подгрузится вход. */}
+          <div className="lg:flex min-h-screen">
+            <Nav />
+            <div className="flex-1 min-w-0">
+              <MobileNav />
+              <main className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 lg:py-7">
+                {children}
+              </main>
+            </div>
+          </div>
         </Providers>
       </body>
     </html>

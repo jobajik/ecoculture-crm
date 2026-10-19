@@ -24,7 +24,7 @@ export default function SaveBar({
 }) {
   if (count === 0) return null;
   return (
-    <div className="no-print fixed inset-x-0 bottom-16 sm:bottom-5 z-30 flex justify-center px-4 pointer-events-none">
+    <div className="no-print fixed inset-x-0 lg:left-[248px] bottom-4 sm:bottom-5 z-30 flex justify-center px-4 pointer-events-none">
       <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-line-hairline bg-surface px-4 py-2.5 shadow-card-hover">
         <span className="text-sm text-ink-secondary tabular-nums">
           Изменено {what}: <b className="text-ink-primary">{count}</b>

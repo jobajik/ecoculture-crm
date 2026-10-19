@@ -389,7 +389,7 @@ export default function WriteoffBulkForm({
 
         {/* На телефоне — полоска у нижнего края, над панелью разделов (как SaveBar):
             список позиций длинный, и кнопка не должна быть за три экрана от поля. */}
-        <div className="no-print fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 px-4 sm:static sm:px-0">
+        <div className="no-print fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 px-4 sm:static sm:px-0">
         <div className="flex items-center gap-3 rounded-xl border border-line-hairline bg-surface px-3 py-2.5 shadow-card-hover sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
           {!planOk ? (
             <button

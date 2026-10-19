@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { areaForPath } from "@/lib/areas";
+import { useRegisterShellTabs } from "./ShellTabs";
 
 /**
  * Вкладки внутри раздела. Верхнее меню держим коротким — по одному пункту на
@@ -21,6 +22,8 @@ export default function SectionTabs({
   inHeader?: boolean;
 }) {
   const pathname = usePathname();
+  // Те же вкладки — подпунктами в боковом меню (на компьютере здесь они спрятаны, см. PageHeader).
+  useRegisterShellTabs(tabs);
   const stripRef = useRef<HTMLDivElement>(null);
   // Есть ли что-то ещё справа за краем экрана. Нужно только для подсказки:
   // на телефоне лента вкладок обрезалась ровно по границе, и «Отчёт» у
