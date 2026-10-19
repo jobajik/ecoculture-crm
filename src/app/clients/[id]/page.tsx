@@ -6,18 +6,24 @@ import { getClientById, listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { buildClientStats } from "@/lib/clientStats";
-import { FLOWER_TYPE_LABELS, MONEY_EPSILON, ROLES, formatGrade } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, ROLES, SHEET_TABS, farmLabel, formatGrade } from "@/lib/constants";
 import { orderStage } from "@/lib/orderStage";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
-import OrderStageBadge from "@/components/OrderStageBadge";
 import Pill from "@/components/Pill";
 import { orderPayState } from "@/lib/orderPay";
+import PageHeader from "@/components/PageHeader";
+import ClientOrdersPanel, { type PanelKaspi, type PanelMessage, type PanelOrder, type PanelPayment } from "@/components/ClientOrdersPanel";
+import { prefetchTables } from "@/lib/sheets";
+import { listPayments } from "@/lib/repo/payments";
+import { listKaspiInvoices } from "@/lib/repo/kaspiInvoices";
+import { listWaMessages } from "@/lib/repo/talks";
+import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiStatusLabel } from "@/lib/kaspiInvoice";
+import { phoneKey } from "@/lib/leads";
 import ClientCard from "@/components/ClientCard";
-import Section from "@/components/Section";
 import Icon, { type IconName } from "@/components/Icon";
 import { orderCode } from "@/lib/paymentStage";
-import { canSeeShop, isOwnShop, isRetailRole, retailLabel } from "@/lib/retail";
+import { canSeeShop, isOwnShop, isRetailRole } from "@/lib/retail";
 import { withBotName } from "@/lib/botIdentity";
 import { canCreateClientOrder, newClientOrderHref } from "@/lib/repeatOrder";
 
@@ -25,7 +31,13 @@ export const dynamic = "force-dynamic";
 
 const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 
-export default async function ClientDetailPage({ params }: { params: { id: string } }) {
+export default async function ClientDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { edit?: string };
+}) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
   if (
@@ -52,10 +64,22 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     notFound();
   }
 
-  const [clients, orders, users] = await Promise.all([
+  // Все вкладки карточки — одним чтением (грабли 1.17): заявки, клиенты, платежи, счета Kaspi, переписка.
+  await prefetchTables([
+    SHEET_TABS.ORDERS,
+    SHEET_TABS.ORDER_ITEMS,
+    SHEET_TABS.CLIENTS,
+    SHEET_TABS.PAYMENTS,
+    SHEET_TABS.KASPI_INVOICES,
+    SHEET_TABS.WA_MESSAGES,
+  ]).catch(() => {});
+  const [clients, orders, users, payments, invoices, messages] = await Promise.all([
     listClients(),
     listOrdersWithItems(),
     listUsers(),
+    listPayments().catch(() => []),
+    listKaspiInvoices().catch(() => []),
+    listWaMessages({ lines: "all" }).catch(() => []),
   ]);
   const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
 
@@ -109,119 +133,251 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   const phoneDigits = client.phone.replace(/[^\d+]/g, "");
   const waDigits = client.phone.replace(/\D/g, "");
 
+  const editing = searchParams?.edit === "1" && canEdit;
+  const ids = new Set(myOrders.map((o) => o.orderId));
+  const codeOf = (id: string) => orderCode(id);
+  const panelOrders: PanelOrder[] = myOrders.map((o) => {
+    const pay = payOf.get(o.orderId)!;
+    const first = o.items[0];
+    return {
+      orderId: o.orderId,
+      code: codeOf(o.orderId),
+      date: (o.deliveryDate || o.createdAt).slice(0, 10),
+      item: first ? `${first.variety}, ${formatGrade(first.grade)} · ${first.quantity.toLocaleString("ru-RU")}` : "—",
+      more: Math.max(0, o.items.length - 1),
+      total: o.totalAmount,
+      paid: Math.min(o.paidAmount, o.totalAmount),
+      payTone: pay.tone,
+      payLabel: pay.label,
+      stage: orderStage(o, today),
+    };
+  });
+  const panelPayments: PanelPayment[] = payments
+    .filter((p) => ids.has(p.orderId))
+    .map((p) => ({
+      id: p.paymentId,
+      date: p.date,
+      amount: p.amount,
+      method: p.method,
+      farm: p.farm ? farmLabel(p.farm) : "",
+      orderId: p.orderId,
+      code: codeOf(p.orderId),
+    }));
+  const panelKaspi: PanelKaspi[] = invoices
+    .filter((k) => ids.has(k.orderId))
+    .map((k) => ({
+      id: k.invoiceId,
+      date: k.createdAt.slice(0, 10),
+      amount: k.amount,
+      phone: k.phone,
+      statusLabel: kaspiStatusLabel(k.status),
+      tone: isPaidKaspiStatus(k.status) ? "good" : isOpenKaspiStatus(k.status) ? "wait" : k.status === "error" ? "bad" : "muted",
+      orderId: k.orderId,
+      code: codeOf(k.orderId),
+    }));
+  const phoneKeys = new Set([client.phone, client.kaspiPay1, client.kaspiPay2].map((v) => phoneKey(v)).filter(Boolean));
+  const panelMessages: PanelMessage[] = messages
+    .filter((m) => phoneKeys.has(phoneKey(m.phone)))
+    .map((m) => ({ id: m.messageId, at: m.at, out: m.direction === "out", text: m.text, who: m.senderName && m.direction === "out" ? m.senderName : "" }));
+  const kaspiNumbers = [client.kaspiPay1, client.kaspiPay2].filter(Boolean);
+
   return (
     <div>
-      <header className="no-print mb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
-          <span className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl grid place-items-center flex-none text-white shadow-sm bg-section-client">
-            <Icon name="client" className="w-5 h-5" />
-          </span>
-          <div className="min-w-0">
-            <div className="text-[12px] font-semibold text-section-client">
-              <Link href={shop ? "/retail/shops" : "/clients"} className="hover:underline">
-                {shop ? `Наши магазины · ${retailLabel(client.retail)}` : "Клиенты"}
+      <PageHeader
+        area="clients"
+        title={client.name}
+        eyebrow={shop ? "Наши магазины" : undefined}
+        actions={
+          <>
+            {waDigits.length >= 10 && (
+              <a href={`https://wa.me/${waDigits}`} target="_blank" rel="noreferrer" className="btn-secondary">
+                <Icon name="message" className="w-4 h-4" />
+                WhatsApp
+              </a>
+            )}
+            {newOrderHref && (
+              <Link href={newOrderHref} className="btn-primary">
+                + Новая заявка
               </Link>
-              <span className="text-ink-muted"> › {client.name}</span>
-            </div>
-            <h1 className="font-display text-[22px] sm:text-[26px] leading-tight font-extrabold tracking-tight break-words">
-              {client.name}
-            </h1>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {waDigits.length >= 10 && (
-            <a href={`https://wa.me/${waDigits}`} target="_blank" rel="noreferrer" className="btn-secondary">
-              <Icon name="message" className="w-4 h-4" />
-              WhatsApp
-            </a>
-          )}
-          {newOrderHref && (
-            <Link href={newOrderHref} className="btn-primary">
-              + Новая заявка
-            </Link>
-          )}
-        </div>
-      </header>
+            )}
+          </>
+        }
+      />
 
       <div className="flex flex-col lg:flex-row gap-5 items-start">
-        {/* Слева — кто это: главное о клиенте и анкета. */}
-        <div className="w-full lg:w-[380px] lg:flex-none space-y-5">
-          <div className="card">
-            <div className="flex items-center gap-3">
-              <span className="w-12 h-12 rounded-xl bg-section-client-soft text-section-client grid place-items-center font-display font-extrabold text-lg flex-none">
-                {client.name.trim().charAt(0).toUpperCase() || "?"}
-              </span>
-              <div className="min-w-0">
-                <div className="font-display font-bold text-[16px] leading-tight break-words">{client.name}</div>
-                <div className="text-xs text-ink-muted mt-0.5">
-                  {[client.clientType, client.city].filter(Boolean).join(" · ") || "—"}
+        {/* Слева — кто это (прототип владельца): о клиенте, доставка, номера Kaspi. Анкета целиком — по «Действиям». */}
+        <div className="w-full lg:w-[360px] lg:flex-none space-y-4">
+          {editing ? (
+            <>
+              <Link href={`/clients/${client.clientId}`} className="text-sm text-ink-secondary hover:underline">
+                ← К карточке
+              </Link>
+              <ClientCard
+                clientId={client.clientId}
+                canEdit={canEdit}
+                startEditing
+                canSetRetail={role === ROLES.ADMIN || role === ROLES.SALES_HEAD}
+                managerName={managerName}
+                values={{
+                  name: client.name,
+                  city: client.city,
+                  shopName: client.shopName,
+                  clientType: client.clientType,
+                  contactPerson: client.contactPerson,
+                  phone: client.phone,
+                  messenger: client.messenger,
+                  address: client.address,
+                  paymentTerms: client.paymentTerms,
+                  paymentMethod: client.paymentMethod,
+                  kaspiPay1: client.kaspiPay1,
+                  kaspiPay2: client.kaspiPay2,
+                  retail: client.retail,
+                  source: client.source,
+                  note: client.note,
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <div className="card !p-0">
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
+                  <span className="w-8 h-8 rounded-lg grid place-items-center bg-section-client-soft text-section-client flex-none">
+                    <Icon name="client" className="w-4 h-4" />
+                  </span>
+                  <h2 className="font-display text-[15px] font-bold">О клиенте</h2>
+                </div>
+                <div className="p-4">
+                  <details className="group relative mb-4">
+                    <summary className="list-none cursor-pointer flex items-center gap-2 rounded-xl border border-line-hairline bg-surface-plane px-3 py-2 text-sm font-semibold select-none">
+                      <Icon name="list" className="w-4 h-4 text-ink-secondary" />
+                      Действия
+                      <span className="ml-auto text-ink-muted transition-transform group-open:rotate-180">▾</span>
+                    </summary>
+                    <div className="absolute left-0 right-0 top-full mt-1 z-10 rounded-xl border border-line-hairline bg-surface shadow-card-hover py-1 text-sm">
+                      {newOrderHref && (
+                        <Link href={newOrderHref} className="block px-3 py-2 hover:bg-surface-plane">
+                          + Новая заявка
+                        </Link>
+                      )}
+                      {canEdit && (
+                        <Link href={`/clients/${client.clientId}?edit=1`} className="block px-3 py-2 hover:bg-surface-plane">
+                          Изменить анкету
+                        </Link>
+                      )}
+                      {client.phone && (
+                        <a href={`tel:${phoneDigits}`} className="block px-3 py-2 hover:bg-surface-plane">
+                          Позвонить
+                        </a>
+                      )}
+                      {waDigits.length >= 10 && (
+                        <a href={`https://wa.me/${waDigits}`} target="_blank" rel="noreferrer" className="block px-3 py-2 hover:bg-surface-plane">
+                          Написать в WhatsApp
+                        </a>
+                      )}
+                      <Link href={shop ? "/retail/shops" : "/clients"} className="block px-3 py-2 hover:bg-surface-plane text-ink-secondary">
+                        {shop ? "Все магазины" : "Все клиенты"}
+                      </Link>
+                    </div>
+                  </details>
+                  <div className="flex items-center gap-3">
+                    <span className="w-12 h-12 rounded-xl bg-section-client-soft text-section-client grid place-items-center font-display font-extrabold text-lg flex-none">
+                      {client.name.trim().charAt(0).toUpperCase() || "?"}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-display font-bold text-[16px] leading-tight break-words">{client.name}</div>
+                      <div className="text-xs text-ink-muted mt-0.5">
+                        {[client.clientType, client.city].filter(Boolean).join(" · ") || "—"}
+                      </div>
+                    </div>
+                    {status && (
+                      <span className="ml-auto">
+                        <Pill tone={status.tone}>{status.label}</Pill>
+                      </span>
+                    )}
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-3.5 mt-4 text-sm">
+                    <Fact icon="client" label="Менеджер">
+                      {managerName || "—"}
+                    </Fact>
+                    <Fact icon="phone" label="Телефон">
+                      {client.phone ? (
+                        <a href={`tel:${phoneDigits}`} className="hover:text-section-client">
+                          {client.phone}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </Fact>
+                    <Fact icon="card" label="Чем платит">
+                      {client.paymentMethod || "—"}
+                    </Fact>
+                    <Fact icon="clock" label="Условия">
+                      {client.paymentTerms || "—"}
+                    </Fact>
+                    {row && !row.neverOrdered && (
+                      <>
+                        <Fact icon="leaf" label="Обычно берёт">
+                          {row.topPosition || "—"}
+                        </Fact>
+                        <Fact icon="calendar" label="Последний заказ">
+                          {formatDay(row.lastOrderDate)}
+                        </Fact>
+                      </>
+                    )}
+                  </dl>
                 </div>
               </div>
-              {status && (
-                <span className="ml-auto">
-                  <Pill tone={status.tone}>{status.label}</Pill>
-                </span>
-              )}
-            </div>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-4 mt-5 text-sm">
-              <Fact icon="client" label="Менеджер">
-                {managerName || "—"}
-              </Fact>
-              <Fact icon="phone" label="Телефон">
-                {client.phone ? (
-                  <a href={`tel:${phoneDigits}`} className="hover:text-section-client">
-                    {client.phone}
-                  </a>
-                ) : (
-                  "—"
-                )}
-              </Fact>
-              <Fact icon="card" label="Чем платит">
-                {client.paymentMethod || "—"}
-              </Fact>
-              <Fact icon="clock" label="Условия">
-                {client.paymentTerms || "—"}
-              </Fact>
-              {row && !row.neverOrdered && (
-                <>
-                  <Fact icon="leaf" label="Обычно берёт">
-                    {row.topPosition || "—"}
-                  </Fact>
-                  <Fact icon="calendar" label="Последний заказ">
-                    {formatDay(row.lastOrderDate)}
-                  </Fact>
-                </>
-              )}
-            </dl>
-          </div>
 
-          <ClientCard
-            clientId={client.clientId}
-            canEdit={canEdit}
-            canSetRetail={role === ROLES.ADMIN || role === ROLES.SALES_HEAD}
-            managerName={managerName}
-            values={{
-              name: client.name,
-              city: client.city,
-              shopName: client.shopName,
-              clientType: client.clientType,
-              contactPerson: client.contactPerson,
-              phone: client.phone,
-              messenger: client.messenger,
-              address: client.address,
-              paymentTerms: client.paymentTerms,
-              paymentMethod: client.paymentMethod,
-              kaspiPay1: client.kaspiPay1,
-              kaspiPay2: client.kaspiPay2,
-              retail: client.retail,
-              source: client.source,
-              note: client.note,
-            }}
-          />
+              <div className="card !p-0">
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
+                  <span className="w-8 h-8 rounded-lg grid place-items-center bg-section-client-soft text-section-client flex-none">
+                    <Icon name="truck" className="w-4 h-4" />
+                  </span>
+                  <h2 className="font-display text-[15px] font-bold">Доставка</h2>
+                  {canEdit && (
+                    <Link href={`/clients/${client.clientId}?edit=1`} className="ml-auto text-ink-muted hover:text-ink-primary text-lg leading-none" title="Изменить">
+                      +
+                    </Link>
+                  )}
+                </div>
+                <div className="p-3 space-y-2.5">
+                  <AddressBox
+                    icon="truck"
+                    title="Адрес доставки"
+                    lines={[client.address || "не указан", [client.city, client.shopName].filter(Boolean).join(" · ")]}
+                    active={!!client.address}
+                  />
+                  {(client.contactPerson || client.messenger) && (
+                    <AddressBox
+                      icon="client"
+                      title={client.contactPerson || "Контакт"}
+                      lines={[client.messenger, client.note].filter(Boolean)}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {kaspiNumbers.length > 0 && (
+                <div className="card !p-0">
+                  <div className="flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
+                    <span className="rounded-md bg-kaspi-soft text-kaspi text-[11px] font-bold px-2 py-0.5">Kaspi</span>
+                    <h2 className="font-display text-[15px] font-bold">Номера для счёта</h2>
+                  </div>
+                  {kaspiNumbers.map((n, i) => (
+                    <div key={n} className="flex items-center gap-3 px-4 py-2.5 border-b border-line-hairline last:border-0 text-sm">
+                      <span className="text-ink-muted w-7">№{i + 1}</span>
+                      <b>{n}</b>
+                      {i === 0 && <span className="ml-auto text-[11px] rounded-full bg-surface-sunk px-2 py-0.5 text-ink-secondary">основной</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
-        {/* Справа — деньги и заявки. */}
-        <div className="w-full min-w-0 flex-1 space-y-5">
+        {/* Справа — деньги и всё по клиенту одной карточкой с вкладками. */}
+        <div className="w-full min-w-0 flex-1 space-y-4">
           {row && (
             <div className="card">
               <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
@@ -257,78 +413,38 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             </div>
           )}
 
-          <Section
-            tone="order"
-            icon="order"
-            title="Заявки клиента"
-            aside={<span className="text-ink-muted">{myOrders.length}</span>}
-            flush
-          >
-            <div className="table-scroll table-cards border-t border-line-hairline">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-ink-muted text-xs border-b border-line-hairline bg-surface-plane/60">
-                    <th className="px-4 py-2.5 font-medium">№</th>
-                    <th className="px-4 py-2.5 font-medium">Дата</th>
-                    <th className="px-4 py-2.5 font-medium">Что заказали</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Сумма</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Оплачено</th>
-                    <th className="px-4 py-2.5 font-medium">Оплата</th>
-                    <th className="px-4 py-2.5 font-medium">Этап</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myOrders.map((o) => {
-                    const pay = payOf.get(o.orderId);
-                    const first = o.items[0];
-                    return (
-                      <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
-                        <td data-label="Заявка" className="px-4 py-3 whitespace-nowrap">
-                          <Link href={`/orders/${o.orderId}`} className="font-mono text-[12.5px] text-ink-secondary hover:text-accent">
-                            {orderCode(o.orderId)}
-                          </Link>
-                        </td>
-                        <td data-label="Дата" className="px-4 py-3 text-ink-secondary whitespace-nowrap">
-                          {formatDay(o.deliveryDate || o.createdAt)}
-                        </td>
-                        <td data-label="Что заказали" className="px-4 py-3 text-ink-secondary">
-                          {first ? (
-                            <>
-                              <b className="font-semibold text-ink-primary">{first.variety}</b>, {formatGrade(first.grade)} ·{" "}
-                              {first.quantity.toLocaleString("ru-RU")}
-                              {o.items.length > 1 && <span className="text-ink-muted"> +{o.items.length - 1}</span>}
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td data-label="Сумма" className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
-                          {money(o.totalAmount)}
-                        </td>
-                        <td data-label="Оплачено" className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-ink-secondary">
-                          {o.paidAmount > MONEY_EPSILON ? money(Math.min(o.paidAmount, o.totalAmount)) : "—"}
-                        </td>
-                        <td data-label="Оплата" className="px-4 py-3">
-                          {pay && <Pill tone={pay.tone}>{pay.label}</Pill>}
-                        </td>
-                        <td data-label="Этап" className="px-4 py-3">
-                          <OrderStageBadge stage={orderStage(o, today)} compact />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {myOrders.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
-                        Заказов пока не было
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Section>
+          <ClientOrdersPanel
+            clientName={client.name}
+            orders={panelOrders}
+            payments={panelPayments}
+            kaspi={panelKaspi}
+            messages={panelMessages}
+          />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AddressBox({ icon, title, lines, active }: { icon: IconName; title: string; lines: string[]; active?: boolean }) {
+  return (
+    <div
+      className={
+        active
+          ? "flex gap-3 rounded-xl border border-section-client/30 bg-section-client-soft/60 px-3.5 py-3"
+          : "flex gap-3 rounded-xl border border-line-hairline px-3.5 py-3"
+      }
+    >
+      <span className="w-8 h-8 rounded-lg border border-line-hairline bg-surface grid place-items-center text-ink-secondary flex-none">
+        <Icon name={icon} className="w-4 h-4" />
+      </span>
+      <div className="min-w-0 text-sm">
+        <div className="font-semibold">{title}</div>
+        {lines.filter(Boolean).map((l, i) => (
+          <div key={i} className="text-xs text-ink-secondary mt-0.5 break-words">
+            {l}
+          </div>
+        ))}
       </div>
     </div>
   );

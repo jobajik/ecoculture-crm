@@ -52,16 +52,19 @@ export default function ClientCard({
   canEdit,
   managerName,
   canSetRetail = false,
+  startEditing = false,
 }: {
   clientId: string;
   values: ClientCardValues;
   canEdit: boolean;
   managerName: string;
+  /** Открыть сразу в режиме правки («Действия → Изменить анкету» на карточке клиента). */
+  startEditing?: boolean;
   /** Отмечать карточку нашим магазином и менять направление может только РОП. */
   canSetRetail?: boolean;
 }) {
   const router = useRouter();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing && canEdit);
   const [form, setForm] = useState<ClientCardValues>(values);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);

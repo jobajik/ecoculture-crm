@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { OrderWithItems } from "@/lib/types";
 import OrderStageBadge from "./OrderStageBadge";
 import ItemsCell from "./ItemsCell";
-import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import Pager, { pageSlice } from "./Pager";
 import { formatDay } from "@/lib/formatDate";
 import { byUrgency, orderStage, STAGE_LABELS, STAGE_ORDER, type OrderStage } from "@/lib/orderStage";
 import { personName, type NameByEmail } from "@/lib/personName";
@@ -141,17 +141,14 @@ export default function OrdersTable({
     return status === "all" ? list : [...list].sort(byUrgency((o: OrderWithItems) => stages.get(o.orderId)!));
   }, [orders, stages, status, search, manager, managerNames]);
 
-  // Заявок со временем накопится много. Показываем начало списка, остальное по
-  // кнопке; при поиске и фильтре по статусу показываем всё найденное — там
-  // список человек сузил сам.
-  const [expanded, setExpanded] = useState(false);
-  const narrowed = status !== "all" || search.trim().length > 0 || (manager !== "" && manager !== defaultManager);
+  // Листаем страницами по 10 — список помещается в экран без прокрутки (владелец: «одностраничный и удобный»).
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [status, search, manager]);
   // Итог выбранного менеджера: заявки и сумма (отменённые в сумму не идут).
   const managerTotal = manager
     ? filtered.filter((o) => stageOf(o).key !== "cancelled").reduce((sum, o) => sum + o.totalAmount, 0)
     : 0;
-  const shown = expanded || narrowed ? filtered : filtered.slice(0, COLLAPSED_TABLE_SIZE);
-  const hidden = filtered.length - shown.length;
+  const shown = pageSlice(filtered, page);
 
   const itemText = (i: OrderWithItems["items"][number]) =>
     `${i.variety}, ${formatGrade(i.grade)} · ${i.quantity.toLocaleString("ru-RU")}`;
@@ -204,19 +201,12 @@ export default function OrdersTable({
     { value: "cancelled", label: "Отменены" },
   ];
   const deliveryLabel = (d: string) => (!d ? "—" : d === today ? "сегодня" : d === tomorrow ? "завтра" : formatDay(d));
-  const initials = (name: string) =>
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase())
-      .join("") || "?";
   const short = (v: number) =>
     v >= 1_000_000 ? `${(v / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} млн ₸` : `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 
   return (
     <div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
         <Tile icon="order" label="Заявок за месяц" value={monthCount.toLocaleString("ru-RU")} hint="без отменённых" />
         <Tile icon="wallet" label="На сумму" value={short(monthSum)} hint="продажи месяца" />
         <Tile
@@ -244,8 +234,8 @@ export default function OrdersTable({
         </p>
       )}
       <div className="card !p-0 overflow-hidden">
-        <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-3 border-b border-line-hairline">
-          <div className="flex gap-2 overflow-x-auto scroll-x-hidden xl:flex-wrap -mx-1 px-1">
+        <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-2.5 border-b border-line-hairline">
+          <div className="flex gap-2 overflow-x-auto scroll-x-hidden -mx-1 px-1 min-w-0">
             {chips
               .filter((c) => c.value === "all" || c.value === status || (counts[c.value] ?? 0) > 0)
               .map((c) => {
@@ -273,7 +263,7 @@ export default function OrdersTable({
           </div>
           <div className="flex gap-2 xl:ml-auto xl:flex-none">
             <input
-              className="input !w-auto flex-1 xl:w-[220px] min-w-0"
+              className="input !py-1.5 !min-h-0 !w-auto flex-1 xl:!w-[200px] min-w-0"
               placeholder="Клиент, телефон, сорт, №"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -284,7 +274,7 @@ export default function OrdersTable({
                 aria-label="Менеджер"
                 value={manager}
                 onChange={(e) => setManager(e.target.value)}
-                className="input !w-auto"
+                className="input !py-1.5 !min-h-0 !w-auto"
               >
                 <option value="">Все менеджеры</option>
                 {managers.map((m) => (
@@ -319,7 +309,7 @@ export default function OrdersTable({
                 <tr
                   className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
                 >
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-2.5 whitespace-nowrap">
                     {/* Номер не переносится: «ORD-260914-T85ZC» ломался на три
                         строки и в одиночку задирал высоту всей строки. */}
                     <Link
@@ -329,66 +319,62 @@ export default function OrdersTable({
                     >
                       {orderCode(o.orderId)}
                     </Link>
-                    <div className="text-xs text-ink-muted whitespace-nowrap">
-                      {formatDay(o.createdAt)}
-                      {o.store === "office" && <span className="ml-1.5 text-section-stock font-medium">· офис</span>}
-                    </div>
-                    {/* Действия админа — под номером, а не отдельной колонкой:
-                        лишняя колонка вылезала за край (боковой прокрутки в
-                        таблицах нет — см. CLAUDE.md). */}
-                    {canAdmin && (
-                      <div className="mt-1 flex gap-1 text-xs whitespace-nowrap">
-                        <Link
-                          href={`/orders/${o.orderId}/edit`}
-                          className="rounded px-1.5 py-0.5 text-ink-secondary hover:bg-surface-sunk hover:text-accent"
-                          title="Изменить заявку"
-                        >
-                          ✎
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => setDeleting(deleting === o.orderId ? null : o.orderId)}
-                          className="rounded px-1.5 py-0.5 text-ink-muted hover:bg-status-critical/10 hover:text-status-critical"
-                          title="Удалить заявку"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )}
+                    <span className="text-xs text-ink-muted whitespace-nowrap inline-flex items-center gap-1 ml-2">
+                      {formatDay(o.createdAt).slice(0, 5)}
+                      {o.store === "office" && <span className="text-section-stock font-medium">· офис</span>}
+                      {/* Действия админа — в той же строке, а не отдельной: строки остаются низкими. */}
+                      {canAdmin && (
+                        <>
+                          <Link
+                            href={`/orders/${o.orderId}/edit`}
+                            className="ml-1 rounded px-1 text-ink-secondary hover:bg-surface-sunk hover:text-accent"
+                            title="Изменить заявку"
+                          >
+                            ✎
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => setDeleting(deleting === o.orderId ? null : o.orderId)}
+                            className="rounded px-1 text-ink-muted hover:bg-status-critical/10 hover:text-status-critical"
+                            title="Удалить заявку"
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </span>
                   </td>
-                  <td className="px-3 py-3" data-label="Клиент">
-                    <Link href={`/orders/${o.orderId}`} className="block truncate max-w-[220px] font-semibold hover:text-accent" title={o.clientName}>
-                      {o.clientName || "—"}
-                    </Link>
-                    <div className="flex items-center gap-1.5 mt-1 text-xs text-ink-secondary min-w-0">
-                      <span className="w-5 h-5 rounded-full bg-accent-soft text-accent grid place-items-center text-[9px] font-bold flex-none">
-                        {initials(mName)}
+                  <td className="px-3 py-2.5" data-label="Клиент">
+                    <div className="flex items-baseline gap-1.5 min-w-0">
+                      <Link href={`/orders/${o.orderId}`} className="truncate max-w-[200px] font-semibold hover:text-accent" title={o.clientName}>
+                        {o.clientName || "—"}
+                      </Link>
+                      <span className="text-xs text-ink-muted truncate max-w-[120px]" title={`Менеджер: ${mName}`}>
+                        · {mName}
                       </span>
-                      <span className="truncate max-w-[160px]">{mName}</span>
                     </div>
                   </td>
                   <td
-                    className={clsx("px-3 py-3 whitespace-nowrap", stage.lateDays > 0 ? "text-status-critical font-semibold" : "text-ink-secondary")}
+                    className={clsx("px-3 py-2.5 whitespace-nowrap", stage.lateDays > 0 ? "text-status-critical font-semibold" : "text-ink-secondary")}
                     data-label="Доставка"
                   >
                     {deliveryLabel(o.deliveryDate)}
-                    {stage.lateDays > 0 && <div className="text-xs font-normal">опаздывает {stage.lateDays} дн.</div>}
+                    {stage.lateDays > 0 && <span className="text-xs font-normal"> · +{stage.lateDays} дн.</span>}
                   </td>
-                  <td className="px-3 py-3 text-ink-secondary" data-label="Что заказали">
+                  <td className="px-3 py-2.5 text-ink-secondary" data-label="Что заказали">
                     <ItemsCell lines={o.items.map(itemText)} />
                   </td>
-                  <td className="px-3 py-3 font-semibold sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
+                  <td className="px-3 py-2.5 font-semibold sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
                     {o.totalAmount.toLocaleString("ru-RU")} ₸
                   </td>
-                  <td className="px-3 py-3" data-label="Оплата">
+                  <td className="px-3 py-2.5" data-label="Оплата">
                     {pay && pay.tone !== "muted" ? <Pill tone={pay.tone}>{pay.label}</Pill> : <span className="text-ink-muted text-xs">{pay?.label ?? "—"}</span>}
                   </td>
                   {/* Один этап вместо пары «статус + готовность» (`orderStage`). */}
-                  <td className="px-3 py-3" data-label="Этап">
-                    <OrderStageBadge stage={{ ...stage, lateDays: 0 }} compact />
-                    {stage.actor && (
-                      <div className="text-xs text-ink-muted mt-1 whitespace-nowrap">ход: {stage.actor}</div>
-                    )}
+                  <td className="px-3 py-2.5" data-label="Этап">
+                    <span title={stage.next || undefined}>
+                      <OrderStageBadge stage={{ ...stage, lateDays: 0 }} compact />
+                    </span>
                   </td>
                 </tr>
                 {canAdmin && deleting === o.orderId && (
@@ -417,21 +403,9 @@ export default function OrdersTable({
           </tbody>
         </table>
       </div>
+      <Pager total={filtered.length} page={page} onPage={setPage} what="заявок" />
       </div>
 
-      {(hidden > 0 || (expanded && !narrowed)) && (
-        <div className="mt-2 flex items-center gap-3">
-          <MoreToggle
-            expanded={expanded}
-            hidden={hidden}
-            onToggle={() => setExpanded((v) => !v)}
-            what="заявок"
-          />
-          <span className="text-xs text-ink-muted">
-            всего заявок: {filtered.length.toLocaleString("ru-RU")}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -457,15 +431,15 @@ function Tile({
         <Icon name={icon} className="w-3.5 h-3.5" />
         {label}
       </div>
-      <div className="font-display font-extrabold text-[22px] sm:text-[26px] tabular-nums mt-1.5 leading-none">{value}</div>
-      <div className={clsx("text-xs mt-2", bad ? "text-status-critical font-semibold" : "text-ink-secondary")}>{hint}</div>
+      <div className="font-display font-extrabold text-[22px] sm:text-[24px] tabular-nums mt-1.5 leading-none">{value}</div>
+      <div className={clsx("text-xs mt-1.5", bad ? "text-status-critical font-semibold" : "text-ink-secondary")}>{hint}</div>
     </>
   );
   return onClick ? (
-    <button type="button" onClick={onClick} className="card !p-4 sm:!p-5 text-left hover:shadow-card-hover transition-shadow">
+    <button type="button" onClick={onClick} className="card !p-4 text-left hover:shadow-card-hover transition-shadow">
       {body}
     </button>
   ) : (
-    <div className="card !p-4 sm:!p-5">{body}</div>
+    <div className="card !p-4">{body}</div>
   );
 }

@@ -2,6 +2,7 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import Icon, { type IconName } from "./Icon";
 import SectionTabs from "./SectionTabs";
+import Crumbs from "./Crumbs";
 import { AREAS, type AreaKey } from "@/lib/areas";
 
 /**
@@ -30,7 +31,7 @@ export default function PageHeader({
   area: AreaKey;
   title: ReactNode;
   subtitle?: ReactNode;
-  /** Надпись над заголовком; по умолчанию — название раздела. */
+  /** Первая «крошка» вместо названия раздела. */
   eyebrow?: ReactNode;
   icon?: IconName;
   /** Кнопки справа: «+ Заявка», выгрузка, период. */
@@ -40,36 +41,45 @@ export default function PageHeader({
   className?: string;
 }) {
   const a = AREAS[area];
-  const over = eyebrow ?? a.label;
-  const showOver = !(typeof over === "string" && typeof title === "string" && over === title);
   const hasTabs = !!tabs && tabs.length > 1;
   return (
-    <header className={clsx("no-print mb-5", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
-          <span className={clsx("w-10 h-10 sm:w-11 sm:h-11 rounded-xl grid place-items-center flex-none text-white shadow-sm", a.solid)}>
-            <Icon name={icon ?? a.icon} className="w-5 h-5" />
-          </span>
-          <div className="min-w-0">
-            {showOver && <div className={clsx("text-[12px] font-semibold", a.text)}>{over}</div>}
-            <h1 className="font-display text-[22px] sm:text-[26px] leading-tight font-extrabold tracking-tight break-words">
-              {title}
-            </h1>
-            {subtitle && <div className="text-sm text-ink-secondary mt-0.5">{subtitle}</div>}
+    <>
+      <header
+        className={clsx(
+          "no-print mb-5",
+          // На компьютере — белая полоса во всю ширину сверху, как на прототипе владельца: заголовок, крошки, кнопки.
+          "lg:sticky lg:top-0 lg:z-20 lg:-mx-8 lg:-mt-6 lg:mb-6 lg:px-8 lg:py-3.5 lg:bg-surface/95 lg:backdrop-blur lg:border-b lg:border-line-hairline",
+          className
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className={clsx("w-10 h-10 rounded-xl grid place-items-center flex-none", a.soft, a.text)}>
+              <Icon name={icon ?? a.icon} className="w-5 h-5" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="font-display text-[20px] sm:text-[22px] leading-tight font-extrabold tracking-tight break-words">
+                {title}
+              </h1>
+              <div className="mt-0.5">
+                <Crumbs area={area} title={title} lead={eyebrow} />
+              </div>
+              {subtitle && <div className="text-sm text-ink-secondary mt-0.5">{subtitle}</div>}
+            </div>
           </div>
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-      </div>
+        {/* Вкладки раздела: на компьютере они подпунктами в боковом меню, здесь — только на телефоне и планшете.
+            Компонент рисуется всегда: он и сообщает вкладки меню (ShellTabs). */}
+        {hasTabs && (
+          <div className="mt-3 lg:hidden">
+            <SectionTabs tabs={tabs!} />
+          </div>
+        )}
+      </header>
       {children && (
-        <div className="mt-4 rounded-2xl border border-line-hairline bg-surface shadow-card px-4 sm:px-5 py-3">{children}</div>
+        <div className="no-print mb-5 rounded-2xl border border-line-hairline bg-surface shadow-card px-4 sm:px-5 py-3">{children}</div>
       )}
-      {/* Вкладки раздела: на компьютере они подпунктами в боковом меню, здесь — только на телефоне и планшете.
-          Компонент рисуется всегда: он и сообщает вкладки меню (ShellTabs). */}
-      {hasTabs && (
-        <div className="mt-3 lg:hidden">
-          <SectionTabs tabs={tabs!} />
-        </div>
-      )}
-    </header>
+    </>
   );
 }

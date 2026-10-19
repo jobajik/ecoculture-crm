@@ -59,6 +59,20 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
         >
           <Icon name={iconFor(l)} className="w-[18px] h-[18px] flex-none" />
           <span className="truncate">{l.label}</span>
+          {l.href !== "/" && (
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className={clsx("ml-auto w-3.5 h-3.5 flex-none transition-transform", active ? "rotate-90 opacity-90" : "opacity-40")}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          )}
         </Link>
         {subs.length > 0 && (
           <div className="ml-[22px] mt-1 mb-2 border-l border-line-hairline pl-3 space-y-0.5">
