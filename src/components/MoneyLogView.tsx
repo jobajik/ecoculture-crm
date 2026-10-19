@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { MONEY_LOG_ACTIONS, MONEY_LOG_LABELS } from "@/lib/constants";
 import { formatMoment } from "@/lib/formatDate";
-import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import Pager, { pageSlice } from "./Pager";
 import { money } from "./PaymentPanel";
 
 export interface MoneyLogRow {
@@ -40,7 +40,7 @@ const STRONG: string[] = [
 export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
   const [action, setAction] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -58,8 +58,9 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
     });
   }, [rows, action, search]);
 
-  const narrowed = action !== "all" || search.trim().length > 0;
-  const shown = expanded || narrowed ? filtered : filtered.slice(0, COLLAPSED_TABLE_SIZE);
+  // Страницами — чтобы журнал помещался в экран (новый вид, 19.10.2026).
+  useEffect(() => setPage(0), [action, search]);
+  const shown = pageSlice(filtered, page);
 
   const actions = useMemo(
     () => Array.from(new Set(rows.map((r) => r.action))).filter(Boolean),
@@ -75,8 +76,8 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="card !p-0 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line-hairline">
         <select
           className="input !w-auto !py-1.5"
           value={action}
@@ -97,7 +98,7 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
         />
       </div>
 
-      <div className="card !p-0 table-scroll table-cards">
+      <div className="table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -156,14 +157,7 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
         </table>
       </div>
 
-      {!narrowed && (
-        <MoreToggle
-          expanded={expanded}
-          hidden={filtered.length - shown.length}
-          onToggle={() => setExpanded((v) => !v)}
-          what="записей"
-        />
-      )}
+      <Pager total={filtered.length} page={page} onPage={setPage} what="записей" />
     </div>
   );
 }

@@ -116,6 +116,8 @@ export default function StockBoard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(() => Date.now());
+  // Вкладка карточки склада (новый вид, 19.10.2026).
+  const [view, setView] = useState<"flowers" | "age" | "money" | "detail">("flowers");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -174,10 +176,18 @@ export default function StockBoard({
 
   const atRisk = snapshot.warningStems + snapshot.criticalStems;
 
+  const tabsList: { key: typeof view; label: string }[] = [
+    { key: "flowers", label: "По цветкам" },
+    { key: "age", label: "Сколько лежит" },
+    ...(snapshot.overall || snapshot.companies ? [{ key: "money" as const, label: "Деньги и компании" }] : []),
+    { key: "detail", label: "Подробно" },
+  ];
+
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+    // Новый вид (19.10.2026, «одностраничный»): склад — одна карточка с вкладками вместо ленты из пяти блоков.
+    <section className="card !p-0 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-line-hairline">
+        <h2 className="font-display text-[15px] font-bold flex items-center gap-2">
           Остатки на складе
           <span className="relative flex h-2 w-2" title="Обновляется автоматически">
             <span className="absolute inline-flex h-full w-full rounded-full bg-status-good opacity-60 animate-ping" />
@@ -197,7 +207,7 @@ export default function StockBoard({
           целиком, когда на складе есть что-то на грани или просроченное. */}
       <div
         className={clsx(
-          "card !py-3 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm border",
+          "px-4 sm:px-5 py-3 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm border-b",
           snapshot.criticalStems > 0
             ? STATUS_TINT.critical
             : snapshot.warningStems > 0
@@ -245,12 +255,25 @@ export default function StockBoard({
         )}
       </div>
 
-      {/* Деньги, ходовое, запас и темп недели — по всему видимому складу. Старый
-          снимок из /api/stock (до обновления сайта) этих полей не несёт. */}
-      {snapshot.overall && <StockPulse row={snapshot.overall} />}
+      <div className="flex flex-wrap gap-x-5 px-4 sm:px-5 border-b border-line-hairline">
+        {tabsList.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setView(t.key)}
+            className={clsx(
+              "py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors",
+              view === t.key ? "border-accent text-ink-primary font-semibold" : "border-transparent text-ink-secondary hover:text-ink-primary"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {snapshot.companies && <StockCompanies companies={snapshot.companies} total={snapshot.totalStems} />}
-
+      <div className="p-3 sm:p-4 bg-surface-plane/60">
+        {view === "flowers" && (
+          <>
       {/* Три колонки: роза · хризантема · эустома */}
       <div
         className={clsx(
@@ -278,11 +301,15 @@ export default function StockBoard({
         ))}
       </div>
 
+          </>
+        )}
+        {view === "age" && (
+          <>
       {/* Сколько дней лежит — диапазонами. Отвечает на вопрос «что залежалось»
           быстрее, чем таблица: цифра крупная, ростовка под ней. */}
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-          <h3 className="font-medium">
+          <h3 className="text-sm text-ink-secondary">
             Сколько дней лежит
             <Hint>
               От даты срезки. Цвет — по сроку хранения цветка: роза 7 дней, хризантема 18,
@@ -298,6 +325,20 @@ export default function StockBoard({
         </div>
       </div>
 
+          </>
+        )}
+        {view === "money" && (
+          <div className="space-y-4">
+      {/* Деньги, ходовое, запас и темп недели — по всему видимому складу. Старый
+          снимок из /api/stock (до обновления сайта) этих полей не несёт. */}
+      {snapshot.overall && <StockPulse row={snapshot.overall} />}
+
+      {snapshot.companies && <StockCompanies companies={snapshot.companies} total={snapshot.totalStems} />}
+
+          </div>
+        )}
+        {view === "detail" && (
+          <>
       {/* Подробно по позициям: блок на цветок, строка на сорт, длины внутри */}
       <StockDetail
         varieties={snapshot.varieties}
@@ -309,6 +350,9 @@ export default function StockBoard({
         }
       />
 
+          </>
+        )}
+      </div>
     </section>
   );
 }

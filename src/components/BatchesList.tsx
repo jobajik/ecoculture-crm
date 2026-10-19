@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createWriteoffAction, fixBatchAction } from "@/app/warehouse/actions";
 import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor, gradeColumnLabel } from "@/lib/constants";
@@ -9,7 +9,7 @@ import { WRITEOFF_REASONS } from "@/lib/writeoffReasons";
 import { formatDay } from "@/lib/formatDate";
 import type { BatchStorageInfo } from "@/lib/shelfLife";
 import StorageStatusBadge from "./StorageStatusBadge";
-import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import Pager, { pageSlice } from "./Pager";
 import { unwrap } from "@/lib/actionResult";
 
 /**
@@ -30,7 +30,7 @@ export default function BatchesList({
   const [openBatchId, setOpenBatchId] = useState<string | null>(null);
   const [onlyActive, setOnlyActive] = useState(true);
 
-  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
 
@@ -49,15 +49,15 @@ export default function BatchesList({
     [infos, onlyActive, query]
   );
 
-  // Партий на складе бывает под две сотни. Показываем начало списка (он уже
-  // отсортирован — сверху то, что дольше лежит), остальное по кнопке. Во время
-  // поиска не сворачиваем: человек уже сузил список сам.
-  const shown = expanded || query ? visible : visible.slice(0, COLLAPSED_TABLE_SIZE);
-  const hidden = visible.length - shown.length;
+  // Партий бывает под две сотни: показываем страницами, чтобы список помещался в экран (новый вид, 19.10.2026).
+  // Список уже отсортирован — сверху то, что дольше лежит.
+  useEffect(() => setPage(0), [onlyActive, query]);
+  const shown = pageSlice(visible, page);
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+      <div className="card !p-0 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 border-b border-line-hairline">
         <input
           type="search"
           className="input sm:!w-64"
@@ -76,10 +76,10 @@ export default function BatchesList({
         ))}
       </datalist>
 
-      <div className="card !p-0 table-scroll table-cards">
+      <div className="table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
               <th className="px-4 py-3 font-medium">Тип / сорт</th>
               <th className="px-4 py-3 font-medium">Код партии</th>
               <th className="px-4 py-3 font-medium">Срезка</th>
@@ -120,19 +120,8 @@ export default function BatchesList({
         </table>
       </div>
 
-      {(hidden > 0 || expanded) && (
-        <div className="mt-2 flex items-center gap-3">
-          <MoreToggle
-            expanded={expanded}
-            hidden={hidden}
-            onToggle={() => setExpanded((v) => !v)}
-            what="партий"
-          />
-          <span className="text-xs text-ink-muted">
-            всего партий: {visible.length.toLocaleString("ru-RU")}
-          </span>
-        </div>
-      )}
+      <Pager total={visible.length} page={page} onPage={setPage} what="партий" />
+      </div>
     </div>
   );
 }

@@ -19,10 +19,10 @@ export default function StatTile({
       : "text-ink-primary";
 
   return (
-    <div className="card">
-      <div className="text-[11px] uppercase tracking-[0.1em] text-ink-muted mb-1">{label}</div>
-      <div className={`font-display text-2xl font-extrabold tabular-nums ${toneClass}`}>{value}</div>
-      {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
+    <div className="card !p-4 sm:!p-5">
+      <div className="text-xs text-ink-muted mb-1.5">{label}</div>
+      <div className={`font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums ${toneClass}`}>{value}</div>
+      {sub && <div className="text-xs text-ink-secondary mt-2">{sub}</div>}
     </div>
   );
 }

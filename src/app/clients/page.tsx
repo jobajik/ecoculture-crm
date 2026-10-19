@@ -7,6 +7,7 @@ import { listUsers } from "@/lib/repo/users";
 import { buildClientStats } from "@/lib/clientStats";
 import { FLOWER_TYPE_LABELS, ROLES, formatGrade } from "@/lib/constants";
 import ClientsBoard from "@/components/ClientsBoard";
+import KpiTile from "@/components/KpiTile";
 import { isRetailRole } from "@/lib/retail";
 import { clients as clientsWord, orders as ordersWord } from "@/lib/plural";
 import PageHeader from "@/components/PageHeader";
@@ -47,34 +48,40 @@ export default async function ClientsPage() {
 
   return (
     <div>
-      <PageHeader area="clients" title="Клиенты" tabs={clientsTabsFor(undefined, role)} />
-      <p className="text-sm text-ink-secondary mb-4">
-        {t.clients === 0
-          ? "Клиентов пока нет."
-          : `${clientsWord(t.clients)} · ${ordersWord(t.orders)} · ${money(t.revenue)} выручки`}
-      </p>
+      <PageHeader
+        area="clients"
+        title="Клиенты"
+        tabs={clientsTabsFor(undefined, role)}
+        subtitle={
+          t.clients === 0
+            ? "Клиентов пока нет."
+            : `${clientsWord(t.clients)} · ${ordersWord(t.orders)} · ${money(t.revenue)} выручки`
+        }
+      />
 
       {t.clients > 0 && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <Tile title="Средний чек" value={money(t.avgCheck)} />
-          <Tile title="В среднем с клиента" value={money(t.revenuePerClient)} />
-          <Tile
-            title="Молчат больше месяца"
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+          <KpiTile icon="wallet" label="Средний чек" value={money(t.avgCheck)} hint="по всем заявкам" />
+          <KpiTile icon="client" label="В среднем с клиента" value={money(t.revenuePerClient)} hint="выручка на клиента" />
+          <KpiTile
+            icon="clock"
+            label="Молчат больше месяца"
             value={String(t.sleepingClients)}
-            hint={t.sleepingClients > 0 ? "Повод позвонить" : undefined}
-            warn={t.sleepingClients > 0}
+            hint={t.sleepingClients > 0 ? "повод позвонить" : "все на связи"}
+            tone={t.sleepingClients > 0 ? "warn" : undefined}
           />
-          <Tile
-            title="Три крупнейших клиента"
+          <KpiTile
+            icon="chart"
+            label="Три крупнейших клиента"
             value={`${Math.round(t.top3Share)} %`}
-            hint="Доля выручки"
-            warn={t.top3Share > 50}
+            hint="доля выручки"
+            tone={t.top3Share > 50 ? "warn" : undefined}
           />
         </div>
       )}
 
       {stats.ordersWithoutClient > 0 && (
-        <div className="card mb-6 text-sm text-[#8a5a00]">
+        <div className="card !py-3 mb-5 text-sm text-[#8a5a00]">
           Без карточки клиента: {ordersWord(stats.ordersWithoutClient)} — в разрезах не считаются.
         </div>
       )}
@@ -104,28 +111,6 @@ export default async function ClientsPage() {
         byCity={stats.byCity}
         byType={stats.byType}
       />
-    </div>
-  );
-}
-
-function Tile({
-  title,
-  value,
-  hint,
-  warn,
-}: {
-  title: string;
-  value: string;
-  hint?: string;
-  warn?: boolean;
-}) {
-  return (
-    <div className="card">
-      <div className="text-sm text-ink-secondary">{title}</div>
-      <div className={`font-display text-2xl font-extrabold tabular-nums mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>
-        {value}
-      </div>
-      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

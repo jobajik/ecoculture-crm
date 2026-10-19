@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import Image from "next/image";
+import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import { getStockSnapshot, loadStockExtras } from "@/lib/stock";
 import { inStore, normalizeStore, stockStoreOfRole } from "@/lib/officeStore";
@@ -9,7 +9,7 @@ import StockBoard from "@/components/StockBoard";
 import PageHeader from "@/components/PageHeader";
 import KaspiAlert from "@/components/KaspiAlert";
 import { Suspense } from "react";
-import HomeFocusBoard, { HomeFocusStrip } from "@/components/HomeFocus";
+import { HomeAttention, HomeFocusStrip, HomeStats } from "@/components/HomeFocus";
 import { homeFocus } from "@/lib/homeFocus";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listBatches } from "@/lib/repo/batches";
@@ -130,53 +130,68 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
       }));
   }
 
+  // Новый вид (19.10.2026, «одностраничный и удобный»): цифры своей работы строкой, ниже склад карточкой с
+  // вкладками и рядом — «требует внимания». Без длинной ленты блоков друг под другом.
+  const pushCard = pushRows.length > 0 && (
+    <div className="card !p-0 overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-line-hairline">
+        <span className="w-2 h-2 rounded-full bg-status-warning" aria-hidden />
+        <h2 className="font-display text-[15px] font-bold">Распродаём в первую очередь</h2>
+      </div>
+      <div className="px-5 py-3 space-y-1.5">
+        {pushRows.map((r) => (
+          <div key={r.text} className="text-sm">
+            {r.text}
+            <span className="text-ink-muted"> · за 7 дней продали {r.sold7.toLocaleString("ru-RU")} шт.</span>
+          </div>
+        ))}
+        <div className="text-xs text-ink-muted">Предлагайте первой — к любому заказу и на «дорого». Бот делает так же.</div>
+      </div>
+    </div>
+  );
+  const side = (focus?.attention !== undefined || pushCard) && (
+    <div className="space-y-5">
+      {focus?.attention !== undefined && <HomeAttention focus={focus} />}
+      {pushCard}
+    </div>
+  );
+
   return (
-    <div className="space-y-8">
+    <div>
       <PageHeader
         area="home"
         title={`Здравствуйте, ${session.user?.name?.split(" ")[0] ?? ""}`}
         subtitle={farm ? `Производство ${farmLabel(farm)}` : undefined}
         actions={
-          /* Логотип компании — только на широком экране, чтобы не съедать место на телефоне. */
-          <Image
-            src="/logo.png"
-            alt="Ecoculture"
-            width={1020}
-            height={593}
-            priority
-            className="hidden sm:block w-32 h-auto shrink-0"
-          />
+          focus?.action ? (
+            <Link href={focus.action.href} className="btn-primary">
+              {focus.action.label}
+            </Link>
+          ) : undefined
         }
       />
 
-      {searchParams?.error === "nofarm" && <div className="card text-sm">{MISSING_FARM_MESSAGE}</div>}
+      <div className="space-y-5">
+        {searchParams?.error === "nofarm" && <div className="card text-sm">{MISSING_FARM_MESSAGE}</div>}
 
-      {(role === ROLES.ADMIN || role === ROLES.ACCOUNTANT) && (
-        <Suspense fallback={null}>
-          <KaspiAlert />
-        </Suspense>
-      )}
+        {(role === ROLES.ADMIN || role === ROLES.ACCOUNTANT) && (
+          <Suspense fallback={null}>
+            <KaspiAlert />
+          </Suspense>
+        )}
 
-      {pushRows.length > 0 && (
-        <div className="card border-l-4 border-status-warning space-y-1">
-          <div className="font-display font-extrabold">Распродаём в первую очередь</div>
-          {pushRows.map((r) => (
-            <div key={r.text} className="text-sm">
-              {r.text}
-              <span className="text-ink-muted"> · за 7 дней продали {r.sold7.toLocaleString("ru-RU")} шт.</span>
-            </div>
-          ))}
-          <div className="text-xs text-ink-muted">Предлагайте клиентам первой — к любому заказу и на «дорого». Бот делает так же.</div>
-        </div>
-      )}
+        {focus && <HomeFocusStrip focus={focus} />}
+        {focus && <HomeStats focus={focus} />}
 
-      {focus && !focus.aboveStock && <HomeFocusStrip focus={focus} />}
-
-      {focus?.aboveStock && <HomeFocusBoard focus={focus} />}
-
-      {showStock && <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />}
-
-      {focus && !focus.aboveStock && <HomeFocusBoard focus={focus} />}
+        {showStock ? (
+          <div className={side ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start" : ""}>
+            <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />
+            {side}
+          </div>
+        ) : (
+          side
+        )}
+      </div>
     </div>
   );
 }
