@@ -25,6 +25,7 @@ export interface WaLineRow {
   assistant: "on" | "off" | "sell";
   hasKey: boolean;
   messages: number;
+  hookUrl: string;
 }
 
 const ASSISTANT_MODE_LABELS = {
@@ -137,6 +138,7 @@ function LineRow({ line: l }: { line: WaLineRow }) {
   const [qr, setQr] = useState("");
   const [log, setLog] = useState<{ ok: boolean; lines: string[] } | null>(null);
   const [offset, setOffset] = useState<number | null>(0);
+  const [copied, setCopied] = useState(false);
   const st = STATE_TEXT[l.state] ?? { text: l.state || "не проверяли", tone: "bg-surface-sunk text-ink-secondary" };
 
   async function run(name: string, fn: () => Promise<unknown>) {
@@ -224,6 +226,32 @@ function LineRow({ line: l }: { line: WaLineRow }) {
           {l.active ? "Выключить" : "Включить"}
         </button>
       </div>
+      <details className="text-sm">
+        <summary className="cursor-pointer text-ink-secondary">Адрес для кабинета Green API — если сообщения не приходят</summary>
+        <div className="mt-2 space-y-2">
+          <p className="text-ink-secondary">
+            Кабинет Green API → этот номер → «Изменить» / «Настройки»: вставьте адрес в «URL для уведомлений», поле токена оставьте
+            пустым, включите уведомления о входящих, исходящих с телефона, исходящих через API и статусах — и сохраните.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input readOnly value={l.hookUrl} className="input !py-1 !min-h-0 w-full sm:w-[28rem] max-w-full font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+            <button
+              type="button"
+              className="btn-secondary !py-1 text-sm"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(l.hookUrl);
+                  setCopied(true);
+                } catch {
+                  setCopied(false);
+                }
+              }}
+            >
+              {copied ? "Скопировано" : "Копировать"}
+            </button>
+          </div>
+        </div>
+      </details>
       {qr && (
         <div className="flex items-start gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}

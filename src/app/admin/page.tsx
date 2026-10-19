@@ -15,6 +15,7 @@ import { settingsMap } from "@/lib/repo/broadcasts";
 import { listWaLines } from "@/lib/repo/waLines";
 import { listWaMessages } from "@/lib/repo/talks";
 import WaLinesAdmin from "@/components/WaLinesAdmin";
+import { lineHookKey } from "@/lib/secretBox";
 import { DIGEST_SETTING } from "@/lib/morningDigest";
 import { DIGEST_LAST_RUN } from "@/lib/morningDigestRunner";
 import {
@@ -107,6 +108,8 @@ export default async function AdminPage() {
     assistant: l.assistant,
     hasKey: !!l.tokenEnc,
     messages: waMessages.filter((m) => m.line === l.code).length,
+    // Адрес уведомлений одной строкой — вставить в кабинет Green API, если CRM не смогла прописать его сама.
+    hookUrl: `${(process.env.NEXTAUTH_URL || "https://www.crm-ecoculture.kz").replace(/\/+$/, "")}/api/whatsapp/webhook?line=${encodeURIComponent(l.code)}&key=${lineHookKey(l.code)}`,
   }));
   const lineManagers = users
     .filter((u) => u.active && ["manager", "sales_head", "admin", "leadgen"].includes(u.role))

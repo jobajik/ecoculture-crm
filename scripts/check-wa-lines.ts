@@ -10,7 +10,7 @@ import { BOT_CHANNEL, isAssistantOrder, isChannelOrder, lineChannel, orderNoteHe
 import { lineAlertText, lineBotChat, lineMorningPlanText, lineNudgeStatus } from "../src/lib/lineSellerRules";
 import { systemPrompt } from "../src/lib/botEngine";
 import { BOT_MANAGER_EMAIL } from "../src/lib/botIdentity";
-import { openSecret, sealSecret } from "../src/lib/secretBox";
+import { lineHookKey, lineHookKeyOk, openSecret, sealSecret } from "../src/lib/secretBox";
 import { parseAssistantAnswer, assistantTranscript } from "../src/lib/lineAssistant";
 import { autoLeadFromMessage } from "../src/lib/waAutoLead";
 import { decisionScope } from "../src/lib/leadDecisions";
@@ -40,6 +40,8 @@ check("шифр: не виден в ячейке", sealed.includes("secret-token
 check("шифр: расшифровывается", openSecret(sealed), "secret-token-123");
 check("шифр: испорченная ячейка — пусто", openSecret(sealed.slice(0, -4) + "AAAA"), "");
 check("шифр: пусто — пусто", openSecret(""), "");
+const hk = lineHookKey("m-ilyas");
+check("ключ адреса уведомлений: свой номер пускает, чужой и пустой — нет", [hk.length, lineHookKeyOk("m-ilyas", hk), lineHookKeyOk("m-emil", hk), lineHookKeyOk("m-ilyas", ""), lineHookKeyOk("m-ilyas", hk.slice(0, -1) + "0")], [40, true, false, false, hk.endsWith("0")]);
 
 // --- Когда помощник отвечает сам ---------------------------------------------------------
 const M = (id: string, at: string, direction: "in" | "out", text = "Сколько стоит хризантема?"): WaMessage => ({

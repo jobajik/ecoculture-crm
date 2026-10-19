@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Токены Green API номеров менеджеров (16.10.2026) лежат во вкладке WaLines
@@ -38,4 +38,23 @@ export function openSecret(sealed: string): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * Ключ адреса уведомлений номера менеджера (19.10.2026): адрес `…/webhook?line=<код>&key=<ключ>` можно вставить
+ * в кабинет Green API ОДНОЙ строкой, без отдельного поля токена — владелец был не за компьютером, а общий токен
+ * уведомлений есть только на ПК. Ключ свой у каждого номера (HMAC от NEXTAUTH_SECRET и кода): по нему пускается
+ * только этот номер, и общий токен он не раскрывает. Показывается только админу в «Настройках».
+ */
+export function lineHookKey(code: string): string {
+  const secret = (process.env.NEXTAUTH_SECRET || "").trim();
+  if (!secret || !code) return "";
+  return createHmac("sha256", `wa-line-hook:${secret}`).update(code).digest("hex").slice(0, 40);
+}
+
+export function lineHookKeyOk(code: string, given: string | null): boolean {
+  const want = lineHookKey(code);
+  const got = (given || "").trim();
+  if (!want || got.length !== want.length) return false;
+  return timingSafeEqual(Buffer.from(got), Buffer.from(want));
 }

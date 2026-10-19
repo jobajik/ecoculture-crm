@@ -20,6 +20,7 @@ import { genitiveName, isManagerLine, isWorkTime, type WaLine } from "@/lib/waLi
 import { kickAssistant, kickAssistantChat, kickLineWatch } from "@/lib/lineAssistant";
 import { staffPhoneKeys } from "@/lib/botSalesAlert";
 import { ourPhoneKeys } from "@/lib/lineNotify";
+import { lineHookKeyOk } from "@/lib/secretBox";
 import { settingsMap } from "@/lib/repo/broadcasts";
 import { cancelFromWhatsApp, kickBroadcast } from "@/lib/autoBroadcastRunner";
 import { isCancelText } from "@/lib/autoBroadcast";
@@ -48,7 +49,10 @@ export const maxDuration = 60;
  * сразу: ссылка на файл у Green API живёт не вечно.
  */
 export async function POST(request: Request) {
-  if (!webhookTokenOk(request.headers.get("authorization"), process.env.WHATSAPP_WEBHOOK_TOKEN)) {
+  // Номер менеджера можно подключить и адресом с ключом номера (`lineHookKey`) — без поля токена в кабинете.
+  const q = new URL(request.url).searchParams;
+  const lineKeyOk = isManagerLine(q.get("line")) && lineHookKeyOk(q.get("line") || "", q.get("key"));
+  if (!lineKeyOk && !webhookTokenOk(request.headers.get("authorization"), process.env.WHATSAPP_WEBHOOK_TOKEN)) {
     return NextResponse.json({ error: "bad token" }, { status: 401 });
   }
 
