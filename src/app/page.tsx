@@ -25,6 +25,12 @@ import { priceFor } from "@/lib/priceList";
 import { stockMap as liveStockMap } from "@/lib/botKnowledge";
 import { isNotASale } from "@/lib/orderKind";
 import { parsePush, pushLineText, pushLines, pushSold, SALES_PUSH_SETTING } from "@/lib/salesPush";
+import { newOrderLinksFor } from "@/lib/newOrder";
+import { dayGreeting } from "@/lib/myDay/greeting";
+import MyDayManager from "@/components/myday/MyDayManager";
+import MyDayAccountant from "@/components/myday/MyDayAccountant";
+import MyDayWarehouse from "@/components/myday/MyDayWarehouse";
+import MyDayOwner from "@/components/myday/MyDayOwner";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -53,6 +59,49 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
   if (role === ROLES.LEADGEN) redirect("/clients/leads");
   if (missingFarm(role, session.user?.farm)) {
     return <div className="card max-w-xl">{MISSING_FARM_MESSAGE}</div>;
+  }
+
+  // «Мой день» (19.10.2026, макет принят владельцем): у каждой роли свой экран — то, что надо сделать сейчас.
+  // Менеджер, бухгалтер, склад (и склад офиса), владелец и РОП — свои экраны; остальные пока на общей сводке ниже.
+  const user = {
+    email: (session.user?.email ?? "").toLowerCase(),
+    name: session.user?.name ?? "",
+    role,
+    farm: isFarmBoundRole(role) ? session.user?.farm ?? null : null,
+  };
+  const DayScreen =
+    role === ROLES.MANAGER
+      ? MyDayManager
+      : role === ROLES.ACCOUNTANT
+        ? MyDayAccountant
+        : role === ROLES.WAREHOUSE || role === ROLES.OFFICE || role === ROLES.OFFICE_RETAIL
+          ? MyDayWarehouse
+          : role === ROLES.ADMIN || role === ROLES.SALES_HEAD
+            ? MyDayOwner
+            : null;
+  if (DayScreen) {
+    const dayActions = newOrderLinksFor(role).map((l) => (
+      <Link key={l.href} href={l.href} className="btn-primary">
+        {l.label}
+      </Link>
+    ));
+    return (
+      <div>
+        <PageHeader
+          area="home"
+          title={dayGreeting(user.name, new Date())}
+          subtitle={user.farm ? `Производство ${farmLabel(user.farm)}` : undefined}
+          actions={dayActions.length ? dayActions : undefined}
+        />
+        {searchParams?.error === "nofarm" && <div className="card text-sm mb-5">{MISSING_FARM_MESSAGE}</div>}
+        {(role === ROLES.ADMIN || role === ROLES.ACCOUNTANT) && (
+          <Suspense fallback={null}>
+            <KaspiAlert />
+          </Suspense>
+        )}
+        <DayScreen user={user} />
+      </div>
+    );
   }
 
   // Зав. складом и агроном привязаны к производству — им и остатки показываем
