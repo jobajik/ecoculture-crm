@@ -6,6 +6,7 @@ import type { OrderWithItems } from "@/lib/types";
 import OrderStageBadge from "./OrderStageBadge";
 import ItemsCell from "./ItemsCell";
 import Pager, { pageSlice } from "./Pager";
+import OrderDrawer from "./OrderDrawer";
 import { formatDay } from "@/lib/formatDate";
 import { byUrgency, orderStage, STAGE_LABELS, STAGE_ORDER, type OrderStage } from "@/lib/orderStage";
 import { personName, type NameByEmail } from "@/lib/personName";
@@ -80,6 +81,8 @@ export default function OrdersTable({
   canAdmin?: boolean;
 }) {
   const [deleting, setDeleting] = useState<string | null>(null);
+  // Карточка заявки сбоку (19.10.2026): нажатие на строку открывает её справа, не уводя со списка.
+  const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<string>(
     STAGE_FILTERS.some((f) => f.value === initialFilter) ? initialFilter : "all"
   );
@@ -149,6 +152,9 @@ export default function OrdersTable({
     ? filtered.filter((o) => stageOf(o).key !== "cancelled").reduce((sum, o) => sum + o.totalAmount, 0)
     : 0;
   const shown = pageSlice(filtered, page);
+  const selectedOrder = selected ? orders.find((o) => o.orderId === selected) ?? null : null;
+  // С открытой карточкой сбоку таблице тесно: позиции, сумма и оплата видны в карточке, их колонки прячем (без боковой прокрутки).
+  const narrow = selectedOrder ? "xl:hidden" : "";
 
   const itemText = (i: OrderWithItems["items"][number]) =>
     `${i.variety}, ${formatGrade(i.grade)} · ${i.quantity.toLocaleString("ru-RU")}`;
@@ -233,7 +239,8 @@ export default function OrdersTable({
           <span className="text-ink-muted"> · без отменённых в сумме</span>
         </p>
       )}
-      <div className="card !p-0 overflow-hidden">
+      <div className="xl:flex xl:gap-4 xl:items-start">
+      <div className="card !p-0 overflow-hidden flex-1 min-w-0">
         <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-2.5 border-b border-line-hairline">
           <div className="flex gap-2 overflow-x-auto scroll-x-hidden -mx-1 px-1 min-w-0">
             {chips
@@ -293,9 +300,9 @@ export default function OrdersTable({
               <th className="px-3 py-2.5 font-medium">№</th>
               <th className="px-3 py-2.5 font-medium">Клиент</th>
               <th className="px-3 py-2.5 font-medium">Доставка</th>
-              <th className="px-3 py-2.5 font-medium">Что заказали</th>
-              <th className="px-3 py-2.5 font-medium text-right">Сумма</th>
-              <th className="px-3 py-2.5 font-medium">Оплата</th>
+              <th className={clsx("px-3 py-2.5 font-medium", narrow)}>Что заказали</th>
+              <th className={clsx("px-3 py-2.5 font-medium text-right", narrow)}>Сумма</th>
+              <th className={clsx("px-3 py-2.5 font-medium", narrow)}>Оплата</th>
               <th className="px-3 py-2.5 font-medium">Этап</th>
             </tr>
           </thead>
@@ -307,7 +314,15 @@ export default function OrdersTable({
               return (
                 <Fragment key={o.orderId}>
                 <tr
-                  className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
+                  onClick={(e) => {
+                    // Ссылки и кнопки в строке работают как раньше; нажатие на остальное открывает карточку сбоку.
+                    if ((e.target as HTMLElement).closest("a,button")) return;
+                    setSelected(selected === o.orderId ? null : o.orderId);
+                  }}
+                  className={clsx(
+                    "border-b border-line-hairline last:border-0 align-top cursor-pointer",
+                    selected === o.orderId ? "bg-accent-soft/60" : "hover:bg-surface-plane"
+                  )}
                 >
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     {/* Номер не переносится: «ORD-260914-T85ZC» ломался на три
@@ -361,13 +376,13 @@ export default function OrdersTable({
                     {deliveryLabel(o.deliveryDate)}
                     {stage.lateDays > 0 && <span className="text-xs font-normal"> · +{stage.lateDays} дн.</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-ink-secondary" data-label="Что заказали">
+                  <td className={clsx("px-3 py-2.5 text-ink-secondary", narrow)} data-label="Что заказали">
                     <ItemsCell lines={o.items.map(itemText)} />
                   </td>
-                  <td className="px-3 py-2.5 font-semibold sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
+                  <td className={clsx("px-3 py-2.5 font-semibold sm:text-right whitespace-nowrap tabular-nums", narrow)} data-label="Сумма">
                     {o.totalAmount.toLocaleString("ru-RU")} ₸
                   </td>
-                  <td className="px-3 py-2.5" data-label="Оплата">
+                  <td className={clsx("px-3 py-2.5", narrow)} data-label="Оплата">
                     {pay && pay.tone !== "muted" ? <Pill tone={pay.tone}>{pay.label}</Pill> : <span className="text-ink-muted text-xs">{pay?.label ?? "—"}</span>}
                   </td>
                   {/* Один этап вместо пары «статус + готовность» (`orderStage`). */}
@@ -406,6 +421,24 @@ export default function OrdersTable({
       <Pager total={filtered.length} page={page} onPage={setPage} what="заявок" />
       </div>
 
+      {selectedOrder && (
+        <div className="fixed inset-0 z-40 xl:static xl:z-auto xl:w-[400px] xl:flex-none">
+          <button type="button" aria-label="Закрыть карточку" onClick={() => setSelected(null)} className="absolute inset-0 bg-ink-primary/40 xl:hidden" />
+          <div className="absolute inset-y-2 right-2 left-2 sm:left-auto sm:w-[420px] xl:static xl:w-auto">
+            <OrderDrawer
+              order={selectedOrder}
+              stage={stageOf(selectedOrder)}
+              pay={payStates[selectedOrder.orderId]}
+              managerName={personName(selectedOrder.managerEmail, managerNames)}
+              today={today}
+              viewerRole={viewerRole}
+              viewerEmail={viewerEmail}
+              onClose={() => setSelected(null)}
+            />
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }
