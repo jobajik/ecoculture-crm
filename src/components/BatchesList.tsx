@@ -10,6 +10,7 @@ import { formatDay } from "@/lib/formatDate";
 import type { BatchStorageInfo } from "@/lib/shelfLife";
 import StorageStatusBadge from "./StorageStatusBadge";
 import Pager, { pageSlice } from "./Pager";
+import Chips, { type ChipItem } from "./Chips";
 import { unwrap } from "@/lib/actionResult";
 
 /**
@@ -28,7 +29,8 @@ export default function BatchesList({
   const router = useRouter();
   const dupSet = useMemo(() => new Set(duplicates), [duplicates]);
   const [openBatchId, setOpenBatchId] = useState<string | null>(null);
-  const [onlyActive, setOnlyActive] = useState(true);
+  // Отбор кнопками вместо галочки «только с остатком» (новый вид, 19.10.2026): сразу видно, сколько просрочено.
+  const [filter, setFilter] = useState("active");
 
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
@@ -37,7 +39,7 @@ export default function BatchesList({
   const visible = useMemo(
     () =>
       infos
-        .filter((i) => (onlyActive ? i.batch.quantityRemaining > 0 : true))
+        .filter((i) => matchesFilter(i, filter, dupSet))
         .filter((i) => {
           if (!query) return true;
           const b = i.batch;
@@ -46,29 +48,35 @@ export default function BatchesList({
             .toLowerCase()
             .includes(query);
         }),
-    [infos, onlyActive, query]
+    [infos, filter, query, dupSet]
   );
+  const countOf = (f: string) => infos.filter((i) => matchesFilter(i, f, dupSet)).length;
+  const chipItems: ChipItem[] = [
+    { value: "active", label: "С остатком", count: countOf("active") },
+    { value: "critical", label: "Дольше срока", count: countOf("critical"), alarm: true },
+    { value: "warning", label: "Скоро срок", count: countOf("warning") },
+    { value: "ok", label: "В сроке", count: countOf("ok") },
+    ...(dupSet.size > 0 ? [{ value: "dup", label: "Похоже на повтор", count: countOf("dup"), alarm: true }] : []),
+    { value: "all", label: "Все, с пустыми", count: infos.length },
+  ];
 
   // Партий бывает под две сотни: показываем страницами, чтобы список помещался в экран (новый вид, 19.10.2026).
   // Список уже отсортирован — сверху то, что дольше лежит.
-  useEffect(() => setPage(0), [onlyActive, query]);
+  useEffect(() => setPage(0), [filter, query]);
   const shown = pageSlice(visible, page);
 
   return (
     <div>
       <div className="card !p-0 overflow-hidden">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 border-b border-line-hairline">
+      <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-3 border-b border-line-hairline">
+        <Chips value={filter} onChange={setFilter} items={chipItems} />
         <input
           type="search"
-          className="input sm:!w-64"
-          placeholder="Найти сорт…"
+          className="input !w-auto xl:ml-auto xl:w-[260px] min-w-0"
+          placeholder="Сорт, длина, код партии"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <label className="flex items-center gap-2 text-sm text-ink-secondary">
-          <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
-          Только с остатком
-        </label>
       </div>
       <datalist id="batch-writeoff-reasons">
         {WRITEOFF_REASONS.map((r) => (
@@ -112,7 +120,7 @@ export default function BatchesList({
             {visible.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
-                  {query ? "Ничего не нашлось" : "Партий нет"}
+                  {query || filter !== "active" ? "Ничего не нашлось" : "Партий нет"}
                 </td>
               </tr>
             )}
@@ -369,4 +377,21 @@ function BatchFixForm({
       {error && <div className="text-sm text-status-critical mt-2">{error}</div>}
     </div>
   );
+}
+
+/** Отбор партий кнопкой: «С остатком» — всё, что лежит; статусы — только среди лежащего. */
+function matchesFilter(i: BatchStorageInfo, filter: string, dup: Set<string>): boolean {
+  const left = i.batch.quantityRemaining > 0;
+  switch (filter) {
+    case "all":
+      return true;
+    case "dup":
+      return dup.has(i.batch.batchId);
+    case "critical":
+    case "warning":
+    case "ok":
+      return left && i.status === filter;
+    default:
+      return left;
+  }
 }

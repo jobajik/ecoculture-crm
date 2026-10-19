@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { savePricesAction } from "@/app/prices/actions";
@@ -10,6 +10,7 @@ import { groupVarietiesByPrice, type PriceGroup } from "@/lib/priceGroups";
 import { formatNumber, parseNumber } from "./NumberCell";
 import Hint from "./Hint";
 import SaveBar from "./SaveBar";
+import CardTabs from "./CardTabs";
 import { unwrap } from "@/lib/actionResult";
 
 /**
@@ -36,6 +37,7 @@ export default function PriceBoard({
   initial,
   canEdit,
   kind = "",
+  history,
 }: {
   flowerTypes: string[];
   varieties: Record<string, string[]>;
@@ -44,8 +46,11 @@ export default function PriceBoard({
   canEdit: boolean;
   /** Какой прайс правим: пусто — клиентский, «retail» — внутренний. */
   kind?: string;
+  /** Последняя вкладка карточки — «История изменений». */
+  history?: ReactNode;
 }) {
   const router = useRouter();
+  const [tab, setTab] = useState<string>(flowerTypes[0] ?? "history");
   const [values, setValues] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,17 +103,33 @@ export default function PriceBoard({
         <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">{saved}</div>
       )}
 
-      {flowerTypes.map((flowerType) => (
-        <FlowerPrices
-          key={`${flowerType}-${version}`}
-          flowerType={flowerType}
-          varieties={varieties[flowerType] ?? []}
-          values={values}
-          initial={initial}
-          setMany={setMany}
-          canEdit={canEdit}
+      {/* Цветки — вкладками одной карточки, а не тремя карточками друг под другом. Неактивные остаются
+          смонтированными (hidden): группы сортов считаются при открытии и не должны перестраиваться от
+          переключения вкладки. */}
+      <div className="card !p-0 overflow-hidden">
+        <CardTabs
+          tone="plans"
+          items={[
+            ...flowerTypes.map((f) => ({ key: f, label: FLOWER_TYPE_LABELS_PLURAL[f] ?? f })),
+            ...(history ? [{ key: "history", label: "История изменений" }] : []),
+          ]}
+          value={tab}
+          onChange={setTab}
         />
-      ))}
+        {flowerTypes.map((flowerType) => (
+          <div key={`${flowerType}-${version}`} className={tab === flowerType ? undefined : "hidden"}>
+            <FlowerPrices
+              flowerType={flowerType}
+              varieties={varieties[flowerType] ?? []}
+              values={values}
+              initial={initial}
+              setMany={setMany}
+              canEdit={canEdit}
+            />
+          </div>
+        ))}
+        {history && tab === "history" && <div>{history}</div>}
+      </div>
 
       {canEdit && (
         <SaveBar
@@ -201,9 +222,9 @@ function FlowerPrices({
   const withPrice = varieties.length - none.length;
 
   return (
-    <section className="card !p-0 overflow-hidden">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4 pb-2">
-        <h2 className="font-semibold">{FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType}</h2>
+    <section>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 sm:px-5 py-2.5">
+        <h2 className="sr-only">{FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType}</h2>
         <span className="text-xs text-ink-muted">
           за стебель · своя цена у {withPrice} сортов из {varieties.length}
           {canEdit && used.length > 0 && hidden > 0 && (
@@ -217,10 +238,10 @@ function FlowerPrices({
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="border-y border-line-hairline text-ink-secondary">
-              <th className="text-left font-medium px-4 py-2 sticky left-0 bg-surface z-10 sm:min-w-[180px]">Сорта</th>
+            <tr className="border-y border-line-hairline bg-surface-plane/60 text-xs text-ink-muted">
+              <th className="text-left font-medium px-4 py-2.5 sticky left-0 bg-surface-plane z-10 sm:min-w-[180px]">Сорта</th>
               {grades.map((g) => (
-                <th key={g} className="text-right font-medium px-3 py-2 whitespace-nowrap">
+                <th key={g} className="text-right font-medium px-3 py-2.5 whitespace-nowrap text-ink-secondary">
                   {formatGrade(g)}
                 </th>
               ))}

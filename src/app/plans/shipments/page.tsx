@@ -99,13 +99,19 @@ export default async function ShipmentPlansPage({
   }
 
   return (
-    <div className="space-y-5">
-      <PageHeader area="plans" title="План отгрузок" icon="truck" tabs={plansTabsFor(role, month)} />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <PeriodPicker period={month} />
-        <ShipmentsViewSwitch view="plan" month={month} />
-      </div>
+    <div>
+      <PageHeader
+        area="plans"
+        title="План отгрузок"
+        icon="truck"
+        tabs={plansTabsFor(role, month)}
+        actions={
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <ShipmentsViewSwitch view="plan" month={month} />
+            <PeriodPicker period={month} />
+          </div>
+        }
+      />
 
       <ShipmentPlanGrid
         key={month}

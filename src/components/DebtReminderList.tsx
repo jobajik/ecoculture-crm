@@ -7,6 +7,7 @@ import { sendDebtReminderAction } from "@/app/finance/reminder-actions";
 import { unwrapValue } from "@/lib/actionResult";
 import { SEND_GAP_SECONDS } from "@/lib/debtReminder";
 import Section from "./Section";
+import Pager, { pageSlice } from "./Pager";
 
 export interface ReminderRow {
   key: string;
@@ -23,6 +24,9 @@ export interface ReminderRow {
 
 type RowState = { status: "sent" | "skipped" | "error" | "sending"; note: string };
 
+/** Клиент — карточка с заявками и текстом, поэтому порция меньше обычной. */
+const REMIND_PAGE = 6;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -37,6 +41,7 @@ export default function DebtReminderList({ rows, canSend }: { rows: ReminderRow[
   const [state, setState] = useState<Record<string, RowState>>({});
   const [running, setRunning] = useState(false);
   const [info, setInfo] = useState("");
+  const [page, setPage] = useState(0);
   const stop = useRef(false);
 
   if (rows.length === 0) {
@@ -92,9 +97,24 @@ export default function DebtReminderList({ rows, canSend }: { rows: ReminderRow[
     setPicked((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
 
   return (
-    <Section tone="money" icon="message" title={`Кому напомнить сегодня: ${rows.length}`} flush>
+    <div className="card !p-0 overflow-hidden">
+      <div className="px-4 py-3 flex flex-wrap items-center gap-3 border-b border-line-hairline">
+        <h2 className="font-semibold font-display text-[15px]">Кому напомнить сегодня · {rows.length}</h2>
+        {canSend && sendable.length > 0 && !running && (
+          <span className="text-xs text-ink-muted">
+            отмечено {queue.length} ·{" "}
+            <button type="button" className="text-accent hover:underline" onClick={() => setPicked(sendable.map((r) => r.key))}>
+              все
+            </button>{" "}
+            ·{" "}
+            <button type="button" className="text-accent hover:underline" onClick={() => setPicked([])}>
+              никого
+            </button>
+          </span>
+        )}
+      </div>
       {canSend && (
-        <div className="px-4 py-3 flex flex-wrap items-center gap-3 border-b border-line-hairline">
+        <div className="px-4 py-3 flex flex-wrap items-center gap-3 border-b border-line-hairline bg-surface-plane/60">
           {running ? (
             <button type="button" className="btn-secondary" onClick={() => (stop.current = true)}>
               Остановить
@@ -108,7 +128,7 @@ export default function DebtReminderList({ rows, canSend }: { rows: ReminderRow[
         </div>
       )}
       <ul className="divide-y divide-line-hairline">
-        {rows.map((r) => {
+        {pageSlice(rows, page, REMIND_PAGE).map((r) => {
           const st = state[r.key];
           return (
             <li key={r.key} className="px-4 py-3">
@@ -174,6 +194,7 @@ export default function DebtReminderList({ rows, canSend }: { rows: ReminderRow[
           );
         })}
       </ul>
-    </Section>
+      <Pager total={rows.length} page={page} onPage={setPage} size={REMIND_PAGE} what="клиентов" />
+    </div>
   );
 }

@@ -10,7 +10,7 @@ import { unwrap, unwrapValue } from "@/lib/actionResult";
 import { DECISION_GROUP_LABELS, waLinkWithText, type DecisionGroup, type DecisionRow } from "@/lib/leadDecisions";
 import { formatDay } from "@/lib/formatDate";
 import { minutesWords } from "@/lib/whatsapp";
-import Section from "./Section";
+import Pager, { PAGE_SIZE, pageSlice } from "./Pager";
 import LeadStageBadge from "./LeadStageBadge";
 
 export type BoardRow = DecisionRow & { managerName: string; canWork: boolean };
@@ -49,7 +49,6 @@ export default function LeadDecisionsBoard({
   /** Владельцу и РОПу — чей это лид. */
   showManager?: boolean;
 }) {
-  const [view, setView] = useState<DecisionGroup | "all">("all");
   const dueToday = groups.follow_up.filter((r) => r.dueDay <= today).length;
   const tiles: { key: DecisionGroup; label: string; value: number; sub: string; tone: string }[] = [
     { key: "sell", label: "Продать сейчас", value: groups.sell.length, sub: `ждут ответа: ${groups.sell.filter((r) => r.waitingSince).length}`, tone: "text-status-good" },
@@ -57,52 +56,88 @@ export default function LeadDecisionsBoard({
     { key: "lost", label: "Отказ", value: groups.lost.length, sub: "закрыть с причиной", tone: "text-status-critical" },
     { key: "none", label: "Не разобраны", value: groups.none.length, sub: `ждут ИИ: ${toAnalyze}`, tone: "text-ink-secondary" },
   ];
-  const shown = GROUPS.filter((g) => view === "all" || view === g.key);
+  const [view, setView] = useState<DecisionGroup | "done">(() => GROUPS.find((g) => groups[g.key].length > 0)?.key ?? "sell");
+  const tabs: { key: DecisionGroup | "done"; label: string; count: number }[] = [
+    ...GROUPS.map((g) => ({ key: g.key, label: DECISION_GROUP_LABELS[g.key], count: groups[g.key].length })),
+    ...(done.length > 0 || closed > 0 ? [{ key: "done" as const, label: "Решение принято", count: done.length }] : []),
+  ];
+  const group = GROUPS.find((g) => g.key === view);
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
         {tiles.map((t) => (
           <button
             key={t.key}
             type="button"
-            onClick={() => setView(view === t.key ? "all" : t.key)}
+            onClick={() => setView(t.key)}
             className={clsx(
-              "card text-left px-4 py-3 transition-colors",
-              view === t.key ? "ring-2 ring-section-leads" : "hover:bg-surface-plane"
+              "card !p-4 sm:!p-5 text-left transition-shadow hover:shadow-card-hover",
+              view === t.key && "!border-section-leads ring-2 ring-section-leads/20"
             )}
           >
             <div className="text-xs text-ink-muted">{t.label}</div>
-            <div className={clsx("font-display font-extrabold text-2xl tabular-nums", t.tone)}>{t.value}</div>
-            <div className="text-xs text-ink-muted">{t.sub}</div>
+            <div className={clsx("font-display font-extrabold text-[22px] sm:text-[26px] tabular-nums mt-1.5 leading-none", t.tone)}>{t.value}</div>
+            <div className="text-xs text-ink-secondary mt-2">{t.sub}</div>
           </button>
         ))}
       </div>
 
-      <AnalyzeBar aiReady={aiReady} pending={toAnalyze} />
+      <div className="card !p-0 overflow-hidden">
+        <div className="flex gap-x-5 overflow-x-auto scroll-x-hidden border-b border-line-hairline px-4">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setView(t.key)}
+              className={clsx(
+                "py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors",
+                view === t.key ? "border-section-leads text-ink-primary font-semibold" : "border-transparent text-ink-secondary hover:text-ink-primary"
+              )}
+            >
+              {t.label}
+              <span className="ml-1.5 text-ink-muted font-normal tabular-nums">{t.count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="px-4 py-3 border-b border-line-hairline">
+          <AnalyzeBar aiReady={aiReady} pending={toAnalyze} />
+        </div>
 
-      {shown.map((g) => (
-        <GroupSection key={g.key} group={g} rows={groups[g.key]} today={today} showManager={showManager} />
-      ))}
+        {group ? (
+          <GroupSection key={group.key} group={group} rows={groups[group.key]} today={today} showManager={showManager} />
+        ) : (
+          <DonePane done={done} closed={closed} />
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {(done.length > 0 || closed > 0) && (
-        <details className="card px-4 py-3">
-          <summary className="cursor-pointer text-sm text-ink-secondary">
-            Решение уже принято: {done.length} · закрыто раньше: {closed}
-          </summary>
-          <div className="mt-2 divide-y divide-line-hairline/70">
-            {done.map((r) => (
-              <div key={r.leadId} className="py-2 flex flex-wrap items-center gap-2 text-sm">
-                <Link href={`/clients/leads/${r.leadId}`} className="font-medium hover:underline">
-                  {r.name}
-                </Link>
-                <LeadStageBadge stage={r.stage} />
-                <span className="text-ink-muted">следующее касание: {r.nextTouchAt ? formatDay(r.nextTouchAt) : "—"}</span>
-              </div>
-            ))}
-          </div>
-        </details>
+/** Лиды, по которым после разбора уже записано касание. */
+function DonePane({ done, closed }: { done: BoardRow[]; closed: number }) {
+  const [page, setPage] = useState(0);
+  return (
+    <div>
+      <p className="px-4 py-2.5 text-xs text-ink-muted bg-surface-plane/60 border-b border-line-hairline">
+        Касание после разбора уже записано{closed > 0 ? ` · закрыто раньше: ${closed}` : ""}
+      </p>
+      {done.length === 0 ? (
+        <p className="px-4 py-6 text-sm text-ink-muted">Пусто.</p>
+      ) : (
+        <ol className="divide-y divide-line-hairline/70">
+          {pageSlice(done, page).map((r) => (
+            <li key={r.leadId} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+              <Link href={`/clients/leads/${r.leadId}`} className="font-medium hover:underline">
+                {r.name}
+              </Link>
+              <LeadStageBadge stage={r.stage} />
+              <span className="text-ink-muted ml-auto">следующее касание: {r.nextTouchAt ? formatDay(r.nextTouchAt) : "—"}</span>
+            </li>
+          ))}
+        </ol>
       )}
+      <Pager total={done.length} page={page} onPage={setPage} what="лидов" />
     </div>
   );
 }
@@ -189,7 +224,7 @@ function GroupSection({
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [limit, setLimit] = useState(15);
+  const [page, setPage] = useState(0);
   const bulkable = group.key === "lost" || group.key === "follow_up";
   const workable = rows.filter((r) => r.canWork && r.analysisId && r.newMessages === 0);
 
@@ -229,25 +264,27 @@ function GroupSection({
       <span className="text-sm text-ink-muted tabular-nums">{rows.length}</span>
     );
 
+  const current = Math.min(page, Math.max(0, Math.ceil(rows.length / PAGE_SIZE) - 1));
+  const shown = pageSlice(rows, current);
+
   return (
-    <Section tone={group.tone} icon={group.icon} title={DECISION_GROUP_LABELS[group.key]} aside={aside} flush>
-      <p className="px-4 pt-2 text-xs text-ink-muted">{group.hint}</p>
-      {msg && <p className="px-4 pt-1 text-sm text-ink-secondary">{msg}</p>}
+    <div>
+      <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 bg-surface-plane/60 border-b border-line-hairline">
+        <span className="text-xs text-ink-muted">{group.hint}</span>
+        <span className="ml-auto">{aside}</span>
+      </div>
+      {msg && <p className="px-4 pt-2 text-sm text-ink-secondary">{msg}</p>}
       {rows.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-ink-muted">Пусто.</p>
+        <p className="px-4 py-6 text-sm text-ink-muted">Пусто.</p>
       ) : (
         <div>
-          {rows.slice(0, limit).map((r, i) => (
-            <DecisionCard key={r.leadId} row={r} today={today} last={i === Math.min(rows.length, limit) - 1} showManager={showManager} />
+          {shown.map((r, i) => (
+            <DecisionCard key={r.leadId} row={r} today={today} last={i === shown.length - 1} showManager={showManager} />
           ))}
-          {rows.length > limit && (
-            <button type="button" className="w-full px-4 py-2 text-sm text-section-leads hover:underline text-left" onClick={() => setLimit(limit + 30)}>
-              Показать ещё {Math.min(30, rows.length - limit)} из {rows.length - limit}
-            </button>
-          )}
         </div>
       )}
-    </Section>
+      <Pager total={rows.length} page={current} onPage={setPage} what="лидов" />
+    </div>
   );
 }
 

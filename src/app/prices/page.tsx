@@ -12,6 +12,7 @@ import PriceBoard from "@/components/PriceBoard";
 import PriceImportForm from "@/components/PriceImportForm";
 import PriceChangesView from "@/components/PriceChangesView";
 import PageHeader from "@/components/PageHeader";
+import KpiTile from "@/components/KpiTile";
 import Hint from "@/components/Hint";
 import { plansTabsFor } from "../plans/tabs";
 import { salesTabsFor } from "../sales/tabs";
@@ -63,7 +64,7 @@ export default async function PricesPage({
       : "";
 
   return (
-    <div className="space-y-5">
+    <div>
       {/* У РОПа прайс — вкладка раздела «Планы», и шапка того же цвета, что у
           соседних вкладок; у менеджера — справка в «Продажах». */}
       <PageHeader
@@ -71,47 +72,69 @@ export default async function PricesPage({
         title="Прайс-лист"
         icon="tag"
         tabs={canEdit ? plansTabsFor(role) : salesTabsFor(role)}
+        actions={
+          <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
+            {[PRICE_KINDS.CLIENT, PRICE_KINDS.RETAIL].map((k) => (
+              <Link
+                key={k || "client"}
+                href={k ? `/prices?kind=${k}` : "/prices"}
+                role="tab"
+                aria-selected={k === kind}
+                className={
+                  k === kind
+                    ? "rounded-md px-3 py-1.5 text-sm bg-surface shadow-sm font-medium"
+                    : "rounded-md px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary"
+                }
+              >
+                {k === PRICE_KINDS.RETAIL ? "Наши магазины" : "Для клиентов"}
+              </Link>
+            ))}
+          </div>
+            <Hint>
+              {kind === PRICE_KINDS.RETAIL
+                ? "Внутренний прайс — цена передачи цветка в наши магазины. Это не продажа."
+                : "Цена за стебель. В заявке она подставляется сама; менеджер может поменять её в заявке, отклонение видно в аналитике."}
+            </Hint>
+          </div>
+        }
       />
 
-      {/* Одна строка инструментов вместо трёх блоков: какой прайс, когда
-          меняли и файл. Всё остальное на странице — сами цены. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
-          {[PRICE_KINDS.CLIENT, PRICE_KINDS.RETAIL].map((k) => (
-            <Link
-              key={k || "client"}
-              href={k ? `/prices?kind=${k}` : "/prices"}
-              role="tab"
-              aria-selected={k === kind}
-              className={
-                k === kind
-                  ? "rounded-md px-3 py-1.5 text-sm bg-surface shadow-sm font-medium"
-                  : "rounded-md px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary"
-              }
-            >
-              {k === PRICE_KINDS.RETAIL ? "Наши магазины" : "Для клиентов"}
-            </Link>
-          ))}
-        </div>
-
-        <span className={stale ? "text-sm text-[#8a5a00]" : "text-sm text-ink-muted"}>
-          {filled === 0
-            ? "Прайс пока пуст"
-            : lastChange
-              ? `Обновлён ${lastChange}${
-                  sinceChange === 0 ? " (сегодня)" : sinceChange !== null ? ` · ${sinceChange} дн. назад` : ""
-                }${stale ? " — пора пересмотреть" : ""}`
-              : `Цен: ${filled}`}
-          {!canEdit && " · только просмотр"}
-          <Hint>
-            {kind === PRICE_KINDS.RETAIL
-              ? "Внутренний прайс — цена передачи цветка в наши магазины. Это не продажа."
-              : "Цена за стебель. В заявке она подставляется сама; менеджер может поменять её в заявке, отклонение видно в аналитике."}
-          </Hint>
-        </span>
-
-        {canEdit && <PriceImportForm kind={kind} />}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile
+          icon="tag"
+          label="Цен в прайсе"
+          value={filled.toLocaleString("ru-RU")}
+          hint={filled === 0 ? "прайс пока пуст" : kind === PRICE_KINDS.RETAIL ? "внутренний прайс" : "для клиентов"}
+          tone={filled === 0 ? "warn" : undefined}
+        />
+        <KpiTile
+          icon="calendar"
+          label="Обновлён"
+          value={lastChange || "—"}
+          hint={
+            sinceChange === null
+              ? undefined
+              : sinceChange === 0
+                ? "сегодня"
+                : `${sinceChange} дн. назад${stale ? " — пора пересмотреть" : ""}`
+          }
+          tone={stale ? "warn" : undefined}
+        />
+        <KpiTile icon="chart" label="Дней с правками" value={changeDays.length.toLocaleString("ru-RU")} hint="вся история прайса" />
+        <KpiTile
+          icon="leaf"
+          label="Сортов в справочнике"
+          value={FLOWER_ORDER.reduce((sum, f) => sum + (varieties[f]?.length ?? 0), 0).toLocaleString("ru-RU")}
+          hint={canEdit ? "цену можно править" : "только просмотр"}
+        />
       </div>
+
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-5">
+          <PriceImportForm kind={kind} />
+        </div>
+      )}
 
       <PriceBoard
         key={kind || "client"}
@@ -120,9 +143,8 @@ export default async function PricesPage({
         initial={priceMapForClient(prices)}
         canEdit={canEdit}
         kind={kind}
+        history={<PriceChangesView days={changeDays} />}
       />
-
-      <PriceChangesView days={changeDays} />
     </div>
   );
 }

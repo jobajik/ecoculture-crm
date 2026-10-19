@@ -37,7 +37,7 @@ export default function BotSettingsForm({ initial, dailyLimit, todayNote }: { in
         Бот отвечает клиентам в WhatsApp
       </label>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
         <label className="space-y-1 text-sm">
           <span className="label">Кому отвечает</span>
           <select className="input" value={s.scope} onChange={(e) => set({ scope: e.target.value === "all" ? "all" : "broadcast" })}>

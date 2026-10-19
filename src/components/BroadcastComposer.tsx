@@ -1,7 +1,8 @@
 "use client";
 
 import { PhoneInput } from "@/components/PhoneInput";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import Pager, { pageSlice } from "@/components/Pager";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { createBroadcastAction, sendTestAction, uploadFilePartAction } from "@/app/clients/broadcasts/actions";
@@ -87,7 +88,7 @@ export default function BroadcastComposer({
   const [segment, setSegment] = useState("");
   const [search, setSearch] = useState("");
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
-  const [showAll, setShowAll] = useState(false);
+  const [page, setPage] = useState(0);
   const [line, setLine] = useState("");
   const [onlyTalkers, setOnlyTalkers] = useState(true);
   const talkers = useMemo(() => new Set(lines.find((l) => l.code === line)?.talkers ?? []), [lines, line]);
@@ -132,7 +133,8 @@ export default function BroadcastComposer({
   const excludedCount = filtered.length - sendable.length;
   // Сначала те, кому уйдёт, — исключённые (нет мобильного, повтор) ниже.
   const ordered = useMemo(() => [...filtered].sort((a, b) => Number(!!a.excluded) - Number(!!b.excluded)), [filtered]);
-  const shown = showAll ? ordered : ordered.slice(0, 60);
+  useEffect(() => setPage(0), [filtered]);
+  const shown = pageSlice(ordered, page);
   const managerName = new Map([...Object.entries(names), ...managers.map((m) => [m.email, m.name] as [string, string])]);
 
   function toggle(r: Row) {
@@ -238,8 +240,9 @@ export default function BroadcastComposer({
   const select = "input !w-auto !py-1.5 text-sm";
 
   return (
-    <div className="space-y-6">
-      <section className="card space-y-4">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px] items-start">
+      <section className="card !p-0 overflow-hidden min-w-0">
+        <div className="p-4 sm:p-5 space-y-4 border-b border-line-hairline">
         <h2 className="font-display text-lg font-bold">1. Кому</h2>
         {lines.length > 1 && (
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -350,8 +353,9 @@ export default function BroadcastComposer({
           )}
           <input className="input !w-56 !py-1.5 text-sm" placeholder="Поиск по имени, номеру" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
+        </div>
 
-        <div className="text-sm">
+        <div className="text-sm px-4 sm:px-5 py-3 border-b border-line-hairline bg-surface-plane/60">
           <b className="text-lg font-display">{chosen.length}</b> получат сообщение
           {excludedCount > 0 && <span className="text-ink-muted"> · не пойдёт {excludedCount} (нет мобильного, отписались, повтор номера)</span>}
           {sendable.length > 0 && (
@@ -371,12 +375,12 @@ export default function BroadcastComposer({
         </div>
 
         {filtered.length > 0 && (
-          <div className="max-h-[420px] overflow-y-auto rounded-lg border border-line-hairline">
+          <div>
             <table className="w-full text-sm">
               <tbody>
                 {shown.map((r) => (
                   <tr key={key(r)} className={clsx("border-b border-line-hairline last:border-0", r.excluded && "text-ink-muted")}>
-                    <td className="w-8 px-2 py-1.5">
+                    <td className="w-10 pl-4 pr-2 py-1.5">
                       <input type="checkbox" disabled={!!r.excluded} checked={!r.excluded && !unchecked.has(key(r))} onChange={() => toggle(r)} />
                     </td>
                     <td className="px-2 py-1.5">
@@ -387,28 +391,25 @@ export default function BroadcastComposer({
                         {r.managerEmail && ` · ${managerName.get(r.managerEmail) ?? r.managerEmail}`}
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                    <td className="pl-2 pr-4 py-1.5 text-right tabular-nums whitespace-nowrap">
                       {r.excluded ? <span className="text-xs">{r.excluded}</span> : `+${r.waPhone}`}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {!showAll && filtered.length > shown.length && (
-              <button type="button" className="w-full py-2 text-sm text-accent hover:underline" onClick={() => setShowAll(true)}>
-                показать ещё {filtered.length - shown.length}
-              </button>
-            )}
+            <Pager total={ordered.length} page={page} onPage={setPage} what="получателей" />
           </div>
         )}
       </section>
 
+      <div className="space-y-5 min-w-0">
       <section className="card space-y-4">
         <h2 className="font-display text-lg font-bold">2. Сообщение</h2>
         <input className="input" placeholder="Название для себя: «Прайс на неделю», «Акция хризантема»" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4">
           <div className="space-y-2">
-            <textarea className="input min-h-[180px]" value={text} onChange={(e) => setText(e.target.value)} />
+            <textarea className="input min-h-[160px]" value={text} onChange={(e) => setText(e.target.value)} />
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <button type="button" className="btn-secondary !py-1" onClick={() => setText((t) => `${t}{имя}`)}>
                 + {"{имя}"}
@@ -515,6 +516,7 @@ export default function BroadcastComposer({
           {pending ? "Создаю…" : `Создать рассылку · ${chosen.length} получателей`}
         </button>
       </section>
+      </div>
     </div>
   );
 }

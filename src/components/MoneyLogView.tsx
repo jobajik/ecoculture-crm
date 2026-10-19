@@ -91,7 +91,7 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
           ))}
         </select>
         <input
-          className="input !w-auto flex-1 min-w-[200px] !py-1.5"
+          className="input !w-full sm:!w-72 sm:ml-auto !py-1.5"
           placeholder="Клиент, сотрудник или текст"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -101,12 +101,12 @@ export default function MoneyLogView({ rows }: { rows: MoneyLogRow[] }) {
       <div className="table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Когда</th>
-              <th className="px-4 py-3 font-medium">Кто</th>
-              <th className="px-4 py-3 font-medium">Заявка</th>
-              <th className="px-4 py-3 font-medium">Что сделал</th>
-              <th className="px-4 py-3 font-medium text-right">Было → стало</th>
+            <tr className="text-left text-xs text-ink-muted bg-surface-plane/60 border-b border-line-hairline">
+              <th className="px-4 py-2.5 font-medium">Когда</th>
+              <th className="px-4 py-2.5 font-medium">Кто</th>
+              <th className="px-4 py-2.5 font-medium">Заявка</th>
+              <th className="px-4 py-2.5 font-medium">Что сделал</th>
+              <th className="px-4 py-2.5 font-medium text-right">Было → стало</th>
             </tr>
           </thead>
           <tbody>

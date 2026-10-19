@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import type { StockRow } from "@/lib/stockAnalytics";
 import Change from "./Change";
+import Chips from "./Chips";
+import Pager, { pageSlice } from "./Pager";
 
 type View = "flower" | "grade" | "variety";
 
@@ -15,39 +17,31 @@ const VIEWS: { key: View; label: string; column: string }[] = [
 
 const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
 
-/** Разрезы склада одной таблицей с переключателем — как «Разрезы месяца» у клиентов. */
+/**
+ * Разрезы склада одной таблицей с переключателем — как «Разрезы месяца» у клиентов. Новый вид (19.10.2026): живёт
+ * вкладкой внутри карточки аналитики, разрез выбирается кнопками, длинный список сортов — страницами.
+ */
 export default function StockBreakdown({ rows, hasPrev }: { rows: Record<View, StockRow[]>; hasPrev: boolean }) {
   const [view, setView] = useState<View>("flower");
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [view]);
   const list = rows[view];
   const cfg = VIEWS.find((v) => v.key === view)!;
 
   return (
-    <section className="card !p-0">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
-        <h2 className="font-semibold">Разрезы месяца</h2>
-        <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
-          {VIEWS.map((v) => (
-            <button
-              key={v.key}
-              type="button"
-              role="tab"
-              aria-selected={view === v.key}
-              onClick={() => setView(v.key)}
-              className={clsx(
-                "rounded-md px-3 py-1.5 text-sm whitespace-nowrap",
-                view === v.key ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary"
-              )}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
+    <div>
+      <div className="px-4 py-3 border-b border-line-hairline">
+        <Chips
+          value={view}
+          onChange={(v) => setView(v as View)}
+          items={VIEWS.map((v) => ({ value: v.key, label: v.label, count: rows[v.key].length }))}
+        />
       </div>
 
-      <div className="table-scroll table-cards border-t border-line-hairline">
+      <div className="table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
               <th className="px-4 py-2.5 font-medium">{cfg.column}</th>
               <th className="px-3 py-2.5 font-medium text-right">Приход</th>
               <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
@@ -59,8 +53,8 @@ export default function StockBreakdown({ rows, hasPrev }: { rows: Record<View, S
             </tr>
           </thead>
           <tbody>
-            {list.map((r) => (
-              <tr key={r.key} className="border-b border-line-hairline/70 last:border-0">
+            {pageSlice(list, page).map((r) => (
+              <tr key={r.key} className="border-b border-line-hairline/70 last:border-0 hover:bg-surface-plane">
                 <td className="px-4 py-2.5 font-medium">{r.label}</td>
                 <td data-label="Приход" className="px-3 py-2.5 text-right tabular-nums">{r.received ? nf(r.received) : ""}</td>
                 <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums font-medium">{r.shipped ? nf(r.shipped) : ""}</td>
@@ -103,6 +97,7 @@ export default function StockBreakdown({ rows, hasPrev }: { rows: Record<View, S
           </tbody>
         </table>
       </div>
-    </section>
+      <Pager total={list.length} page={page} onPage={setPage} what="строк" />
+    </div>
   );
 }

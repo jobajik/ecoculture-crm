@@ -33,9 +33,9 @@ export default function CashByFlowerCard({
   const rows = cash.rows.filter((r) => r.amount > 0);
 
   return (
-    <div className="card">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-        <h3 className="font-medium">
+    <div className="card !p-0 overflow-hidden">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3.5 border-b border-line-hairline">
+        <h3 className="font-semibold font-display text-[15px]">
           Касса по цветкам
           <Hint>
             Считается по дню, когда пришли деньги, поэтому может не совпадать с остальными цифрами
@@ -46,8 +46,9 @@ export default function CashByFlowerCard({
       </div>
 
       {rows.length === 0 && cash.unsplit === 0 ? (
-        <p className="text-sm text-ink-secondary">Денег не поступало.</p>
+        <p className="text-sm text-ink-secondary px-5 py-4">Денег не поступало.</p>
       ) : (
+        <div className="px-5 py-2">
         <table className="w-full text-sm">
           <tbody>
             {rows.map((row) => (
@@ -66,13 +67,14 @@ export default function CashByFlowerCard({
               </tr>
             )}
             <tr>
-              <td className="pt-2 font-medium">Всего в кассу</td>
-              <td className="pt-2 text-right tabular-nums font-semibold text-status-good">
+              <td className="pt-2 pb-1 font-medium">Всего в кассу</td>
+              <td className="pt-2 pb-1 text-right tabular-nums font-semibold text-status-good">
                 {money(cash.total)}
               </td>
             </tr>
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import type { CalendarDay, CalendarMonth } from "@/lib/calendar";
-import MoreToggle from "./MoreToggle";
+import CardTabs from "./CardTabs";
+import Pager, { pageSlice } from "./Pager";
 
 /** Что подсвечивать цветом в клетках. Одна метрика за раз — иначе рябит. */
 type Heat = "sold" | "received" | "shipped" | "paid";
@@ -84,34 +85,24 @@ export default function CalendarBoard({ data }: { data: CalendarMonth }) {
           : data.max.paid;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1">
-          {(Object.keys(HEAT_LABELS) as Heat[]).map((k) => (
-            <button
-              key={k}
-              onClick={() => setHeat(k)}
-              className={clsx(
-                "px-3 py-1.5 rounded-lg text-sm border transition-colors",
-                heat === k
-                  ? "bg-accent text-white border-accent"
-                  : "border-line-hairline text-ink-secondary hover:bg-surface-plane"
-              )}
-            >
-              {HEAT_LABELS[k]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="card !p-0 table-scroll">
+    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] items-start">
+      <div className="card !p-0 overflow-hidden">
+        {/* Подсветка — вкладками карточки: по какой цифре красить дни. */}
+        <CardTabs
+          tone="analytics"
+          items={(Object.keys(HEAT_LABELS) as Heat[]).map((k) => ({ key: k, label: HEAT_LABELS[k] }))}
+          value={heat}
+          onChange={setHeat}
+          right={<span className="text-xs text-ink-muted">нажмите на день — подробности рядом</span>}
+        />
+      <div className="table-scroll">
         <div className="min-w-[760px]">
-          <div className="grid grid-cols-7 border-b border-line-hairline">
+          <div className="grid grid-cols-7 border-b border-line-hairline bg-surface-plane/60">
             {WEEKDAYS.map((w, i) => (
               <div
                 key={w}
                 className={clsx(
-                  "px-3 py-2 text-xs font-medium",
+                  "px-3 py-2.5 text-xs font-medium",
                   i >= 5 ? "text-ink-muted" : "text-ink-secondary"
                 )}
               >
@@ -136,8 +127,9 @@ export default function CalendarBoard({ data }: { data: CalendarMonth }) {
           </div>
         </div>
       </div>
+      </div>
 
-      {day && <DayDetails day={day} />}
+      {day && <DayDetails key={day.date} day={day} />}
     </div>
   );
 }
@@ -219,15 +211,9 @@ function DayCell({
   );
 }
 
-function DayDetails({ day }: { day: CalendarDay }) {
-  const [showAllOrders, setShowAllOrders] = useState(false);
-  const [showAllGrades, setShowAllGrades] = useState(false);
-  const VISIBLE = 6;
-  const orders = showAllOrders ? day.orders : day.orders.slice(0, VISIBLE);
-  // Ростовок за большой срез набегает под двадцать строк — столько сразу не
-  // читают, а карточка рядом из-за них уезжает вниз на пол-экрана.
-  const grades = showAllGrades ? day.receivedByGrade : day.receivedByGrade.slice(0, VISIBLE);
+type DayTab = "orders" | "managers" | "received" | "shipped" | "payments" | "writeoffs";
 
+function DayDetails({ day }: { day: CalendarDay }) {
   const date = new Date(`${day.date}T00:00:00`);
   const title = date.toLocaleDateString("ru-RU", {
     day: "numeric",
@@ -241,17 +227,31 @@ function DayDetails({ day }: { day: CalendarDay }) {
     day.shippedStems === 0 &&
     day.paidMoney === 0;
 
+  // Разрезы дня — вкладками одной карточки, а не шестью карточками друг под другом.
+  const tabs: { key: DayTab; label: string }[] = [
+    ...(day.orders.length > 0 ? [{ key: "orders" as DayTab, label: `Заявки (${day.orders.length})` }] : []),
+    ...(day.byManager.length > 0 ? [{ key: "managers" as DayTab, label: "Кто продал" }] : []),
+    ...(day.receivedByFlower.length > 0 ? [{ key: "received" as DayTab, label: "Срез" }] : []),
+    ...(day.shippedByFlower.length > 0 ? [{ key: "shipped" as DayTab, label: "Отгрузки" }] : []),
+    ...(day.payments.length > 0 ? [{ key: "payments" as DayTab, label: `Оплаты (${day.payments.length})` }] : []),
+    ...(day.writeoffs.length > 0 ? [{ key: "writeoffs" as DayTab, label: "Списания" }] : []),
+  ];
+  const [tab, setTab] = useState<DayTab>(tabs[0]?.key ?? "orders");
+  const shownTab = tabs.some((t) => t.key === tab) ? tab : tabs[0]?.key;
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="font-medium first-letter:uppercase">{title}</h2>
+    <div className="card !p-0 overflow-hidden">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 sm:px-5 pt-4">
+        <h2 className="font-display text-[17px] font-bold first-letter:uppercase">{title}</h2>
         {day.future && <span className="text-sm text-ink-muted">День ещё не наступил</span>}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile label="Срезали и приняли" value={`${nf(day.receivedStems)} шт`} sub={
-          day.receivedMoney > 0 ? `${money(day.receivedMoney)} ₸ по прайсу` : undefined
-        } />
+      <div className="grid grid-cols-2 gap-2.5 px-4 sm:px-5 py-4">
+        <Tile
+          label="Срезали и приняли"
+          value={`${nf(day.receivedStems)} шт`}
+          sub={day.receivedMoney > 0 ? `${money(day.receivedMoney)} ₸ по прайсу` : undefined}
+        />
         <Tile
           label="Продали"
           value={`${money(day.soldMoney)} ₸`}
@@ -264,144 +264,115 @@ function DayDetails({ day }: { day: CalendarDay }) {
         <Tile
           label="Отгрузили"
           value={`${nf(day.shippedStems)} шт`}
-          sub={
-            day.shipmentCount > 0
-              ? plural(day.shipmentCount, "отгрузка", "отгрузки", "отгрузок")
-              : undefined
-          }
+          sub={day.shipmentCount > 0 ? plural(day.shipmentCount, "отгрузка", "отгрузки", "отгрузок") : undefined}
         />
         <Tile
           label="Пришло денег"
           value={`${money(day.paidMoney)} ₸`}
-          sub={
-            day.payments.length > 0
-              ? plural(day.payments.length, "оплата", "оплаты", "оплат")
-              : undefined
-          }
+          sub={day.payments.length > 0 ? plural(day.payments.length, "оплата", "оплаты", "оплат") : undefined}
           tone="good"
         />
       </div>
 
-      {nothing ? (
-        <div className="card text-center py-8 text-sm text-ink-secondary">
-          {day.future
-            ? "Пока пусто."
-            : "В этот день ничего не было."}
+      {nothing || !shownTab ? (
+        <div className="text-center py-10 text-sm text-ink-muted border-t border-line-hairline">
+          {day.future ? "Пока пусто." : "В этот день ничего не было."}
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {day.byManager.length > 0 && (
-            <Block title="Кто продал">
-              <Table
-                head={["Менеджер", "Заявок", "Стеблей", "Сумма"]}
-                rows={day.byManager.map((m) => [
-                  m.label,
-                  String(m.count),
-                  nf(m.stems),
-                  `${money(m.amount)} ₸`,
-                ])}
-              />
-            </Block>
+        <>
+          <div className="border-t border-line-hairline">
+            <CardTabs tone="analytics" items={tabs} value={shownTab} onChange={setTab} />
+          </div>
+
+          <div key={shownTab}>
+          {shownTab === "orders" && (
+            <PagedTable
+              head={["Клиент", "Менеджер", "Сумма", "Оплата"]}
+              what="заявок"
+              rows={day.orders.map((o) => [
+                <Link key={o.orderId} href={`/orders/${o.orderId}`} className="font-semibold hover:underline">
+                  {o.clientName}
+                </Link>,
+                o.managerName,
+                `${money(o.amount)} ₸`,
+                o.paidAmount >= o.amount - 1 && o.paidAmount > 0 ? (
+                  <span key="p" className="text-status-good">
+                    оплачено
+                  </span>
+                ) : o.paidAmount > 0 ? (
+                  <span key="p" className="text-[#8a5a00]">
+                    {money(o.paidAmount)} из {money(o.amount)}
+                  </span>
+                ) : (
+                  <span key="p" className="text-ink-muted">
+                    ждём
+                  </span>
+                ),
+              ])}
+            />
           )}
 
-          {day.receivedByFlower.length > 0 && (
-            <Block title="Что срезали">
-              <Table
+          {shownTab === "managers" && (
+            <PagedTable
+              head={["Менеджер", "Заявок", "Стеблей", "Сумма"]}
+              what="менеджеров"
+              rows={day.byManager.map((m) => [m.label, String(m.count), nf(m.stems), `${money(m.amount)} ₸`])}
+            />
+          )}
+
+          {shownTab === "received" && (
+            <>
+              <PagedTable
                 head={["Цветок", "Партий", "Стеблей", "По прайсу"]}
-                rows={day.receivedByFlower.map((f) => [
-                  f.label,
-                  String(f.count),
-                  nf(f.stems),
-                  `${money(f.amount)} ₸`,
-                ])}
+                what="цветков"
+                rows={day.receivedByFlower.map((f) => [f.label, String(f.count), nf(f.stems), `${money(f.amount)} ₸`])}
               />
-            </Block>
+              {day.receivedByGrade.length > 0 && (
+                <>
+                  <div className="px-4 sm:px-5 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted border-t border-line-hairline">
+                    По ростовке и категории
+                  </div>
+                  <PagedTable
+                    head={["Позиция", "Стеблей"]}
+                    what="позиций"
+                    rows={day.receivedByGrade.map((g) => [g.label, nf(g.stems)])}
+                  />
+                </>
+              )}
+            </>
           )}
 
-          {day.orders.length > 0 && (
-            <Block title="Заявки за день">
-              <Table
-                head={["Клиент", "Менеджер", "Сумма", "Оплата"]}
-                rows={orders.map((o) => [
-                  <Link key={o.orderId} href={`/orders/${o.orderId}`} className="hover:underline">
-                    {o.clientName}
-                  </Link>,
-                  o.managerName,
-                  `${money(o.amount)} ₸`,
-                  o.paidAmount >= o.amount - 1 && o.paidAmount > 0 ? (
-                    <span key="p" className="text-status-good">
-                      оплачено
-                    </span>
-                  ) : o.paidAmount > 0 ? (
-                    <span key="p" className="text-[#8a5a00]">
-                      {money(o.paidAmount)} из {money(o.amount)}
-                    </span>
-                  ) : (
-                    <span key="p" className="text-ink-muted">
-                      ждём
-                    </span>
-                  ),
-                ])}
-              />
-              <MoreToggle
-                expanded={showAllOrders}
-                hidden={day.orders.length - orders.length}
-                onToggle={() => setShowAllOrders((v) => !v)}
-                what="заявок"
-                className="mt-2"
-              />
-            </Block>
+          {shownTab === "shipped" && (
+            <PagedTable
+              head={["Цветок", "Отгрузок", "Стеблей"]}
+              what="цветков"
+              rows={day.shippedByFlower.map((f) => [f.label, String(f.count), nf(f.stems)])}
+            />
           )}
 
-          {day.receivedByGrade.length > 0 && (
-            <Block title="Срез по ростовке и категории">
-              <Table
-                head={["Позиция", "Стеблей"]}
-                rows={grades.map((g) => [g.label, nf(g.stems)])}
-              />
-              <MoreToggle
-                expanded={showAllGrades}
-                hidden={day.receivedByGrade.length - grades.length}
-                onToggle={() => setShowAllGrades((v) => !v)}
-                what="позиций"
-                className="mt-2"
-              />
-            </Block>
+          {shownTab === "payments" && (
+            <PagedTable
+              head={["Клиент", "Способ", "Сумма"]}
+              what="оплат"
+              rows={day.payments.map((p) => [
+                <Link key={p.orderId} href={`/orders/${p.orderId}`} className="font-semibold hover:underline">
+                  {p.clientName}
+                </Link>,
+                p.method || "—",
+                `${money(p.amount)} ₸`,
+              ])}
+            />
           )}
 
-          {day.shippedByFlower.length > 0 && (
-            <Block title="Что отгрузили">
-              <Table
-                head={["Цветок", "Отгрузок", "Стеблей"]}
-                rows={day.shippedByFlower.map((f) => [f.label, String(f.count), nf(f.stems)])}
-              />
-            </Block>
+          {shownTab === "writeoffs" && (
+            <PagedTable
+              head={["Причина", "Стеблей"]}
+              what="причин"
+              rows={day.writeoffs.map((w) => [w.reason, nf(w.stems)])}
+            />
           )}
-
-          {day.payments.length > 0 && (
-            <Block title="Оплаты">
-              <Table
-                head={["Клиент", "Способ", "Сумма"]}
-                rows={day.payments.map((p) => [
-                  <Link key={p.orderId} href={`/orders/${p.orderId}`} className="hover:underline">
-                    {p.clientName}
-                  </Link>,
-                  p.method || "—",
-                  `${money(p.amount)} ₸`,
-                ])}
-              />
-            </Block>
-          )}
-
-          {day.writeoffs.length > 0 && (
-            <Block title="Списания">
-              <Table
-                head={["Причина", "Стеблей"]}
-                rows={day.writeoffs.map((w) => [w.reason, nf(w.stems)])}
-              />
-            </Block>
-          )}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -419,11 +390,11 @@ function Tile({
   tone?: "good";
 }) {
   return (
-    <div className="card !p-4">
-      <div className="text-xs text-ink-secondary mb-1">{label}</div>
+    <div className="rounded-xl bg-surface-plane px-3 py-2.5">
+      <div className="text-xs text-ink-muted mb-1">{label}</div>
       <div
         className={clsx(
-          "font-display text-xl font-extrabold tabular-nums",
+          "font-display text-lg font-extrabold tabular-nums leading-tight",
           tone === "good" ? "text-status-good" : "text-ink-primary"
         )}
       >
@@ -434,54 +405,37 @@ function Tile({
   );
 }
 
-function Block({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+/** Таблица разреза дня страницами (новый вид: вместо «показать ещё N»). */
+function PagedTable({ head, rows, what }: { head: string[]; rows: React.ReactNode[][]; what: string }) {
+  const [page, setPage] = useState(0);
+  const shown = pageSlice(rows, page);
   return (
-    <div className="card">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 mb-2">
-        <h3 className="font-medium text-sm">{title}</h3>
-        {hint && <span className="text-xs text-ink-muted">{hint}</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
-  return (
-    <div className="table-scroll">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-ink-secondary border-b border-line-hairline">
-            {head.map((h, i) => (
-              <th key={h} className={clsx("py-1.5 font-medium", i > 0 && "text-right")}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} className="border-b border-line-hairline last:border-0">
-              {row.map((cell, j) => (
-                <td
-                  key={j}
-                  className={clsx("py-1.5", j > 0 && "text-right tabular-nums whitespace-nowrap")}
-                >
-                  {cell}
-                </td>
+    <>
+      <div className="table-scroll">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
+              {head.map((h, i) => (
+                <th key={h} className={clsx("px-4 py-2.5 font-medium", i > 0 && "text-right")}>
+                  {h}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {shown.map((row, i) => (
+              <tr key={i} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane/60">
+                {row.map((cell, j) => (
+                  <td key={j} className={clsx("px-4 py-2.5", j > 0 && "text-right tabular-nums whitespace-nowrap")}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pager total={rows.length} page={page} onPage={setPage} what={what} />
+    </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { importForecastAction, parseForecastFileAction } from "@/app/forecast/actions";
 import { FLOWER_TYPE_LABELS, farmLabel, formatGrade, periodLabel, weekLabel } from "@/lib/constants";
@@ -16,10 +16,13 @@ import Hint from "./Hint";
 export default function ForecastImportForm({
   month,
   farm = null,
+  status,
 }: {
   month: string;
   /** Выбранная администратором компания: шаблон и загрузка — только по ней. */
   farm?: string | null;
+  /** Строка состояния под заголовком: сколько недель заполнено, когда правили. */
+  status?: ReactNode;
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -83,10 +86,11 @@ export default function ForecastImportForm({
   }
 
   return (
-    <div className="card space-y-4">
+    <div className="card !p-4 sm:!p-5 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-medium">Загрузка из Excel</h2>
+          <h2 className="font-display text-[15px] font-bold">Загрузка из Excel</h2>
+          {status && <p className="text-sm text-ink-muted mt-0.5">{status}</p>}
           <p className="text-sm text-ink-secondary mt-0.5">
             Файл <b>заменит</b> <span className="capitalize">{periodLabel(month)}</span>{" "}
             {farm ? <>по {farmLabel(farm)}</> : "целиком"}.

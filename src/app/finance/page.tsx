@@ -60,8 +60,8 @@ export default async function FinancePage({
                 href={`/finance?period=${p.key}${anchor ? `&date=${anchor}` : ""}`}
                 className={
                   period === p.key
-                    ? "px-3 py-1.5 rounded-lg text-sm bg-accent text-white"
-                    : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane"
+                    ? "px-3 py-1.5 rounded-lg text-sm bg-ink-primary text-white"
+                    : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline bg-surface text-ink-secondary hover:text-ink-primary"
                 }
               >
                 {p.label}
@@ -86,7 +86,7 @@ export default async function FinancePage({
           что сайт сломался, — ровно так и вышло у бухгалтера, когда права
           пропали из-за сбоя связи с таблицей (грабли 1.14). */}
       {!canEdit && (
-        <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">
+        <p className="text-sm text-ink-secondary bg-section-money-soft/60 rounded-lg px-3 py-2">
           Только <b>просмотр</b>: оплаты и счета отмечает бухгалтер.
         </p>
       )}

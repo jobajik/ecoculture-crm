@@ -12,7 +12,7 @@ import { buildCallQueue, buildCallReport, listCampaigns } from "@/lib/calls";
 import { localDayKey } from "@/lib/timezone";
 import { isRetailRole } from "@/lib/retail";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
+import PaneTabs from "@/components/PaneTabs";
 import CallDesk from "@/components/CallDesk";
 import CallReport from "@/components/CallReport";
 import { clientsTabsFor } from "../../tabs";
@@ -68,29 +68,29 @@ export default async function CallsPage({ searchParams }: { searchParams?: { c?:
   const showDesk = !manage || queue.items.length > 0 || queue.later > 0;
   const reportCampaign = report?.campaign ?? "";
 
+  const desk = <CallDesk items={queue.items.slice(0, QUEUE_BATCH)} counts={queue} today={today} callsToday={myCallsToday} />;
+
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader area="leads" title="Обзвон" tabs={clientsTabsFor(undefined, role)} />
 
       {campaigns.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-sm">
-          <span className="text-ink-muted mr-1">Обзвон:</span>
-          {!manage && (
-            <CampaignChip href="/clients/leads/calls" active={!campaign} label="все мои" />
-          )}
+        <div className="flex gap-2 overflow-x-auto scroll-x-hidden lg:flex-wrap -mx-1 px-1 mb-5">
+          {!manage && <CampaignChip href="/clients/leads/calls" active={!campaign} label="Все мои" />}
           {campaigns.map((c) => (
             <CampaignChip
               key={c.name}
               href={`/clients/leads/calls?c=${encodeURIComponent(c.name)}`}
               active={manage ? reportCampaign === c.name : campaign === c.name}
-              label={`${c.name} · ${c.leads}`}
+              label={c.name}
+              count={c.leads}
             />
           ))}
         </div>
       )}
 
       {manage && campaigns.length === 0 && (
-        <p className="card text-sm text-ink-secondary">
+        <p className="card text-sm text-ink-secondary mb-5">
           Обзвонов ещё нет. Загрузите базу в «Лидах» — кнопка «Загрузить базу»: там же назовёте обзвон и раздадите
           клиентов менеджерам.{" "}
           <Link href="/clients/leads" className="text-accent hover:underline">
@@ -99,30 +99,31 @@ export default async function CallsPage({ searchParams }: { searchParams?: { c?:
         </p>
       )}
 
-      {report && campaigns.length > 0 && <CallReport report={report} managers={managers} />}
-
-      {showDesk &&
-        (manage ? (
-          <Section tone="leads" icon="phone" title="Мои звонки" className="!mb-0">
-            <CallDesk items={queue.items.slice(0, QUEUE_BATCH)} counts={queue} today={today} callsToday={myCallsToday} />
-          </Section>
-        ) : (
-          <CallDesk items={queue.items.slice(0, QUEUE_BATCH)} counts={queue} today={today} callsToday={myCallsToday} />
-        ))}
+      {manage ? (
+        <PaneTabs
+          tabs={[
+            { key: "report", label: "Итоги обзвона", content: report && campaigns.length > 0 ? <CallReport report={report} managers={managers} /> : null },
+            { key: "desk", label: "Мои звонки", count: queue.items.length, content: showDesk ? desk : null },
+          ]}
+        />
+      ) : (
+        desk
+      )}
     </div>
   );
 }
 
-function CampaignChip({ href, active, label }: { href: string; active: boolean; label: string }) {
+function CampaignChip({ href, active, label, count }: { href: string; active: boolean; label: string; count?: number }) {
   return (
     <Link
       href={href}
       className={clsx(
-        "rounded-full border px-3 py-1",
-        active ? "border-section-leads bg-section-leads-soft text-section-leads font-medium" : "border-line-hairline text-ink-secondary hover:bg-surface-sunk"
+        "flex-none h-8 px-3 rounded-full border text-[13px] inline-flex items-center gap-1.5 whitespace-nowrap transition-colors",
+        active ? "bg-ink-primary border-ink-primary text-white font-semibold" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
       )}
     >
       {label}
+      {count !== undefined && <span className={clsx("tabular-nums", active ? "text-white/70" : "text-ink-muted")}>{count}</span>}
     </Link>
   );
 }

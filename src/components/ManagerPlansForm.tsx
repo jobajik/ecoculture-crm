@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { saveManagerPlansAction } from "@/app/plans/actions";
 import { PLAN_FLOWERS, planCellKey, planFlowerLabel } from "@/lib/managerPlans";
 import NumberCell from "./NumberCell";
+import SaveBar from "./SaveBar";
 import PlanProgress, { paceTone, TONE_TEXT } from "./PlanProgress";
 import { unwrap } from "@/lib/actionResult";
 
@@ -191,49 +192,52 @@ export default function ManagerPlansForm({
 
   return (
     <div className="space-y-3">
-      {/* Переключатель цветка. На кнопке сразу стоит итог по нему — иначе, чтобы
-          увидеть весь план, пришлось бы три раза переключиться и держать цифры
-          в голове. */}
-      <div className="flex flex-wrap gap-2">
+      <div className="card !p-0 overflow-hidden">
+      {/* Переключатель цветка — вкладками карточки. На вкладке сразу стоит итог по
+          нему — иначе, чтобы увидеть весь план, пришлось бы три раза
+          переключиться и держать цифры в голове. */}
+      <div className="flex flex-wrap items-end gap-x-6 px-4 sm:px-5 border-b border-line-hairline">
         {PLAN_FLOWERS.map((f) => (
           <button
             key={f}
             type="button"
             onClick={() => setFlower(f)}
             className={clsx(
-              "rounded-lg border px-3 py-2 text-left transition-colors",
-              f === flower
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-line-hairline text-ink-secondary hover:bg-surface-plane"
+              "py-3 text-left border-b-2 -mb-px transition-colors",
+              f === flower ? "border-section-plans text-ink-primary" : "border-transparent text-ink-secondary hover:text-ink-primary"
             )}
           >
-            <div className="text-sm font-medium">{planFlowerLabel(f)}</div>
-            <div className="text-xs tabular-nums opacity-80">
+            <div className={clsx("text-sm", f === flower && "font-semibold")}>{planFlowerLabel(f)}</div>
+            <div className="text-xs tabular-nums text-ink-muted">
               {nf(flowerTotals[f].amount)} ₸ · {nf(flowerTotals[f].stems)} шт
             </div>
           </button>
         ))}
+        <div className="ml-auto py-3 text-right">
+          <div className="text-xs text-ink-muted">План отдела, все цветки</div>
+          <div className="font-display font-extrabold tabular-nums">{nf(grandTotal.amount)} ₸</div>
+        </div>
       </div>
 
       {/* На узком экране таблица не сжимается, а прокручивается вбок: у поля
           ввода есть предел, за которым «1 800 000» показывается как «1 800 0».
           Шрифт уменьшить нельзя — при меньшем 16 px Safari на iPhone сам
           увеличивает страницу, как только палец попадает в поле. */}
-      <div className="card !p-0 table-scroll">
+      <div className="table-scroll">
         <table className="w-full min-w-[540px] sm:min-w-0 text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Менеджер</th>
-              <th className="px-4 py-3 font-medium w-40">
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
+              <th className="px-4 py-2.5 font-medium">Менеджер</th>
+              <th className="px-4 py-2.5 font-medium w-44">
                 План продаж
                 <div className="text-xs font-normal text-ink-muted">
                   {planFlowerLabel(flower).toLowerCase()}
                 </div>
               </th>
-              <th className="px-4 py-3 font-medium w-40">
+              <th className="px-4 py-2.5 font-medium w-40">
                 План стеблей
               </th>
-              <th className="px-4 py-3 font-medium hidden sm:table-cell min-w-[190px]">
+              <th className="px-4 py-2.5 font-medium hidden sm:table-cell min-w-[210px]">
                 Продано
                 <div className="text-xs font-normal text-ink-muted">
                   {planFlowerLabel(flower).toLowerCase()}, за месяц
@@ -242,7 +246,7 @@ export default function ManagerPlansForm({
               {/* На телефоне последние колонки не влезают: поля ввода сжимаются
                   так, что числа в них обрезаются. Там факт и итог показаны
                   строками под фамилией. */}
-              <th className="px-4 py-3 font-medium text-right hidden sm:table-cell">
+              <th className="px-4 py-2.5 font-medium text-right hidden sm:table-cell">
                 Всего за месяц
                 <div className="text-xs font-normal text-ink-muted">все цветки</div>
               </th>
@@ -253,9 +257,9 @@ export default function ManagerPlansForm({
               const current = cell(row.email, flower);
               const total = managerTotal(row);
               return (
-                <tr key={row.email} className="border-b border-line-hairline last:border-0">
-                  <td className="px-4 py-2">
-                    <div className="font-medium">{row.name || row.email}</div>
+                <tr key={row.email} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane/40">
+                  <td className="px-4 py-2.5">
+                    <div className="font-semibold">{row.name || row.email}</div>
                     <div className="text-xs text-ink-muted hidden sm:block">{row.email}</div>
                     <div className="sm:hidden mt-1 space-y-1">
                       <div className="text-xs text-ink-secondary tabular-nums">
@@ -325,8 +329,8 @@ export default function ManagerPlansForm({
             })}
           </tbody>
           <tfoot>
-            <tr className="bg-surface-plane">
-              <td className="px-4 py-3 font-medium">
+            <tr className="bg-surface-plane/60 border-t border-line-hairline">
+              <td className="px-4 py-3 font-semibold">
                 Итого по отделу
                 <div className="text-xs font-normal text-ink-secondary sm:hidden tabular-nums">
                   всего за месяц: {nf(grandTotal.amount)} ₸
@@ -368,6 +372,7 @@ export default function ManagerPlansForm({
           </tfoot>
         </table>
       </div>
+      </div>
 
       {unsplit.length > 0 && (
         <div className="text-sm text-ink-secondary bg-status-warning/10 rounded-lg px-3 py-2">
@@ -385,20 +390,16 @@ export default function ManagerPlansForm({
         <div className="text-sm text-status-good bg-status-good/10 rounded-lg px-3 py-2">{saved}</div>
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving || changed.length === 0}
-          className="btn-primary disabled:opacity-50"
-        >
-          {saving ? "Сохраняю…" : "Сохранить"}
-        </button>
-        <span className="text-sm text-ink-muted">
-          {changed.length === 0
-            ? "Изменений нет"
-            : `Изменено ячеек: ${changed.length}${changedFlowersLabel(changed)}`}
-        </span>
-      </div>
+      <SaveBar
+        count={changed.length}
+        what={`ячеек${changedFlowersLabel(changed)}`}
+        saving={saving}
+        onSave={handleSave}
+        onReset={() => {
+          setCells(initialCells);
+          setError(null);
+        }}
+      />
     </div>
   );
 }

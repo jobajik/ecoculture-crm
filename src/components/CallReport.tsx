@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -10,7 +10,8 @@ import { CALL_OUTCOMES, FAST_MARK_SECONDS, OUTCOME_GROUPS, outcomeLabel, outcome
 import { formatMoment } from "@/lib/formatDate";
 import Section from "./Section";
 import Hint from "./Hint";
-import MoreToggle from "./MoreToggle";
+import KpiTile from "./KpiTile";
+import Pager, { pageSlice } from "./Pager";
 
 const GROUP_BAR: Record<OutcomeGroup, string> = {
   interest: "bg-status-good",
@@ -45,69 +46,49 @@ export default function CallReport({
   const interest = r.byGroup.interest;
   const orders = r.byOutcome.find((o) => o.key === "order")?.count ?? 0;
 
+  const [tab, setTab] = useState<"feed" | "managers">("feed");
+  const tabs: { key: "feed" | "managers"; label: string; count: number }[] = [
+    { key: "feed", label: "Звонки", count: r.feed.length },
+    { key: "managers", label: "По менеджерам", count: r.managers.length },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile label="Позвонили" value={`${touchedTotal} из ${r.leads}`} sub={`${pct(touchedTotal, r.leads)} % базы · осталось ${r.untouched}`} />
-        <Tile label="Дозвонились" value={String(r.reached)} sub={`${pct(r.reached, touchedTotal)} % из тех, кому звонили`} />
-        <Tile label="Интерес" value={String(interest)} sub={`из них договорились о заказе: ${orders}`} tone="good" />
-        <Tile label="Звонков сегодня" value={String(r.callsToday)} sub={r.unassigned > 0 ? `ничьих в обзвоне: ${r.unassigned}` : "вся база раздана"} />
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="phone" label="Позвонили" value={`${touchedTotal} из ${r.leads}`} hint={`${pct(touchedTotal, r.leads)} % базы · осталось ${r.untouched}`} />
+        <KpiTile icon="phone" label="Дозвонились" value={r.reached} hint={`${pct(r.reached, touchedTotal)} % из тех, кому звонили`} />
+        <KpiTile icon="chart" label="Интерес" value={interest} hint={`договорились о заказе: ${orders}`} tone={interest > 0 ? "good" : undefined} />
+        <KpiTile
+          icon="client"
+          label="Звонков сегодня"
+          value={r.callsToday}
+          hint={r.silentToday.length > 0 ? `не звонили: ${r.silentToday.join(", ")}` : r.unassigned > 0 ? `ничьих в обзвоне: ${r.unassigned}` : "вся база раздана"}
+          tone={r.silentToday.length > 0 ? "warn" : undefined}
+        />
       </div>
 
-      {r.silentToday.length > 0 && (
-        <p className="card !py-2.5 text-sm border-status-warning/40 bg-status-warning/10">
-          Сегодня ещё не звонили: <b>{r.silentToday.join(", ")}</b>
-        </p>
-      )}
-
-      <Section
-        tone="leads"
-        icon="chart"
-        className="!mb-0"
-        title={
-          <>
-            Чем закончилось
-            <span className="normal-case tracking-normal">
-              <Hint>По каждому клиенту — итог ПОСЛЕДНЕГО звонка. Кому ещё не звонили, здесь нет.</Hint>
-            </span>
-          </>
-        }
-      >
-        {touchedTotal === 0 ? (
-          <p className="text-sm text-ink-muted">Звонков по этому обзвону ещё не было.</p>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex h-3 rounded-full overflow-hidden bg-surface-sunk">
-              {OUTCOME_GROUPS.map((g) =>
-                r.byGroup[g.key] > 0 ? (
-                  <span key={g.key} className={GROUP_BAR[g.key]} style={{ width: `${(r.byGroup[g.key] / touchedTotal) * 100}%` }} title={`${g.label}: ${r.byGroup[g.key]}`} />
-                ) : null
-              )}
-            </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
-              {OUTCOME_GROUPS.map((g) => (
-                <div key={g.key}>
-                  <div className={clsx("font-medium", GROUP_TEXT[g.key])}>
-                    {g.label} · {r.byGroup[g.key]} <span className="text-ink-muted font-normal">({pct(r.byGroup[g.key], touchedTotal)} %)</span>
-                  </div>
-                  <ul className="text-xs text-ink-secondary mt-0.5">
-                    {r.byOutcome
-                      .filter((o) => o.group === g.key && o.count > 0)
-                      .map((o) => (
-                        <li key={o.key}>
-                          {o.label} — {o.count}
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+        <div className="card !p-0 overflow-hidden min-w-0">
+          <div className="flex gap-x-5 overflow-x-auto scroll-x-hidden border-b border-line-hairline px-4">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={clsx(
+                  "py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors",
+                  tab === t.key ? "border-section-leads text-ink-primary font-semibold" : "border-transparent text-ink-secondary hover:text-ink-primary"
+                )}
+              >
+                {t.label}
+                <span className="ml-1.5 text-ink-muted font-normal tabular-nums">{t.count}</span>
+              </button>
+            ))}
           </div>
-        )}
-      </Section>
-
-      <Section tone="leads" icon="client" title="По менеджерам" flush className="!mb-0">
-        <div className="table-cards border-t border-line-hairline">
+          {tab === "feed" ? (
+            <CallFeed report={r} managers={managers} />
+          ) : (
+            <div className="table-cards">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -155,22 +136,60 @@ export default function CallReport({
               ))}
             </tbody>
           </table>
+            </div>
+          )}
         </div>
-      </Section>
 
-      <DistributeForm report={r} managers={managers} />
+        <div className="space-y-5 min-w-0">
+          <Section
+            tone="leads"
+            icon="chart"
+            className="!mb-0"
+            title={
+              <>
+                Чем закончилось
+                <span className="normal-case tracking-normal">
+                  <Hint>По каждому клиенту — итог ПОСЛЕДНЕГО звонка. Кому ещё не звонили, здесь нет.</Hint>
+                </span>
+              </>
+            }
+          >
+            {touchedTotal === 0 ? (
+              <p className="text-sm text-ink-muted">Звонков по этому обзвону ещё не было.</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex h-3 rounded-full overflow-hidden bg-surface-sunk">
+                  {OUTCOME_GROUPS.map((g) =>
+                    r.byGroup[g.key] > 0 ? (
+                      <span key={g.key} className={GROUP_BAR[g.key]} style={{ width: `${(r.byGroup[g.key] / touchedTotal) * 100}%` }} title={`${g.label}: ${r.byGroup[g.key]}`} />
+                    ) : null
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {OUTCOME_GROUPS.map((g) => (
+                    <div key={g.key}>
+                      <div className={clsx("font-medium", GROUP_TEXT[g.key])}>
+                        {g.label} · {r.byGroup[g.key]} <span className="text-ink-muted font-normal">({pct(r.byGroup[g.key], touchedTotal)} %)</span>
+                      </div>
+                      <ul className="text-xs text-ink-secondary mt-0.5">
+                        {r.byOutcome
+                          .filter((o) => o.group === g.key && o.count > 0)
+                          .map((o) => (
+                            <li key={o.key}>
+                              {o.label} — {o.count}
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
 
-      <CallFeed report={r} managers={managers} />
-    </div>
-  );
-}
-
-function Tile({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: "good" }) {
-  return (
-    <div className="card !py-3">
-      <div className="text-xs text-ink-muted">{label}</div>
-      <div className={clsx("font-display text-2xl font-extrabold tabular-nums", tone === "good" && "text-status-good")}>{value}</div>
-      <div className="text-xs text-ink-secondary mt-0.5">{sub}</div>
+          <DistributeForm report={r} managers={managers} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -268,50 +287,42 @@ function DistributeForm({ report, managers }: { report: Report; managers: { emai
 function CallFeed({ report, managers }: { report: Report; managers: { email: string; name: string }[] }) {
   const [who, setWho] = useState("");
   const [outcome, setOutcome] = useState("");
-  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
   const list = useMemo(
     () => report.feed.filter((f) => (!who || f.managerEmail === who) && (!outcome || f.outcome === outcome)),
     [report.feed, who, outcome]
   );
-  const filtered = !!(who || outcome);
-  const shown = expanded || filtered ? list.slice(0, 300) : list.slice(0, 25);
+  useEffect(() => setPage(0), [who, outcome]);
+  const shown = pageSlice(list, page);
 
   return (
-    <Section
-      tone="leads"
-      icon="phone"
-      flush
-      className="!mb-0"
-      title={`Звонки · ${report.feed.length}`}
-      aside={
-        <div className="flex flex-wrap gap-2">
-          <select className="input !w-auto !py-1 !text-sm" value={who} onChange={(e) => setWho(e.target.value)}>
-            <option value="">все менеджеры</option>
-            {managers.map((m) => (
-              <option key={m.email} value={m.email}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          <select className="input !w-auto !py-1 !text-sm" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
-            <option value="">все итоги</option>
-            {CALL_OUTCOMES.map((o) => (
-              <option key={o.key} value={o.key}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      }
-    >
+    <div>
+      <div className="px-4 py-3 border-b border-line-hairline flex flex-wrap gap-2">
+        <select className="input !w-auto !py-1 !text-sm" value={who} onChange={(e) => setWho(e.target.value)}>
+          <option value="">все менеджеры</option>
+          {managers.map((m) => (
+            <option key={m.email} value={m.email}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+        <select className="input !w-auto !py-1 !text-sm" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+          <option value="">все итоги</option>
+          {CALL_OUTCOMES.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
       {list.length === 0 ? (
-        <p className="px-5 pb-4 text-sm text-ink-muted">Звонков нет.</p>
+        <p className="px-4 py-6 text-sm text-ink-muted">Звонков нет.</p>
       ) : (
-        <ol className="divide-y divide-line-hairline/70 border-t border-line-hairline">
+        <ol className="divide-y divide-line-hairline/70">
           {shown.map((f) => {
             const g = outcomeOf(f.outcome)?.group ?? "none";
             return (
-              <li key={f.touchId} className="px-5 py-2.5 text-sm space-y-0.5">
+              <li key={f.touchId} className="px-4 py-2.5 text-sm space-y-0.5">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   <Link href={`/clients/leads/${f.leadId}`} className="font-medium hover:underline">
                     {f.leadName}
@@ -333,7 +344,7 @@ function CallFeed({ report, managers }: { report: Report; managers: { email: str
           })}
         </ol>
       )}
-      {!filtered && <MoreToggle expanded={expanded} hidden={Math.min(list.length, 300) - shown.length} onToggle={() => setExpanded(!expanded)} what="звонков" />}
-    </Section>
+      <Pager total={list.length} page={page} onPage={setPage} what="звонков" />
+    </div>
   );
 }

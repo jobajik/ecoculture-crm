@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { checkLeadImportAction, importLeadsAction } from "@/app/clients/leads/actions";
 import { collectRequests, parseLeadMatrix, pickLeadSheet, type LeadImportResult } from "@/lib/leads";
 import { unwrapValue } from "@/lib/actionResult";
-import MoreToggle from "./MoreToggle";
+import Pager, { pageSlice } from "./Pager";
 import Hint from "./Hint";
 
 const VISIBLE = 15;
@@ -28,7 +28,7 @@ export default function LeadImportForm({ managers }: { managers: { email: string
   const [sheetName, setSheetName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ created: number; skipped: number; perManager: Record<string, number> } | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
   const [offSegments, setOffSegments] = useState<string[]>([]);
   const now = new Date();
   const [campaign, setCampaign] = useState(`Обзвон ${MONTHS[now.getMonth()]} ${now.getFullYear()}`);
@@ -40,7 +40,7 @@ export default function LeadImportForm({ managers }: { managers: { email: string
     setError(null);
     setDone(null);
     setResult(null);
-    setExpanded(false);
+    setPage(0);
     setBusy("read");
     try {
       const lite = await import("@/lib/xlsxLite");
@@ -81,7 +81,7 @@ export default function LeadImportForm({ managers }: { managers: { email: string
   }, [rows]);
   const offCount = rows.filter((r) => !r.skip && offSegments.includes(r.segment)).length;
   const bought = chosen.filter((r) => r.pastOrders > 0).length;
-  const shown = expanded ? rows : rows.slice(0, VISIBLE);
+  const shown = pageSlice(rows, page, VISIBLE);
   const nameOf = (email: string) => managers.find((m) => m.email === email)?.name ?? email;
 
   async function handleImport() {
@@ -304,7 +304,7 @@ export default function LeadImportForm({ managers }: { managers: { email: string
                   </tbody>
                 </table>
               </div>
-              <MoreToggle expanded={expanded} hidden={rows.length - shown.length} onToggle={() => setExpanded(!expanded)} what="строк" />
+              <Pager total={rows.length} page={page} onPage={setPage} size={VISIBLE} what="строк" />
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"

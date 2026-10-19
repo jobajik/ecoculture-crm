@@ -5,7 +5,6 @@ import Hint from "@/components/Hint";
 import AnalyticsReport from "@/components/AnalyticsReport";
 import FlowerSummary from "@/components/FlowerSummary";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
 import { analyticsTabsFor } from "./tabs";
 
 export const dynamic = "force-dynamic";
@@ -31,67 +30,76 @@ export default async function AnalyticsPage() {
   const ownFarm = session?.user?.role === "warehouse" ? session?.user?.farm ?? null : null;
   const { all, byFarm } = await getAnalyticsByFarm(ownFarm);
 
+  const extra =
+    all.headline.length > 0 || all.attention.length > 0 ? (
+      <div className="grid gap-5 lg:grid-cols-2 items-start">
+        {all.headline.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-2">Коротко</div>
+            <ul className="space-y-2 text-sm text-ink-secondary">
+              {all.headline.map((line, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="mt-2 w-1.5 h-1.5 rounded-full bg-section-analytics flex-none" />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {all.attention.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-2">На что смотреть</div>
+            <div className="grid gap-2">
+              {all.attention.map((a, i) => (
+                <div
+                  key={i}
+                  className={
+                    a.level === "critical"
+                      ? "rounded-xl px-3 py-2.5 border-l-4 border-l-status-critical bg-status-critical/[0.05]"
+                      : a.level === "warning"
+                        ? "rounded-xl px-3 py-2.5 border-l-4 border-l-status-warning bg-status-warning/[0.06]"
+                        : "rounded-xl px-3 py-2.5 border-l-4 border-l-status-good bg-status-good/[0.04]"
+                  }
+                >
+                  <div className="font-semibold text-sm">{a.title}</div>
+                  <div className="text-sm text-ink-secondary mt-0.5">{a.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    ) : null;
+
   return (
-    <div className="space-y-5">
+    <div>
       {/* У администратора рядом с отчётом живёт календарь: остальным ролям
           вкладок не показываем, одна вкладка в ряду выглядит как недоделка. */}
       <PageHeader
         area="analytics"
         title="Аналитика"
         tabs={analyticsTabsFor(session?.user?.role)}
-        subtitle={
-          <>
+        actions={
+          <span className="text-xs text-ink-muted">
             Последние {all.days} дней · {all.periodLabel}
             <Hint>
               Стрелка под цифрой — сравнение с предыдущими {all.days} днями ({all.prevLabel}).
               Заявки и клиенты по производствам не складываются в итог: смешанная заявка
-              считается у обоих.
+              считается у обоих. Обновлено {new Date(all.generatedAt).toLocaleString("ru-RU")}.
             </Hint>
-          </>
-        }
-        actions={
-          <span className="text-xs text-ink-muted">
-            Обновлено {new Date(all.generatedAt).toLocaleString("ru-RU")}
           </span>
         }
       />
 
-      {/* «По цветку» стоит ПЕРВОЙ — так решил владелец: это самая понятная
-          таблица во всей аналитике, и прятать её под кнопкой «подробности»
-          было ошибкой. Остальное — пояснения и разрезы к ней. */}
-      <FlowerSummary rows={all.byFlower} days={all.days} />
-
-      {all.headline.length > 0 && (
-        <Section tone="analytics" icon="note" title="Коротко" className="!mb-0">
-          <ul className="space-y-1 text-sm text-ink-secondary">
-            {all.headline.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {all.attention.length > 0 && (
-        <div className="grid gap-2 md:grid-cols-2">
-          {all.attention.map((a, i) => (
-            <div
-              key={i}
-              className={
-                a.level === "critical"
-                  ? "card !p-3 border-l-4 border-l-status-critical bg-status-critical/[0.05]"
-                  : a.level === "warning"
-                    ? "card !p-3 border-l-4 border-l-status-warning bg-status-warning/[0.06]"
-                    : "card !p-3 border-l-4 border-l-status-good bg-status-good/[0.04]"
-              }
-            >
-              <div className="font-medium text-sm">{a.title}</div>
-              <div className="text-sm text-ink-secondary mt-0.5">{a.detail}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <AnalyticsReport all={all} byFarm={byFarm} onlyFarm={ownFarm} />
+      {/* «По цветку» стоит ПЕРВОЙ вкладкой — так решил владелец: это самая понятная
+          таблица во всей аналитике. Остальное — вкладки разделов отчёта. */}
+      <AnalyticsReport
+        all={all}
+        byFarm={byFarm}
+        onlyFarm={ownFarm}
+        flowerSummary={all.byFlower.length > 0 ? <FlowerSummary rows={all.byFlower} days={all.days} bare /> : undefined}
+        extra={extra}
+      />
     </div>
   );
 }

@@ -6,12 +6,9 @@ import { importPricesAction, parsePriceFileAction } from "@/app/prices/actions";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import { BASE_VARIETY_LABEL } from "@/lib/priceList";
 import type { PriceParseResult } from "@/lib/excel";
-import MoreToggle from "./MoreToggle";
+import Pager, { pageSlice } from "./Pager";
 import Hint from "./Hint";
 import { unwrapValue } from "@/lib/actionResult";
-
-/** Сколько строк предпросмотра видно без разворота. */
-const VISIBLE_ROWS = 12;
 
 /**
  * Загрузка прайса файлом. Как у агронома с прогнозом: сначала показываем, что
@@ -30,13 +27,13 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
   const [result, setResult] = useState<PriceParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ updated: number; created: number } | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
 
   async function handleFile(file: File) {
     setError(null);
     setDone(null);
     setResult(null);
-    setExpanded(false);
+    setPage(0);
     setFileName(file.name);
     setParsing(true);
     try {
@@ -76,7 +73,7 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
   }
 
   const rows = result?.rows ?? [];
-  const shown = expanded ? rows : rows.slice(0, VISIBLE_ROWS);
+  const shown = pageSlice(rows, page);
 
   // Без файла это две кнопки в строке инструментов, а не отдельная карточка с
   // полем выбора файла: карточка занимала полэкрана, а нужна раз в месяц.
@@ -154,10 +151,11 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
             <p className="text-sm text-ink-secondary">Новых цен нет.</p>
           ) : (
             <>
-              <div className="overflow-x-auto border border-line-hairline rounded-lg">
+              <div className="overflow-hidden border border-line-hairline rounded-xl">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-ink-secondary border-b border-line-hairline bg-surface-plane">
+                    <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
                       <th className="px-3 py-2 font-medium">Цветок</th>
                       <th className="px-3 py-2 font-medium">Сорт</th>
                       <th className="px-3 py-2 font-medium">Длина / категория</th>
@@ -216,13 +214,8 @@ export default function PriceImportForm({ kind = "" }: { kind?: string }) {
                   </tbody>
                 </table>
               </div>
-
-              <MoreToggle
-                expanded={expanded}
-                hidden={rows.length - shown.length}
-                onToggle={() => setExpanded((v) => !v)}
-                what="строк"
-              />
+              <Pager total={rows.length} page={page} onPage={setPage} what="строк" />
+              </div>
             </>
           )}
 

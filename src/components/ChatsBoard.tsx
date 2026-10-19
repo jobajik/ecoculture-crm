@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { closeNoteAction, draftReplyAction, sendReplyAction } from "@/app/clients/chats/actions";
 import { unwrap, unwrapValue } from "@/lib/actionResult";
+import Chips from "./Chips";
+import Pager, { pageSlice } from "./Pager";
+
+/** Чатов на странице списка: столько помещается рядом с перепиской без прокрутки. */
+const CHATS_PAGE = 12;
 
 export interface BoardNote {
   at: string;
@@ -99,55 +104,51 @@ export default function ChatsBoard({
     });
   }, [chats, view, q]);
 
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [view, q, line]);
+  const waitingCount = chats.filter((c) => c.waitingSince).length;
+  const aiCount = chats.filter((c) => c.lastByAssistant).length;
+
   return (
-    <div className="space-y-3">
+    <div>
       {lines.length > 1 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-2 overflow-x-auto scroll-x-hidden lg:flex-wrap -mx-1 px-1 mb-4">
           {lines.map((l) => (
             <Link
               key={l.code || "main"}
               href={`/clients/chats?line=${encodeURIComponent(l.code)}`}
               className={clsx(
-                "px-3 py-1.5 rounded-lg text-sm border transition-colors",
-                l.code === line ? "border-section-leads bg-section-leads-soft text-ink-primary font-medium" : "border-line-hairline text-ink-secondary hover:text-ink-primary"
+                "flex-none h-8 px-3 rounded-full border text-[13px] whitespace-nowrap inline-flex items-center gap-1.5 transition-colors",
+                l.code === line ? "bg-ink-primary border-ink-primary text-white" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
               )}
             >
               {l.label}
-              {l.waiting > 0 && <span className="ml-1.5 rounded-full bg-status-critical/10 text-status-critical px-1.5 text-[11px]">{l.waiting}</span>}
+              {l.waiting > 0 && <b className={clsx("font-semibold tabular-nums", l.code !== line && "text-status-critical")}>{l.waiting}</b>}
             </Link>
           ))}
         </div>
       )}
-      {!lineConnected && <p className="text-sm text-status-critical">У этого номера нет ключа — подключите его в «Настройках → WhatsApp менеджеров».</p>}
+      {!lineConnected && <p className="text-sm text-status-critical mb-4">У этого номера нет ключа — подключите его в «Настройках → WhatsApp менеджеров».</p>}
 
-      <div className="grid lg:grid-cols-[360px_1fr] gap-4 items-start">
-        <div className={clsx("card !p-0 overflow-hidden", selected && "hidden lg:block")}>
-          <div className="p-3 space-y-2 border-b border-line-hairline">
+      <div className="grid lg:grid-cols-[360px_minmax(0,1fr)] gap-5 items-start">
+        <div className={clsx("card !p-0 overflow-hidden min-w-0", selected && "hidden lg:block")}>
+          <div className="px-4 py-3 space-y-2.5 border-b border-line-hairline">
             <input className="input w-full" placeholder="Поиск: имя, номер, текст" value={q} onChange={(e) => setQ(e.target.value)} />
-            <div className="flex flex-wrap gap-1 text-sm">
-              {(
-                [
-                  ["all", `Все · ${chats.length}`],
-                  ["waiting", `Ждут ответа · ${chats.filter((c) => c.waitingSince).length}`],
-                  ["notes", `Нужен менеджер · ${notesCount}`],
-                  ["ai", "Ответил ИИ"],
-                ] as [View, string][]
-              ).map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setView(v)}
-                  className={clsx("px-2 py-1 rounded-md", view === v ? "bg-section-leads-soft text-section-leads font-medium" : "text-ink-secondary hover:bg-surface-plane")}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <Chips
+              value={view}
+              onChange={(v) => setView(v as View)}
+              items={[
+                { value: "all", label: "Все", count: chats.length },
+                { value: "waiting", label: "Ждут ответа", count: waitingCount, alarm: true },
+                { value: "notes", label: "Нужен менеджер", count: notesCount, alarm: true },
+                { value: "ai", label: "Ответил ИИ", count: aiCount },
+              ]}
+            />
           </div>
-          <div className="max-h-[70vh] overflow-y-auto divide-y divide-line-hairline/70">
-            {shown.length === 0 && <p className="p-4 text-sm text-ink-muted">Пусто.</p>}
-            {shown.map((c) => (
-              <Link key={c.key} href={href(c.phone)} className={clsx("block px-3 py-2.5 hover:bg-surface-plane", selected?.key === c.key && "bg-section-leads-soft")}>
+          <div className="divide-y divide-line-hairline/70">
+            {shown.length === 0 && <p className="px-4 py-6 text-sm text-ink-muted">Пусто.</p>}
+            {pageSlice(shown, page, CHATS_PAGE).map((c) => (
+              <Link key={c.key} href={href(c.phone)} className={clsx("block px-4 py-2.5 hover:bg-surface-plane", selected?.key === c.key && "bg-section-leads-soft")}>
                 <div className="flex items-center gap-2">
                   <span className="font-medium truncate min-w-0 flex-1">{c.name}</span>
                   <span className="text-[11px] text-ink-muted flex-none">{formatMoment(c.lastAt)}</span>
@@ -164,12 +165,13 @@ export default function ChatsBoard({
               </Link>
             ))}
           </div>
+          <Pager total={shown.length} page={page} onPage={setPage} size={CHATS_PAGE} what="чатов" />
         </div>
 
         {selected ? (
           <Thread key={selected.key} line={line} chat={selected} thread={thread} verdict={verdict} canSend={canSend} aiReady={aiReady} backHref={href()} />
         ) : (
-          <div className="card hidden lg:block text-sm text-ink-muted">Выберите переписку слева.</div>
+          <div className="card hidden lg:grid place-items-center min-h-[320px] text-sm text-ink-muted">Выберите переписку слева.</div>
         )}
       </div>
     </div>

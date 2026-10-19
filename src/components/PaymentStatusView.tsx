@@ -11,11 +11,13 @@ import { formatDay, formatMoment } from "@/lib/formatDate";
 import { DEBT_OVERDUE_DAYS } from "@/lib/constants";
 import PaymentPanel from "./PaymentPanel";
 import InvoiceCell from "./InvoiceCell";
-import MoreToggle from "./MoreToggle";
+import Pager, { pageSlice } from "./Pager";
+import Chips from "./Chips";
 import Hint from "./Hint";
 
 const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
-const LANE_PREVIEW = 6;
+/** «Пришло сегодня» в боковой колонке — короткими порциями. */
+const TODAY_PAGE = 6;
 /** Страница сама перечитывает данные, пока открыта: Kaspi-оплаты приходят без бухгалтера. */
 const AUTO_REFRESH_MS = 90_000;
 
@@ -51,7 +53,7 @@ export default function PaymentStatusView({
   const [lane, setLane] = useState<StatusLane | "all">("all");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [todayPage, setTodayPage] = useState(0);
 
   // Пока открыта панель заявки, страницу не перечитываем: введённое не должно
   // пропадать из-под рук (грабли 1.20).
@@ -64,32 +66,45 @@ export default function PaymentStatusView({
   }, [openId, router]);
 
   const byKey = useMemo(() => Object.fromEntries(board.lanes.map((l) => [l.key, l])), [board.lanes]);
+  const laneLabel = useMemo(
+    () => Object.fromEntries(board.lanes.map((l) => [l.key, l.label])) as Record<StatusLane, string>,
+    [board.lanes]
+  );
   const q = query.trim();
-  const lanes = board.lanes
+  // Одна таблица вместо стопки дорожек: «Все» — дорожки подряд в их порядке (Kaspi не дошёл сверху),
+  // выбранная дорожка — только она. Дорожка видна цветной строкой статуса и меткой у строки.
+  const rows = board.lanes
     .filter((l) => lane === "all" || l.key === lane)
-    .map((l) => ({
-      ...l,
-      rows: q
-        ? l.rows.filter((r) => matchesOrderSearch(
-                {
-                  orderId: r.row.orderId,
-                  clientName: r.row.clientName,
-                  managerName: r.row.managerName,
-                  amount: r.row.amount,
-                  realization1c: r.row.realization1c,
-                  amounts: [r.row.debt, ...(r.kaspi ? [r.kaspi.amount] : [])],
-                },
-                q
-              ))
-        : l.rows,
-    }))
-    .filter((l) => l.rows.length > 0);
+    .flatMap((l) => l.rows)
+    .filter(
+      (r) =>
+        !q ||
+        matchesOrderSearch(
+          {
+            orderId: r.row.orderId,
+            clientName: r.row.clientName,
+            managerName: r.row.managerName,
+            amount: r.row.amount,
+            realization1c: r.row.realization1c,
+            amounts: [r.row.debt, ...(r.kaspi ? [r.kaspi.amount] : [])],
+          },
+          q
+        )
+    );
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    setPage(0);
+    setOpenId(null);
+  }, [lane, query]);
+  const shown = pageSlice(rows, page);
+  const rowsDebt = rows.reduce((s, r) => s + r.row.debt, 0);
   const totalOpen = board.lanes.reduce((s, l) => s + l.count, 0);
   const kw = board.kaspiWeek;
+  const laneHint = lane === "all" ? "" : byKey[lane]?.hint ?? "";
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Tile
           active={lane === "kaspi_pending"}
           onClick={() => setLane(lane === "kaspi_pending" ? "all" : "kaspi_pending")}
@@ -125,52 +140,51 @@ export default function PaymentStatusView({
         />
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
-        <div className="flex gap-2 overflow-x-auto scroll-x-hidden -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
-        <LaneChip active={lane === "all"} onClick={() => setLane("all")} label="Все" count={totalOpen} />
-        {board.lanes.map((l) => (
-          <LaneChip
-            key={l.key}
-            active={lane === l.key}
-            onClick={() => setLane(l.key)}
-            label={l.label}
-            count={l.count}
-            dot={LANE_TONE[l.key].dot}
-          />
-        ))}
-        </div>
-        <input
-          className="input !w-full sm:!w-56 sm:ml-auto"
-          placeholder="Клиент, номер, сумма"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
-
-      {lanes.length === 0 && (
-        <p className="text-sm text-ink-muted card">
-          {q ? "Ничего не нашлось." : totalOpen === 0 ? "Все счета оплачены." : "В этой дорожке пусто."}
-        </p>
-      )}
-
-      {lanes.map((l) => {
-        const showAll = expanded[l.key] || !!q || lane !== "all";
-        const visible = showAll ? l.rows : l.rows.slice(0, LANE_PREVIEW);
-        return (
-          <section key={l.key} className="card !p-0 overflow-hidden relative">
-            <span className={clsx("absolute inset-y-0 left-0 w-1", LANE_TONE[l.key].dot)} aria-hidden="true" />
-            <header className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-3 border-b border-line-hairline">
-              <h2 className={clsx("text-[13px] font-semibold uppercase tracking-[0.08em]", LANE_TONE[l.key].text)}>{l.label}</h2>
-              <span className="font-display font-bold tabular-nums text-ink-primary">
-                {l.rows.length} · {money(l.rows.reduce((s, r) => s + r.row.debt, 0))}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] items-start">
+        <div className="card !p-0 overflow-hidden">
+          <div className="px-4 py-3 border-b border-line-hairline flex flex-col lg:flex-row lg:items-center gap-2">
+            <Chips
+              className="min-w-0 flex-1"
+              value={lane}
+              onChange={(v) => setLane(v as StatusLane | "all")}
+              items={[
+                { value: "all", label: "Все", count: totalOpen },
+                ...board.lanes.map((l) => ({
+                  value: l.key,
+                  label: l.label,
+                  count: l.count,
+                  alarm: l.key === "kaspi_problem",
+                })),
+              ]}
+            />
+            <input
+              className="input !w-full lg:!w-56 flex-none"
+              placeholder="Клиент, номер, сумма"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          {rows.length > 0 && (
+            <div className="px-4 py-2 border-b border-line-hairline text-xs text-ink-muted flex flex-wrap gap-x-2">
+              <span>
+                {rows.length} {lane === "all" ? "неоплаченных" : "в дорожке"} · долг{" "}
+                <b className="text-ink-primary tabular-nums">{money(rowsDebt)}</b>
               </span>
-              <span className="text-xs text-ink-muted">{l.hint}</span>
-            </header>
+              {laneHint && <span>· {laneHint}</span>}
+            </div>
+          )}
+
+          {rows.length === 0 ? (
+            <p className="text-sm text-ink-muted px-4 py-6">
+              {q ? "Ничего не нашлось." : totalOpen === 0 ? "Все счета оплачены." : "В этой дорожке пусто."}
+            </p>
+          ) : (
             <ul className="divide-y divide-line-hairline">
-              {visible.map((r) => (
+              {shown.map((r) => (
                 <StatusItem
                   key={r.row.orderId}
                   r={r}
+                  laneLabel={lane === "all" ? laneLabel[r.lane] : ""}
                   canEdit={canEdit}
                   kaspi={r.row.farms.some((f) => kaspiFarms.includes(f.farm) && f.amount - f.paidAmount > 1)}
                   open={openId === r.row.orderId}
@@ -178,64 +192,80 @@ export default function PaymentStatusView({
                 />
               ))}
             </ul>
-            {!showAll && l.rows.length > LANE_PREVIEW && (
-              <div className="px-4 py-2 border-t border-line-hairline">
-                <MoreToggle
-                  expanded={false}
-                  hidden={l.rows.length - LANE_PREVIEW}
-                  onToggle={() => setExpanded((e) => ({ ...e, [l.key]: true }))}
-                  what="заявок"
+          )}
+          <Pager total={rows.length} page={page} onPage={setPage} what="заявок" />
+        </div>
+
+        <div className="space-y-5">
+          <section className="card !p-0 overflow-hidden">
+            <header className="px-4 py-3 border-b border-line-hairline flex items-baseline gap-3">
+              <span className="w-2 h-2 rounded-full self-center bg-status-good" />
+              <h2 className="text-sm font-semibold">Пришло сегодня</h2>
+              <span className="ml-auto text-sm tabular-nums font-semibold text-status-good">
+                {money(board.paidToday.amount)}
+              </span>
+            </header>
+            {board.paidToday.rows.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-ink-muted">Пока ничего.</p>
+            ) : (
+              <>
+                <ul className="divide-y divide-line-hairline">
+                  {pageSlice(board.paidToday.rows, todayPage, TODAY_PAGE).map((p, i) => (
+                    <li key={`${p.orderId}-${i}`} className="px-4 py-2.5 text-sm">
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="font-medium min-w-0 truncate">{p.clientName || "(без названия)"}</span>
+                        <span className="ml-auto tabular-nums font-medium text-status-good flex-none">{money(p.amount)}</span>
+                      </div>
+                      <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-ink-muted">
+                        <Link href={`/orders/${p.orderId}`} className="font-mono hover:text-accent">
+                          {p.code}
+                        </Link>
+                        <span>{p.method}</span>
+                        {p.viaKaspi && <span className="text-accent">Kaspi-счёт · проведено само</span>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <Pager
+                  total={board.paidToday.rows.length}
+                  page={todayPage}
+                  onPage={setTodayPage}
+                  size={TODAY_PAGE}
+                  what="платежей"
                 />
-              </div>
+              </>
             )}
           </section>
-        );
-      })}
 
-      {board.paidToday.rows.length > 0 && (
-        <section className="card !p-0 overflow-hidden">
-          <header className="px-4 py-3 border-b border-line-hairline flex items-baseline gap-3">
-            <span className="w-2 h-2 rounded-full self-center bg-status-good" />
-            <h2 className="text-sm font-semibold">Пришло сегодня</h2>
-            <span className="text-sm tabular-nums text-ink-secondary">{money(board.paidToday.amount)}</span>
-          </header>
-          <ul className="divide-y divide-line-hairline">
-            {board.paidToday.rows.map((p, i) => (
-              <li key={`${p.orderId}-${i}`} className="px-4 py-2.5 flex flex-wrap items-baseline gap-x-3 text-sm">
-                <span className="font-medium min-w-0 truncate">{p.clientName || "(без названия)"}</span>
-                <Link href={`/orders/${p.orderId}`} className="text-xs font-mono text-ink-muted hover:text-accent">
-                  {p.code}
-                </Link>
-                <span className="text-xs text-ink-muted">{p.method}</span>
-                {p.viaKaspi && (
-                  <span className="text-[11px] rounded-full px-2 py-0.5 bg-accent-soft text-accent">
-                    Kaspi-счёт · проведено само
-                  </span>
-                )}
-                <span className="ml-auto tabular-nums font-medium text-status-good">{money(p.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <p className="text-xs text-ink-muted flex flex-wrap gap-x-3 gap-y-1 items-center">
-        <span>
-          Kaspi за 7 дней: выставлено {kw.sent} на {money(kw.sentAmount)}, оплачено {kw.paid} на {money(kw.paidAmount)}
-          {kw.sent > 0 && ` (${Math.round((kw.paid / kw.sent) * 100)} %)`}
-        </span>
-        <span>
-          · обновлено {formatMoment(generatedAt)}{" "}
-          <button type="button" className="text-accent hover:underline" onClick={() => router.refresh()}>
-            обновить
-          </button>
-          <Hint>
-            Страница обновляется сама раз в полторы минуты, пока открыта. Оплаченный Kaspi-счёт проводится
-            платежом без бухгалтера. Долг — остаток по заявке; реализация (пожарка) и наши магазины сюда не
-            попадают. «Нет отметки» — счёт не выставлен или отправлен мимо программы.
-          </Hint>
-        </span>
-      </p>
+          <section className="card !p-4 text-sm space-y-1">
+            <div className="text-xs text-ink-muted">Kaspi за 7 дней</div>
+            <div className="flex justify-between gap-2">
+              <span className="text-ink-secondary">Выставлено</span>
+              <span className="tabular-nums">
+                {kw.sent} · {money(kw.sentAmount)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-ink-secondary">Оплачено</span>
+              <span className="tabular-nums">
+                {kw.paid} · {money(kw.paidAmount)}
+                {kw.sent > 0 && ` (${Math.round((kw.paid / kw.sent) * 100)} %)`}
+              </span>
+            </div>
+            <div className="text-xs text-ink-muted pt-2 border-t border-line-hairline mt-2">
+              Обновлено {formatMoment(generatedAt)} ·{" "}
+              <button type="button" className="text-accent hover:underline" onClick={() => router.refresh()}>
+                обновить
+              </button>
+              <Hint>
+                Страница обновляется сама раз в полторы минуты, пока открыта. Оплаченный Kaspi-счёт проводится
+                платежом без бухгалтера. Долг — остаток по заявке; реализация (пожарка) и наши магазины сюда не
+                попадают. «Нет отметки» — счёт не выставлен или отправлен мимо программы.
+              </Hint>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
@@ -282,36 +312,6 @@ function Tile({
   );
 }
 
-function LaneChip({
-  label,
-  count,
-  active,
-  onClick,
-  dot,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-  dot?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={clsx(
-        "inline-flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm min-h-[36px]",
-        active ? "border-accent bg-accent-soft text-ink-primary" : "border-line-hairline text-ink-secondary hover:bg-surface"
-      )}
-    >
-      {dot && <span className={clsx("w-1.5 h-1.5 rounded-full", dot)} />}
-      {label}
-      <span className="tabular-nums text-ink-muted">{count}</span>
-    </button>
-  );
-}
-
 function statusText(r: StatusRow): string {
   const k = r.kaspi;
   switch (r.lane) {
@@ -335,12 +335,15 @@ function statusText(r: StatusRow): string {
 
 function StatusItem({
   r,
+  laneLabel,
   canEdit,
   kaspi,
   open,
   onToggle,
 }: {
   r: StatusRow;
+  /** Название дорожки — только в общем списке «Все». */
+  laneLabel: string;
   canEdit: boolean;
   kaspi: boolean;
   open: boolean;
@@ -360,7 +363,15 @@ function StatusItem({
               {r.row.code}
             </Link>
           </div>
-          <div className={clsx("text-xs truncate", LANE_TONE[r.lane].text)}>{statusText(r)}</div>
+          <div className={clsx("text-xs truncate", LANE_TONE[r.lane].text)}>
+            {laneLabel && (
+              <span className="inline-flex items-center gap-1 mr-1.5 font-medium">
+                <span className={clsx("w-1.5 h-1.5 rounded-full", LANE_TONE[r.lane].dot)} />
+                {laneLabel} ·
+              </span>
+            )}
+            {statusText(r)}
+          </div>
           {/* «Нет отметки о счёте»: отметить отправленный счёт или записать, почему
               не ушёл, — прямо в строке, как в «Оплатах», не раскрывая панель. */}
           {r.lane === "no_invoice" && (

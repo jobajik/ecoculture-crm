@@ -10,8 +10,8 @@ import Section from "./Section";
  */
 export default function WaInbox({ rows }: { rows: InboxRow[] }) {
   if (rows.length === 0) return null;
-  const first = rows.slice(0, 8);
-  const rest = rows.slice(8);
+  const first = rows.slice(0, 6);
+  const rest = rows.slice(6);
   const row = (r: InboxRow) => {
     const params = new URLSearchParams({ new: "1", phone: prettyWaPhone(r.phone), name: r.name || "", source: "Написали в WhatsApp" });
     return (
@@ -19,11 +19,11 @@ export default function WaInbox({ rows }: { rows: InboxRow[] }) {
         <span className="font-medium">{r.name || prettyWaPhone(r.phone)}</span>
         {r.name && <span className="text-xs text-ink-muted tabular-nums">{prettyWaPhone(r.phone)}</span>}
         {r.waiting && <span className="badge bg-status-critical/10 text-status-critical">ждёт ответа</span>}
-        <span className="basis-full sm:basis-auto sm:flex-1 min-w-0 truncate text-ink-secondary" title={r.lastText}>
+        <span className="basis-full min-w-0 truncate text-ink-secondary" title={r.lastText}>
           {r.lastText}
         </span>
         <span className="text-xs text-ink-muted tabular-nums">{formatMoment(r.lastAt)}</span>
-        <Link href={`/clients/leads?${params.toString()}`} className="text-accent font-medium hover:underline whitespace-nowrap">
+        <Link href={`/clients/leads?${params.toString()}`} className="ml-auto text-section-leads font-medium hover:underline whitespace-nowrap">
           Завести лидом
         </Link>
       </li>
@@ -34,7 +34,7 @@ export default function WaInbox({ rows }: { rows: InboxRow[] }) {
       <ol className="divide-y divide-line-hairline/70 border-t border-line-hairline">{first.map(row)}</ol>
       {rest.length > 0 && (
         <details className="border-t border-line-hairline">
-          <summary className="cursor-pointer px-4 py-2 text-sm text-accent select-none">ещё {rest.length}</summary>
+          <summary className="cursor-pointer px-4 py-2 text-sm text-section-leads select-none">ещё {rest.length}</summary>
           <ol className="divide-y divide-line-hairline/70">{rest.map(row)}</ol>
         </details>
       )}

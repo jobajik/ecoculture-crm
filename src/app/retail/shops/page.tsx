@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -8,11 +7,15 @@ import { ORDER_STATUSES, RETAIL_ORDER, ROLES } from "@/lib/constants";
 import { isRetailOrder, isRetailRole, retailShortLabel, territoriesFor } from "@/lib/retail";
 import { formatDay } from "@/lib/formatDate";
 import PageHeader from "@/components/PageHeader";
+import KpiTile from "@/components/KpiTile";
+import RetailShopsTable, { type RetailShopRow } from "@/components/RetailShopsTable";
+import { localDayKey } from "@/lib/timezone";
 import { retailTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
 
-const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
+/** Сколько дней без доставки — повод проверить точку: забытая заявка или магазин закрылся. */
+const QUIET_DAYS = 7;
 
 /**
  * Справочник наших точек. Отвечает на два вопроса: какие магазины у меня есть и
@@ -55,6 +58,31 @@ export default async function RetailShopsPage() {
     stat.set(order.clientId, row);
   }
 
+  // Новый вид (19.10.2026): цифры плитками, справочник — одна карточка с отбором «не возили неделю».
+  const today = localDayKey();
+  const dayMs = (d: string) => new Date(`${d}T00:00:00`).getTime();
+  const rows: RetailShopRow[] = shops.map((shop) => {
+    const row = stat.get(shop.clientId);
+    const last = row?.last ?? "";
+    const daysAgo = last ? Math.max(0, Math.round((dayMs(today) - dayMs(last.slice(0, 10))) / 86_400_000)) : null;
+    return {
+      clientId: shop.clientId,
+      name: shop.name,
+      city: shop.city || "",
+      territory: retailShortLabel(shop.retail),
+      active: shop.active,
+      orders: row?.orders ?? 0,
+      stems: row?.stems ?? 0,
+      amount: row?.amount ?? 0,
+      lastLabel: last ? formatDay(last) : "ещё не возили",
+      daysAgo: daysAgo !== null && Number.isFinite(daysAgo) ? daysAgo : null,
+    };
+  });
+  const activeRows = rows.filter((r) => r.active);
+  const quiet = activeRows.filter((r) => r.daysAgo !== null && r.daysAgo >= QUIET_DAYS).length;
+  const never = rows.filter((r) => r.daysAgo === null).length;
+  const stems = rows.reduce((s, r) => s + r.stems, 0);
+
   return (
     <div>
       <PageHeader
@@ -64,81 +92,20 @@ export default async function RetailShopsPage() {
         tabs={retailTabsFor(role)}
       />
 
-      <p className="text-sm text-ink-secondary mb-4">
-        {shops.length === 0
-          ? "Магазинов пока нет."
-          : `${shops.length} ${shops.length === 1 ? "магазин" : "магазинов"}`}
-      </p>
-
-      <div className="card !p-0 table-scroll table-cards">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Магазин</th>
-              <th className="px-4 py-3 font-medium">Город</th>
-              {territories.length > 1 && <th className="px-4 py-3 font-medium">Направление</th>}
-              <th className="px-4 py-3 font-medium text-right">Заявок</th>
-              <th className="px-4 py-3 font-medium text-right">Стеблей</th>
-              <th className="px-4 py-3 font-medium text-right">По внутр. цене</th>
-              <th className="px-4 py-3 font-medium">Последняя доставка</th>
-              {canOrder && <th className="px-4 py-3 font-medium" />}
-            </tr>
-          </thead>
-          <tbody>
-            {shops.map((shop) => {
-              const row = stat.get(shop.clientId);
-              return (
-                <tr
-                  key={shop.clientId}
-                  className="border-b border-line-hairline last:border-0 hover:bg-surface-plane"
-                >
-                  <td data-label="Магазин" className="px-4 py-2.5">
-                    <Link href={`/clients/${shop.clientId}`} className="font-medium hover:underline">
-                      {shop.name}
-                    </Link>
-                    {!shop.active && (
-                      <span className="ml-2 text-xs text-ink-muted">не работает</span>
-                    )}
-                  </td>
-                  <td data-label="Город" className="px-4 py-2.5 text-ink-secondary">{shop.city || "—"}</td>
-                  {territories.length > 1 && (
-                    <td data-label="Направление" className="px-4 py-2.5 text-ink-secondary">
-                      {retailShortLabel(shop.retail)}
-                    </td>
-                  )}
-                  <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row?.orders ?? 0}</td>
-                  <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
-                    {row ? row.stems.toLocaleString("ru-RU") : "—"}
-                  </td>
-                  <td data-label="По внутр. цене" className="px-4 py-2.5 text-right tabular-nums">
-                    {row ? money(row.amount) : "—"}
-                  </td>
-                  <td data-label="Последняя доставка" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                    {row?.last ? formatDay(row.last) : "ещё не возили"}
-                  </td>
-                  {canOrder && (
-                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                      <Link
-                        href={`/orders/new?retail=1&client=${shop.clientId}`}
-                        className="btn-secondary !py-1 !px-2.5 text-xs"
-                      >
-                        Заявка
-                      </Link>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-            {shops.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-ink-muted">
-                  Пока пусто
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="store" label="Магазинов" value={String(rows.length)} hint={`работают: ${activeRows.length}`} />
+        <KpiTile
+          icon="alert"
+          label={`Не возили ${QUIET_DAYS}+ дней`}
+          value={String(quiet)}
+          hint={quiet > 0 ? "забытая заявка или закрылись" : "всем возим"}
+          tone={quiet > 0 ? "bad" : "good"}
+        />
+        <KpiTile icon="clock" label="Ещё не возили" value={String(never)} hint="ни одной заявки" tone={never > 0 ? "warn" : undefined} />
+        <KpiTile icon="leaf" label="Стеблей за всё время" value={stems.toLocaleString("ru-RU")} hint="в наши магазины" />
       </div>
+
+      <RetailShopsTable rows={rows} showTerritory={territories.length > 1} canOrder={canOrder} quietDays={QUIET_DAYS} />
     </div>
   );
 }

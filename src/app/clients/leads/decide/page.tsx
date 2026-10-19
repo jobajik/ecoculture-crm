@@ -64,7 +64,7 @@ export default async function LeadDecisionsPage({ searchParams }: { searchParams
   };
 
   return (
-    <div className="space-y-5">
+    <div>
       <PageHeader
         area="leads"
         title={
@@ -81,14 +81,14 @@ export default async function LeadDecisionsPage({ searchParams }: { searchParams
         tabs={clientsTabsFor(undefined, role)}
       />
       {manage && managerOptions.length > 0 && (
-        <div className="flex flex-wrap gap-2 text-sm">
+        <div className="flex gap-2 overflow-x-auto scroll-x-hidden lg:flex-wrap -mx-1 px-1 mb-5">
           {[{ email: "", name: "Все менеджеры" }, ...managerOptions].map((o) => (
             <Link
               key={o.email || "all"}
               href={o.email ? `/clients/leads/decide?m=${encodeURIComponent(o.email)}` : "/clients/leads/decide"}
               className={
-                "px-3 py-1.5 rounded-lg border transition-colors " +
-                (o.email === managerFilter ? "border-section-leads bg-section-leads-soft text-ink-primary font-medium" : "border-line-hairline text-ink-secondary hover:text-ink-primary")
+                "flex-none h-8 px-3 rounded-full border text-[13px] whitespace-nowrap inline-flex items-center transition-colors " +
+                (o.email === managerFilter ? "bg-ink-primary border-ink-primary text-white" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary")
               }
             >
               {o.name}

@@ -19,7 +19,7 @@ export default async function DailySalesPage({
   const snapshot = await getDailySalesSnapshot(searchParams.date);
 
   return (
-    <div className="space-y-5">
+    <div>
       <PageHeader area="sales" title="Продажи за день" icon="calendar" tabs={salesTabsFor(role)} />
 
       <DailySalesDashboard initial={snapshot} />

@@ -15,7 +15,10 @@ import { openAiConfigured } from "@/lib/openai";
 import { formatMoment } from "@/lib/formatDate";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
-import StatTile from "@/components/StatTile";
+import KpiTile from "@/components/KpiTile";
+import Pill from "@/components/Pill";
+import PaneTabs from "@/components/PaneTabs";
+import PagedList from "@/components/PagedList";
 import Hint from "@/components/Hint";
 import TalksRunButton from "@/components/TalksRunButton";
 import { ScoreChip, TemperatureChip } from "@/components/TalkChips";
@@ -75,7 +78,7 @@ export default async function TalksPage() {
   );
 
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader
         area="leads"
         title="Разговоры"
@@ -97,7 +100,7 @@ export default async function TalksPage() {
       />
 
       {(!waReady || !aiReady) && (
-        <Section tone="warn" icon="alert" title="Подключение" className="!mb-0">
+        <Section tone="warn" icon="alert" title="Подключение" className="!mb-5">
           <ul className="text-sm space-y-1">
             <li>
               WhatsApp рабочего номера: {waReady ? <b className="text-status-good">подключён</b> : <b className="text-[#8a5a00]">не подключён</b>}
@@ -114,150 +117,164 @@ export default async function TalksPage() {
         </Section>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatTile label="Разобрано за 30 дней" value={String(report.analysedTotal)} sub={`переписок с сообщениями: ${infos.filter((i) => i.messages > 0).length}`} />
-        <StatTile
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="chart" label={`Разобрано за ${PERIOD_DAYS} дней`} value={report.analysedTotal} hint={`переписок с сообщениями: ${infos.filter((i) => i.messages > 0).length}`} />
+        <KpiTile
+          icon="check"
           label="Средняя оценка"
-          value={teamScore === null ? "—" : String(teamScore)}
-          sub="из 100 по чек-листу"
-          tone={teamScore === null ? "default" : teamScore >= 80 ? "good" : teamScore >= 50 ? "warning" : "critical"}
+          value={teamScore === null ? "—" : teamScore}
+          hint="из 100 по чек-листу"
+          tone={teamScore === null ? undefined : teamScore >= 80 ? "good" : teamScore >= 50 ? "warn" : "bad"}
         />
-        <StatTile
+        <KpiTile
+          icon="clock"
           label="Ждут ответа"
-          value={String(report.waiting.length)}
-          sub="клиент написал, мы молчим больше часа"
-          tone={report.waiting.length > 0 ? "critical" : "default"}
+          value={report.waiting.length}
+          hint="клиент написал, мы молчим больше часа"
+          tone={report.waiting.length > 0 ? "bad" : undefined}
         />
-        <StatTile label="Горячие" value={String(report.hot.length)} sub="готовы заказать" tone={report.hot.length > 0 ? "good" : "default"} />
+        <KpiTile icon="arrow" label="Горячие" value={report.hot.length} hint="готовы заказать" tone={report.hot.length > 0 ? "good" : undefined} />
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4 items-start">
-        <Section tone={report.waiting.length ? "bad" : "neutral"} icon="clock" title={`Ждут ответа · ${report.waiting.length}`} flush className="!mb-0">
-          {report.waiting.length === 0 ? (
-            <p className="px-4 pb-4 text-sm text-ink-muted">Все, кто написал, получили ответ.</p>
-          ) : (
-            <ol className="divide-y divide-line-hairline/70 border-t border-line-hairline">
-              {report.waiting.map((i) =>
-                leadLine(
-                  i,
-                  <span className="badge bg-status-critical/10 text-status-critical">{minutesWords(minutesSince(i.waitingSince, now))}</span>
-                )
-              )}
-            </ol>
-          )}
-        </Section>
-
-        <Section tone="claims" icon="arrow" title={`Горячие · ${report.hot.length}`} flush className="!mb-0">
-          {report.hot.length === 0 ? (
-            <p className="px-4 pb-4 text-sm text-ink-muted">Горячих лидов по последним разборам нет.</p>
-          ) : (
-            <ol className="divide-y divide-line-hairline/70 border-t border-line-hairline">
-              {report.hot.map((i) =>
-                leadLine(
-                  i,
-                  <>
-                    <TemperatureChip value="hot" />
-                    <span className="text-xs text-ink-muted tabular-nums">{i.lastAt ? formatMoment(i.lastAt) : ""}</span>
-                  </>
-                )
-              )}
-            </ol>
-          )}
-        </Section>
-      </div>
-
-      <Section tone="leads" icon="client" title="Менеджеры" flush className="!mb-0">
-        {report.managers.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-ink-muted">Переписок с лидами пока нет.</p>
-        ) : (
-          <div className="table-cards border-t border-line-hairline">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                  <th className="px-4 py-2 font-medium">Менеджер</th>
-                  <th className="px-3 py-2 font-medium text-right">Разборов</th>
-                  <th className="px-3 py-2 font-medium text-right">Оценка</th>
-                  <th className="px-3 py-2 font-medium text-right">Отвечает за</th>
-                  <th className="px-3 py-2 font-medium text-right">Ждут ответа</th>
-                  <th className="px-3 py-2 font-medium text-right">Горячих</th>
-                  <th className="px-4 py-2 font-medium">Слабее всего</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.managers.map((m) => {
-                  const weak = CHECKLIST.map((c) => ({ label: c.label as string, pct: m.items[c.key] }))
-                    .filter((x): x is { label: string; pct: number } => x.pct !== null && x.pct < 70)
-                    .sort((a, b) => a.pct - b.pct)
-                    .slice(0, 2);
-                  return (
-                    <tr key={m.email || "free"} className="border-b border-line-hairline/70 last:border-0">
-                      <td className="px-4 py-2 font-medium">{m.name}</td>
-                      <td data-label="Разборов" className="px-3 py-2 text-right tabular-nums">{m.analysed || ""}</td>
-                      <td data-label="Оценка" className="px-3 py-2 text-right">
-                        <ScoreChip score={m.avgScore} />
-                      </td>
-                      <td data-label="Отвечает за" className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                        {m.replyMinutes === null ? "" : minutesWords(m.replyMinutes)}
-                      </td>
-                      <td data-label="Ждут ответа" className={`px-3 py-2 text-right tabular-nums ${m.waiting ? "text-status-critical font-medium" : ""}`}>
-                        {m.waiting || ""}
-                      </td>
-                      <td data-label="Горячих" className="px-3 py-2 text-right tabular-nums">{m.hot || ""}</td>
-                      <td data-label="Слабее всего" className="px-4 py-2 text-ink-secondary">
-                        {weak.map((w) => `${w.label} — ${w.pct} %`).join("; ")}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
-
-      <div className="grid lg:grid-cols-2 gap-4 items-start">
-        <Section tone="leads" icon="check" title="Чек-лист по команде" className="!mb-0">
-          {fresh.length === 0 ? (
-            <p className="text-sm text-ink-muted">Разборов за {PERIOD_DAYS} дней пока нет.</p>
-          ) : (
-            <ul className="space-y-2.5">
-              {team.map((c) => (
-                <li key={c.key} className="text-sm">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span title={c.hint}>{c.label}</span>
-                    <span className="tabular-nums text-ink-secondary">{c.pct === null ? "не к месту" : `${c.pct} %`}</span>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+        <PaneTabs
+          boxed
+          initial={report.waiting.length > 0 ? "waiting" : "hot"}
+          tabs={[
+            {
+              key: "waiting",
+              label: "Ждут ответа",
+              count: report.waiting.length,
+              alert: report.waiting.length > 0,
+              content: (
+                <PagedList
+                  what="лидов"
+                  empty={<p className="px-4 py-6 text-sm text-ink-muted">Все, кто написал, получили ответ.</p>}
+                  items={report.waiting.map((i) =>
+                    leadLine(i, <Pill tone="bad">{minutesWords(minutesSince(i.waitingSince, now))}</Pill>)
+                  )}
+                />
+              ),
+            },
+            {
+              key: "hot",
+              label: "Горячие",
+              count: report.hot.length,
+              content: (
+                <PagedList
+                  what="лидов"
+                  empty={<p className="px-4 py-6 text-sm text-ink-muted">Горячих лидов по последним разборам нет.</p>}
+                  items={report.hot.map((i) =>
+                    leadLine(
+                      i,
+                      <>
+                        <TemperatureChip value="hot" />
+                        <span className="text-xs text-ink-muted tabular-nums">{i.lastAt ? formatMoment(i.lastAt) : ""}</span>
+                      </>
+                    )
+                  )}
+                />
+              ),
+            },
+            {
+              key: "managers",
+              label: "Менеджеры",
+              count: report.managers.length,
+              content:
+                report.managers.length === 0 ? (
+                  <p className="px-4 py-6 text-sm text-ink-muted">Переписок с лидами пока нет.</p>
+                ) : (
+                  <div className="table-cards">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-ink-secondary border-b border-line-hairline">
+                          <th className="px-4 py-2 font-medium">Менеджер</th>
+                          <th className="px-3 py-2 font-medium text-right">Разборов</th>
+                          <th className="px-3 py-2 font-medium text-right">Оценка</th>
+                          <th className="px-3 py-2 font-medium text-right">Отвечает за</th>
+                          <th className="px-3 py-2 font-medium text-right">Ждут ответа</th>
+                          <th className="px-3 py-2 font-medium text-right">Горячих</th>
+                          <th className="px-4 py-2 font-medium">Слабее всего</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.managers.map((m) => {
+                          const weak = CHECKLIST.map((c) => ({ label: c.label as string, pct: m.items[c.key] }))
+                            .filter((x): x is { label: string; pct: number } => x.pct !== null && x.pct < 70)
+                            .sort((a, b) => a.pct - b.pct)
+                            .slice(0, 2);
+                          return (
+                            <tr key={m.email || "free"} className="border-b border-line-hairline/70 last:border-0">
+                              <td className="px-4 py-2 font-medium">{m.name}</td>
+                              <td data-label="Разборов" className="px-3 py-2 text-right tabular-nums">{m.analysed || ""}</td>
+                              <td data-label="Оценка" className="px-3 py-2 text-right">
+                                <ScoreChip score={m.avgScore} />
+                              </td>
+                              <td data-label="Отвечает за" className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                                {m.replyMinutes === null ? "" : minutesWords(m.replyMinutes)}
+                              </td>
+                              <td data-label="Ждут ответа" className={`px-3 py-2 text-right tabular-nums ${m.waiting ? "text-status-critical font-medium" : ""}`}>
+                                {m.waiting || ""}
+                              </td>
+                              <td data-label="Горячих" className="px-3 py-2 text-right tabular-nums">{m.hot || ""}</td>
+                              <td data-label="Слабее всего" className="px-4 py-2 text-ink-secondary">
+                                {weak.map((w) => `${w.label} — ${w.pct} %`).join("; ")}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  <div className="h-1.5 rounded-full bg-surface-sunk mt-1 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${c.pct === null ? "" : c.pct >= 80 ? "bg-status-good" : c.pct >= 50 ? "bg-status-warning" : "bg-status-critical"}`}
-                      style={{ width: `${c.pct ?? 0}%` }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
+                ),
+            },
+          ]}
+        />
 
-        <Section tone="claims" icon="alert" title="Что мешает продаже" className="!mb-0">
-          {report.objections.length === 0 ? (
-            <p className="text-sm text-ink-muted">Возражений в разборах за {PERIOD_DAYS} дней нет.</p>
-          ) : (
-            <ul className="space-y-2.5">
-              {report.objections.map((o) => (
-                <li key={o.kind} className="text-sm">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span>{o.label}</span>
-                    <span className="tabular-nums text-ink-secondary">{o.count} лид.</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-surface-sunk mt-1 overflow-hidden">
-                    <div className="h-full rounded-full bg-section-claims" style={{ width: `${(o.count / maxObjection) * 100}%` }} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
+        <div className="space-y-5 min-w-0">
+          <Section tone="leads" icon="check" title="Чек-лист по команде" className="!mb-0">
+            {fresh.length === 0 ? (
+              <p className="text-sm text-ink-muted">Разборов за {PERIOD_DAYS} дней пока нет.</p>
+            ) : (
+              <ul className="space-y-2.5">
+                {team.map((c) => (
+                  <li key={c.key} className="text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span title={c.hint}>{c.label}</span>
+                      <span className="tabular-nums text-ink-secondary">{c.pct === null ? "не к месту" : `${c.pct} %`}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-surface-sunk mt-1 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${c.pct === null ? "" : c.pct >= 80 ? "bg-status-good" : c.pct >= 50 ? "bg-status-warning" : "bg-status-critical"}`}
+                        style={{ width: `${c.pct ?? 0}%` }}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+
+          <Section tone="claims" icon="alert" title="Что мешает продаже" className="!mb-0">
+            {report.objections.length === 0 ? (
+              <p className="text-sm text-ink-muted">Возражений в разборах за {PERIOD_DAYS} дней нет.</p>
+            ) : (
+              <ul className="space-y-2.5">
+                {report.objections.map((o) => (
+                  <li key={o.kind} className="text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span>{o.label}</span>
+                      <span className="tabular-nums text-ink-secondary">{o.count} лид.</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-surface-sunk mt-1 overflow-hidden">
+                      <div className="h-full rounded-full bg-section-claims" style={{ width: `${(o.count / maxObjection) * 100}%` }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        </div>
       </div>
     </div>
   );

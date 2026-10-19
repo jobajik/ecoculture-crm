@@ -17,6 +17,7 @@ import Section from "@/components/Section";
 import type { IconName } from "@/components/Icon";
 import PeriodPicker from "@/components/PeriodPicker";
 import PlanProgress, { paceTone, TONE_TEXT } from "@/components/PlanProgress";
+import KpiTile from "@/components/KpiTile";
 import { plansTabsFor } from "./tabs";
 import { forecastByWeek, monthFrom, prefetchPlanTabs } from "./data";
 
@@ -64,15 +65,90 @@ export default async function PlansOverviewPage({ searchParams }: { searchParams
   });
 
   const q = `?period=${month}`;
+  const pace = ov.pace.pacePercent;
+  const salesTone = toKpiTone(paceTone(ov.sales.percent, pace));
+  const shipTone = toKpiTone(paceTone(ov.shipments.orderedPercent, pace));
+  const harvestShort = ov.harvest.byFlower.reduce((s, f) => s + (f.forecast > 0 && f.diff < 0 ? -f.diff : 0), 0);
+  const harvestExtra = ov.harvest.byFlower.reduce((s, f) => s + (f.forecast > 0 && f.diff > 0 ? f.diff : 0), 0);
   return (
-    <div className="space-y-5">
-      <PageHeader area="plans" title="Планы" tabs={plansTabsFor(role, month)} actions={<MonthPace ov={ov} />} />
+    <div>
+      <PageHeader
+        area="plans"
+        title="Планы"
+        tabs={plansTabsFor(role, month)}
+        actions={
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <MonthPace ov={ov} />
+            <PeriodPicker period={month} />
+          </div>
+        }
+      />
 
-      <PeriodPicker period={month} />
+      {/* Главное о месяце одной строкой (новый вид, 19.10.2026): куда смотреть — видно сразу, без чтения карточек. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile
+          icon="chart"
+          label="Продажи менеджеров"
+          value={pctText(ov.sales.percent)}
+          hint={
+            ov.sales.target > 0
+              ? `${shortMoney(ov.sales.fact)} из ${shortMoney(ov.sales.target)} · ${paceWords(ov.sales.percent, pace)}`
+              : `продано ${shortMoney(ov.sales.fact)} · плана нет`
+          }
+          tone={salesTone}
+          href={`/plans/sales${q}`}
+        />
+        <KpiTile
+          icon="truck"
+          label="Заказано по направлениям"
+          value={pctText(ov.shipments.orderedPercent)}
+          hint={
+            ov.shipments.planStems > 0
+              ? `${nf(ov.shipments.orderedStems)} из ${nf(ov.shipments.planStems)} шт. · ${paceWords(ov.shipments.orderedPercent, pace)}`
+              : `${nf(ov.shipments.orderedStems)} шт. · плана нет`
+          }
+          tone={shipTone}
+          href={`/plans/shipments${q}`}
+        />
+        <KpiTile
+          icon="box"
+          label="Уже отгружено"
+          value={`${nf(ov.shipments.shippedToDate)} шт.`}
+          hint={ov.shipments.expectedToDate > 0 ? `по плану к сегодня ${nf(ov.shipments.expectedToDate)}` : "плана к сегодня нет"}
+          tone={
+            ov.shipments.expectedToDate > 0 && ov.shipments.shippedToDate < ov.shipments.expectedToDate * 0.85 ? "bad" : undefined
+          }
+          href={`/plans/regions${q}`}
+        />
+        <KpiTile
+          icon="leaf"
+          label="Срезка против плана"
+          value={
+            !ov.harvest.hasForecast
+              ? "нет прогноза"
+              : harvestShort > 0
+                ? `−${nf(harvestShort)}`
+                : harvestExtra > 0
+                  ? `+${nf(harvestExtra)}`
+                  : "сходится"
+          }
+          hint={
+            !ov.harvest.hasForecast
+              ? "агроном ещё не загрузил"
+              : harvestShort > 0
+                ? `не хватит цветка${ov.harvest.shortWeeks.length > 0 ? ` · недель: ${ov.harvest.shortWeeks.length}` : ""}`
+                : harvestExtra > 0
+                  ? "срежем больше, чем распланировано"
+                  : "срезка и план сходятся"
+          }
+          tone={!ov.harvest.hasForecast ? undefined : harvestShort > 0 ? "bad" : harvestExtra > 0 ? "warn" : "good"}
+          href={`/plans/balance${q}`}
+        />
+      </div>
 
       <Checklist ov={ov} />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 items-start mb-5">
         <SalesCard ov={ov} href={`/plans/sales${q}`} />
         <ShipmentsCard ov={ov} href={`/plans/shipments${q}`} />
         <HarvestCard ov={ov} href={`/plans/balance${q}`} />
@@ -81,6 +157,11 @@ export default async function PlansOverviewPage({ searchParams }: { searchParams
       <FlowerMatrix ov={ov} />
     </div>
   );
+}
+
+/** Тон плитки — от тона темпа (`paceTone`): зелёный, жёлтый, красный. */
+function toKpiTone(t: string): "good" | "warn" | "bad" | undefined {
+  return t === "good" ? "good" : t === "warn" ? "warn" : t === "critical" ? "bad" : undefined;
 }
 
 function MonthPace({ ov }: { ov: PlanOverview }) {
@@ -103,14 +184,14 @@ function MonthPace({ ov }: { ov: PlanOverview }) {
 function Checklist({ ov }: { ov: PlanOverview }) {
   if (ov.checklist.every((c) => c.done)) return null;
   return (
-    <div className="grid gap-2 sm:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-3 mb-5">
       {ov.checklist.map((c) => (
         <Link
           key={c.key}
           href={c.href}
           className={clsx(
-            "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors hover:bg-surface-plane",
-            c.done ? "border-line-hairline" : "border-status-warning/50 bg-status-warning/5"
+            "flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition-colors hover:shadow-card-hover",
+            c.done ? "border-line-hairline bg-surface" : "border-status-warning/50 bg-status-warning/5"
           )}
         >
           <span
@@ -152,7 +233,7 @@ function CardShell({
       title={title}
       className="!mb-0"
       aside={
-        <Link href={href} className="text-sm text-series-1 whitespace-nowrap hover:underline">
+        <Link href={href} className="text-sm font-semibold text-section-plans whitespace-nowrap hover:underline">
           {action} →
         </Link>
       }
@@ -167,7 +248,7 @@ function Headline({ percent, pace, caption }: { percent: number | null; pace: nu
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-3">
-        <span className={clsx("font-display text-3xl font-extrabold tabular-nums", TONE_TEXT[tone])}>{pctText(percent)}</span>
+        <span className={clsx("font-display text-[40px] leading-none font-extrabold tabular-nums", TONE_TEXT[tone])}>{pctText(percent)}</span>
         <span className="text-sm text-ink-secondary">{caption}</span>
       </div>
       <PlanProgress percent={percent} pace={pace} />
@@ -186,9 +267,9 @@ function paceWords(percent: number | null, pace: number): string {
 
 function MiniRow({ label, value, percent, pace }: { label: string; value: string; percent: number | null; pace: number }) {
   return (
-    <li className="grid grid-cols-[6.5rem_1fr] items-center gap-x-3 gap-y-1">
-      <span className="text-sm">{label}</span>
-      <span className="text-right text-xs text-ink-secondary tabular-nums">{value}</span>
+    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
+      <span className="text-sm font-medium">{label}</span>
+      <span className="text-right text-xs text-ink-secondary tabular-nums whitespace-nowrap">{value}</span>
       <span className="col-span-2">
         <PlanProgress percent={percent} pace={pace} size="sm" />
       </span>
@@ -385,10 +466,11 @@ function compact(n: number): string {
 function FlowerMatrix({ ov }: { ov: PlanOverview }) {
   const pace = ov.pace.pacePercent;
   return (
-    <section className="card !p-0 table-scroll table-cards">
+    <Section tone="plans" icon="leaf" title="По цветкам — все три плана рядом" flush className="!mb-0">
+    <div className="table-scroll table-cards border-t border-line-hairline">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-ink-secondary border-b border-line-hairline">
+          <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
             <th className="px-4 py-2.5 font-medium">Цветок</th>
             <th className="px-4 py-2.5 font-medium">Продажи: факт / план</th>
             <th className="px-4 py-2.5 font-medium">Отгрузки: заказано / план</th>
@@ -402,7 +484,7 @@ function FlowerMatrix({ ov }: { ov: PlanOverview }) {
             const shPct = sh && sh.plan > 0 ? (sh.ordered / sh.plan) * 100 : null;
             return (
               <tr key={s.flowerType} className="border-b border-line-hairline last:border-0">
-                <td className="px-4 py-3 font-medium">{s.label}</td>
+                <td className="px-4 py-3 font-semibold">{s.label}</td>
                 <td className="px-4 py-3 tabular-nums" data-label="Продажи">
                   {shortMoney(s.fact)} / {s.target > 0 ? shortMoney(s.target) : "—"}{" "}
                   <span className={TONE_TEXT[paceTone(s.percent, pace)]}>{pctText(s.percent)}</span>
@@ -424,6 +506,7 @@ function FlowerMatrix({ ov }: { ov: PlanOverview }) {
           })}
         </tbody>
       </table>
-    </section>
+    </div>
+    </Section>
   );
 }

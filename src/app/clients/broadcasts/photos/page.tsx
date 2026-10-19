@@ -15,6 +15,7 @@ import { publicCatalogUrl } from "@/lib/waFileSign";
 import { openAiConfigured } from "@/lib/openai";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
+import PaneTabs from "@/components/PaneTabs";
 import PhotoLibrary from "@/components/PhotoLibrary";
 import { clientsTabsFor } from "../../tabs";
 
@@ -62,44 +63,60 @@ export default async function PhotosPage() {
   }));
 
   return (
-    <div className="space-y-6">
+    <div>
       <PageHeader
         area="leads"
         title="Фото и каталог"
         tabs={clientsTabsFor(undefined, role)}
         actions={
-          <Link href="/clients/broadcasts" className="text-sm text-ink-secondary hover:underline">
-            ← рассылки
+          <Link href="/clients/broadcasts" className="btn-secondary">
+            ← Рассылки
           </Link>
         }
       />
-      <Section tone="leads" icon="list" title="Каталог JPEG" aside={<span className="text-xs text-ink-muted">цены и наличие — на момент открытия</span>}>
-        {catalog.length === 0 ? (
-          <p className="text-sm text-ink-muted">В прайсе нет цен — каталог появится, когда РОП заполнит прайс.</p>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-3">
-            {catalog.map((c) => (
-              <div key={c.flowerType} className="space-y-2">
-                <a href={c.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-line-hairline bg-surface-plane">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={c.url} alt={`Каталог: ${c.title}`} loading="lazy" className="block w-full" />
-                </a>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{c.title}</span>
-                  <a href={c.download} className="text-accent hover:underline">
-                    Скачать JPEG
-                  </a>
+      <PaneTabs
+        tabs={[
+          {
+            key: "photos",
+            label: "Фото для бота",
+            count: list.filter((p) => p.active && !p.info).length,
+            content: <PhotoLibrary photos={list} flowers={flowers} aiReady={openAiConfigured()} />,
+          },
+          {
+            key: "catalog",
+            label: "Каталог JPEG",
+            count: catalog.length,
+            content: (
+            <Section tone="leads" icon="list" title="Каталог JPEG" className="!mb-0" aside={<span className="text-xs text-ink-muted">цены и наличие — на момент открытия</span>}>
+              {catalog.length === 0 ? (
+                <p className="text-sm text-ink-muted">В прайсе нет цен — каталог появится, когда РОП заполнит прайс.</p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {catalog.map((c) => (
+                    <div key={c.flowerType} className="space-y-2">
+                      <a href={c.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-line-hairline bg-surface-plane">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={c.url} alt={`Каталог: ${c.title}`} loading="lazy" className="block w-full max-h-[460px] object-cover object-top" />
+                      </a>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">{c.title}</span>
+                        <a href={c.download} className="text-accent hover:underline">
+                          Скачать JPEG
+                        </a>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <p className="mt-3 text-xs text-ink-muted">
-          Бот присылает его сам, когда клиент просит каталог или фото. В рассылке — «Каталог JPEG» в поле картинки. Фото на странице цветка — последние загруженные
-          ниже.
-        </p>
-      </Section>
-      <PhotoLibrary photos={list} flowers={flowers} aiReady={openAiConfigured()} />
+              )}
+              <p className="mt-3 text-xs text-ink-muted">
+                Бот присылает его сам, когда клиент просит каталог или фото. В рассылке — «Каталог JPEG» в поле картинки. Фото на странице цветка — последние загруженные
+                ниже.
+              </p>
+            </Section>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

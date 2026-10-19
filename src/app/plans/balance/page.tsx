@@ -16,6 +16,7 @@ import {
 import { buildFlowerBalance, type DirectionPlan } from "@/lib/planBalance";
 import { FLOWER_ORDER } from "@/lib/planOverview";
 import PageHeader from "@/components/PageHeader";
+import KpiTile from "@/components/KpiTile";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import HarvestWeeks, { type HarvestFlowerRow } from "@/components/HarvestWeeks";
@@ -112,31 +113,50 @@ export default async function BalancePage({
       .map((w) => ({ label: r.label, week: w.index, missing: w.planned - w.forecast }))
   );
   const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
+  // Итоги месяца для плиток — суммы тех же недельных чисел, что на картинке ниже.
+  const monthForecast = rows.reduce((s, r) => s + r.weeks.reduce((a, w) => a + w.forecast, 0), 0);
+  const monthPlanned = rows.reduce((s, r) => s + r.weeks.reduce((a, w) => a + w.planned, 0), 0);
+  const monthDiff = monthForecast - monthPlanned;
 
   return (
-    <div className="space-y-5">
+    <div>
       <PageHeader
         area="plans"
         title="Срезка против плана"
         icon="leaf"
         tabs={plansTabsFor(role, month)}
-        subtitle={
-          <>
-            Хватит ли срезки на план отгрузок
+        actions={
+          <div className="flex items-center gap-2">
+            <PeriodPicker period={month} />
             <Hint>
-              Срезка — прогноз агронома по сортам (если сорта не заполнены — по ростовке). План — сумма
-              плана отгрузок по всем направлениям. Неделя «сходится», если разница не больше 3 %.
+              Хватит ли срезки на план отгрузок. Срезка — прогноз агронома по сортам (если сорта не заполнены — по
+              ростовке). План — сумма плана отгрузок по всем направлениям. Неделя «сходится», если разница не больше 3 %.
             </Hint>
-          </>
+          </div>
         }
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <PeriodPicker period={month} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="leaf" label="Срезка за месяц, прогноз" value={hasForecast ? `${nf(monthForecast)} шт` : "—"} hint={hasForecast ? "все цветки" : "прогноза ещё нет"} tone={hasForecast ? undefined : "warn"} href={role === ROLES.ADMIN ? `/forecast?period=${month}` : undefined} />
+        <KpiTile icon="truck" label="План отгрузок" value={hasPlan ? `${nf(monthPlanned)} шт` : "—"} hint={hasPlan ? "все направления" : "не поставлен"} tone={hasPlan ? undefined : "warn"} href={`/plans/shipments?period=${month}`} />
+        <KpiTile
+          icon="chart"
+          label={monthDiff >= 0 ? "Без плана останется" : "Не хватит на план"}
+          value={hasForecast && hasPlan ? `${nf(Math.abs(monthDiff))} шт` : "—"}
+          hint={hasForecast && hasPlan ? (monthDiff >= 0 ? "можно разложить ниже" : "ужать план или добрать") : undefined}
+          tone={hasForecast && hasPlan ? (monthDiff >= 0 ? "good" : "bad") : undefined}
+        />
+        <KpiTile
+          icon="alert"
+          label="Недель с нехваткой"
+          value={String(shortWeeks.length)}
+          hint={shortWeeks.length > 0 ? "по всем цветкам" : "всё сходится"}
+          tone={shortWeeks.length > 0 ? "bad" : hasForecast && hasPlan ? "good" : undefined}
+        />
       </div>
 
       {!hasForecast && (
-        <div className="card border-[#d9b25c] text-sm">
+        <div className="card border-[#d9b25c] text-sm mb-5">
           <div className="font-medium">Прогноза срезки на {periodLabel(month).toLowerCase()} ещё нет</div>
           <div className="text-ink-secondary mt-0.5">
             Его загружает агроном файлом. Пока прогноза нет, не видно, хватит ли цветка на план.
@@ -153,7 +173,7 @@ export default async function BalancePage({
       )}
 
       {hasForecast && !hasPlan && (
-        <div className="card border-[#d9b25c] text-sm">
+        <div className="card border-[#d9b25c] text-sm mb-5">
           <div className="font-medium">План отгрузок на месяц не поставлен</div>
           <div className="text-ink-secondary mt-0.5">
             Вся срезка сейчас «без плана».{" "}
@@ -165,9 +185,9 @@ export default async function BalancePage({
       )}
 
       {shortWeeks.length > 0 && (
-        <div className="card border-status-critical/40 bg-status-critical/5 text-sm">
+        <div className="card border-status-critical/40 bg-status-critical/5 text-sm mb-5">
           <div className="font-medium text-status-critical">Срезки не хватит на план</div>
-          <ul className="mt-1 space-y-0.5 text-ink-secondary">
+          <ul className="mt-1.5 grid gap-x-6 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3 text-ink-secondary">
             {shortWeeks.map((s) => (
               <li key={`${s.label}-${s.week}`}>
                 {s.label}, неделя {s.week}: не хватит {nf(s.missing)} шт
@@ -178,15 +198,17 @@ export default async function BalancePage({
       )}
 
       {(hasForecast || hasPlan) && (
+        <div className="mb-5">
         <HarvestWeeks
           rows={rows}
           currentWeek={weeks.some((w) => w.code === weekOfDate(new Date())) ? weekOfDate(new Date()) : undefined}
         />
+        </div>
       )}
 
       {(hasForecast || hasPlan) && (
         <details className="card group">
-          <summary className="cursor-pointer select-none font-medium list-none flex items-center justify-between gap-2">
+          <summary className="cursor-pointer select-none font-display font-bold text-[15px] list-none flex items-center justify-between gap-2">
             <span>Разложить остаток или ужать план по направлениям</span>
             <span className="text-ink-muted text-sm group-open:hidden">открыть</span>
             <span className="text-ink-muted text-sm hidden group-open:inline">свернуть</span>

@@ -25,9 +25,12 @@ const money = (n: number) => `${nf(n)} ₸`;
 export default function FinanceBreakdown({
   rows,
   prevLabel,
+  bare,
 }: {
   rows: Record<View, FinanceBreakdownRow[]>;
   prevLabel: string;
+  /** Внутри вкладки чужой карточки — без своей рамки и заголовка. */
+  bare?: boolean;
 }) {
   const [view, setView] = useState<View>("manager");
   const list = rows[view];
@@ -38,9 +41,9 @@ export default function FinanceBreakdown({
   const hasPrev = list.some((r) => (cash ? r.prevCashIn : r.prevBilled) > 0);
 
   return (
-    <section className="card !p-0">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
-        <h2 className="font-semibold">Разрезы месяца</h2>
+    <section className={bare ? "" : "card !p-0"}>
+      <div className={clsx("flex flex-wrap items-center justify-between gap-2 px-4", bare ? "py-3" : "pt-4 pb-3")}>
+        {!bare && <h2 className="font-semibold">Разрезы месяца</h2>}
         <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
           {VIEWS.map((v) => (
             <button
@@ -63,7 +66,7 @@ export default function FinanceBreakdown({
       <div className="table-scroll table-cards border-t border-line-hairline">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+            <tr className="text-left text-xs text-ink-muted bg-surface-plane/60 border-b border-line-hairline">
               <th className="px-4 py-2.5 font-medium">{VIEWS.find((v) => v.key === view)!.column}</th>
               {cash ? (
                 <>

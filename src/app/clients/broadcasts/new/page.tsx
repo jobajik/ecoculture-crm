@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -73,8 +74,17 @@ export default async function NewBroadcastPage() {
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 
   return (
-    <div className="space-y-6">
-      <PageHeader area="leads" title="Новая рассылка" tabs={clientsTabsFor(undefined, role)} />
+    <div>
+      <PageHeader
+        area="leads"
+        title="Новая рассылка"
+        tabs={clientsTabsFor(undefined, role)}
+        actions={
+          <Link href="/clients/broadcasts" className="btn-secondary">
+            ← Все рассылки
+          </Link>
+        }
+      />
       <BroadcastComposer
         rows={rows}
         managers={managers}

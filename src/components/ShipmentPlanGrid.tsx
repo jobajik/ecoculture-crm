@@ -313,9 +313,16 @@ export default function ShipmentPlanGrid({
 
   return (
     <div className="space-y-3">
-      {/* --- Одна строка управления: цветок · цена · действия ----------------- */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
+      {note && <div className="text-sm text-ink-secondary bg-accent-soft/60 rounded-lg px-3 py-2">{note}</div>}
+      {error && (
+        <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>
+      )}
+
+      {/* Без overflow-hidden у карточки: меню «Заполнить ▾» не должно обрезаться. */}
+      <div className="card !p-0">
+      {/* --- Шапка карточки: цветок вкладками · цена · действия ---------------- */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 sm:px-5 border-b border-line-hairline">
+        <div className="flex gap-x-5" role="tablist">
           {flowerTypes.map((flowerType) => {
             const active = flowerType === activeFlower;
             const sum = filledByFlower[flowerType] ?? 0;
@@ -327,12 +334,12 @@ export default function ShipmentPlanGrid({
                 aria-selected={active}
                 onClick={() => setActiveFlower(flowerType)}
                 className={clsx(
-                  "rounded-md px-3 py-1.5 text-sm whitespace-nowrap",
-                  active ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary"
+                  "py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors",
+                  active ? "border-section-plans text-ink-primary font-semibold" : "border-transparent text-ink-secondary hover:text-ink-primary"
                 )}
               >
                 {FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType}
-                <span className={clsx("ml-1.5 text-xs tabular-nums", active ? "text-ink-secondary" : "text-ink-muted")}>
+                <span className="ml-1.5 text-xs font-normal tabular-nums text-ink-muted">
                   {sum > 0 ? fmt(sum) : "0"}
                 </span>
               </button>
@@ -340,80 +347,76 @@ export default function ShipmentPlanGrid({
           })}
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-ink-secondary">
-          Цена стебля
-          <span className="relative">
-            <input
-              className="w-24 rounded-md border border-line-hairline bg-surface pl-2 pr-6 py-1.5 text-right text-base sm:text-sm tabular-nums text-ink-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
-              inputMode="decimal"
-              aria-label="Цена стебля"
-              value={price ? price.toLocaleString("ru-RU") : ""}
-              placeholder="0"
-              onFocus={(e) => e.target.select()}
-              onChange={(e) =>
-                setPriceByFlower((prev) => ({
-                  ...prev,
-                  [activeFlower]: parseNumber(e.target.value),
-                }))
-              }
-            />
-            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-muted">₸</span>
-          </span>
-          {price !== listPrice ? (
-            <span className="text-xs text-[#8a5a00]">
-              {listPrice > 0 ? `в прайсе ${fmt(listPrice)} — ` : ""}суммы пересчитаются
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+          <label className="flex items-center gap-2 text-sm text-ink-secondary">
+            Цена стебля
+            <span className="relative">
+              <input
+                className="w-24 rounded-md border border-line-hairline bg-surface pl-2 pr-6 py-1.5 text-right text-base sm:text-sm tabular-nums text-ink-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+                inputMode="decimal"
+                aria-label="Цена стебля"
+                value={price ? price.toLocaleString("ru-RU") : ""}
+                placeholder="0"
+                onFocus={(e) => e.target.select()}
+                onChange={(e) =>
+                  setPriceByFlower((prev) => ({
+                    ...prev,
+                    [activeFlower]: parseNumber(e.target.value),
+                  }))
+                }
+              />
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-muted">₸</span>
             </span>
-          ) : (
-            listPrice === 0 && <span className="text-xs text-[#8a5a00]">нет в прайсе</span>
-          )}
-        </label>
-
-        <div className="ml-auto flex items-center gap-1">
-          <Hint>
-            В клетке — план в стеблях. Под ним мелко — сколько уже заказано на эту неделю (и сколько
-            отгружено). Зелёным — заказов не меньше плана, жёлтым — везут без плана. Сумма не вводится:
-            стебли × цена стебля (из прайса, можно поправить на месяц). Внизу — прогноз срезки агронома
-            и сколько стеблей ещё никому не обещано.
-          </Hint>
-          <ActionsMenu
-            busy={busy}
-            month={month}
-            onCopy={handleCopyPrevious}
-            onUpload={() => fileInput.current?.click()}
-          />
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".xlsx"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleFile(file);
-            }}
-          />
+            {price !== listPrice ? (
+              <span className="text-xs text-[#8a5a00]">
+                {listPrice > 0 ? `в прайсе ${fmt(listPrice)} — ` : ""}суммы пересчитаются
+              </span>
+            ) : (
+              listPrice === 0 && <span className="text-xs text-[#8a5a00]">нет в прайсе</span>
+            )}
+          </label>
+          <div className="flex items-center gap-1">
+            <Hint>
+              В клетке — план в стеблях. Под ним мелко — сколько уже заказано на эту неделю (и сколько
+              отгружено). Зелёным — заказов не меньше плана, жёлтым — везут без плана. Сумма не вводится:
+              стебли × цена стебля (из прайса, можно поправить на месяц). Внизу — прогноз срезки агронома
+              и сколько стеблей ещё никому не обещано.
+            </Hint>
+            <ActionsMenu
+              busy={busy}
+              month={month}
+              onCopy={handleCopyPrevious}
+              onUpload={() => fileInput.current?.click()}
+            />
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleFile(file);
+              }}
+            />
+          </div>
         </div>
       </div>
 
-      {note && <div className="text-sm text-ink-secondary bg-accent-soft/60 rounded-lg px-3 py-2">{note}</div>}
-      {error && (
-        <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>
-      )}
-
       {/* --- Сетка: как лист таблицы, без рамки у каждого поля ---------------- */}
-      <div className="card !p-0 overflow-x-auto">
+      <div className="overflow-x-auto rounded-b-[inherit]">
         <table className="w-full text-sm min-w-[680px] border-collapse">
           <thead>
-            <tr className="border-b border-line-hairline">
-              <th className="text-left px-4 py-2.5 font-medium text-ink-secondary sticky left-0 bg-surface z-10 min-w-[170px]">
+            <tr className="border-b border-line-hairline bg-surface-plane/60 text-xs text-ink-muted">
+              <th className="text-left px-4 py-2.5 font-medium sticky left-0 bg-surface-plane z-10 min-w-[170px]">
                 Направление
               </th>
               {weeks.map((week) => (
-                <th key={week.code} className="px-3 py-2.5 text-right font-medium whitespace-nowrap">
+                <th key={week.code} className="px-3 py-2.5 text-right font-medium whitespace-nowrap text-ink-secondary">
                   Неделя {week.index}
                   <span className="block text-[11px] font-normal text-ink-muted">{week.label}</span>
                 </th>
               ))}
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap bg-surface-plane/50">Месяц</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-ink-secondary bg-surface-plane">Месяц</th>
             </tr>
           </thead>
 
@@ -423,7 +426,7 @@ export default function ShipmentPlanGrid({
                 <tr>
                   <th
                     colSpan={cols}
-                    className="text-left px-4 pt-3 pb-1 text-xs font-medium text-ink-muted sticky left-0"
+                    className="text-left px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted sticky left-0"
                   >
                     {group.label}
                   </th>
@@ -546,6 +549,7 @@ export default function ShipmentPlanGrid({
             )}
           </tfoot>
         </table>
+      </div>
       </div>
 
       <SaveBar count={changed.length} what="ячеек" saving={saving} onSave={handleSave} onReset={resetAll} />

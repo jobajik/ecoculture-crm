@@ -14,7 +14,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import ChartCard, { CHART_COLORS, tooltipStyle } from "@/components/charts/ChartCard";
+import { CHART_COLORS, tooltipStyle } from "@/components/charts/ChartCard";
+import KpiTile from "@/components/KpiTile";
+import CardTabs from "@/components/CardTabs";
+import { THEAD_ROW, TH, TR } from "@/lib/tableStyle";
 import { FARM_ORDER, FLOWER_TYPE_LABELS_PLURAL, farmLabel } from "@/lib/constants";
 import type { ManagerSalesRow, SalesSnapshot } from "@/lib/salesAnalytics";
 
@@ -24,6 +27,8 @@ const FARM_COLOR: Record<string, string> = {
 };
 
 const REFRESH_MS = 60_000;
+
+type View = "managers" | "flowers" | "farms" | "charts";
 
 function money(value: number): string {
   return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
@@ -67,6 +72,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
   const [period, setPeriod] = useState(initial.period);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("managers");
 
   const load = useCallback(async (nextPeriod: string) => {
     setLoading(true);
@@ -98,58 +104,50 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
     cumulative: Number.isNaN(d.cumulative) ? null : d.cumulative,
   }));
 
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <select
-            className="input !w-auto !py-1.5"
-            value={period}
-            onChange={(e) => {
-              setPeriod(e.target.value);
-              load(e.target.value);
-            }}
-          >
-            {snapshot.availablePeriods.map((p) => (
-              <option key={p} value={p}>
-                {periodLabel(p)}
-              </option>
-            ))}
-          </select>
-          {loading && <span className="text-sm text-ink-muted">обновляю…</span>}
-          {error && <span className="text-sm text-status-critical">{error}</span>}
-        </div>
-        <span className="text-sm text-ink-muted tabular-nums">
-          День {t.daysPassed} из {t.daysInMonth}
-        </span>
-      </div>
+  const tabs: { key: View; label: string }[] = [
+    { key: "managers", label: `Менеджеры (${snapshot.managers.length})` },
+    ...(snapshot.byFlower.length > 0 ? [{ key: "flowers" as View, label: "По цветку" }] : []),
+    ...(snapshot.byFarm.length > 0 ? [{ key: "farms" as View, label: "По производствам" }] : []),
+    { key: "charts", label: "Графики" },
+  ];
+  const shownView = tabs.some((x) => x.key === view) ? view : "managers";
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile label="Продано за месяц" value={money(t.amountMonth)} sub={`${t.ordersMonth} заявок · ${t.stemsMonth.toLocaleString("ru-RU")} шт.`} />
-        <Tile label="План на месяц" value={hasPlan ? money(t.targetAmount) : "не задан"} sub={hasPlan ? `осталось ${money(Math.max(0, t.targetAmount - t.amountMonth))}` : "вкладка Plans в таблице"} />
-        <Tile
-          label="Выполнение плана"
-          value={hasPlan ? `${t.progressPercent.toFixed(0)}%` : "—"}
-          sub={hasPlan ? `прогноз ${money(t.forecastAmount)}` : undefined}
-          tone={hasPlan ? tone : "default"}
+  return (
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile
+          icon="chart"
+          label="Продано за месяц"
+          value={money(t.amountMonth)}
+          hint={`${t.ordersMonth} заявок · ${t.stemsMonth.toLocaleString("ru-RU")} шт.`}
         />
-        <Tile label="Продано сегодня" value={money(t.amountToday)} sub={`${t.ordersToday} заявок`} />
+        <KpiTile
+          icon="list"
+          label="План на месяц"
+          value={hasPlan ? money(t.targetAmount) : "не задан"}
+          hint={hasPlan ? `осталось ${money(Math.max(0, t.targetAmount - t.amountMonth))}` : "ставит РОП в «Планах»"}
+          href={hasPlan ? undefined : "/plans/sales"}
+        />
+        <KpiTile
+          icon="trophy"
+          label="Выполнение плана"
+          value={<span className={hasPlan ? TONE_TEXT[tone] : undefined}>{hasPlan ? `${t.progressPercent.toFixed(0)}%` : "—"}</span>}
+          hint={hasPlan ? `прогноз ${money(t.forecastAmount)}` : undefined}
+          tone={!hasPlan || tone === "ok" ? undefined : tone === "good" ? "good" : tone === "warning" ? "warn" : "bad"}
+        />
+        <KpiTile icon="calendar" label="Продано сегодня" value={money(t.amountToday)} hint={`${t.ordersToday} заявок`} />
       </div>
 
       {hasPlan && (
-        <div className="card">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <h3 className="font-medium">План месяца</h3>
+        <div className="card !p-4 sm:!p-5 mb-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2.5">
+            <span className="font-display text-[15px] font-bold">План месяца</span>
             <span className="text-sm text-ink-secondary tabular-nums">
-              {money(t.amountMonth)} из {money(t.targetAmount)}
-              {t.requiredPerDay > 0 && (
-                <span className="text-ink-muted">
-                  {" "}· нужно {money(t.requiredPerDay)}/день
-                </span>
-              )}
+              <b className="text-ink-primary">{money(t.amountMonth)}</b> из {money(t.targetAmount)}
+              {t.requiredPerDay > 0 && <span className="text-ink-muted"> · нужно {money(t.requiredPerDay)}/день</span>}
             </span>
           </div>
-          <div className="relative h-3 rounded-full bg-surface-plane overflow-hidden">
+          <div className="relative h-3 rounded-full bg-surface-sunk overflow-hidden">
             <div
               className={clsx("h-full rounded-full transition-all", TONE_BAR[tone])}
               style={{ width: `${Math.min(100, t.progressPercent)}%` }}
@@ -169,185 +167,177 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
         </div>
       )}
 
-      {snapshot.byFlower.length > 0 && (
-        <div className="card !p-0 table-scroll">
-          <div className="px-4 pt-4 pb-2">
-            <h3 className="font-medium">План и факт по цветку</h3>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-secondary border-y border-line-hairline">
-                <th className="px-4 py-2 font-medium">Цветок</th>
-                <th className="px-4 py-2 font-medium text-right">План</th>
-                <th className="px-4 py-2 font-medium text-right">Продано</th>
-                <th className="px-4 py-2 font-medium text-right">Выполнение</th>
-                <th className="px-4 py-2 font-medium text-right">
-                  Стебли
-                  <div className="text-xs font-normal text-ink-muted">факт / план</div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.byFlower.map((f) => {
-                const tone =
-                  f.progressPercent === null
-                    ? "ok"
-                    : progressTone(f.progressPercent, daysShare);
-                return (
-                  <tr key={f.flowerType} className="border-b border-line-hairline last:border-0">
-                    <td className="px-4 py-2 font-medium">
-                      {FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-ink-secondary">
-                      {f.targetAmount > 0 ? money(f.targetAmount) : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums font-medium">
-                      {money(f.amount)}
-                    </td>
-                    <td className={clsx("px-4 py-2 text-right tabular-nums", TONE_TEXT[tone])}>
-                      {f.progressPercent === null ? "плана нет" : `${Math.round(f.progressPercent)}%`}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-ink-secondary">
-                      {f.stems.toLocaleString("ru-RU")}
-                      {f.targetStems > 0 && (
-                        <span className="text-ink-muted">
-                          {" "}
-                          / {f.targetStems.toLocaleString("ru-RU")}
-                        </span>
-                      )}
+      <div className="card !p-0 overflow-hidden">
+        <CardTabs
+          tone="sales"
+          items={tabs}
+          value={shownView}
+          onChange={setView}
+          right={
+            <>
+              {loading && <span className="text-ink-muted">обновляю…</span>}
+              {error && <span className="text-status-critical">{error}</span>}
+              <span className="text-ink-muted tabular-nums hidden sm:inline">
+                день {t.daysPassed} из {t.daysInMonth}
+              </span>
+              <select
+                className="input !w-auto !py-1.5"
+                value={period}
+                onChange={(e) => {
+                  setPeriod(e.target.value);
+                  load(e.target.value);
+                }}
+              >
+                {snapshot.availablePeriods.map((p) => (
+                  <option key={p} value={p}>
+                    {periodLabel(p)}
+                  </option>
+                ))}
+              </select>
+            </>
+          }
+        />
+
+        {shownView === "managers" && (
+          <div className="table-scroll table-cards">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={THEAD_ROW}>
+                  <th className={TH}>Менеджер</th>
+                  <th className={clsx(TH, "text-right")}>Сегодня</th>
+                  <th className={clsx(TH, "text-right")}>За месяц</th>
+                  <th className={clsx(TH, "text-right")}>Заявок</th>
+                  <th className={clsx(TH, "text-right")}>Средний чек</th>
+                  <th className={clsx(TH, "text-right")}>План</th>
+                  <th className={clsx(TH, "min-w-[170px]")}>Выполнение</th>
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.managers.map((m) => (
+                  <ManagerRow key={m.managerEmail} row={m} daysShare={daysShare} />
+                ))}
+                {snapshot.managers.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-ink-muted">
+                      За этот месяц продаж пока нет
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {snapshot.unsplitTargetAmount > 0 && (
-            <p className="px-4 py-2 text-xs text-status-warning">
-              Ещё {money(snapshot.unsplitTargetAmount)} плана без разбивки по цветку — не в таблице.
-            </p>
-          )}
-        </div>
-      )}
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {snapshot.byFarm.length > 0 && (
-        <div className="card">
-          <h3 className="font-medium mb-1">Продажи по производствам</h3>
-          <p className="text-xs text-ink-muted mb-3">
-            Rose Farm — роза и эустома, Есентай — хризантема
-          </p>
-          <div className="space-y-3">
+        {shownView === "flowers" && (
+          <>
+            <div className="table-scroll table-cards">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className={THEAD_ROW}>
+                    <th className={TH}>Цветок</th>
+                    <th className={clsx(TH, "text-right")}>План</th>
+                    <th className={clsx(TH, "text-right")}>Продано</th>
+                    <th className={clsx(TH, "text-right")}>Выполнение</th>
+                    <th className={clsx(TH, "text-right")}>Стебли, факт / план</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshot.byFlower.map((f) => {
+                    const ft = f.progressPercent === null ? "ok" : progressTone(f.progressPercent, daysShare);
+                    return (
+                      <tr key={f.flowerType} className={TR}>
+                        <td className="px-4 py-3 font-semibold">{FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}</td>
+                        <td data-label="План" className="px-4 py-3 text-right tabular-nums text-ink-secondary">
+                          {f.targetAmount > 0 ? money(f.targetAmount) : "—"}
+                        </td>
+                        <td data-label="Продано" className="px-4 py-3 text-right tabular-nums font-semibold">
+                          {money(f.amount)}
+                        </td>
+                        <td data-label="Выполнение" className={clsx("px-4 py-3 text-right tabular-nums font-semibold", TONE_TEXT[ft])}>
+                          {f.progressPercent === null ? "плана нет" : `${Math.round(f.progressPercent)}%`}
+                        </td>
+                        <td data-label="Стебли" className="px-4 py-3 text-right tabular-nums text-ink-secondary">
+                          {f.stems.toLocaleString("ru-RU")}
+                          {f.targetStems > 0 && <span className="text-ink-muted"> / {f.targetStems.toLocaleString("ru-RU")}</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {snapshot.unsplitTargetAmount > 0 && (
+              <p className="px-4 sm:px-5 py-3 text-xs text-[#8a5a00] border-t border-line-hairline">
+                Ещё {money(snapshot.unsplitTargetAmount)} плана без разбивки по цветку — не в таблице.
+              </p>
+            )}
+          </>
+        )}
+
+        {shownView === "farms" && (
+          <div className="p-4 sm:p-5 grid gap-4 md:grid-cols-2">
             {snapshot.byFarm.map((f) => (
-              <div key={f.farm}>
-                <div className="flex items-baseline justify-between text-sm mb-1">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="inline-block w-2.5 h-2.5 rounded-full"
-                      style={{ background: FARM_COLOR[f.farm] ?? CHART_COLORS.series3 }}
-                    />
-                    {farmLabel(f.farm)}
-                  </span>
-                  <span className="tabular-nums">
-                    <b>{money(f.amount)}</b>
-                    <span className="text-ink-muted">
-                      {" "}· {f.stems.toLocaleString("ru-RU")} шт. · {Math.round(f.share)}%
-                    </span>
-                  </span>
+              <div key={f.farm} className="rounded-2xl border border-line-hairline p-4">
+                <div className="flex items-center gap-2 text-sm text-ink-secondary">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: FARM_COLOR[f.farm] ?? CHART_COLORS.series3 }} />
+                  {farmLabel(f.farm)}
+                  <span className="ml-auto tabular-nums text-ink-muted">{Math.round(f.share)}%</span>
                 </div>
-                <div className="h-2 rounded-full bg-surface-plane overflow-hidden">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${f.share}%`,
-                      background: FARM_COLOR[f.farm] ?? CHART_COLORS.series3,
-                    }}
-                  />
+                <div className="font-display text-[26px] font-extrabold tabular-nums leading-none mt-2">{money(f.amount)}</div>
+                <div className="text-xs text-ink-muted mt-1.5 tabular-nums">{f.stems.toLocaleString("ru-RU")} шт.</div>
+                <div className="h-2 rounded-full bg-surface-sunk overflow-hidden mt-3">
+                  <div className="h-full rounded-full" style={{ width: `${f.share}%`, background: FARM_COLOR[f.farm] ?? CHART_COLORS.series3 }} />
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="grid lg:grid-cols-2 gap-4">
-        <ChartCard title="Продажи по дням" description={`Сумма оформленных заявок, ${snapshot.periodLabel}`}>
-          <ResponsiveContainer>
-            <BarChart data={dailyChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-              <CartesianGrid vertical={false} stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_COLORS.axis }} interval={2} />
-              <YAxis tick={{ fontSize: 11, fill: CHART_COLORS.axis }} width={54} tickFormatter={shortMoney} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                labelFormatter={(v) => `${v} ${periodLabel(snapshot.period).split(" ")[0]}`}
-                formatter={(value: number) => [money(value), "Продано"]}
-              />
-              <Bar dataKey="amount" fill={CHART_COLORS.series1} radius={[4, 4, 0, 0]} maxBarSize={22} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <ChartCard title="Накопительно к плану" description="Факт нарастающим итогом против равномерного плана">
-          <ResponsiveContainer>
-            <LineChart data={dailyChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-              <CartesianGrid vertical={false} stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_COLORS.axis }} interval={2} />
-              <YAxis tick={{ fontSize: 11, fill: CHART_COLORS.axis }} width={54} tickFormatter={shortMoney} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                formatter={(value: number, name: string) => [
-                  money(value),
-                  name === "cumulative" ? "Факт" : "План",
-                ]}
-              />
-              <Legend formatter={(name: string) => (name === "cumulative" ? "Факт" : "План")} wrapperStyle={{ fontSize: 12 }} />
-              {hasPlan && (
-                <Line
-                  type="monotone"
-                  dataKey="planCumulative"
-                  stroke={CHART_COLORS.axis}
-                  strokeWidth={2}
-                  strokeDasharray="5 4"
-                  dot={false}
-                />
-              )}
-              <Line
-                type="monotone"
-                dataKey="cumulative"
-                stroke={CHART_COLORS.series1}
-                strokeWidth={2}
-                dot={false}
-                connectNulls={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-
-      <div className="card !p-0 table-scroll">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Менеджер</th>
-              <th className="px-4 py-3 font-medium text-right">Сегодня</th>
-              <th className="px-4 py-3 font-medium text-right">За месяц</th>
-              <th className="px-4 py-3 font-medium text-right">Заявок</th>
-              <th className="px-4 py-3 font-medium text-right">Средний чек</th>
-              <th className="px-4 py-3 font-medium text-right">План</th>
-              <th className="px-4 py-3 font-medium w-44">Выполнение</th>
-            </tr>
-          </thead>
-          <tbody>
-            {snapshot.managers.map((m) => (
-              <ManagerRow key={m.managerEmail} row={m} daysShare={daysShare} />
-            ))}
-            {snapshot.managers.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
-                  За этот месяц продаж пока нет
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {shownView === "charts" && (
+          <div className="p-4 sm:p-5 grid lg:grid-cols-2 gap-5">
+            <div>
+              <div className="text-sm font-semibold mb-0.5">Продажи по дням</div>
+              <div className="text-xs text-ink-muted mb-3">Сумма оформленных заявок, {snapshot.periodLabel}</div>
+              <div style={{ width: "100%", height: 260 }}>
+                <ResponsiveContainer>
+                  <BarChart data={dailyChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                    <CartesianGrid vertical={false} stroke={CHART_COLORS.grid} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_COLORS.axis }} interval={2} />
+                    <YAxis tick={{ fontSize: 11, fill: CHART_COLORS.axis }} width={54} tickFormatter={shortMoney} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      labelFormatter={(v) => `${v} ${periodLabel(snapshot.period).split(" ")[0]}`}
+                      formatter={(value: number) => [money(value), "Продано"]}
+                    />
+                    <Bar dataKey="amount" fill={CHART_COLORS.series1} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div>
+              <div className="text-sm font-semibold mb-0.5">Накопительно к плану</div>
+              <div className="text-xs text-ink-muted mb-3">Факт нарастающим итогом против равномерного плана</div>
+              <div style={{ width: "100%", height: 260 }}>
+                <ResponsiveContainer>
+                  <LineChart data={dailyChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                    <CartesianGrid vertical={false} stroke={CHART_COLORS.grid} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_COLORS.axis }} interval={2} />
+                    <YAxis tick={{ fontSize: 11, fill: CHART_COLORS.axis }} width={54} tickFormatter={shortMoney} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      formatter={(value: number, name: string) => [money(value), name === "cumulative" ? "Факт" : "План"]}
+                    />
+                    <Legend formatter={(name: string) => (name === "cumulative" ? "Факт" : "План")} wrapperStyle={{ fontSize: 12 }} />
+                    {hasPlan && (
+                      <Line type="monotone" dataKey="planCumulative" stroke={CHART_COLORS.axis} strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                    )}
+                    <Line type="monotone" dataKey="cumulative" stroke={CHART_COLORS.series1} strokeWidth={2} dot={false} connectNulls={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -358,32 +348,32 @@ function ManagerRow({ row, daysShare }: { row: ManagerSalesRow; daysShare: numbe
   const tone = hasPlan ? progressTone(row.progressPercent, daysShare) : "ok";
 
   return (
-    <tr className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
+    <tr className={TR}>
       <td className="px-4 py-3">
-        <div className="font-medium">{row.name}</div>
+        <div className="font-semibold whitespace-nowrap">{row.name}</div>
         <div className="text-xs text-ink-muted">{row.managerEmail}</div>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">
+      <td data-label="Сегодня" className="px-4 py-3 text-right tabular-nums">
         {row.amountToday > 0 ? money(row.amountToday) : <span className="text-ink-muted">—</span>}
       </td>
-      <td className="px-4 py-3 text-right tabular-nums font-medium">
+      <td data-label="За месяц" className="px-4 py-3 text-right tabular-nums font-display font-extrabold whitespace-nowrap">
         {money(row.amountMonth)}
         {row.amountMonth > 0 && (
-          <div className="text-xs font-normal text-ink-muted">
+          <div className="text-xs font-normal font-sans text-ink-muted">
             {FARM_ORDER.filter((f) => (row.byFarm[f] ?? 0) > 0)
               .map((f) => `${farmLabel(f)} ${shortMoney(row.byFarm[f] ?? 0)}`)
               .join(" · ")}
           </div>
         )}
       </td>
-      <td className="px-4 py-3 text-right tabular-nums text-ink-secondary">{row.ordersMonth}</td>
-      <td className="px-4 py-3 text-right tabular-nums text-ink-secondary">
+      <td data-label="Заявок" className="px-4 py-3 text-right tabular-nums text-ink-secondary">{row.ordersMonth}</td>
+      <td data-label="Средний чек" className="px-4 py-3 text-right tabular-nums text-ink-secondary whitespace-nowrap">
         {row.ordersMonth > 0 ? money(row.avgOrderAmount) : "—"}
       </td>
-      <td className="px-4 py-3 text-right tabular-nums text-ink-secondary">
+      <td data-label="План" className="px-4 py-3 text-right tabular-nums text-ink-secondary whitespace-nowrap">
         {hasPlan ? money(row.targetAmount) : "—"}
       </td>
-      <td className="px-4 py-3">
+      <td data-label="Выполнение" className="px-4 py-3">
         {hasPlan ? (
           <div>
             <div className="flex justify-between text-xs mb-1">
@@ -394,7 +384,7 @@ function ManagerRow({ row, daysShare }: { row: ManagerSalesRow; daysShare: numbe
                 {shortMoney(Math.max(0, row.targetAmount - row.amountMonth))} осталось
               </span>
             </div>
-            <div className="h-1.5 rounded-full bg-surface-plane overflow-hidden">
+            <div className="h-1.5 rounded-full bg-surface-sunk overflow-hidden">
               <div
                 className={clsx("h-full rounded-full", TONE_BAR[tone])}
                 style={{ width: `${Math.min(100, row.progressPercent)}%` }}
@@ -406,32 +396,5 @@ function ManagerRow({ row, daysShare }: { row: ManagerSalesRow; daysShare: numbe
         )}
       </td>
     </tr>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  sub,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: "default" | "good" | "ok" | "warning" | "critical";
-}) {
-  return (
-    <div className="card !p-4">
-      <div className="text-xs text-ink-secondary mb-1">{label}</div>
-      <div
-        className={clsx(
-          "font-display text-2xl font-extrabold tabular-nums",
-          tone === "default" ? "text-ink-primary" : TONE_TEXT[tone]
-        )}
-      >
-        {value}
-      </div>
-      {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
-    </div>
   );
 }

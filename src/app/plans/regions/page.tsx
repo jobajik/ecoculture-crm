@@ -20,6 +20,9 @@ import {
   ordersMissingDirection,
 } from "@/lib/direction";
 import PageHeader from "@/components/PageHeader";
+import KpiTile from "@/components/KpiTile";
+import RegionOrdersTable from "@/components/RegionOrdersTable";
+import { orderCode } from "@/lib/paymentStage";
 import Section from "@/components/Section";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
@@ -65,7 +68,7 @@ export const revalidate = 0;
 export default async function RegionSalesPage({
   searchParams,
 }: {
-  searchParams?: { period?: string; week?: string; flower?: string };
+  searchParams?: { period?: string; week?: string; flower?: string; view?: string };
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
@@ -196,91 +199,62 @@ export default async function RegionSalesPage({
     return `/plans/regions?${params.toString()}`;
   };
 
+  const view = searchParams?.view === "orders" ? "orders" : "directions";
+  const viewHref = (v: "directions" | "orders") => {
+    const params = new URLSearchParams({ period: month });
+    if (flower) params.set("flower", flower);
+    if (week) params.set("week", week.code);
+    if (v === "orders") params.set("view", "orders");
+    return `/plans/regions?${params.toString()}`;
+  };
+
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader
         area="plans"
         title="Отгрузки по регионам"
         icon="route"
         tabs={plansTabsFor(role, month)}
         actions={
-          <Link href="/orders/new?region=1" className="btn-primary">
-            + Объём в регион
-          </Link>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <ShipmentsViewSwitch view="fact" month={month} />
+            <PeriodPicker period={month} />
+            <Link href="/orders/new?region=1" className="btn-primary">
+              + Объём в регион
+            </Link>
+          </div>
         }
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <PeriodPicker period={month} />
-        <ShipmentsViewSwitch view="fact" month={month} />
-      </div>
-
-      {/* --- Отбор: неделя и цветок, проценты цветков прямо на кнопках -------- */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Segmented
-          items={[
-            { href: keep({}), active: !week, label: "Месяц" },
-            ...weeks.map((w) => ({ href: keep({ week: w.code }), active: week?.code === w.code, label: w.shortLabel })),
-          ]}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile
+          icon="truck"
+          label="Заказано, шт"
+          value={nf(fact.orderedStems)}
+          hint={fact.planStems > 0 ? `${pct(fact.donePercent)} от плана ${nf(fact.planStems)}` : "плана на период нет"}
+          tone={fact.planStems > 0 ? (tone === "good" ? "good" : tone === "warn" ? "warn" : tone === "critical" ? "bad" : undefined) : undefined}
         />
-        <Segmented
-          items={[
-            { href: flowerHref(""), active: !flower, label: "Все", note: pct(allFlowers.donePercent) },
-            ...FLOWER_ORDER.map((f) => {
-              const row = allFlowers.byFlower.find((r) => r.flowerType === f);
-              return {
-                href: flowerHref(f),
-                active: flower === f,
-                label: FLOWER_TYPE_LABELS_PLURAL[f] ?? f,
-                note: row && row.planStems + row.orderedStems > 0 ? pct(row.donePercent) : "",
-              };
-            }),
-          ]}
+        <KpiTile
+          icon="box"
+          label="Отгружено, шт"
+          value={nf(fact.shippedStems)}
+          hint={notShipped > 0 ? `ещё не уехало ${nf(notShipped)}` : fact.orderedStems > 0 ? "всё уехало" : undefined}
+          tone={notShipped > 0 ? "warn" : fact.orderedStems > 0 ? "good" : undefined}
         />
-        <span className="text-xs text-ink-muted">
-          доставка {formatDay(from)} — {formatDay(to)}
-          <Hint>
-            Факт считается по дню доставки. Отменённые и заявки в наши магазины не в счёт. Алматы в
-            плане нет, поэтому сумма по направлениям меньше общих продаж. Процент у цветка — сколько
-            заказано от его плана. Риска на полоске — сколько периода уже прошло.
-          </Hint>
-        </span>
+        <KpiTile
+          icon="wallet"
+          label="Поступило"
+          value={`${nf(incomeTotal)} ₸`}
+          hint={waitingIncome > 0 ? `ждут суммы от бухгалтера: ${waitingIncome}` : undefined}
+          tone={waitingIncome > 0 ? "warn" : undefined}
+        />
+        <KpiTile
+          icon="order"
+          label="Заявок"
+          value={String(fact.orders)}
+          hint={cityOrders > 0 ? `из них объём на города: ${cityOrders}` : undefined}
+        />
       </div>
-
-      {/* --- Сводка одной карточкой ------------------------------------------ */}
-      <section className="card space-y-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <span className="font-display text-2xl font-extrabold tabular-nums">{nf(fact.orderedStems)}</span>
-            <span className="ml-2 text-ink-secondary">
-              {fact.planStems > 0 ? `из ${nf(fact.planStems)} по плану заказано` : "заказано · плана на период нет"}
-            </span>
-          </div>
-          {fact.planStems > 0 && (
-            <span className={`font-display text-xl font-extrabold tabular-nums ${TONE_TEXT[tone]}`}>{pct(fact.donePercent)}</span>
-          )}
-        </div>
-        {fact.planStems > 0 && <PlanProgress percent={fact.donePercent} pace={pace} />}
-        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-line-hairline text-sm">
-          <Stat
-            title="Отгружено"
-            value={nf(fact.shippedStems)}
-            note={notShipped > 0 ? `ещё не уехало ${nf(notShipped)}` : fact.orderedStems > 0 ? "всё уехало" : null}
-            warn={notShipped > 0}
-          />
-          <Stat
-            title="Поступило"
-            value={`${nf(incomeTotal)} ₸`}
-            note={waitingIncome > 0 ? `ждут суммы от бухгалтера: ${waitingIncome}` : null}
-            warn={waitingIncome > 0}
-          />
-          <Stat
-            title="Заявок"
-            value={String(fact.orders)}
-            note={cityOrders > 0 ? `из них объём на города: ${cityOrders}` : null}
-          />
-        </dl>
-      </section>
 
       {missing.length > 0 && (
         <Section
@@ -293,7 +267,7 @@ export default async function RegionSalesPage({
             </>
           }
         >
-          <div className="space-y-2">
+          <div className="grid gap-2 lg:grid-cols-2">
             {missing.map((m) => (
               <DirectionFixRow
                 key={m.orderId}
@@ -307,28 +281,99 @@ export default async function RegionSalesPage({
         </Section>
       )}
 
-      {/* --- По направлениям ------------------------------------------------- */}
-      <Section
-        tone="plans"
-        icon="route"
-        flush
-        title={
-          <>
-            По направлениям
-            {flower ? <span className="text-ink-secondary font-normal"> · {FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower}</span> : null}
-          </>
-        }
-      >
+      <div className="card !p-0 overflow-hidden">
+        {/* Вкладки карточки: направления и заявки периода — ссылками, страница серверная. */}
+        <div className="flex flex-wrap items-center gap-x-5 px-4 sm:px-5 border-b border-line-hairline">
+          {(
+            [
+              ["directions", "По направлениям"],
+              ["orders", `Заявки периода (${regionOrders.length})`],
+            ] as const
+          ).map(([key, label]) => (
+            <Link
+              key={key}
+              href={viewHref(key)}
+              className={
+                "py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors " +
+                (view === key
+                  ? "border-section-plans text-ink-primary font-semibold"
+                  : "border-transparent text-ink-secondary hover:text-ink-primary")
+              }
+            >
+              {label}
+            </Link>
+          ))}
+          <span className="ml-auto py-3 text-xs text-ink-muted">
+            доставка {formatDay(from)} — {formatDay(to)}
+            <Hint>
+              Факт считается по дню доставки. Отменённые и заявки в наши магазины не в счёт. Алматы в плане нет,
+              поэтому сумма по направлениям меньше общих продаж. Процент у цветка — сколько заказано от его плана.
+              Риска на полоске — сколько периода уже прошло.
+            </Hint>
+          </span>
+        </div>
+
+        {/* --- Отбор: неделя и цветок, проценты цветков прямо на кнопках -------- */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 sm:px-5 py-3 border-b border-line-hairline">
+          <Segmented
+            items={[
+              { href: keep(view === "orders" ? { view } : {}), active: !week, label: "Месяц" },
+              ...weeks.map((w) => ({
+                href: keep(view === "orders" ? { week: w.code, view } : { week: w.code }),
+                active: week?.code === w.code,
+                label: w.shortLabel,
+              })),
+            ]}
+          />
+          <Segmented
+            items={[
+              { href: flowerHref("") + (view === "orders" ? "&view=orders" : ""), active: !flower, label: "Все", note: pct(allFlowers.donePercent) },
+              ...FLOWER_ORDER.map((f) => {
+                const row = allFlowers.byFlower.find((r) => r.flowerType === f);
+                return {
+                  href: flowerHref(f) + (view === "orders" ? "&view=orders" : ""),
+                  active: flower === f,
+                  label: FLOWER_TYPE_LABELS_PLURAL[f] ?? f,
+                  note: row && row.planStems + row.orderedStems > 0 ? pct(row.donePercent) : "",
+                };
+              }),
+            ]}
+          />
+          {fact.planStems > 0 && (
+            <div className="flex items-center gap-3 min-w-[220px] flex-1 lg:max-w-sm lg:ml-auto">
+              <div className="flex-1">
+                <PlanProgress percent={fact.donePercent} pace={pace} />
+              </div>
+              <span className={`font-display font-extrabold tabular-nums ${TONE_TEXT[tone]}`}>{pct(fact.donePercent)}</span>
+            </div>
+          )}
+        </div>
+
+        {view === "orders" ? (
+          <RegionOrdersTable
+            rows={regionOrders.map((o) => ({
+              orderId: o.orderId,
+              code: orderCode(o.orderId),
+              clientName: o.clientName,
+              deliveryLabel: formatDay(o.deliveryDate),
+              direction: o.direction,
+              stems: o.stems,
+              shipped: o.shipped,
+              amount: o.amount,
+            }))}
+            empty={flower ? "Заявок в регионы по этому цветку за период нет." : "Заявок в регионы за этот период нет."}
+          />
+        ) : (
         <div className="table-scroll table-cards">
           <table className="w-full text-sm min-w-[680px]">
             <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline">
+              <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
                 <th className="px-4 py-2.5 font-medium">Направление</th>
-                <th className="px-3 py-2.5 font-medium text-right">План</th>
-                <th className="px-3 py-2.5 font-medium text-right">Заказано</th>
-                <th className="px-3 py-2.5 font-medium w-40">Выполнение</th>
-                <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
-                <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
+                <th className="px-4 py-2.5 font-medium text-right">План</th>
+                <th className="px-4 py-2.5 font-medium text-right">Заказано</th>
+                <th className="px-4 py-2.5 font-medium w-48">Выполнение</th>
+                <th className="px-4 py-2.5 font-medium text-right">Отгружено</th>
+                <th className="px-4 py-2.5 font-medium text-right">Поступило</th>
               </tr>
             </thead>
             <tbody>
@@ -341,7 +386,7 @@ export default async function RegionSalesPage({
                 return (
                   <Fragment key={group.key}>
                     <tr>
-                      <td colSpan={6} className="px-4 pt-3 pb-1 text-xs text-ink-muted">
+                      <td colSpan={6} className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                         {group.label}
                       </td>
                     </tr>
@@ -349,20 +394,20 @@ export default async function RegionSalesPage({
                       const inc = incomeByDirection.get(r.direction);
                       const rowTone = paceTone(r.donePercent, pace);
                       return (
-                        <tr key={r.direction} className="border-t border-line-hairline/70">
-                          <td data-label="Направление" className="px-4 py-2.5 font-medium whitespace-nowrap">
+                        <tr key={r.direction} className="border-t border-line-hairline/70 hover:bg-surface-plane/60">
+                          <td data-label="Направление" className="px-4 py-2.5 font-semibold whitespace-nowrap">
                             {r.direction}
                             {r.orders > 0 && (
                               <span className="ml-1.5 text-xs font-normal text-ink-muted">· {r.orders} заяв.</span>
                             )}
                           </td>
-                          <td data-label="План" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
+                          <td data-label="План" className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">
                             {r.planStems > 0 ? nf(r.planStems) : null}
                           </td>
-                          <td data-label="Заказано" className="px-3 py-2.5 text-right tabular-nums font-medium">
+                          <td data-label="Заказано" className="px-4 py-2.5 text-right tabular-nums font-semibold">
                             {r.orderedStems > 0 ? nf(r.orderedStems) : null}
                           </td>
-                          <td data-label="Выполнение" className="px-3 py-2.5">
+                          <td data-label="Выполнение" className="px-4 py-2.5">
                             {r.donePercent === null ? (
                               r.orderedStems > 0 ? <span className="text-xs text-[#8a5a00]">без плана</span> : null
                             ) : (
@@ -370,16 +415,16 @@ export default async function RegionSalesPage({
                                 <div className="flex-1 min-w-[60px]">
                                   <PlanProgress percent={r.donePercent} pace={pace} size="sm" />
                                 </div>
-                                <span className={`w-10 text-right text-xs tabular-nums ${TONE_TEXT[rowTone]}`}>
+                                <span className={`w-10 text-right text-xs font-semibold tabular-nums ${TONE_TEXT[rowTone]}`}>
                                   {pct(r.donePercent)}
                                 </span>
                               </div>
                             )}
                           </td>
-                          <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums">
+                          <td data-label="Отгружено" className="px-4 py-2.5 text-right tabular-nums">
                             {r.shippedStems > 0 ? nf(r.shippedStems) : null}
                           </td>
-                          <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">
+                          <td data-label="Поступило" className="px-4 py-2.5 text-right tabular-nums">
                             {(inc?.income ?? 0) > 0 ? `${nf(inc!.income)} ₸` : null}
                             {(inc?.waitingIncome ?? 0) > 0 && (
                               <span className="block text-[11px] text-[#8a5a00]">ждёт суммы: {inc!.waitingIncome}</span>
@@ -393,7 +438,7 @@ export default async function RegionSalesPage({
               })}
               {fact.planStems === 0 && fact.orderedStems === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
+                  <td colSpan={6} className="px-4 py-12 text-center text-ink-muted">
                     За этот период ни плана, ни отгрузок по регионам нет.{" "}
                     <Link href={`/plans/shipments?period=${month}`} className="text-accent hover:underline">
                       Поставить план
@@ -404,67 +449,8 @@ export default async function RegionSalesPage({
             </tbody>
           </table>
         </div>
-      </Section>
-
-      {/* --- Заявки периода — свёрнуты --------------------------------------- */}
-      <details className="card !p-0 group">
-        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 font-medium [&::-webkit-details-marker]:hidden">
-          <span>
-            Заявки периода · {regionOrders.length}
-            {flower ? (
-              <span className="text-ink-secondary font-normal">
-                {" "}
-                · только {(FLOWER_TYPE_LABELS_PLURAL[flower] ?? flower).toLowerCase()}
-              </span>
-            ) : null}
-          </span>
-          <span className="text-sm text-accent group-open:hidden">показать</span>
-          <span className="text-sm text-accent hidden group-open:inline">скрыть</span>
-        </summary>
-        <div className="table-scroll table-cards border-t border-line-hairline">
-          <table className="w-full text-sm min-w-[680px]">
-            <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                <th className="px-4 py-2.5 font-medium">Доставка</th>
-                <th className="px-3 py-2.5 font-medium">Направление</th>
-                <th className="px-3 py-2.5 font-medium">Клиент</th>
-                <th className="px-3 py-2.5 font-medium">Заявка</th>
-                <th className="px-3 py-2.5 font-medium text-right">Стеблей</th>
-                <th className="px-3 py-2.5 font-medium text-right">Отгружено</th>
-                <th className="px-3 py-2.5 font-medium text-right">Поступило</th>
-              </tr>
-            </thead>
-            <tbody>
-              {regionOrders.map((o) => (
-                <tr key={o.orderId} className="border-b border-line-hairline last:border-0">
-                  <td data-label="Доставка" className="px-4 py-2.5 whitespace-nowrap text-ink-secondary">
-                    {formatDay(o.deliveryDate)}
-                  </td>
-                  <td data-label="Направление" className="px-3 py-2.5 whitespace-nowrap font-medium">{o.direction}</td>
-                  <td data-label="Клиент" className="px-3 py-2.5">{o.clientName}</td>
-                  <td data-label="Заявка" className="px-3 py-2.5 whitespace-nowrap">
-                    <Link href={`/orders/${o.orderId}`} className="hover:underline">
-                      {o.orderId}
-                    </Link>
-                  </td>
-                  <td data-label="Стеблей" className="px-3 py-2.5 text-right tabular-nums">{nf(o.stems)}</td>
-                  <td data-label="Отгружено" className="px-3 py-2.5 text-right tabular-nums text-ink-secondary">
-                    {o.shipped > 0 ? nf(o.shipped) : "—"}
-                  </td>
-                  <td data-label="Поступило" className="px-3 py-2.5 text-right tabular-nums">{nf(o.amount)} ₸</td>
-                </tr>
-              ))}
-              {regionOrders.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
-                    {flower ? "Заявок в регионы по этому цветку за период нет." : "Заявок в регионы за этот период нет."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </details>
+        )}
+      </div>
     </div>
   );
 }
@@ -490,16 +476,6 @@ function Segmented({
           {i.note ? <span className="ml-1.5 text-xs font-normal text-ink-muted tabular-nums">{i.note}</span> : null}
         </Link>
       ))}
-    </div>
-  );
-}
-
-function Stat({ title, value, note, warn }: { title: string; value: string; note: string | null; warn?: boolean }) {
-  return (
-    <div>
-      <dt className="text-ink-secondary">{title}</dt>
-      <dd className="text-lg font-semibold tabular-nums">{value}</dd>
-      {note && <dd className={`text-xs ${warn ? "text-[#8a5a00]" : "text-ink-muted"}`}>{note}</dd>}
     </div>
   );
 }

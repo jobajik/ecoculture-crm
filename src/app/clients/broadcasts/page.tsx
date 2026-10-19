@@ -8,7 +8,8 @@ import { formatMoment } from "@/lib/formatDate";
 import { BROADCAST_STATUS_LABELS } from "@/lib/broadcast";
 import { shortMoney } from "@/lib/formatNumber";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
+import KpiTile from "@/components/KpiTile";
+import BroadcastList, { type BroadcastListRow } from "@/components/BroadcastList";
 import { clientsTabsFor } from "../tabs";
 import { channelInfo, loadBroadcastData } from "./data";
 
@@ -26,8 +27,29 @@ export default async function BroadcastsPage() {
 
   const [{ broadcasts, optedOut }, channel] = await Promise.all([loadBroadcastData(), channelInfo()]);
 
+  const sent = broadcasts.reduce((sum, b) => sum + b.totals.sent, 0);
+  const replied = broadcasts.reduce((sum, b) => sum + b.totals.replied, 0);
+  const orders = broadcasts.reduce((sum, b) => sum + b.results.count, 0);
+  const ordersAmount = broadcasts.reduce((sum, b) => sum + b.results.amount, 0);
+  const live = broadcasts.filter((b) => b.status === "sending" || b.status === "paused");
+  const rows: BroadcastListRow[] = broadcasts.map((b) => ({
+    id: b.broadcastId,
+    title: b.title,
+    when: formatMoment(b.createdAt),
+    auto: !!b.auto,
+    status: b.status,
+    statusLabel: BROADCAST_STATUS_LABELS[b.status] ?? b.status,
+    total: b.totals.total,
+    sent: b.totals.sent,
+    read: b.totals.read,
+    replied: b.totals.replied,
+    errors: b.totals.errors,
+    orders: b.results.count,
+    ordersMoney: shortMoney(b.results.amount),
+  }));
+
   return (
-    <div className="space-y-6">
+    <div>
       <PageHeader
         area="leads"
         title="Рассылки WhatsApp"
@@ -50,80 +72,23 @@ export default async function BroadcastsPage() {
         }
       />
 
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="message" label="Рассылок" value={broadcasts.length} hint={live.length > 0 ? `идут сейчас: ${live.length}` : "сейчас ничего не идёт"} tone={live.length > 0 ? "good" : undefined} />
+        <KpiTile icon="arrow" label="Отправлено" value={sent.toLocaleString("ru-RU")} hint={optedOut.size > 0 ? `отписались: ${optedOut.size}` : undefined} />
+        <KpiTile icon="message" label="Ответили" value={replied.toLocaleString("ru-RU")} hint={sent > 0 ? `${Math.round((replied / sent) * 100)} % от отправленных` : undefined} />
+        <KpiTile icon="chart" label="Заявки за 7 дн." value={orders} hint={orders > 0 ? `на ${shortMoney(ordersAmount)}` : "после сообщения"} tone={orders > 0 ? "good" : undefined} />
+      </div>
+
       <div
         className={clsx(
-          "rounded-xl px-4 py-3 text-sm",
+          "rounded-xl px-4 py-3 text-sm mb-5",
           channel.ok ? "bg-status-good/10 text-status-good" : "bg-status-warning/10 text-[#8a5a00]"
         )}
       >
         {channel.text}
-        {optedOut.size > 0 && <span className="text-ink-secondary"> · отписались: {optedOut.size}</span>}
       </div>
 
-      <Section tone="leads" icon="list" title="Все рассылки" flush>
-        {broadcasts.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-ink-muted">Рассылок ещё не было.</p>
-        ) : (
-          <div className="table-cards">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                  <th className="px-3 py-2.5 font-medium">Рассылка</th>
-                  <th className="px-3 py-2.5 font-medium">Статус</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Кому</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Отправлено</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Прочитали</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Ответили</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Ошибки</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Заявки за 7 дн.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {broadcasts.map((b) => (
-                  <tr key={b.broadcastId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
-                    <td className="px-3 py-2.5">
-                      <Link href={`/clients/broadcasts/${b.broadcastId}`} className="text-series-1 font-medium">
-                        {b.title}
-                      </Link>
-                      <div className="text-xs text-ink-muted">
-                        {formatMoment(b.createdAt)}
-                        {b.auto ? " · автопилот" : ""}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5" data-label="Статус">
-                      {BROADCAST_STATUS_LABELS[b.status] ?? b.status}
-                    </td>
-                    <td className="px-3 py-2.5 sm:text-right tabular-nums" data-label="Кому">
-                      {b.totals.total}
-                    </td>
-                    <td className="px-3 py-2.5 sm:text-right tabular-nums" data-label="Отправлено">
-                      {b.totals.sent}
-                    </td>
-                    <td className="px-3 py-2.5 sm:text-right tabular-nums" data-label="Прочитали">
-                      {b.totals.read}
-                    </td>
-                    <td className="px-3 py-2.5 sm:text-right tabular-nums text-status-good font-medium" data-label="Ответили">
-                      {b.totals.replied}
-                    </td>
-                    <td className="px-3 py-2.5 sm:text-right tabular-nums" data-label="Ошибки">
-                      {b.totals.errors || "—"}
-                    </td>
-                    <td className="px-3 py-2.5 sm:text-right tabular-nums" data-label="Заявки за 7 дн.">
-                      {b.results.count > 0 ? (
-                        <>
-                          {b.results.count} <span className="text-ink-muted">· {shortMoney(b.results.amount)}</span>
-                        </>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
+      <BroadcastList rows={rows} />
     </div>
   );
 }

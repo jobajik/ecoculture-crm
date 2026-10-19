@@ -23,16 +23,17 @@ export default function CityTabs({
   date: string;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    // Новый вид (19.10.2026): вкладки внутри карточки, подчёркнуты цветом розницы.
+    <div className="flex flex-wrap gap-x-5 px-4 sm:px-5 border-b border-line-hairline">
       {cities.map((city) => (
         <Link
           key={city}
           href={`/retail/regions?city=${encodeURIComponent(city)}&date=${date}`}
           className={clsx(
-            "px-3 py-1.5 rounded-lg text-sm border transition-colors",
+            "py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors",
             city === current
-              ? "border-accent bg-accent-soft text-ink-primary font-medium"
-              : "border-line-hairline text-ink-secondary hover:text-ink-primary"
+              ? "border-section-retail text-ink-primary font-semibold"
+              : "border-transparent text-ink-secondary hover:text-ink-primary"
           )}
         >
           {city}

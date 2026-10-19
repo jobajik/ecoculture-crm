@@ -26,6 +26,7 @@ import { localDayKey } from "@/lib/timezone";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
+import PaneTabs from "@/components/PaneTabs";
 import LeadStageBadge from "@/components/LeadStageBadge";
 import LeadInfoForm from "@/components/LeadInfoForm";
 import LeadTouchForm from "@/components/LeadTouchForm";
@@ -104,7 +105,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
   const showTalk = messages.length > 0 || !!analysis || waConnected || (aiReady && work);
 
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader
         area="leads"
         eyebrow="Лид"
@@ -126,14 +127,14 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
           </span>
         }
         actions={
-          <Link href="/clients/leads" className="text-sm text-accent hover:underline">
-            ← Лиды
+          <Link href="/clients/leads" className="btn-secondary">
+            ← Все лиды
           </Link>
         }
       />
 
       {/* Путь по стадиям: где лид сейчас. Отказ — отдельно, не шаг пути. */}
-      <ol className="flex gap-1 overflow-x-auto text-xs" aria-label="Стадии">
+      <ol className="flex gap-1 overflow-x-auto text-xs mb-5" aria-label="Стадии">
         {LEAD_STAGES.filter((s) => s.key !== "lost").map((s, i) => (
           <li
             key={s.key}
@@ -141,9 +142,9 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
               stage === "lost"
                 ? "bg-surface-sunk text-ink-muted"
                 : i < current
-                  ? "bg-accent/15 text-accent"
+                  ? "bg-section-leads-soft text-section-leads"
                   : i === current
-                    ? "bg-accent text-white font-medium"
+                    ? "bg-section-leads text-white font-semibold"
                     : "bg-surface-sunk text-ink-muted"
             }`}
             title={`${s.label}: ${s.hint}`}
@@ -153,7 +154,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
         ))}
       </ol>
 
-      <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 items-start">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
         <div className="space-y-4 min-w-0">
         <LeadInfoForm
           lead={lead}
@@ -214,69 +215,94 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
         )}
         </div>
 
-        <div className="space-y-4 min-w-0">
-          {showTalk && (
-            <LeadTalkPanel
-              leadId={lead.leadId}
-              canRun={work}
-              aiReady={aiReady}
-              analysis={analysis}
-              prefill={prefill}
-              newMessages={newSinceAnalysis(messages, analysis ?? undefined)}
-              currentStage={stage}
-              hasMessages={messages.length > 0}
-              waConnected={waConnected}
-              managerName={lead.managerEmail ? nameByEmail.get(lead.managerEmail) ?? "" : ""}
-            />
-          )}
-
-          {work ? (
-            <LeadTouchForm leadId={lead.leadId} stage={stage} hasClient={!!lead.clientId} today={today} />
-          ) : (
-            <p className="card text-sm text-ink-secondary">
-              {leadgen && lead.handedOverAt
-                ? "Лид у менеджера — касания записывает он. Здесь видно, как идёт работа."
-                : lead.managerEmail
-                  ? "Касания записывает менеджер этого лида."
-                  : "Возьмите лид себе, чтобы записывать касания."}
-            </p>
-          )}
-
-          {(messages.length > 0 || waConnected) && (
-            <WaChat
-              messages={messages}
-              waLink={whatsappLink(lead.phone)}
-              replyMinutes={talkStats.replyMinutes}
-              waitingMinutes={waitingMinutes}
-            />
-          )}
-
-          <Section tone="leads" icon="phone" title={`Касания · ${history.length}`} flush className="!mb-0">
-            {history.length === 0 ? (
-              <p className="px-4 pb-4 text-sm text-ink-muted">Ещё не связывались.</p>
-            ) : (
-              <ol className="divide-y divide-line-hairline/70 border-t border-line-hairline">
-                {history.map((t) => (
-                  <li key={t.touchId} className="px-4 py-3 text-sm space-y-1">
-                    <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-ink-muted">
-                      <span className="tabular-nums">{formatMoment(t.createdAt)}</span>
-                      <span>· {t.channel}</span>
-                      <span>· {nameByEmail.get(t.managerEmail) ?? t.managerEmail}</span>
-                      {t.outcome && <span className="font-medium text-section-leads">· {outcomeLabel(t.outcome)}</span>}
-                      {t.stageTo && t.stageFrom !== t.stageTo && (
-                        <span className="text-accent">
-                          · {stageLabel(t.stageFrom)} → {stageLabel(t.stageTo)}
-                        </span>
+        <div className="min-w-0">
+          {/* Справа одна панель за раз (новый вид, 19.10.2026): касания, переписка, разбор ИИ — вкладками. */}
+          <PaneTabs
+            initial={waitingMinutes !== null ? "chat" : "touches"}
+            // То же событие, что шлёт «Перенести в касание» (LeadTalkPanel → TOUCH_PREFILL_EVENT): открыть форму.
+            switchOn={{ event: "lead-touch-prefill", to: "touches" }}
+            tabs={[
+              {
+                key: "touches",
+                label: "Касания",
+                count: history.length,
+                content: (
+                  <>
+                    {work ? (
+                      <LeadTouchForm leadId={lead.leadId} stage={stage} hasClient={!!lead.clientId} today={today} />
+                    ) : (
+                      <p className="card text-sm text-ink-secondary">
+                        {leadgen && lead.handedOverAt
+                          ? "Лид у менеджера — касания записывает он. Здесь видно, как идёт работа."
+                          : lead.managerEmail
+                            ? "Касания записывает менеджер этого лида."
+                            : "Возьмите лид себе, чтобы записывать касания."}
+                      </p>
+                    )}
+                    <Section tone="leads" icon="phone" title={`История касаний · ${history.length}`} flush className="!mb-0">
+                      {history.length === 0 ? (
+                        <p className="px-4 pb-4 text-sm text-ink-muted">Ещё не связывались.</p>
+                      ) : (
+                        <ol className="divide-y divide-line-hairline/70 border-t border-line-hairline">
+                          {history.map((t) => (
+                            <li key={t.touchId} className="px-4 py-3 text-sm space-y-1">
+                              <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-ink-muted">
+                                <span className="tabular-nums">{formatMoment(t.createdAt)}</span>
+                                <span>· {t.channel}</span>
+                                <span>· {nameByEmail.get(t.managerEmail) ?? t.managerEmail}</span>
+                                {t.outcome && <span className="font-medium text-section-leads">· {outcomeLabel(t.outcome)}</span>}
+                                {t.stageTo && t.stageFrom !== t.stageTo && (
+                                  <span className="text-accent">
+                                    · {stageLabel(t.stageFrom)} → {stageLabel(t.stageTo)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="whitespace-pre-line">{t.comment}</p>
+                              {t.nextTouchAt && <p className="text-xs text-ink-muted">следующее: {formatDay(t.nextTouchAt)}</p>}
+                            </li>
+                          ))}
+                        </ol>
                       )}
-                    </div>
-                    <p className="whitespace-pre-line">{t.comment}</p>
-                    {t.nextTouchAt && <p className="text-xs text-ink-muted">следующее: {formatDay(t.nextTouchAt)}</p>}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Section>
-          <p className="text-xs text-ink-muted">
+                    </Section>
+                  </>
+                ),
+              },
+              {
+                key: "chat",
+                label: "Переписка",
+                count: messages.length || undefined,
+                alert: waitingMinutes !== null,
+                content:
+                  messages.length > 0 || waConnected ? (
+                    <WaChat
+                      messages={messages}
+                      waLink={whatsappLink(lead.phone)}
+                      replyMinutes={talkStats.replyMinutes}
+                      waitingMinutes={waitingMinutes}
+                    />
+                  ) : null,
+              },
+              {
+                key: "ai",
+                label: "Разбор ИИ",
+                content: showTalk ? (
+                  <LeadTalkPanel
+                    leadId={lead.leadId}
+                    canRun={work}
+                    aiReady={aiReady}
+                    analysis={analysis}
+                    prefill={prefill}
+                    newMessages={newSinceAnalysis(messages, analysis ?? undefined)}
+                    currentStage={stage}
+                    hasMessages={messages.length > 0}
+                    waConnected={waConnected}
+                    managerName={lead.managerEmail ? nameByEmail.get(lead.managerEmail) ?? "" : ""}
+                  />
+                ) : null,
+              },
+            ]}
+          />
+          <p className="text-xs text-ink-muted mt-3">
             Заведён {formatDay(lead.createdAt)}
             {lead.createdByEmail && ` · ${nameByEmail.get(lead.createdByEmail) ?? lead.createdByEmail}`}
           </p>

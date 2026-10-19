@@ -18,11 +18,10 @@ export default async function SalesPlanPage({
   const snapshot = await getSalesSnapshot(searchParams.period);
 
   return (
-    <div className="space-y-5">
+    <div>
       <PageHeader
         area="sales"
         title="План и факт"
-        subtitle="Продажа засчитывается по дате оформления заявки."
         tabs={salesTabsFor(role)}
       />
 

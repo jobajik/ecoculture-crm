@@ -116,7 +116,7 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
   const canSend = !!current && isManagerLine(current.code) && !!current.line && (role === "admin" || current.line.managerEmail === email);
 
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader
         area="leads"
         title={

@@ -72,8 +72,9 @@ function Bar({ value, max, className }: { value: number; max: number; className:
 
 export default function HarvestWeeks({ rows, currentWeek }: { rows: HarvestFlowerRow[]; currentWeek?: string }) {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-secondary">
+    <div className="card !p-0 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 sm:px-5 py-3 border-b border-line-hairline text-xs text-ink-secondary">
+        <span className="font-display text-[15px] font-bold text-ink-primary mr-auto">По неделям месяца</span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-5 rounded-full bg-accent" /> срезка (прогноз агронома)
         </span>
@@ -91,9 +92,9 @@ export default function HarvestWeeks({ rows, currentWeek }: { rows: HarvestFlowe
         const max = Math.max(1, ...row.weeks.map((w) => Math.max(w.forecast, w.planned)));
         const month = stateText(forecast, planned);
         return (
-          <section key={row.flowerType} className="card space-y-3">
+          <section key={row.flowerType} className="px-4 sm:px-5 py-4 space-y-3 border-b border-line-hairline last:border-0">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <h2 className="font-semibold">{row.label}</h2>
+              <h2 className="font-display text-base font-bold">{row.label}</h2>
               <div className="text-sm tabular-nums text-ink-secondary">
                 срезка <span className="font-medium text-ink-primary">{forecast > 0 ? nf(forecast) : "—"}</span>
                 {" · "}план <span className="font-medium text-ink-primary">{planned > 0 ? nf(planned) : "—"}</span>
@@ -105,7 +106,7 @@ export default function HarvestWeeks({ rows, currentWeek }: { rows: HarvestFlowe
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(120px,1fr))]">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(140px,1fr))]">
               {row.weeks.map((w) => {
                 const s = stateText(w.forecast, w.planned);
                 const state = weekState(w.forecast, w.planned);
@@ -113,7 +114,7 @@ export default function HarvestWeeks({ rows, currentWeek }: { rows: HarvestFlowe
                   <div
                     key={w.code}
                     className={clsx(
-                      "rounded-lg border px-3 py-2 space-y-1.5",
+                      "rounded-xl border px-3 py-2.5 space-y-1.5",
                       state === "short"
                         ? "border-status-critical/40 bg-status-critical/5"
                         : "border-line-hairline",
@@ -128,10 +129,10 @@ export default function HarvestWeeks({ rows, currentWeek }: { rows: HarvestFlowe
                       <Bar value={w.forecast} max={max} className="bg-accent" />
                       <Bar value={w.planned} max={max} className="bg-ink-secondary/70" />
                     </div>
-                    <div className="text-xs tabular-nums text-ink-secondary">
-                      {w.forecast > 0 ? nf(w.forecast) : "—"} / {w.planned > 0 ? nf(w.planned) : "—"}
+                    <div className="text-sm tabular-nums text-ink-primary font-semibold">
+                      {w.forecast > 0 ? nf(w.forecast) : "—"} <span className="text-ink-muted font-normal">/ {w.planned > 0 ? nf(w.planned) : "—"}</span>
                     </div>
-                    <div className={clsx("text-xs font-medium tabular-nums", s.tone)}>{s.text}</div>
+                    <div className={clsx("text-xs font-semibold tabular-nums", s.tone)}>{s.text}</div>
                   </div>
                 );
               })}

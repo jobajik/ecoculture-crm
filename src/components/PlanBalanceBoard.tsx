@@ -377,7 +377,7 @@ export default function PlanBalanceBoard({
       <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
               <th className="px-4 py-3 font-medium">
                 Направление
                 <span className="ml-2 text-xs font-normal text-ink-muted">
@@ -499,7 +499,7 @@ export default function PlanBalanceBoard({
       <div className="card !p-0 table-scroll">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
               <th className="px-4 py-3 font-medium">
                 Месяц по неделям · {FLOWER_TYPE_LABELS_PLURAL[active] ?? active}
               </th>

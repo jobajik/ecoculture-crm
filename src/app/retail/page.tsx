@@ -9,6 +9,9 @@ import { buildShopDay, isRetailRole, retailShortLabel, territoriesFor } from "@/
 import PageHeader from "@/components/PageHeader";
 import { retailTabsFor } from "./tabs";
 import DayNav from "@/components/DayNav";
+import KpiTile from "@/components/KpiTile";
+import RetailDayBoard, { type RetailDayRow } from "@/components/RetailDayBoard";
+import { formatDay } from "@/lib/formatDate";
 import { ROLES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +86,12 @@ export default async function RetailDayPage({
 
   const canOrder = isRetailRole(role) || role === ROLES.ADMIN;
   const missing = rows.filter((r) => r.empty).length;
+  const boardRows: RetailDayRow[] = rows.map((r) => ({
+    ...r,
+    sub: [r.city, territories.length > 1 ? retailShortLabel(r.territory) : ""].filter(Boolean).join(" · "),
+  }));
 
+  // Новый вид (19.10.2026): цифры дня плитками, ниже одна карточка — день, отбор «без заявки» и страницы.
   return (
     <div>
       <PageHeader
@@ -106,132 +114,25 @@ export default async function RetailDayPage({
         }
       />
 
-      <DayNav date={date} today={todayKey()} />
-
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 my-4">
-        <Tile title="Магазинов" value={String(totals.shops)} />
-        <Tile
-          title="Заявка есть"
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="store" label="Магазинов" value={String(totals.shops)} hint={formatDay(date)} />
+        <KpiTile
+          icon="check"
+          label="Заявка есть"
           value={`${totals.covered} из ${totals.shops}`}
-          hint={missing > 0 ? `${missing} без заявки` : "Все закрыты"}
-          warn={missing > 0}
+          hint={missing > 0 ? `${missing} без заявки` : "все закрыты"}
+          tone={missing > 0 ? "bad" : "good"}
         />
-        <Tile title="Стеблей" value={totals.stems.toLocaleString("ru-RU")} />
-        <Tile title="По внутренней цене" value={money(totals.amount)} hint="Это не выручка" />
+        <KpiTile icon="leaf" label="Стеблей" value={totals.stems.toLocaleString("ru-RU")} hint="на этот день" />
+        <KpiTile icon="tag" label="По внутренней цене" value={money(totals.amount)} hint="это не выручка" />
       </div>
 
-      <div className="card !p-0 table-scroll table-cards">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Магазин</th>
-              <th className="px-4 py-3 font-medium">Что заказано</th>
-              <th className="px-4 py-3 font-medium text-right">Стеблей</th>
-              <th className="px-4 py-3 font-medium text-right">Сумма</th>
-              <th className="px-4 py-3 font-medium">Готовность</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.clientId}
-                className="border-b border-line-hairline last:border-0 hover:bg-surface-plane"
-              >
-                <td data-label="Магазин" className="px-4 py-2.5 align-top">
-                  <Link href={`/clients/${row.clientId}`} className="font-medium hover:underline">
-                    {row.name}
-                  </Link>
-                  <div className="text-xs text-ink-muted">
-                    {[row.city, territories.length > 1 ? retailShortLabel(row.territory) : ""]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
-                </td>
-                <td data-label="Что заказано" className="px-4 py-2.5 align-top text-ink-secondary">
-                  {row.empty ? (
-                    <span className="text-[#8a5a00]">заявки нет</span>
-                  ) : (
-                    row.orders.map((o) => (
-                      <div key={o.orderId}>
-                        <Link href={`/orders/${o.orderId}`} className="hover:underline">
-                          {o.positions || "без позиций"}
-                        </Link>
-                      </div>
-                    ))
-                  )}
-                </td>
-                <td data-label="Стеблей" className="px-4 py-2.5 align-top text-right tabular-nums">
-                  {row.stems > 0 ? row.stems.toLocaleString("ru-RU") : "—"}
-                </td>
-                <td data-label="Сумма" className="px-4 py-2.5 align-top text-right tabular-nums">
-                  {row.amount > 0 ? money(row.amount) : "—"}
-                </td>
-                <td data-label="Готовность" className="px-4 py-2.5 align-top">
-                  {row.empty ? (
-                    canOrder ? (
-                      // Магазин и день уже выбраны здесь — незачем выбирать их
-                      // заново на следующей странице. Одно нажатие, и остаётся
-                      // ввести количество.
-                      <Link
-                        href={`/orders/new?retail=1&client=${row.clientId}&date=${date}`}
-                        className="btn-secondary !py-1 !px-2.5 text-xs"
-                      >
-                        Оформить
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-ink-muted">—</span>
-                    )
-                  ) : row.orders.every((o) => o.managerConfirmed) ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-status-good">✓ подтверждена</span>
-                      {canOrder && (
-                        <Link
-                          href={`/orders/new?retail=1&client=${row.clientId}&date=${date}`}
-                          className="text-xs text-ink-secondary hover:underline"
-                          title="Добор: вторая заявка на тот же день"
-                        >
-                          добавить
-                        </Link>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-[#8a5a00]">ждёт подтверждения</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-ink-muted">
-                  Магазинов пока нет
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="card !p-0 overflow-hidden">
+        <div className="px-4 py-3 border-b border-line-hairline">
+          <DayNav date={date} today={todayKey()} />
+        </div>
+        <RetailDayBoard rows={boardRows} date={date} canOrder={canOrder} />
       </div>
-    </div>
-  );
-}
-
-function Tile({
-  title,
-  value,
-  hint,
-  warn,
-}: {
-  title: string;
-  value: string;
-  hint?: string;
-  warn?: boolean;
-}) {
-  return (
-    <div className="card">
-      <div className="text-sm text-ink-secondary">{title}</div>
-      <div className={`font-display text-2xl font-extrabold tabular-nums mt-1 ${warn ? "text-[#8a5a00]" : ""}`}>
-        {value}
-      </div>
-      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

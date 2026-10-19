@@ -6,7 +6,12 @@ import { listOrdersWithItems } from "@/lib/repo/orders";
 import { FLOWER_TYPE_LABELS, ORDER_STATUSES, formatGrade } from "@/lib/constants";
 import { buildRetailSummary, retailShortLabel, territoriesFor } from "@/lib/retail";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
+import KpiTile from "@/components/KpiTile";
+import RetailSummaryTabs, {
+  type RetailSummaryShop,
+  type RetailSummaryTerritory,
+  type RetailSummaryVariety,
+} from "@/components/RetailSummaryTabs";
 import { retailTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -65,141 +70,54 @@ export default async function RetailSummaryPage() {
   });
 
   const t = summary.totals;
+  const shops: RetailSummaryShop[] = summary.byShop.map((row) => ({
+    key: row.clientId || row.name,
+    name: row.name,
+    city: row.city || "",
+    orders: row.orders,
+    stems: row.stems,
+    amount: row.amount,
+    share: t.stems > 0 ? `${Math.round((row.stems / t.stems) * 100)} %` : "—",
+  }));
+  const varieties: RetailSummaryVariety[] = summary.byVariety.map((row) => ({
+    key: `${row.flowerType}|${row.variety}|${row.grade}`,
+    flower: FLOWER_TYPE_LABELS[row.flowerType] ?? row.flowerType,
+    variety: row.variety,
+    grade: formatGrade(row.grade),
+    stems: row.stems,
+    amount: row.amount,
+  }));
+  const byTerritory: RetailSummaryTerritory[] = summary.byTerritory.map((row) => ({
+    key: row.territory,
+    label: row.label,
+    orders: row.orders,
+    stems: row.stems,
+    amount: row.amount,
+  }));
 
+  // Новый вид (19.10.2026): цифры плитками, разрезы — одна карточка с вкладками и страницами.
   return (
     <div>
       <PageHeader
         area="retail"
         title={`Сводка${territories.length === 1 ? ` — ${retailShortLabel(territories[0])}` : ""}`}
+        subtitle={`За последние ${DAYS} дней, по дате оформления`}
         icon="chart"
         tabs={retailTabsFor(role)}
       />
 
-      <p className="text-sm text-ink-secondary mb-4">
-        За последние {DAYS} дней, по дате оформления.
-      </p>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="order" label="Заявок" value={String(t.orders)} hint="кроме отменённых" />
+        <KpiTile icon="store" label="Магазинов" value={String(t.shops)} hint="получали цветок" />
+        <KpiTile icon="leaf" label="Стеблей" value={t.stems.toLocaleString("ru-RU")} hint={`за ${DAYS} дней`} />
+        <KpiTile icon="tag" label="По внутренней цене" value={money(t.amount)} hint="это не выручка" />
+      </div>
 
       {t.orders === 0 ? (
-        <div className="card text-sm text-ink-secondary">
-          Заявок в магазины не было.
-        </div>
+        <div className="card text-sm text-ink-secondary">Заявок в магазины не было.</div>
       ) : (
-        <>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-            <Tile title="Заявок" value={String(t.orders)} hint="Кроме отменённых" />
-            <Tile title="Магазинов" value={String(t.shops)} />
-            <Tile title="Стеблей" value={t.stems.toLocaleString("ru-RU")} />
-            <Tile title="По внутренней цене" value={money(t.amount)} hint="Это не выручка" />
-          </div>
-
-          {summary.byTerritory.length > 1 && (
-            <div className="card !p-0 table-scroll table-cards mb-6">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                    <th className="px-4 py-3 font-medium">Направление</th>
-                    <th className="px-4 py-3 font-medium text-right">Заявок</th>
-                    <th className="px-4 py-3 font-medium text-right">Стеблей</th>
-                    <th className="px-4 py-3 font-medium text-right">Сумма</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.byTerritory.map((row) => (
-                    <tr key={row.territory} className="border-b border-line-hairline last:border-0">
-                      <td data-label="Направление" className="px-4 py-2.5">{row.label}</td>
-                      <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
-                      <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
-                        {row.stems.toLocaleString("ru-RU")}
-                      </td>
-                      <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <Section tone="retail" icon="store" title="По магазинам" flush className="!mb-6">
-            <div className="table-scroll table-cards border-t border-line-hairline">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                    <th className="px-4 py-3 font-medium">Магазин</th>
-                    <th className="px-4 py-3 font-medium">Город</th>
-                    <th className="px-4 py-3 font-medium text-right">Заявок</th>
-                    <th className="px-4 py-3 font-medium text-right">Стеблей</th>
-                    <th className="px-4 py-3 font-medium text-right">Сумма</th>
-                    <th className="px-4 py-3 font-medium text-right">Доля</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.byShop.map((row) => (
-                    <tr
-                      key={row.clientId || row.name}
-                      className="border-b border-line-hairline last:border-0"
-                    >
-                      <td data-label="Магазин" className="px-4 py-2.5">{row.name}</td>
-                      <td data-label="Город" className="px-4 py-2.5 text-ink-secondary">{row.city || "—"}</td>
-                      <td data-label="Заявок" className="px-4 py-2.5 text-right tabular-nums">{row.orders}</td>
-                      <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
-                        {row.stems.toLocaleString("ru-RU")}
-                      </td>
-                      <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
-                      <td data-label="Доля" className="px-4 py-2.5 text-right tabular-nums text-ink-secondary">
-                        {t.stems > 0 ? `${Math.round((row.stems / t.stems) * 100)} %` : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-
-          <Section tone="retail" icon="leaf" title="Что возим" flush className="!mb-0">
-            <div className="table-scroll table-cards border-t border-line-hairline">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                    <th className="px-4 py-3 font-medium">Цветок</th>
-                    <th className="px-4 py-3 font-medium">Сорт</th>
-                    <th className="px-4 py-3 font-medium">Длина / категория</th>
-                    <th className="px-4 py-3 font-medium text-right">Стеблей</th>
-                    <th className="px-4 py-3 font-medium text-right">Сумма</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.byVariety.map((row) => (
-                    <tr
-                      key={`${row.flowerType}|${row.variety}|${row.grade}`}
-                      className="border-b border-line-hairline last:border-0"
-                    >
-                      <td data-label="Цветок" className="px-4 py-2.5">
-                        {FLOWER_TYPE_LABELS[row.flowerType] ?? row.flowerType}
-                      </td>
-                      <td data-label="Сорт" className="px-4 py-2.5">{row.variety}</td>
-                      <td data-label="Длина / категория" className="px-4 py-2.5 text-ink-secondary">{formatGrade(row.grade)}</td>
-                      <td data-label="Стеблей" className="px-4 py-2.5 text-right tabular-nums">
-                        {row.stems.toLocaleString("ru-RU")}
-                      </td>
-                      <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums">{money(row.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        </>
+        <RetailSummaryTabs shops={shops} varieties={varieties} territories={byTerritory} />
       )}
-    </div>
-  );
-}
-
-function Tile({ title, value, hint }: { title: string; value: string; hint?: string }) {
-  return (
-    <div className="card">
-      <div className="text-sm text-ink-secondary">{title}</div>
-      <div className="font-display text-2xl font-extrabold tabular-nums mt-1">{value}</div>
-      {hint && <div className="text-xs text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }

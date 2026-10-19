@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { LEAD_STAGES, isClosedStage, whatsappLink, type LeadRow } from "@/lib/leads";
@@ -19,7 +19,7 @@ import {
 } from "@/lib/leadsView";
 import { formatDay } from "@/lib/formatDate";
 import { prettyWaPhone } from "@/lib/whatsapp";
-import MoreToggle from "./MoreToggle";
+import Pager, { pageSlice } from "./Pager";
 import LeadStageBadge from "./LeadStageBadge";
 import Icon from "./Icon";
 import { ScoreChip, TemperatureChip, WaitingChip } from "./TalkChips";
@@ -28,7 +28,6 @@ export type { LeadTalkMark } from "@/lib/leadsView";
 
 type Who = "mine" | "free" | "all" | "handed";
 
-const PAGE = 40;
 
 /**
  * Список лидов «что делать сейчас». Сверху — четыре плитки (они же фильтр): ждут ответа
@@ -63,7 +62,7 @@ export default function LeadsBoard({
   const [stage, setStage] = useState("");
   const [origin, setOrigin] = useState<LeadOrigin>("all");
   const [query, setQuery] = useState("");
-  const [limit, setLimit] = useState(PAGE);
+  const [page, setPage] = useState(0);
 
   const byWho = useMemo(
     () =>
@@ -111,19 +110,29 @@ export default function LeadsBoard({
     const picked = scoped.filter((r) => matchesView(r, view, talk[r.leadId]) && (!stage || r.stage === stage) && matchesQuery(r, query));
     return sortLeadsForWork(picked, talk);
   }, [scoped, view, stage, query, talk]);
-  const shown = list.slice(0, limit);
+  // Страницами, а не «показать ещё» (новый вид, 19.10.2026: «одностраничный»). Любой отбор — с первой страницы.
+  useEffect(() => setPage(0), [view, who, manager, stage, origin, query]);
+  const shown = pageSlice(list, page);
   const stageCounts = LEAD_STAGES.map((s) => ({ ...s, count: scoped.filter((r) => r.stage === s.key).length }));
   const hasOrigins = byWho.some((r) => originOf(r) !== "other");
 
-  const pickView = (v: LeadView) => {
-    setView(view === v && v !== "work" ? "work" : v);
-    setLimit(PAGE);
-  };
+  const pickView = (v: LeadView) => setView(view === v && v !== "work" ? "work" : v);
+
+  const whoOptions: { key: Who; label: string }[] = leadgen
+    ? [
+        { key: "mine", label: "Мои" },
+        { key: "handed", label: "Передала" },
+      ]
+    : [
+        { key: "mine", label: "Мои" },
+        { key: "free", label: "Ничьи" },
+        ...(canManage ? [{ key: "all" as Who, label: "Все" }] : []),
+      ];
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-5">
       {/* Плитки — что сделать сейчас. Нажатие — отбор, второе нажатие — обратно ко всем. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {tiles.map((t) => {
           const active = view === t.key;
           const hot = t.value > 0 && (t.tone === "critical" || t.tone === "warning");
@@ -134,111 +143,105 @@ export default function LeadsBoard({
               onClick={() => pickView(t.key)}
               aria-pressed={active}
               className={clsx(
-                "rounded-xl border px-3 py-2.5 text-left transition-colors min-w-0 bg-surface",
-                active ? "border-accent ring-2 ring-accent/20" : "border-line-hairline hover:bg-surface-plane",
-                hot && !active && (t.tone === "critical" ? "border-status-critical/40 bg-status-critical/5" : "border-status-warning/50 bg-status-warning/5")
+                "card !p-4 sm:!p-5 text-left transition-shadow min-w-0 hover:shadow-card-hover",
+                active && "!border-section-leads ring-2 ring-section-leads/20"
               )}
             >
-              <div className="text-xs text-ink-secondary truncate">{t.label}</div>
+              <div className="text-xs text-ink-muted truncate">{t.label}</div>
               <div
                 className={clsx(
-                  "font-display text-2xl font-extrabold tabular-nums leading-tight",
+                  "font-display text-[22px] sm:text-[26px] font-extrabold tabular-nums leading-none mt-1.5",
                   hot && (t.tone === "critical" ? "text-status-critical" : "text-[#8a5a00]")
                 )}
               >
                 {t.value}
               </div>
-              <div className="text-xs text-ink-muted truncate">{t.hint}</div>
+              <div className="text-xs text-ink-secondary mt-2 truncate">{t.hint}</div>
             </button>
           );
         })}
       </div>
 
-      {/* Отбор: поиск первым — им пользуются чаще всего. */}
-      <div className="card !p-3 space-y-2">
-        <input
-          className="input !py-2"
-          placeholder="Найти: название, имя, город или телефон"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setLimit(PAGE);
-          }}
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <Segment
-            value={who}
-            onChange={(v) => {
-              setWho(v as Who);
-              setLimit(PAGE);
-            }}
-            options={
-              leadgen
-                ? [
-                    { key: "mine", label: "Мои" },
-                    { key: "handed", label: "Передала" },
-                  ]
-                : [
-                    { key: "mine", label: "Мои" },
-                    { key: "free", label: "Ничьи" },
-                    ...(canManage ? [{ key: "all", label: "Все" }] : []),
-                  ]
-            }
-          />
-          {canManage && who === "all" && (
-            <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={manager} onChange={(e) => setManager(e.target.value)} aria-label="Менеджер">
-              <option value="">Все менеджеры</option>
-              {managers.map((m) => (
-                <option key={m.email} value={m.email}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Стадия">
-            <option value="">Все стадии</option>
-            {stageCounts.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label} · {s.count}
-              </option>
-            ))}
-          </select>
-          {hasOrigins && !leadgen && (
-            <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={origin} onChange={(e) => setOrigin(e.target.value as LeadOrigin)} aria-label="Откуда">
-              <option value="all">Откуда: все</option>
-              <option value="ads">С рекламы</option>
-              <option value="calls">База обзвона</option>
-              <option value="other">Остальные</option>
-            </select>
-          )}
+      <div className="card !p-0 overflow-hidden">
+        {/* Чьи лиды — вкладками карточки; закрытые — справа. */}
+        <div className="flex flex-wrap items-center gap-x-5 px-4 sm:px-5 border-b border-line-hairline">
+          {whoOptions.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => setWho(o.key)}
+              className={clsx(
+                "py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors",
+                who === o.key ? "border-section-leads text-ink-primary font-semibold" : "border-transparent text-ink-secondary hover:text-ink-primary"
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => pickView("closed")}
-            className={clsx("text-sm sm:ml-auto", view === "closed" ? "font-medium text-accent" : "text-ink-secondary hover:text-ink-primary")}
+            className={clsx("ml-auto py-3 text-sm", view === "closed" ? "font-semibold text-section-leads" : "text-ink-secondary hover:text-ink-primary")}
           >
             {view === "closed" ? "← К лидам в работе" : `Закрытые · ${count("closed")}`}
           </button>
         </div>
-      </div>
 
-      {hiddenCallBase > 0 && (
-        <p className="text-xs text-ink-muted px-1">
-          Ещё {hiddenCallBase.toLocaleString("ru-RU")} из базы обзвона ждут первого звонка —{" "}
-          {canOpenCalls ? (
-            <Link href="/clients/leads/calls" className="text-accent hover:underline">
-              они во вкладке «Обзвон»
-            </Link>
-          ) : (
-            "они во вкладке «Обзвон»"
-          )}
-          {" · "}
-          <button type="button" className="text-accent hover:underline" onClick={() => setOrigin("calls")}>
-            показать здесь
-          </button>
-        </p>
-      )}
+        {/* Отбор одной строкой: поиск, менеджер, стадия, откуда. */}
+        <div className="flex flex-col lg:flex-row lg:items-center gap-2 px-4 py-3 border-b border-line-hairline">
+          <input
+            className="input lg:!w-[280px] !py-1.5"
+            placeholder="Название, имя, город или телефон"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div className="flex flex-wrap gap-2 lg:ml-auto">
+            {canManage && who === "all" && (
+              <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={manager} onChange={(e) => setManager(e.target.value)} aria-label="Менеджер">
+                <option value="">Все менеджеры</option>
+                {managers.map((m) => (
+                  <option key={m.email} value={m.email}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Стадия">
+              <option value="">Все стадии</option>
+              {stageCounts.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label} · {s.count}
+                </option>
+              ))}
+            </select>
+            {hasOrigins && !leadgen && (
+              <select className="input !w-auto flex-1 sm:flex-none !py-1.5" value={origin} onChange={(e) => setOrigin(e.target.value as LeadOrigin)} aria-label="Откуда">
+                <option value="all">Откуда: все</option>
+                <option value="ads">С рекламы</option>
+                <option value="calls">База обзвона</option>
+                <option value="other">Остальные</option>
+              </select>
+            )}
+          </div>
+        </div>
 
-      <div className="card !p-0 overflow-hidden">
+        {hiddenCallBase > 0 && (
+          <p className="text-xs text-ink-muted px-4 py-2 border-b border-line-hairline bg-surface-plane/60">
+            Ещё {hiddenCallBase.toLocaleString("ru-RU")} из базы обзвона ждут первого звонка —{" "}
+            {canOpenCalls ? (
+              <Link href="/clients/leads/calls" className="text-section-leads hover:underline">
+                они во вкладке «Обзвон»
+              </Link>
+            ) : (
+              "они во вкладке «Обзвон»"
+            )}
+            {" · "}
+            <button type="button" className="text-section-leads hover:underline" onClick={() => setOrigin("calls")}>
+              показать здесь
+            </button>
+          </p>
+        )}
+
         {list.length === 0 ? (
           <p className="px-4 py-10 text-center text-ink-muted">
             {rows.length === 0
@@ -260,11 +263,12 @@ export default function LeadsBoard({
                   {group !== prev && (
                     <div
                       className={clsx(
-                        "px-4 py-1.5 text-xs font-semibold uppercase tracking-wide border-b border-line-hairline bg-surface-plane",
+                        "px-4 py-1.5 text-xs font-semibold border-b border-line-hairline bg-surface-plane/60 flex items-center gap-2",
                         i > 0 && "border-t",
                         group === "waiting" || group === "overdue" ? "text-status-critical" : group === "today" ? "text-[#8a5a00]" : "text-ink-secondary"
                       )}
                     >
+                      <span className="w-1.5 h-1.5 rounded-full bg-current" aria-hidden />
                       {LEAD_GROUP_LABELS[group]} · {groupCount}
                     </div>
                   )}
@@ -274,10 +278,8 @@ export default function LeadsBoard({
             })}
           </ol>
         )}
+        <Pager total={list.length} page={page} onPage={setPage} what="лидов" />
       </div>
-      {list.length > shown.length && (
-        <MoreToggle expanded={false} hidden={Math.min(list.length - shown.length, PAGE * 5)} onToggle={() => setLimit(limit + PAGE * 5)} what="лидов" />
-      )}
     </section>
   );
 }
@@ -359,36 +361,6 @@ function LeadLine({ row: r, mark, today, last }: { row: LeadRow; mark?: LeadTalk
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function Segment({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { key: string; label: string }[];
-}) {
-  return (
-    <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
-      {options.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          role="tab"
-          aria-selected={value === o.key}
-          onClick={() => onChange(o.key)}
-          className={clsx(
-            "rounded-md px-3 py-1 text-sm whitespace-nowrap",
-            value === o.key ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary"
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
     </div>
   );
 }

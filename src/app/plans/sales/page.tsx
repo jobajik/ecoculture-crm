@@ -59,10 +59,14 @@ export default async function PlansSalesPage({ searchParams }: { searchParams: {
   const pace = paceOf(period, localDayKey()).pacePercent;
 
   return (
-    <div className="space-y-5">
-      <PageHeader area="plans" title="Планы продаж" icon="chart" tabs={plansTabsFor(role, period)} />
-
-      <PeriodPicker period={period} />
+    <div>
+      <PageHeader
+        area="plans"
+        title="Планы продаж"
+        icon="chart"
+        tabs={plansTabsFor(role, period)}
+        actions={<PeriodPicker period={period} />}
+      />
 
       {/* key по месяцу: при переключении форма пересоздаётся с нуля,
           чтобы цифры прошлого месяца не остались в полях. */}

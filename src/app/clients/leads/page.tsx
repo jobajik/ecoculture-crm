@@ -106,7 +106,7 @@ export default async function LeadsPage({
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader
         area="leads"
         title="Лиды"
@@ -122,7 +122,7 @@ export default async function LeadsPage({
         tabs={clientsTabsFor(undefined, role)}
       />
 
-      <div className="flex flex-wrap items-start gap-2">
+      <div className="flex flex-wrap items-start gap-2 mb-5">
         <NewLeadForm key={initial ? `${initial.phone}` : "blank"} canManage={manage} managers={managers} initial={initial} />
         {manage && (
           <details className="group sm:ml-auto">
@@ -134,57 +134,62 @@ export default async function LeadsPage({
         )}
       </div>
 
-      {/* Кто написал на номер Земфиры и ещё не заведён лидом; рабочий номер не показываем. */}
-      <WaInbox rows={inbox} />
+      {/* Новый вид (19.10.2026): лиды слева, справа — кто написал в WhatsApp и как работают менеджеры. */}
+      <div className={inbox.length > 0 || (manage && summary.byManager.length > 0) ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] items-start" : ""}>
+        <LeadsBoard
+          rows={rows}
+          myEmail={email}
+          canManage={manage}
+          leadgen={leadgen}
+          canOpenCalls={canOpen(role, "/clients/leads/calls")}
+          managers={managers}
+          talk={talk}
+          today={today}
+        />
 
-      <LeadsBoard
-        rows={rows}
-        myEmail={email}
-        canManage={manage}
-        leadgen={leadgen}
-        canOpenCalls={canOpen(role, "/clients/leads/calls")}
-        managers={managers}
-        talk={talk}
-        today={today}
-      />
+        {(inbox.length > 0 || (manage && summary.byManager.length > 0)) && (
+          <div className="space-y-5 min-w-0">
+            {/* Кто написал на номер Земфиры и ещё не заведён лидом; рабочий номер не показываем. */}
+            <WaInbox rows={inbox} />
 
-      {manage && summary.byManager.length > 0 && (
-        <details className="card !p-0 overflow-hidden">
-          <summary className="px-4 py-3 cursor-pointer select-none font-medium">
-            Как работают менеджеры
-            <span className="text-ink-muted font-normal text-sm"> · просрочено у всех: {summary.overdue}</span>
-          </summary>
-          <div className="table-cards border-t border-line-hairline">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                  <th className="px-4 py-2 font-medium">Менеджер</th>
-                  <th className="px-3 py-2 font-medium text-right">В работе</th>
-                  <th className="px-3 py-2 font-medium text-right">Просрочено</th>
-                  <th className="px-3 py-2 font-medium text-right">Касаний за 7 дней</th>
-                  <th className="px-3 py-2 font-medium text-right">Дошли до заказа</th>
-                  <th className="px-4 py-2 font-medium text-right">Отказ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.byManager.map((m) => (
-                  <tr key={m.email} className="border-b border-line-hairline/70 last:border-0">
-                    <td className="px-4 py-2 font-medium">{m.name}</td>
-                    <td data-label="В работе" className="px-3 py-2 text-right tabular-nums">{m.open}</td>
-                    <td data-label="Просрочено" className={`px-3 py-2 text-right tabular-nums ${m.overdue > 0 ? "text-status-critical" : ""}`}>
-                      {m.overdue || ""}
-                    </td>
-                    <td data-label="Касаний за 7 дней" className="px-3 py-2 text-right tabular-nums">{m.touches7}</td>
-                    <td data-label="Дошли до заказа" className="px-3 py-2 text-right tabular-nums text-status-good">{m.won30 || ""}</td>
-                    <td data-label="Отказ" className="px-4 py-2 text-right tabular-nums text-ink-muted">{m.lost30 || ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {manage && summary.byManager.length > 0 && (
+              <div className="card !p-0 overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-3.5 border-b border-line-hairline">
+                  <h2 className="font-display text-[15px] font-bold">Как работают менеджеры</h2>
+                  <Hint>«Дошли до заказа» и «отказ» — за 30 дней. Просрочено у всех: {summary.overdue}.</Hint>
+                </div>
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
+                      <th className="px-4 py-2 font-medium">Менеджер</th>
+                      <th className="px-2 py-2 font-medium text-right" title="В работе">Работа</th>
+                      <th className="px-2 py-2 font-medium text-right" title="Просрочено">Проср.</th>
+                      <th className="px-2 py-2 font-medium text-right" title="Касаний за 7 дней">7 дн.</th>
+                      <th className="px-4 py-2 font-medium text-right" title="Дошли до заказа / отказ за 30 дней">Заказ / отказ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.byManager.map((m) => (
+                      <tr key={m.email} className="border-b border-line-hairline/70 last:border-0">
+                        <td className="px-4 py-2 font-medium truncate max-w-[120px]">{m.name}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{m.open}</td>
+                        <td className={`px-2 py-2 text-right tabular-nums ${m.overdue > 0 ? "text-status-critical font-semibold" : "text-ink-muted"}`}>
+                          {m.overdue || "—"}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">{m.touches7}</td>
+                        <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+                          <span className="text-status-good">{m.won30 || 0}</span>
+                          <span className="text-ink-muted"> / {m.lost30 || 0}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <p className="px-4 py-2 text-xs text-ink-muted border-t border-line-hairline">«Дошли до заказа» и «отказ» — за 30 дней.</p>
-        </details>
-      )}
+        )}
+      </div>
     </div>
   );
 }

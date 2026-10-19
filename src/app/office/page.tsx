@@ -6,9 +6,10 @@ import { getSettings } from "@/lib/repo/settings";
 import { computeBatchStorageInfo } from "@/lib/shelfLife";
 import { stockPositions } from "@/lib/writeoffPlan";
 import { canMoveStock, inStore, isOfficeRole } from "@/lib/officeStore";
-import { FLOWER_TYPE_LABELS, formatGrade, gradeColumnLabel, gradeColumnLabelFor } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, formatGrade, gradeColumnLabelFor } from "@/lib/constants";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
+import KpiTile from "@/components/KpiTile";
+import OfficeStockTable, { type OfficeStockRow } from "@/components/OfficeStockTable";
 import Hint from "@/components/Hint";
 import StockMoveForm from "@/components/StockMoveForm";
 import { officeTabsFor } from "./tabs";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
  * Подсклад «Офис»: что лежит в офисе и перемещение основной склад ⇄ офис.
  * Перемещает РОП (решение владельца), склад офиса видит остатки и отгружает.
  */
-export default async function OfficePage() {
+export default async function OfficePage({ searchParams }: { searchParams?: { view?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? "";
   const [batches, settings] = await Promise.all([listBatches(), getSettings()]);
@@ -48,12 +49,33 @@ export default async function OfficePage() {
   // Пересчёт — у тех, кто списывает в офисе (РОП только смотрит и перемещает).
   const canRecount = isOfficeRole(role) || role === "admin";
 
+  // Новый вид (19.10.2026): цифры сверху, ниже одна карточка — «Что лежит» и «Перемещение» вкладками.
+  const view = mover && searchParams?.view === "move" ? "move" : "stock";
+  const stemsBy = (st: string) => infos.filter((i) => i.status === st).reduce((s, i) => s + i.batch.quantityRemaining, 0);
+  const critical = stemsBy("critical");
+  const warning = stemsBy("warning");
+  const rowsForTable: OfficeStockRow[] = list.map((r) => ({
+    key: `${r.flowerType}|${r.variety}|${r.grade}`,
+    flowerType: r.flowerType,
+    flower: FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType,
+    variety: r.variety,
+    grade: r.grade,
+    gradeLabel: formatGrade(r.grade),
+    qty: r.qty,
+    oldest: r.oldest,
+    status: r.status,
+  }));
+  const tabCls = (on: boolean) =>
+    on
+      ? "py-3 text-sm border-b-2 -mb-px whitespace-nowrap border-section-stock text-ink-primary font-semibold"
+      : "py-3 text-sm border-b-2 -mb-px whitespace-nowrap border-transparent text-ink-secondary hover:text-ink-primary";
+
   return (
     <div>
       <PageHeader
         area="stock"
         title="Офис"
-        subtitle={`В офисе ${nf(total)} шт. · после 12:00 бот продаёт отсюда`}
+        subtitle="После 12:00 бот продаёт отсюда"
         icon="store"
         tabs={officeTabsFor(role)}
         actions={
@@ -70,68 +92,46 @@ export default async function OfficePage() {
         }
       />
 
-      <Section
-        tone="stock"
-        icon="box"
-        title={
-          <>
-            Что лежит в офисе
-            <span className="normal-case tracking-normal">
-              <Hint>
-                Цветок попадает сюда перемещением с основного склада (его делает РОП). Отсюда отгружаются заявки
-                «Склад: Офис» — их ставит бот после 12:00 или менеджер вручную.
-              </Hint>
-            </span>
-          </>
-        }
-        flush
-      >
-        <div className="table-scroll table-cards border-t border-line-hairline">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                <th className="px-4 py-2.5 font-medium">Цветок</th>
-                <th className="px-3 py-2.5 font-medium">Сорт</th>
-                <th className="px-3 py-2.5 font-medium">{gradeColumnLabelFor(list.map((r) => r.flowerType))}</th>
-                <th className="px-3 py-2.5 font-medium text-right">Шт.</th>
-                <th className="px-3 py-2.5 font-medium text-right">Лежит</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={`${r.flowerType}|${r.variety}|${r.grade}`} className="border-b border-line-hairline last:border-0">
-                  <td className="px-4 py-2">{FLOWER_TYPE_LABELS[r.flowerType] ?? r.flowerType}</td>
-                  <td data-label="Сорт" className="px-3 py-2">{r.variety}</td>
-                  <td data-label={gradeColumnLabel(r.flowerType)} className="px-3 py-2">{formatGrade(r.grade)}</td>
-                  <td data-label="Шт." className="px-3 py-2 text-right tabular-nums font-medium">{nf(r.qty)}</td>
-                  <td
-                    data-label="Лежит"
-                    className={
-                      "px-3 py-2 text-right whitespace-nowrap " +
-                      (r.status === "critical" ? "text-status-critical" : r.status === "warning" ? "text-[#8a5a00]" : "text-ink-secondary")
-                    }
-                  >
-                    {r.oldest} дн.
-                  </td>
-                </tr>
-              ))}
-              {list.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-ink-muted">
-                    В офисе пока пусто{mover ? " — переместите цветок со склада ниже." : "."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Section>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="box" label="В офисе" value={nf(total)} hint="стеблей" />
+        <KpiTile icon="list" label="Позиций" value={nf(list.length)} hint={`в ${nf(office.length)} парт.`} />
+        <KpiTile
+          icon="alert"
+          label="Дольше срока"
+          value={nf(critical)}
+          hint={critical > 0 ? "стеблей — списать или продать" : "нет"}
+          tone={critical > 0 ? "bad" : "good"}
+        />
+        <KpiTile icon="clock" label="Скоро срок" value={nf(warning)} hint={warning > 0 ? "стеблей" : "нет"} tone={warning > 0 ? "warn" : undefined} />
+      </div>
 
-      {mover && (
-        <Section tone="stock" icon="route" title="Перемещение">
+      <div className="card !p-0 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-x-5 px-4 sm:px-5 border-b border-line-hairline">
+          <Link href="/office" className={tabCls(view === "stock")}>
+            Что лежит в офисе <span className="tabular-nums text-ink-muted">{list.length}</span>
+          </Link>
+          {mover && (
+            <Link href="/office?view=move" className={tabCls(view === "move")}>
+              Перемещение
+            </Link>
+          )}
+          <span className="ml-auto py-3">
+            <Hint>
+              Цветок попадает сюда перемещением с основного склада (его делает РОП). Отсюда отгружаются заявки
+              «Склад: Офис» — их ставит бот после 12:00 или менеджер вручную.
+            </Hint>
+          </span>
+        </div>
+        {view === "stock" ? (
+          <OfficeStockTable
+            rows={rowsForTable}
+            gradeHeader={gradeColumnLabelFor(list.map((r) => r.flowerType))}
+            emptyText={`В офисе пока пусто${mover ? " — переместите цветок со склада во вкладке «Перемещение»." : "."}`}
+          />
+        ) : (
           <StockMoveForm main={stockPositions(inStore(batches, ""), null)} office={stockPositions(office, null)} />
-        </Section>
-      )}
+        )}
+      </div>
     </div>
   );
 }

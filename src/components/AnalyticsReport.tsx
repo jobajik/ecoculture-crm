@@ -13,7 +13,10 @@ import {
 } from "@/lib/constants";
 import { BENCHMARKS, toneHigherBetter, toneLowerBetter, type Tone } from "@/lib/benchmarks";
 import type { AnalyticsSummary, Delta } from "@/lib/analytics";
-import MoreToggle, { COLLAPSED_TABLE_SIZE } from "./MoreToggle";
+import KpiTile from "./KpiTile";
+import Chips from "./Chips";
+import CardTabs from "./CardTabs";
+import Pager, { PAGE_SIZE, pageSlice } from "./Pager";
 
 /**
  * Аналитика в виде отчёта: одна плотная таблица вместо двух десятков плиток.
@@ -470,15 +473,56 @@ function Change({ value, prev, betterUp }: { value: number; prev: number | null;
   );
 }
 
+/** Короткие подписи вкладок для разделов отчёта — по порядку `SECTIONS`. */
+const SECTION_TABS = ["Продажи", "Прайс", "Деньги", "Производство", "Склад"];
+
+/** Подробные разрезы, которые живут внутри вкладки раздела вторым уровнем (кнопками). */
+type DetailKey = "grades" | "varieties" | "clients" | "managers" | "deviation" | "received" | "writeoffs";
+const DETAILS_BY_SECTION: Record<number, { key: DetailKey; label: string }[]> = {
+  0: [
+    { key: "grades", label: "Что продаётся" },
+    { key: "varieties", label: "Сорта" },
+    { key: "clients", label: "Клиенты" },
+    { key: "managers", label: "Менеджеры" },
+  ],
+  1: [{ key: "deviation", label: "По позициям" }],
+  3: [
+    { key: "received", label: "Что вырастили" },
+    { key: "writeoffs", label: "Из-за чего списывали" },
+  ],
+};
+
+/** Строка отчёта по её ключу — для плиток наверху. */
+function rowByKey(key: string): Row | undefined {
+  for (const section of SECTIONS) {
+    const row = section.rows.find((r) => r.key === key);
+    if (row) return row;
+  }
+  return undefined;
+}
+
+const KPI_KEYS: { key: string; icon: "chart" | "wallet" | "leaf" | "box" }[] = [
+  { key: "revenue", icon: "chart" },
+  { key: "collect", icon: "wallet" },
+  { key: "received", icon: "leaf" },
+  { key: "stock", icon: "box" },
+];
+
 export default function AnalyticsReport({
   all,
   byFarm,
   onlyFarm,
+  flowerSummary,
+  extra,
 }: {
   all: AnalyticsSummary;
   byFarm: { farm: string; summary: AnalyticsSummary }[];
   /** Зав. складом видит одну колонку — своё производство. */
   onlyFarm?: string | null;
+  /** Таблица «По цветку» (рисует сервер) — первая вкладка отчёта. */
+  flowerSummary?: React.ReactNode;
+  /** «Коротко» и «На что смотреть» — вкладка «Главное». */
+  extra?: React.ReactNode;
 }) {
   const single = Boolean(onlyFarm);
   const columns = single
@@ -493,70 +537,139 @@ export default function AnalyticsReport({
       ? ["rose", "chrysanthemum", "eustoma"]
       : FLOWER_TYPES_BY_FARM[key] ?? [];
 
+  type TabKey = "flower" | "main" | `s${number}`;
+  const tabs: { key: TabKey; label: string }[] = [
+    ...(flowerSummary ? [{ key: "flower" as TabKey, label: "По цветку" }] : []),
+    ...(extra ? [{ key: "main" as TabKey, label: "Главное" }] : []),
+    ...SECTIONS.map((section, i) => ({ key: `s${i}` as TabKey, label: SECTION_TABS[i] ?? section.title })),
+  ];
+  const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? "s0");
+  const [detail, setDetail] = useState<DetailKey | "rows">("rows");
+  const sectionIndex = tab.startsWith("s") ? Number(tab.slice(1)) : -1;
+  const section = sectionIndex >= 0 ? SECTIONS[sectionIndex] : null;
+  const detailItems = (DETAILS_BY_SECTION[sectionIndex] ?? []).filter((d) => hasDetail(all, d.key));
+  const shownDetail = detailItems.some((d) => d.key === detail) ? detail : "rows";
+
   return (
-    <div className="space-y-6">
-      <div className="card !p-0 table-scroll">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead>
-            <tr className="border-b border-line-hairline">
-              <th className="text-left px-4 py-2.5 font-medium text-ink-secondary sticky left-0 bg-surface z-10 min-w-[240px]">
-                Показатель
-              </th>
-              {columns.map((c) => (
-                <th
-                  key={c.key}
-                  className={clsx(
-                    "text-right px-4 py-2.5 font-medium whitespace-nowrap",
-                    c.key === "all" ? "text-ink-primary" : "text-ink-secondary"
-                  )}
-                >
-                  {c.key !== "all" && (
-                    <span
-                      className={clsx(
-                        "inline-block w-2 h-2 rounded-full mr-1.5 align-middle",
-                        FARM_BAR[c.key]
-                      )}
-                    />
-                  )}
-                  {c.label}
-                  <span className="block text-[11px] font-normal text-ink-muted">
-                    {flowersOf(c.key)
-                      .map((t) => FLOWER_TYPE_LABELS_PLURAL[t] ?? t)
-                      .join(", ")}
+    <div>
+      {/* Главные четыре цифры — плитками, как на остальных страницах. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        {KPI_KEYS.map(({ key, icon }) => {
+          const row = rowByKey(key);
+          if (!row) return null;
+          const value = row.pick(all);
+          const prev = row.prev ? row.prev(all) : null;
+          const tone: Tone = value !== null && row.tone ? row.tone(value, all) : "neutral";
+          return (
+            <KpiTile
+              key={key}
+              icon={icon}
+              label={row.label}
+              value={
+                value === null ? (
+                  "—"
+                ) : (
+                  <span className={clsx(tone !== "neutral" && TONE_TEXT[tone])}>
+                    {row.format ? row.format(value) : formatValue(value, row.kind)}
                   </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {SECTIONS.map((section) => {
-              // Пустые строки не показываем совсем: владелец отдельно просил
-              // убрать нули и прочерки, которые занимали место наравне с делом.
-              const rows = section.rows.filter((row) =>
-                columns.some((c) => {
-                  const v = row.pick(c.summary);
-                  return v !== null && v !== 0;
-                })
-              );
-
-              return (
-                <SectionRows
-                  key={section.title}
-                  section={section}
-                  rows={rows}
-                  columns={columns}
-                  total={all}
-                  byFarm={byFarm}
-                  single={single}
-                />
-              );
-            })}
-          </tbody>
-        </table>
+                )
+              }
+              hint={
+                value !== null && prev ? (
+                  <>
+                    <Change value={value} prev={prev} betterUp={row.betterUp !== false} />{" "}
+                    <span className="text-ink-muted">к прошлым {all.days} дням</span>
+                  </>
+                ) : (
+                  row.hint
+                )
+              }
+            />
+          );
+        })}
       </div>
 
-      <Details all={all} byFarm={byFarm} onlyFarm={onlyFarm} />
+      <div className="card !p-0 overflow-hidden">
+        <CardTabs
+          tone="analytics"
+          items={tabs}
+          value={tab}
+          onChange={(k) => {
+            setTab(k);
+            setDetail("rows");
+          }}
+        />
+
+        {tab === "flower" && flowerSummary}
+        {tab === "main" && <div className="p-4 sm:p-5">{extra}</div>}
+
+        {section && (
+          <>
+            {detailItems.length > 0 && (
+              <div className="px-4 sm:px-5 py-3 border-b border-line-hairline">
+                <Chips
+                  value={shownDetail}
+                  onChange={(v) => setDetail(v as DetailKey | "rows")}
+                  items={[{ value: "rows", label: "Показатели" }, ...detailItems.map((d) => ({ value: d.key, label: d.label }))]}
+                />
+              </div>
+            )}
+
+            {shownDetail === "rows" ? (
+              <div className="table-scroll">
+                <table className="w-full text-sm min-w-[640px]">
+                  <thead>
+                    <tr className="border-b border-line-hairline bg-surface-plane/60 text-xs text-ink-muted">
+                      <th className="text-left px-4 py-2.5 font-medium sticky left-0 bg-surface-plane z-10 min-w-[240px]">
+                        Показатель
+                      </th>
+                      {columns.map((c) => (
+                        <th
+                          key={c.key}
+                          className={clsx(
+                            "text-right px-4 py-2.5 font-medium whitespace-nowrap",
+                            c.key === "all" ? "text-ink-primary" : "text-ink-secondary"
+                          )}
+                        >
+                          {c.key !== "all" && (
+                            <span className={clsx("inline-block w-2 h-2 rounded-full mr-1.5 align-middle", FARM_BAR[c.key])} />
+                          )}
+                          {c.label}
+                          <span className="block text-[11px] font-normal text-ink-muted">
+                            {flowersOf(c.key)
+                              .map((t) => FLOWER_TYPE_LABELS_PLURAL[t] ?? t)
+                              .join(", ")}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <SectionRows
+                      section={section}
+                      // Пустые строки не показываем совсем: владелец отдельно просил
+                      // убрать нули и прочерки, которые занимали место наравне с делом.
+                      rows={section.rows.filter((row) =>
+                        columns.some((c) => {
+                          const v = row.pick(c.summary);
+                          return v !== null && v !== 0;
+                        })
+                      )}
+                      columns={columns}
+                      total={all}
+                      byFarm={byFarm}
+                      single={single}
+                      hideTitle
+                    />
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <DetailView all={all} onlyFarm={onlyFarm} view={shownDetail} />
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -568,6 +681,7 @@ function SectionRows({
   total,
   byFarm,
   single,
+  hideTitle = false,
 }: {
   section: Section;
   rows: Row[];
@@ -575,9 +689,12 @@ function SectionRows({
   total: AnalyticsSummary;
   byFarm: { farm: string; summary: AnalyticsSummary }[];
   single: boolean;
+  /** Раздел открыт вкладкой — его название уже на вкладке. */
+  hideTitle?: boolean;
 }) {
   return (
     <>
+      {!hideTitle && (
       <tr className="bg-surface-plane/70">
         <th
           colSpan={columns.length + 1}
@@ -586,18 +703,19 @@ function SectionRows({
           {section.title}
         </th>
       </tr>
+      )}
 
       {rows.length === 0 ? (
         <tr className="border-b border-line-hairline">
-          <td colSpan={columns.length + 1} className="px-4 py-3 text-sm text-ink-muted">
+          <td colSpan={columns.length + 1} className="px-4 py-12 text-center text-sm text-ink-muted">
             {section.emptyText}
           </td>
         </tr>
       ) : (
         rows.map((row) => (
           <tr key={row.key} className="border-b border-line-hairline last:border-0">
-            <td className="px-4 py-2 sticky left-0 bg-surface z-10">
-              <span className="font-medium">{row.label}</span>
+            <td className="px-4 py-2.5 sticky left-0 bg-surface z-10">
+              <span className="font-semibold">{row.label}</span>
               {row.hint && (
                 <span className="block text-[11px] text-ink-muted leading-snug">{row.hint}</span>
               )}
@@ -611,7 +729,7 @@ function SectionRows({
                 <td
                   key={c.key}
                   className={clsx(
-                    "px-4 py-2 text-right align-top tabular-nums whitespace-nowrap",
+                    "px-4 py-2.5 text-right align-top tabular-nums whitespace-nowrap",
                     TONE_CELL[tone]
                   )}
                 >
@@ -661,39 +779,32 @@ function SectionRows({
 
 // --- Подробности ------------------------------------------------------------
 
-/** Таблица со свёрнутым хвостом. */
-function Collapsible<T>({
+/** Таблица разреза страницами (новый вид, 19.10.2026: вместо «показать ещё N»). */
+function DetailTable<T>({
   rows,
   what,
   render,
   head,
-  limit = COLLAPSED_TABLE_SIZE,
 }: {
   rows: T[];
-  what: (hidden: number) => string;
+  what: (n: number) => string;
   head: React.ReactNode;
   render: (row: T, index: number) => React.ReactNode;
-  limit?: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const shown = open ? rows : rows.slice(0, limit);
-  const hidden = rows.length - shown.length;
+  const [page, setPage] = useState(0);
+  const shown = pageSlice(rows, page);
   return (
-    <div className="card !p-0">
+    <>
       <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">{head}</tr>
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">{head}</tr>
           </thead>
-          <tbody>{shown.map((row, i) => render(row, i))}</tbody>
+          <tbody>{shown.map((row, i) => render(row, page * PAGE_SIZE + i))}</tbody>
         </table>
       </div>
-      {(hidden > 0 || open) && (
-        <div className="px-4 py-2 border-t border-line-hairline">
-          <MoreToggle expanded={open} hidden={hidden} onToggle={() => setOpen((v) => !v)} what={what(hidden)} />
-        </div>
-      )}
-    </div>
+      <Pager total={rows.length} page={page} onPage={setPage} what={what(rows.length)} />
+    </>
   );
 }
 
@@ -725,16 +836,41 @@ function Deviation({ percent, compact }: { percent: number | null; compact?: boo
   );
 }
 
-function Details({
+/** Есть ли что показать в разрезе — пустые кнопки не рисуем. */
+function hasDetail(all: AnalyticsSummary, key: DetailKey): boolean {
+  switch (key) {
+    case "grades":
+      return all.byGrade.length > 0;
+    case "received":
+      return all.receivedByGrade.length > 0;
+    case "deviation":
+      return all.priceDeviation.length > 0;
+    case "varieties":
+      return all.topVarieties.length > 0;
+    case "clients":
+      return all.clientRows.length > 0;
+    case "managers":
+      return all.managers.length > 0;
+    case "writeoffs":
+      return all.writeoffReasons.length > 0;
+  }
+}
+
+const TD = "px-4 py-2.5";
+const TDN = "px-4 py-2.5 text-right tabular-nums";
+const TH = "px-4 py-2.5 font-medium";
+const THN = "px-4 py-2.5 font-medium text-right";
+const TROW = "border-b border-line-hairline last:border-0 hover:bg-surface-plane/60";
+
+function DetailView({
   all,
-  byFarm,
   onlyFarm,
+  view,
 }: {
   all: AnalyticsSummary;
-  byFarm: { farm: string; summary: AnalyticsSummary }[];
   onlyFarm?: string | null;
+  view: DetailKey;
 }) {
-  const [open, setOpen] = useState(false);
   const flowers = onlyFarm
     ? FLOWER_TYPES_BY_FARM[onlyFarm] ?? []
     : ["rose", "chrysanthemum", "eustoma"];
@@ -745,326 +881,231 @@ function Details({
   const clientWord = (n: number) => plural(n, "клиент", "клиента", "клиентов");
   const reasonWord = (n: number) => plural(n, "причина", "причины", "причин");
   const dayWord = (n: number) => plural(n, "день", "дня", "дней");
-
-  const nothing =
-    all.byGrade.length === 0 &&
-    all.receivedByGrade.length === 0 &&
-    all.topVarieties.length === 0 &&
-    all.clientRows.length === 0;
-  if (nothing) return null;
-
   const flowerName = (t: string) => FLOWER_TYPE_LABELS[t] ?? t;
 
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-sm font-medium text-accent hover:underline"
-        aria-expanded={open}
-      >
-        {open ? "▲ Свернуть" : "▼ Подробнее: позиции, клиенты, менеджеры"}
-      </button>
-
-      {open && (
-        <div className="space-y-6 mt-3">
-          {all.byGrade.length > 0 && (
-            <Block title="Что продаётся">
-              <Collapsible
-                rows={all.byGrade}
-                what={gradeWord}
-                head={
-                  <>
-                    <th className="px-4 py-2 font-medium">{gradeColumn}</th>
-                    <th className="px-3 py-2 font-medium text-right">Стеблей</th>
-                    <th className="px-3 py-2 font-medium text-right">Доля</th>
-                    <th className="px-3 py-2 font-medium text-right">Ср. цена</th>
-                    <th className="px-3 py-2 font-medium text-right">Выручка</th>
-                  </>
-                }
-                render={(g) => (
-                  <tr key={`${g.flowerType}:${g.grade}`} className="border-b border-line-hairline last:border-0">
-                    <td className="px-4 py-2">
-                      {!single && <span className="text-ink-muted">{flowerName(g.flowerType)} </span>}
-                      <span className="font-medium">{formatGrade(g.grade)}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{nf(g.stems)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-ink-secondary">
-                      {dec(g.share, 0)} %
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{nf(g.avgPrice.value)} ₸</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(g.revenue)}</td>
-                  </tr>
-                )}
-              />
-            </Block>
+  switch (view) {
+    case "grades":
+      return (
+        <DetailTable
+          key="grades"
+          rows={all.byGrade}
+          what={gradeWord}
+          head={
+            <>
+              <th className={TH}>{gradeColumn}</th>
+              <th className={THN}>Стеблей</th>
+              <th className={THN}>Доля</th>
+              <th className={THN}>Ср. цена</th>
+              <th className={THN}>Выручка</th>
+            </>
+          }
+          render={(g) => (
+            <tr key={`${g.flowerType}:${g.grade}`} className={TROW}>
+              <td className={TD}>
+                {!single && <span className="text-ink-muted">{flowerName(g.flowerType)} </span>}
+                <span className="font-semibold">{formatGrade(g.grade)}</span>
+              </td>
+              <td className={TDN}>{nf(g.stems)}</td>
+              <td className={clsx(TDN, "text-ink-secondary")}>{dec(g.share, 0)} %</td>
+              <td className={TDN}>{nf(g.avgPrice.value)} ₸</td>
+              <td className={TDN}>{money(g.revenue)}</td>
+            </tr>
           )}
-
-          {all.receivedByGrade.length > 0 && (
-            <Block title="Что вырастили">
-              <Collapsible
-                rows={all.receivedByGrade}
-                what={gradeWord}
-                head={
-                  <>
-                    <th className="px-4 py-2 font-medium">{gradeColumn}</th>
-                    <th className="px-3 py-2 font-medium text-right">Принято</th>
-                    <th className="px-3 py-2 font-medium text-right">Доля</th>
-                    <th className="px-3 py-2 font-medium text-right">К прошлым 30</th>
-                  </>
-                }
-                render={(r) => (
-                  <tr key={`${r.flowerType}:${r.grade}`} className="border-b border-line-hairline last:border-0">
-                    <td className="px-4 py-2">
-                      {!single && <span className="text-ink-muted">{flowerName(r.flowerType)} </span>}
-                      <span className="font-medium">{formatGrade(r.grade)}</span>
-                      {r.top && <span className={clsx("ml-2 text-[11px]", TONE_TEXT.good)}>высшая</span>}
-                      {!r.top && r.liquid && (
-                        <span className="ml-2 text-[11px] text-ink-muted">ликвид</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{nf(r.stems.value)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-ink-secondary">
-                      {dec(r.share, 0)} %
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Change value={r.stems.value} prev={r.stems.prev} betterUp />
-                    </td>
-                  </tr>
-                )}
-              />
-            </Block>
+        />
+      );
+    case "received":
+      return (
+        <DetailTable
+          key="received"
+          rows={all.receivedByGrade}
+          what={gradeWord}
+          head={
+            <>
+              <th className={TH}>{gradeColumn}</th>
+              <th className={THN}>Принято</th>
+              <th className={THN}>Доля</th>
+              <th className={THN}>К прошлым {all.days}</th>
+            </>
+          }
+          render={(r) => (
+            <tr key={`${r.flowerType}:${r.grade}`} className={TROW}>
+              <td className={TD}>
+                {!single && <span className="text-ink-muted">{flowerName(r.flowerType)} </span>}
+                <span className="font-semibold">{formatGrade(r.grade)}</span>
+                {r.top && <span className={clsx("ml-2 text-[11px]", TONE_TEXT.good)}>высшая</span>}
+                {!r.top && r.liquid && <span className="ml-2 text-[11px] text-ink-muted">ликвид</span>}
+              </td>
+              <td className={TDN}>{nf(r.stems.value)}</td>
+              <td className={clsx(TDN, "text-ink-secondary")}>{dec(r.share, 0)} %</td>
+              <td className="px-4 py-2.5 text-right">
+                <Change value={r.stems.value} prev={r.stems.prev} betterUp />
+              </td>
+            </tr>
           )}
-
-          {all.priceDeviation.length > 0 && (
-            <Block
-              title="Отклонение от прайса"
-              hint={`ориентир до ${BENCHMARKS.discountPercent.good} %`}
-            >
-              <Collapsible
-                rows={all.priceDeviation}
-                what={gradeWord}
-                head={
-                  <>
-                    <th className="px-4 py-2 font-medium">{gradeColumn}</th>
-                    <th className="px-3 py-2 font-medium text-right">Стеблей</th>
-                    <th className="px-3 py-2 font-medium text-right">По прайсу</th>
-                    <th className="px-3 py-2 font-medium text-right">Продали</th>
-                    <th className="px-3 py-2 font-medium text-right">Отклонение</th>
-                  </>
-                }
-                render={(p) => (
-                  <tr key={p.key} className="border-b border-line-hairline last:border-0">
-                    <td className="px-4 py-2">
-                      {!single && <span className="text-ink-muted">{flowerName(p.flowerType)} </span>}
-                      <span className="font-medium">{formatGrade(p.grade)}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{nf(p.stems)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-ink-secondary">
-                      {money(p.listRevenue)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(p.revenue)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      <Deviation percent={p.discountPercent} />
-                    </td>
-                  </tr>
-                )}
-              />
-            </Block>
+        />
+      );
+    case "deviation":
+      return (
+        <>
+          <p className="px-4 sm:px-5 pt-3 text-xs text-ink-muted">ориентир — до {BENCHMARKS.discountPercent.good} % ниже прайса</p>
+          <DetailTable
+            key="deviation"
+            rows={all.priceDeviation}
+            what={gradeWord}
+            head={
+              <>
+                <th className={TH}>{gradeColumn}</th>
+                <th className={THN}>Стеблей</th>
+                <th className={THN}>По прайсу</th>
+                <th className={THN}>Продали</th>
+                <th className={THN}>Отклонение</th>
+              </>
+            }
+            render={(p) => (
+              <tr key={p.key} className={TROW}>
+                <td className={TD}>
+                  {!single && <span className="text-ink-muted">{flowerName(p.flowerType)} </span>}
+                  <span className="font-semibold">{formatGrade(p.grade)}</span>
+                </td>
+                <td className={TDN}>{nf(p.stems)}</td>
+                <td className={clsx(TDN, "text-ink-secondary")}>{money(p.listRevenue)}</td>
+                <td className={TDN}>{money(p.revenue)}</td>
+                <td className={TDN}>
+                  <Deviation percent={p.discountPercent} />
+                </td>
+              </tr>
+            )}
+          />
+        </>
+      );
+    case "varieties":
+      return (
+        <DetailTable
+          key="varieties"
+          rows={all.topVarieties}
+          what={varietyWord}
+          head={
+            <>
+              <th className={TH}>Сорт</th>
+              <th className={THN}>Стеблей</th>
+              <th className={THN}>Выручка</th>
+              <th className={THN}>Доля</th>
+            </>
+          }
+          render={(v) => (
+            <tr key={v.key} className={TROW}>
+              <td className={TD}>
+                <span className="font-semibold">{v.variety}</span>
+                {!single && <span className="ml-1.5 text-xs text-ink-muted">{flowerName(v.flowerType)}</span>}
+              </td>
+              <td className={TDN}>{nf(v.stems)}</td>
+              <td className={TDN}>{money(v.revenue.value)}</td>
+              <td className={clsx(TDN, "text-ink-secondary")}>{dec(v.share, 0)} %</td>
+            </tr>
           )}
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            {all.topVarieties.length > 0 && (
-              <Block title="Сорта по выручке">
-                <Collapsible
-                  rows={all.topVarieties}
-                  what={varietyWord}
-                  limit={8}
-                  head={
-                    <>
-                      <th className="px-4 py-2 font-medium">Сорт</th>
-                      <th className="px-3 py-2 font-medium text-right">Стеблей</th>
-                      <th className="px-3 py-2 font-medium text-right">Выручка</th>
-                      <th className="px-3 py-2 font-medium text-right">Доля</th>
-                    </>
-                  }
-                  render={(v) => (
-                    <tr key={v.key} className="border-b border-line-hairline last:border-0">
-                      <td className="px-4 py-2">
-                        <span className="font-medium">{v.variety}</span>
-                        {!single && (
-                          <span className="block text-[11px] text-ink-muted">
-                            {flowerName(v.flowerType)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{nf(v.stems)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{money(v.revenue.value)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-ink-secondary">
-                        {dec(v.share, 0)} %
-                      </td>
-                    </tr>
-                  )}
-                />
-              </Block>
+        />
+      );
+    case "clients":
+      return (
+        <>
+          <p className="px-4 sm:px-5 pt-3 text-xs text-ink-muted">
+            Три крупнейших дают {dec(all.topClientsPercent, 0)} % выручки
+          </p>
+          <DetailTable
+            key="clients"
+            rows={all.clientRows}
+            what={clientWord}
+            head={
+              <>
+                <th className={TH}>Клиент</th>
+                <th className={THN}>Заявок</th>
+                <th className={THN}>Выручка</th>
+                <th className={THN}>Долг</th>
+              </>
+            }
+            render={(c) => (
+              <tr key={c.clientName} className={TROW}>
+                <td className={TD}>
+                  <span className="font-semibold">{c.clientName}</span>
+                  <span className="block text-[11px] text-ink-muted">
+                    последняя заявка{" "}
+                    {c.lastOrderDaysAgo === 0 ? "сегодня" : `${c.lastOrderDaysAgo} ${dayWord(c.lastOrderDaysAgo)} назад`}
+                  </span>
+                </td>
+                <td className={TDN}>{c.orders}</td>
+                <td className={TDN}>
+                  {money(c.revenue)}
+                  <span className="block text-[11px] text-ink-muted">{dec(c.share, 0)} %</span>
+                </td>
+                <td className={clsx(TDN, c.debt > 0 && TONE_TEXT.critical)}>{c.debt > 0 ? money(c.debt) : "—"}</td>
+              </tr>
             )}
-
-            {all.clientRows.length > 0 && (
-              <Block
-                title="Клиенты"
-                hint={`Три крупнейших дают ${dec(all.topClientsPercent, 0)} % выручки`}
-              >
-                <Collapsible
-                  rows={all.clientRows}
-                  what={clientWord}
-                  limit={8}
-                  head={
-                    <>
-                      <th className="px-4 py-2 font-medium">Клиент</th>
-                      <th className="px-3 py-2 font-medium text-right">Заявок</th>
-                      <th className="px-3 py-2 font-medium text-right">Выручка</th>
-                      <th className="px-3 py-2 font-medium text-right">Долг</th>
-                    </>
-                  }
-                  render={(c) => (
-                    <tr key={c.clientName} className="border-b border-line-hairline last:border-0">
-                      <td className="px-4 py-2">
-                        <span className="font-medium">{c.clientName}</span>
-                        <span className="block text-[11px] text-ink-muted">
-                          последняя заявка{" "}
-                          {c.lastOrderDaysAgo === 0
-                            ? "сегодня"
-                            : `${c.lastOrderDaysAgo} ${dayWord(c.lastOrderDaysAgo)} назад`}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{c.orders}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {money(c.revenue)}
-                        <span className="block text-[11px] text-ink-muted">
-                          {dec(c.share, 0)} %
-                        </span>
-                      </td>
-                      <td
-                        className={clsx(
-                          "px-3 py-2 text-right tabular-nums",
-                          c.debt > 0 && TONE_TEXT.critical
-                        )}
-                      >
-                        {c.debt > 0 ? money(c.debt) : "—"}
-                      </td>
-                    </tr>
-                  )}
-                />
-              </Block>
-            )}
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            {all.managers.length > 0 && (
-              <Block
-                title="Менеджеры"
-                hint="К прайсу: ↑ дороже, ↓ дешевле"
-              >
-                <Collapsible
-                  rows={all.managers}
-                  what={(n) => plural(n, "менеджер", "менеджера", "менеджеров")}
-                  limit={8}
-                  head={
-                    <>
-                      <th className="px-4 py-2 font-medium">Менеджер</th>
-                      <th className="px-3 py-2 font-medium text-right">Заявок</th>
-                      <th className="px-3 py-2 font-medium text-right">Выручка</th>
-                      <th className="px-3 py-2 font-medium text-right">Собрано</th>
-                      <th className="px-3 py-2 font-medium text-right">К прайсу</th>
-                    </>
-                  }
-                  render={(m) => {
-                    const tone: Tone =
-                      m.collectPercent === null
-                        ? "neutral"
-                        : toneHigherBetter(m.collectPercent, BENCHMARKS.collectPercent);
-                    return (
-                      <tr key={m.managerEmail} className="border-b border-line-hairline last:border-0">
-                        <td className="px-4 py-2">
-                          <span className="font-medium">{m.managerEmail.split("@")[0]}</span>
-                          <span className="block text-[11px] text-ink-muted">
-                            средний чек {money(m.avgCheck)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{m.orders}</td>
-                        <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                          {money(m.revenue.value)}
-                        </td>
-                        <td
-                          className={clsx(
-                            "px-3 py-2 text-right tabular-nums",
-                            TONE_TEXT[tone]
-                          )}
-                        >
-                          {m.collectPercent === null ? "—" : `${dec(m.collectPercent, 0)} %`}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          <Deviation percent={m.discountPercent} compact />
-                        </td>
-                      </tr>
-                    );
-                  }}
-                />
-              </Block>
-            )}
-
-            {all.writeoffReasons.length > 0 && (
-              <Block title="Из-за чего списывали">
-                <Collapsible
-                  rows={all.writeoffReasons}
-                  what={reasonWord}
-                  limit={8}
-                  head={
-                    <>
-                      <th className="px-4 py-2 font-medium">Причина</th>
-                      <th className="px-3 py-2 font-medium text-right">Стеблей</th>
-                      <th className="px-3 py-2 font-medium text-right">Доля</th>
-                      <th className="px-3 py-2 font-medium text-right">Деньги</th>
-                    </>
-                  }
-                  render={(r) => (
-                    <tr key={r.reason} className="border-b border-line-hairline last:border-0">
-                      <td className="px-4 py-2">{r.reason}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{nf(r.stems)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-ink-secondary">
-                        {dec(r.share, 0)} %
-                      </td>
-                      <td className={clsx("px-3 py-2 text-right tabular-nums", TONE_TEXT.critical)}>
-                        {money(r.money)}
-                      </td>
-                    </tr>
-                  )}
-                />
-              </Block>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Block({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2">
-        <h3 className="font-medium">{title}</h3>
-        {hint && <span className="text-xs text-ink-muted">{hint}</span>}
-      </div>
-      {children}
-    </div>
-  );
+          />
+        </>
+      );
+    case "managers":
+      return (
+        <>
+          <p className="px-4 sm:px-5 pt-3 text-xs text-ink-muted">К прайсу: ↑ дороже, ↓ дешевле</p>
+          <DetailTable
+            key="managers"
+            rows={all.managers}
+            what={(n) => plural(n, "менеджер", "менеджера", "менеджеров")}
+            head={
+              <>
+                <th className={TH}>Менеджер</th>
+                <th className={THN}>Заявок</th>
+                <th className={THN}>Выручка</th>
+                <th className={THN}>Собрано</th>
+                <th className={THN}>К прайсу</th>
+              </>
+            }
+            render={(m) => {
+              const tone: Tone =
+                m.collectPercent === null ? "neutral" : toneHigherBetter(m.collectPercent, BENCHMARKS.collectPercent);
+              return (
+                <tr key={m.managerEmail} className={TROW}>
+                  <td className={TD}>
+                    <span className="font-semibold">{m.managerEmail.split("@")[0]}</span>
+                    <span className="block text-[11px] text-ink-muted">средний чек {money(m.avgCheck)}</span>
+                  </td>
+                  <td className={TDN}>{m.orders}</td>
+                  <td className={clsx(TDN, "whitespace-nowrap")}>{money(m.revenue.value)}</td>
+                  <td className={clsx(TDN, TONE_TEXT[tone])}>
+                    {m.collectPercent === null ? "—" : `${dec(m.collectPercent, 0)} %`}
+                  </td>
+                  <td className={TDN}>
+                    <Deviation percent={m.discountPercent} compact />
+                  </td>
+                </tr>
+              );
+            }}
+          />
+        </>
+      );
+    case "writeoffs":
+      return (
+        <DetailTable
+          key="writeoffs"
+          rows={all.writeoffReasons}
+          what={reasonWord}
+          head={
+            <>
+              <th className={TH}>Причина</th>
+              <th className={THN}>Стеблей</th>
+              <th className={THN}>Доля</th>
+              <th className={THN}>Деньги</th>
+            </>
+          }
+          render={(r) => (
+            <tr key={r.reason} className={TROW}>
+              <td className={clsx(TD, "font-semibold")}>{r.reason}</td>
+              <td className={TDN}>{nf(r.stems)}</td>
+              <td className={clsx(TDN, "text-ink-secondary")}>{dec(r.share, 0)} %</td>
+              <td className={clsx(TDN, TONE_TEXT.critical)}>{money(r.money)}</td>
+            </tr>
+          )}
+        />
+      );
+  }
 }

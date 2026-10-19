@@ -6,6 +6,7 @@ import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { LeaderboardSnapshot } from "@/lib/leaderboard";
 import type { FinancePeriod } from "@/lib/finance";
 import PeriodStepper from "@/components/PeriodStepper";
+import Chips from "@/components/Chips";
 
 const PERIODS: { key: FinancePeriod; label: string }[] = [
   { key: "day", label: "День" },
@@ -40,25 +41,15 @@ export default function Leaderboard({
     router.push(`/sales?${q.toString()}`);
   }
 
+  const tone = (v: number) => (v >= 100 ? "text-status-good" : "text-ink-secondary");
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => switchPeriod(p.key)}
-              className={clsx(
-                "px-3 py-1.5 rounded-lg text-sm border transition-colors",
-                snapshot.period === p.key
-                  ? "bg-accent text-white border-accent"
-                  : "border-line-hairline text-ink-secondary hover:bg-surface-plane"
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <Chips
+          value={snapshot.period}
+          onChange={(v) => switchPeriod(v as FinancePeriod)}
+          items={PERIODS.map((p) => ({ value: p.key, label: p.label }))}
+        />
         <PeriodStepper
           basePath="/sales"
           period={snapshot.period}
@@ -67,13 +58,13 @@ export default function Leaderboard({
           label={snapshot.periodLabel}
           today={today}
         />
-        <div className="text-sm text-ink-muted">
-          Бонус: роза и эустома <b className="text-ink-secondary">1,5%</b>, хризантема{" "}
-          <b className="text-ink-secondary">2%</b> — с оплаченных заявок
-        </div>
+        <span className="text-sm text-ink-muted lg:ml-auto">
+          Бонус с оплаченных: роза и эустома <b className="text-ink-secondary">1,5 %</b>, хризантема{" "}
+          <b className="text-ink-secondary">2 %</b>
+        </span>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Tile label="Оплачено всего" value={money(t.paidAmount)} sub={`${t.orders} заявок`} />
         <Tile label="Ждём оплату" value={money(t.pendingAmount)} sub="бонус пока не начислен" />
         <Tile label="Бонусный фонд" value={money(t.bonus)} sub="начислено за период" />
@@ -94,128 +85,124 @@ export default function Leaderboard({
         />
       </div>
 
-      {snapshot.rows.length === 0 ? (
-        <div className="card text-center py-12">
-          <div className="text-2xl mb-2">🏁</div>
-          <p className="font-medium">За этот период продаж нет</p>
+      {/* Рейтинг одной таблицей (новый вид, 19.10.2026): строка на менеджера вместо высоких карточек друг под
+          другом — весь отдел виден на одном экране. */}
+      <div className="card !p-0 overflow-hidden">
+        <div className="flex items-center gap-2 px-4 sm:px-5 py-3.5 border-b border-line-hairline">
+          <h2 className="font-display text-[15px] font-bold">Рейтинг менеджеров</h2>
+          <span className="text-sm text-ink-muted">· по оплаченным заявкам</span>
+          {!snapshot.hasPlans && <span className="ml-auto text-xs text-ink-muted">план виден на периоде «месяц»</span>}
         </div>
-      ) : (
-        <div className="space-y-3">
-          {snapshot.rows.map((row) => {
-            const isMe = row.managerEmail === currentEmail;
-            return (
-              <div
-                key={row.managerEmail}
-                className={clsx(
-                  "card",
-                  isMe && "border-accent/50 bg-accent-soft/40",
-                  row.rank === 1 && !isMe && "border-status-good/40"
-                )}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <span className="text-xl w-8 text-center shrink-0 tabular-nums">
-                      {MEDALS[row.rank - 1] ?? row.rank}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">
-                        {row.name}
-                        {isMe && <span className="text-accent text-sm font-normal"> · вы</span>}
-                      </div>
-                      <div className="text-xs text-ink-muted">
-                        {row.paidOrders} из {row.orders} заявок оплачено ·{" "}
-                        {row.paidStems.toLocaleString("ru-RU")} шт.
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="text-lg font-semibold tabular-nums">{money(row.paidAmount)}</div>
-                    {row.pointAmount > 0 && (
-                      <div className="text-xs text-ink-muted tabular-nums">в т.ч. точка на базаре {money(row.pointAmount)}</div>
-                    )}
-                    <div className="text-xs text-status-good font-medium tabular-nums">
-                      бонус {money(row.bonus)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Полоса результата — сразу видно разрыв между менеджерами */}
-                <div className="mt-3 h-2 rounded-full bg-surface-plane overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-accent"
-                    style={{ width: `${(row.paidAmount / max) * 100}%` }}
-                  />
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs">
-                  {Object.entries(row.paidByFlowerType)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([type, amount]) => (
-                      <span key={type} className="text-ink-secondary">
-                        {FLOWER_TYPE_LABELS[type] ?? type}: <b>{money(amount)}</b>
-                        <span className="text-ink-muted">
-                          {" "}
-                          → {money(row.bonusByFlowerType[type] ?? 0)}
-                        </span>
-                      </span>
-                    ))}
-                  {row.pendingAmount > 0 && (
-                    <span className="text-ink-muted">
-                      не оплачено {money(row.pendingAmount)} (бонус {money(row.pendingBonus)} ждёт)
-                    </span>
-                  )}
-                </div>
-
-                {snapshot.hasPlans && row.targetAmount > 0 && (
-                  <div className="mt-3 pt-3 border-t border-line-hairline">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-ink-secondary">
-                        План {money(row.targetAmount)}
-                      </span>
-                      <span
-                        className={clsx(
-                          "font-medium tabular-nums",
-                          row.progressPercent >= 100 ? "text-status-good" : "text-ink-secondary"
+        {snapshot.rows.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-2xl mb-2">🏁</div>
+            <p className="font-medium">За этот период продаж нет</p>
+          </div>
+        ) : (
+          <div className="table-scroll table-cards">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
+                  <th className="px-4 py-2.5 font-medium w-12">#</th>
+                  <th className="px-4 py-2.5 font-medium">Менеджер</th>
+                  <th className="px-4 py-2.5 font-medium min-w-[220px]">Результат</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Оплачено</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Бонус</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Ждём оплату</th>
+                  {snapshot.hasPlans && <th className="px-4 py-2.5 font-medium min-w-[150px]">План</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.rows.map((row) => {
+                  const isMe = row.managerEmail === currentEmail;
+                  return (
+                    <tr
+                      key={row.managerEmail}
+                      className={clsx("border-b border-line-hairline last:border-0 align-top", isMe ? "bg-accent-soft/50" : "hover:bg-surface-plane")}
+                    >
+                      <td className="px-4 py-3 text-lg tabular-nums">{MEDALS[row.rank - 1] ?? row.rank}</td>
+                      <td data-label="Менеджер" className="px-4 py-3">
+                        <div className="font-semibold whitespace-nowrap">
+                          {row.name}
+                          {isMe && <span className="text-accent text-xs font-normal"> · вы</span>}
+                        </div>
+                        <div className="text-xs text-ink-muted whitespace-nowrap">
+                          {row.paidOrders} из {row.orders} заявок · {row.paidStems.toLocaleString("ru-RU")} шт.
+                        </div>
+                      </td>
+                      <td data-label="Результат" className="px-4 py-3">
+                        <div className="h-2 rounded-full bg-surface-sunk overflow-hidden mt-1.5">
+                          <div className="h-full rounded-full bg-section-sales" style={{ width: `${(row.paidAmount / max) * 100}%` }} />
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-secondary">
+                          {Object.entries(row.paidByFlowerType)
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([type, amount]) => (
+                              <span key={type} className="whitespace-nowrap">
+                                {FLOWER_TYPE_LABELS[type] ?? type} <b className="text-ink-primary">{money(amount)}</b>
+                              </span>
+                            ))}
+                        </div>
+                      </td>
+                      <td data-label="Оплачено" className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="font-display font-extrabold tabular-nums">{money(row.paidAmount)}</div>
+                        {row.pointAmount > 0 && (
+                          <div className="text-xs text-ink-muted tabular-nums">точка {money(row.pointAmount)}</div>
                         )}
-                      >
-                        {row.progressPercent.toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-surface-plane overflow-hidden">
-                      <div
-                        className={clsx(
-                          "h-full rounded-full",
-                          row.progressPercent >= 100 ? "bg-status-good" : "bg-accent"
+                      </td>
+                      <td data-label="Бонус" className="px-4 py-3 text-right whitespace-nowrap font-semibold text-status-good tabular-nums">
+                        {money(row.bonus)}
+                      </td>
+                      <td data-label="Ждём оплату" className="px-4 py-3 text-right whitespace-nowrap tabular-nums text-ink-secondary">
+                        {row.pendingAmount > 0 ? (
+                          <>
+                            {money(row.pendingAmount)}
+                            <div className="text-xs text-ink-muted">бонус {money(row.pendingBonus)} ждёт</div>
+                          </>
+                        ) : (
+                          "—"
                         )}
-                        style={{ width: `${Math.min(100, row.progressPercent)}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Раньше здесь было написано «планы задаются на вкладке Plans в
-          Google-таблице» — это устарело и отправляло человека лезть в таблицу
-          руками, хотя планы давно ставит РОП на странице «Планы». Подсказка,
-          которая врёт, хуже, чем её отсутствие. */}
-      <p className="text-xs text-ink-muted">
-        План виден на периоде «месяц».
-      </p>
+                      </td>
+                      {snapshot.hasPlans && (
+                        <td data-label="План" className="px-4 py-3">
+                          {row.targetAmount > 0 ? (
+                            <>
+                              <div className="flex justify-between gap-2 text-xs mb-1 whitespace-nowrap">
+                                <span className="text-ink-secondary">{money(row.targetAmount)}</span>
+                                <span className={clsx("font-semibold tabular-nums", tone(row.progressPercent))}>
+                                  {row.progressPercent.toFixed(0)}%
+                                </span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-surface-sunk overflow-hidden">
+                                <div
+                                  className={clsx("h-full rounded-full", row.progressPercent >= 100 ? "bg-status-good" : "bg-accent")}
+                                  style={{ width: `${Math.min(100, row.progressPercent)}%` }}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-xs text-ink-muted">без плана</span>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="card !p-4">
-      <div className="text-xs text-ink-secondary mb-1">{label}</div>
-      <div className="font-display text-2xl font-extrabold tabular-nums">{value}</div>
-      {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
+    <div className="card !p-4 sm:!p-5">
+      <div className="text-xs text-ink-muted mb-1.5">{label}</div>
+      <div className="font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums">{value}</div>
+      {sub && <div className="text-xs text-ink-secondary mt-2">{sub}</div>}
     </div>
   );
 }

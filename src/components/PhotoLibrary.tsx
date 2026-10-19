@@ -10,6 +10,10 @@ import { readAsDataUrl, shrinkImage } from "@/lib/imageShrink";
 import { MAX_PHOTO_CAPTION } from "@/lib/botPhotos";
 import { formatMoment } from "@/lib/formatDate";
 import Section from "@/components/Section";
+import Pager, { pageSlice } from "@/components/Pager";
+
+/** Фото на странице: три ряда по три. */
+const PHOTOS_PAGE = 9;
 
 /**
  * Фото для клиентов: загрузить (ужимается в браузере в JPEG), указать цветок,
@@ -35,6 +39,7 @@ type Flower = { key: string; label: string; varieties: string[]; grades: { key: 
 export default function PhotoLibrary({ photos, flowers, aiReady }: { photos: PhotoRow[]; flowers: Flower[]; aiReady: boolean }) {
   const router = useRouter();
   const [file, setFile] = useState<{ id: string; name: string; preview: string } | null>(null);
+  const [page, setPage] = useState(0);
   const [flower, setFlower] = useState("");
   const [variety, setVariety] = useState("");
   const [grade, setGrade] = useState("");
@@ -119,10 +124,13 @@ export default function PhotoLibrary({ photos, flowers, aiReady }: { photos: Pho
   const select = "input !w-auto !py-1.5 text-sm";
   const active = photos.filter((p) => p.active && !p.info).length;
 
+  const pageCount = Math.max(1, Math.ceil(photos.length / PHOTOS_PAGE));
+  const shown = pageSlice(photos, Math.min(page, pageCount - 1), PHOTOS_PAGE);
+
   return (
-    <>
-      <Section tone="leads" icon="upload" title="Добавить фото">
-        <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <Section tone="leads" icon="upload" title="Добавить фото" className="!mb-0 xl:order-2 min-w-0">
+        <div className="grid gap-4 sm:grid-cols-[200px_1fr] xl:grid-cols-1">
           <div>
             {file ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -204,18 +212,28 @@ export default function PhotoLibrary({ photos, flowers, aiReady }: { photos: Pho
         </div>
       </Section>
 
-      <Section tone="leads" icon="list" title={`Живых фото в ротации: ${active}`} aside={<span className="text-xs text-ink-muted">реже отправленное уходит первым</span>}>
+      <Section
+        tone="leads"
+        icon="list"
+        title={`Живых фото в ротации: ${active}`}
+        aside={<span className="text-xs text-ink-muted">реже отправленное уходит первым</span>}
+        className="!mb-0 min-w-0"
+        flush
+      >
         {photos.length === 0 ? (
-          <p className="text-sm text-ink-muted">Пока ни одного фото. Пока их нет, бот дожимает текстом, а в каталоге — плашка с названием цветка.</p>
+          <p className="px-4 sm:px-5 pb-4 text-sm text-ink-muted">Пока ни одного фото. Пока их нет, бот дожимает текстом, а в каталоге — плашка с названием цветка.</p>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {photos.map((p) => (
-              <PhotoCard key={p.photoId} photo={p} />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 px-4 sm:px-5 py-4">
+              {shown.map((p) => (
+                <PhotoCard key={p.photoId} photo={p} />
+              ))}
+            </div>
+            <Pager total={photos.length} page={Math.min(page, pageCount - 1)} onPage={setPage} size={PHOTOS_PAGE} what="фото" />
+          </>
         )}
       </Section>
-    </>
+    </div>
   );
 }
 

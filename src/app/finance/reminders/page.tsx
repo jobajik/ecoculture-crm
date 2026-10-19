@@ -8,9 +8,10 @@ import { REMIND_GAP_DAYS, prettyWaPhone, reminderText } from "@/lib/debtReminder
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { prettyKaspiPhone } from "@/lib/kaspiInvoice";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
+import StatTile from "@/components/StatTile";
 import Hint from "@/components/Hint";
 import DebtReminderList, { type ReminderRow } from "@/components/DebtReminderList";
+import SentReminders, { type SentReminderRow } from "@/components/SentReminders";
 import { financeTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,15 @@ export default async function RemindersPage() {
     .filter((r) => Date.now() - new Date(r.sentAt).getTime() < 14 * 86_400_000)
     .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1))
     .slice(0, 40);
+  const sent: SentReminderRow[] = recent.map((r) => ({
+    id: r.reminderId,
+    when: formatMoment(r.sentAt),
+    text: `${r.clientName} · ${money(r.amount)}${r.kaspiInvoices ? " · со счётом Kaspi" : ""}`,
+    ok: !!r.messageId,
+    error: r.error,
+  }));
+  const dueTotal = plan.due.reduce((s, g) => s + g.total, 0);
+  const blocked = plan.due.filter((g) => g.problem).length;
 
   return (
     <div className="space-y-5">
@@ -71,41 +81,24 @@ export default async function RemindersPage() {
             </span>
           </>
         }
-        subtitle={
-          [
-            plan.recentlyReminded ? `недавно напоминали: ${plan.recentlyReminded}` : "",
-            plan.promised ? `обещали заплатить позже: ${plan.promised}` : "",
-          ]
-            .filter(Boolean)
-            .join(" · ") || undefined
-        }
       />
 
-      <DebtReminderList rows={rows} canSend={canSend} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <StatTile
+          label="Пора напомнить"
+          value={String(rows.length)}
+          sub={rows.length ? money(dueTotal) : "некому"}
+          tone={rows.length ? "warning" : "good"}
+        />
+        <StatTile label="Нельзя отправить" value={String(blocked)} sub={blocked ? "нет мобильного и т. п." : "у всех есть номер"} />
+        <StatTile label="Недавно напоминали" value={String(plan.recentlyReminded)} sub={`пауза ${REMIND_GAP_DAYS} дня`} />
+        <StatTile label="Обещали позже" value={String(plan.promised)} sub="не трогаем" />
+      </div>
 
-      <Section tone="money" icon="clock" title="Отправленные за 2 недели" flush>
-        {recent.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-ink-muted">Пока ни одного.</p>
-        ) : (
-          <ul className="divide-y divide-line-hairline text-sm">
-            {recent.map((r) => (
-              <li key={r.reminderId} className="px-4 py-2 flex flex-wrap items-baseline gap-x-3">
-                <span className="w-36 text-ink-secondary">{formatMoment(r.sentAt)}</span>
-                <span className="flex-1 min-w-0">
-                  {r.clientName} · {money(r.amount)}
-                  {r.kaspiInvoices && <span className="text-ink-muted"> · со счётом Kaspi</span>}
-                </span>
-                {r.messageId ? (
-                  <span className="text-status-good text-xs">ушло</span>
-                ) : (
-                  <span className="text-status-critical text-xs">не ушло</span>
-                )}
-                {r.error && <div className="basis-full text-xs text-[#8a5a00]">{r.error}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+        <DebtReminderList rows={rows} canSend={canSend} />
+        <SentReminders rows={sent} />
+      </div>
     </div>
   );
 }

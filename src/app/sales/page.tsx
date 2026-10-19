@@ -24,7 +24,7 @@ export default async function SalesPage({
   const snapshot = await getLeaderboard(period, searchParams.date);
 
   return (
-    <div className="space-y-5">
+    <div>
       <PageHeader area="sales" title="Рейтинг менеджеров" icon="trophy" tabs={salesTabsFor(role)} />
 
       <Leaderboard snapshot={snapshot} currentEmail={session?.user?.email?.toLowerCase() ?? ""} today={localDayKey()} />

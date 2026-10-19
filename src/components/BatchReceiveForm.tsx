@@ -59,7 +59,7 @@ export default function BatchReceiveForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card max-w-xl space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <label className="label">Тип цветка</label>
@@ -136,7 +136,7 @@ export default function BatchReceiveForm({
         </div>
       )}
 
-      <button type="submit" disabled={submitting} className="btn-primary">
+      <button type="submit" disabled={submitting} className="btn-primary w-full sm:w-auto sm:min-w-[200px]">
         {submitting ? "Сохранение…" : "Принять партию"}
       </button>
     </form>

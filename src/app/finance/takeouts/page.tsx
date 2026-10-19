@@ -51,37 +51,46 @@ export default async function FinanceTakeoutsPage({
   for (let i = 3; i >= 0; i--) months.push(periodShift(current, -i));
 
   return (
-    <div>
-      <PageHeader area="money" title="Цветы в счёт зарплаты" icon="leaf" tabs={financeTabsFor(role)} />
-
-      <div className="flex flex-wrap gap-2 mb-4">
-        {months.map((m) => (
-          <Link
-            key={m}
-            href={`/finance/takeouts?month=${m}`}
-            className={
-              "px-3 py-1.5 rounded-lg text-sm border transition-colors " +
-              (m === month
-                ? "border-accent bg-accent-soft text-ink-primary font-medium"
-                : "border-line-hairline text-ink-secondary hover:text-ink-primary")
-            }
-          >
-            {periodLabel(m)}
-          </Link>
-        ))}
-      </div>
-
-      <StaffTakeoutMonth
-        month={data}
-        title={`${periodLabel(month)} — по сотрудникам`}
-        hint="Сумма к удержанию из зарплаты"
+    <div className="space-y-5">
+      <PageHeader
+        area="money"
+        title="Цветы в счёт зарплаты"
+        icon="leaf"
+        tabs={financeTabsFor(role)}
+        actions={
+          <div className="flex flex-wrap gap-1">
+            {months.map((m) => (
+              <Link
+                key={m}
+                href={`/finance/takeouts?month=${m}`}
+                className={
+                  m === month
+                    ? "px-3 py-1.5 rounded-lg text-sm bg-ink-primary text-white"
+                    : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline bg-surface text-ink-secondary hover:text-ink-primary"
+                }
+              >
+                {periodLabel(m)}
+              </Link>
+            ))}
+          </div>
+        }
       />
 
-      <div className="mt-6">
-        <CompanyUseReport
-          data={company}
-          title={`${periodLabel(month)} — на нужды компании (не удерживается)`}
-        />
+      {/* Две колонки: к удержанию — слева, нужды компании (не удерживается) — справа. */}
+      <div className="grid gap-5 xl:grid-cols-2 items-start">
+        <div className="min-w-0">
+          <StaffTakeoutMonth
+            month={data}
+            title={`${periodLabel(month)} — по сотрудникам`}
+            hint="Сумма к удержанию из зарплаты"
+          />
+        </div>
+        <div className="min-w-0">
+          <CompanyUseReport
+            data={company}
+            title={`${periodLabel(month)} — на нужды компании (не удерживается)`}
+          />
+        </div>
       </div>
     </div>
   );

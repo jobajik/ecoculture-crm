@@ -22,10 +22,13 @@ import type { FlowerRow } from "@/lib/analytics";
 export default function FlowerSummary({
   rows,
   days,
+  bare = false,
 }: {
   rows: FlowerRow[];
   /** Длина окна — чтобы подпись не расходилась с расчётом. */
   days: number;
+  /** Без заголовка и своей карточки — вкладкой внутри карточки отчёта. */
+  bare?: boolean;
 }) {
   if (rows.length === 0) return null;
 
@@ -44,17 +47,19 @@ export default function FlowerSummary({
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2">
-        <h2 className="font-medium">По цветку</h2>
-        <span className="text-sm text-ink-muted">
-          за {days} дней
-        </span>
-      </div>
+      {!bare && (
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2">
+          <h2 className="font-medium">По цветку</h2>
+          <span className="text-sm text-ink-muted">
+            за {days} дней
+          </span>
+        </div>
+      )}
 
-      <div className="card !p-0 table-scroll">
+      <div className={bare ? "table-scroll" : "card !p-0 table-scroll"}>
         <table className="w-full text-sm min-w-[920px]">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
               <th className="px-4 py-2.5 font-medium">Цветок</th>
               <th className="px-3 py-2.5 font-medium text-right">Срезано</th>
               <th className="px-3 py-2.5 font-medium text-right">Продано</th>
@@ -79,8 +84,8 @@ export default function FlowerSummary({
               const tone: Tone =
                 ratio === null ? "neutral" : toneLowerBetter(ratio, BENCHMARKS.coverRatio);
               return (
-                <tr key={f.flowerType} className="border-b border-line-hairline">
-                  <td className="px-4 py-2.5 font-medium whitespace-nowrap">
+                <tr key={f.flowerType} className="border-b border-line-hairline hover:bg-surface-plane/60">
+                  <td className="px-4 py-2.5 font-semibold whitespace-nowrap">
                     {FLOWER_TYPE_LABELS_PLURAL[f.flowerType] ?? f.flowerType}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{num(f.received)}</td>

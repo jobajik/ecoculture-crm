@@ -5,47 +5,32 @@ import clsx from "clsx";
 import { FLOWER_TYPE_LABELS, formatGrade } from "@/lib/constants";
 import { BASE_VARIETY_LABEL } from "@/lib/priceList";
 import type { PriceChangeDay } from "@/lib/priceChanges";
-import MoreToggle from "./MoreToggle";
-
-/** Сколько дней истории видно без разворота. */
-const VISIBLE_DAYS = 3;
+import Pager, { pageSlice } from "./Pager";
 
 /**
- * История изменений прайса: по дням, сверху свежее.
+ * История изменений прайса: по дням, сверху свежее. Рисуется вкладкой карточки прайса (без своей рамки),
+ * дни — страницами.
  *
  * Свёрнутый день — это одна строка: дата и сколько позиций подорожало,
  * подешевело или появилось впервые. Разворачивается по клику: чаще всего нужно
  * знать «когда последний раз меняли», а не «что именно поменяли в марте».
  */
 export default function PriceChangesView({ days }: { days: PriceChangeDay[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? days : days.slice(0, VISIBLE_DAYS);
+  const [page, setPage] = useState(0);
+  const shown = pageSlice(days, page);
 
   if (days.length === 0) {
-    return (
-      <div className="card">
-        <h2 className="font-medium">История изменений</h2>
-        <p className="text-sm text-ink-secondary mt-1">Изменений пока не было.</p>
-      </div>
-    );
+    return <p className="px-4 sm:px-5 py-12 text-center text-sm text-ink-muted">Изменений пока не было.</p>;
   }
 
   return (
-    <div className="card space-y-3">
-      <h2 className="font-medium">История изменений</h2>
-
-      <div className="divide-y divide-line-hairline border border-line-hairline rounded-lg">
+    <div>
+      <div className="divide-y divide-line-hairline">
         {shown.map((day) => (
           <DayRow key={day.date} day={day} />
         ))}
       </div>
-
-      <MoreToggle
-        expanded={expanded}
-        hidden={days.length - shown.length}
-        onToggle={() => setExpanded((v) => !v)}
-        what="дней"
-      />
+      <Pager total={days.length} page={page} onPage={setPage} what="дней" />
     </div>
   );
 }
@@ -58,7 +43,7 @@ function DayRow({ day }: { day: PriceChangeDay }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2.5 text-left hover:bg-surface-plane"
+        className="w-full flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 sm:px-5 py-3 text-left hover:bg-surface-plane/60"
       >
         <span className="flex items-center gap-2">
           <span aria-hidden className="text-[10px] text-ink-muted">
@@ -102,7 +87,7 @@ function DayRow({ day }: { day: PriceChangeDay }) {
         <div className="table-scroll border-t border-line-hairline">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline bg-surface-plane">
+              <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
                 <th className="px-3 py-2 font-medium">Цветок</th>
                 <th className="px-3 py-2 font-medium">Сорт</th>
                 <th className="px-3 py-2 font-medium">Длина / категория</th>

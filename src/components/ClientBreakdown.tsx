@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import type { BreakdownRow } from "@/lib/clientAnalytics";
 import Change from "./Change";
+import Pager, { pageSlice } from "./Pager";
 
 type View = "manager" | "city" | "type" | "flower";
 
@@ -23,41 +24,51 @@ const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
 export default function ClientBreakdown({
   rows,
   prevLabel,
+  extraTabs = [],
 }: {
   rows: Record<View, BreakdownRow[]>;
   /** «август» — с чем сравниваем. */
   prevLabel: string;
+  /** Ещё вкладки в той же карточке (крупнейшие клиенты, «давно не заказывали») — их рисует страница. */
+  extraTabs?: { key: string; label: string; count?: number; content: ReactNode }[];
 }) {
-  const [view, setView] = useState<View>("manager");
+  const [tab, setTab] = useState<string>("manager");
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [tab]);
+  const extra = extraTabs.find((t) => t.key === tab);
+  const view: View = extra ? "manager" : (tab as View);
   const list = rows[view];
   const flower = view === "flower";
   const maxShare = Math.max(1, ...list.map((r) => r.share));
   const hasPrev = list.some((r) => r.prevRevenue > 0);
+  const tabs = [...VIEWS.map((v) => ({ key: v.key as string, label: v.label, count: undefined as number | undefined })), ...extraTabs];
 
   return (
-    <section className="card !p-0">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
-        <h2 className="font-semibold">Разрезы месяца</h2>
-        <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">
-          {VIEWS.map((v) => (
-            <button
-              key={v.key}
-              type="button"
-              role="tab"
-              aria-selected={view === v.key}
-              onClick={() => setView(v.key)}
-              className={clsx(
-                "rounded-md px-3 py-1.5 text-sm whitespace-nowrap",
-                view === v.key ? "bg-surface shadow-sm font-medium" : "text-ink-secondary hover:text-ink-primary"
-              )}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
+    <section className="card !p-0 overflow-hidden min-w-0">
+      <div className="flex gap-x-5 overflow-x-auto scroll-x-hidden border-b border-line-hairline px-4" role="tablist">
+        {tabs.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === v.key}
+            onClick={() => setTab(v.key)}
+            className={clsx(
+              "py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors",
+              tab === v.key ? "border-section-client text-ink-primary font-semibold" : "border-transparent text-ink-secondary hover:text-ink-primary"
+            )}
+          >
+            {v.label}
+            {v.count !== undefined && <span className="ml-1.5 text-ink-muted font-normal tabular-nums">{v.count}</span>}
+          </button>
+        ))}
       </div>
 
-      <div className="table-scroll table-cards border-t border-line-hairline">
+      {extra ? (
+        extra.content
+      ) : (
+      <>
+      <div className="table-cards">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-secondary border-b border-line-hairline">
@@ -82,7 +93,7 @@ export default function ClientBreakdown({
             </tr>
           </thead>
           <tbody>
-            {list.map((r) => (
+            {pageSlice(list, page).map((r) => (
               <tr key={r.key} className="border-b border-line-hairline/70 last:border-0">
                 <td className="px-4 py-2.5 font-medium">{r.label}</td>
                 <td data-label={flower ? "Клиентов" : "Покупали"} className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
@@ -150,6 +161,9 @@ export default function ClientBreakdown({
           </tbody>
         </table>
       </div>
+      <Pager total={list.length} page={page} onPage={setPage} what="строк" />
+      </>
+      )}
     </section>
   );
 }

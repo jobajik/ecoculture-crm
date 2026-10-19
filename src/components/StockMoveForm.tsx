@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { moveStockAction, previewMoveAction } from "@/app/office/actions";
@@ -9,6 +9,8 @@ import { formatDay } from "@/lib/formatDate";
 import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import { positionKey, positionLabel, type StockPosition, type WriteoffPlan } from "@/lib/writeoffPlan";
 import type { MoveDirection, MoveLine } from "@/lib/officeStore";
+import Chips from "./Chips";
+import Pager, { pageSlice } from "./Pager";
 
 /**
  * Перемещение основной склад ⇄ офис (РОП). Вписал количество напротив позиции →
@@ -26,6 +28,7 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
 
   const positions = direction === "to_office" ? main : office;
   const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
@@ -36,6 +39,7 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
       .filter((p) => !flower || p.flowerType === flower)
       .filter((p) => !q || positionLabel(p).toLowerCase().includes(q));
   }, [positions, flower, search]);
+  useEffect(() => setPage(0), [direction, flower, search]);
 
   const lines: MoveLine[] = positions
     .filter((p) => Number(qty[positionKey(p)]) > 0)
@@ -85,60 +89,54 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
 
   const planOk = plan && !plan.result.errors.some(Boolean);
 
+  // Новый вид (19.10.2026): форма живёт вкладкой внутри карточки «Офис» — слева позиции с отбором и страницами,
+  // справа примечание, раскладка по партиям и кнопка. Без вложенных карточек.
   return (
-    <div className="space-y-4">
-      <div className="inline-flex rounded-lg border border-line-hairline p-1 bg-surface-plane" role="tablist">
-        {(
-          [
-            ["to_office", "Склад → Офис"],
-            ["to_main", "Офис → Склад"],
-          ] as const
-        ).map(([d, label]) => (
-          <button
-            key={d}
-            type="button"
-            role="tab"
-            aria-selected={direction === d}
-            onClick={() => switchDirection(d)}
-            className={clsx("px-3 py-1.5 rounded-md text-sm", direction === d ? "bg-surface shadow-sm font-medium" : "text-ink-secondary")}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="card !p-0">
-        <div className="p-4 flex flex-wrap items-end gap-3 border-b border-line-hairline">
-          <select className="input !w-44" value={flower} onChange={(e) => setFlower(e.target.value)}>
-            <option value="">Все цветы</option>
-            {flowers.map((f) => (
-              <option key={f} value={f}>
-                {FLOWER_TYPE_LABELS[f] ?? f}
-              </option>
-            ))}
-          </select>
-          <input className="input !w-56" placeholder="Найти сорт…" value={search} onChange={(e) => setSearch(e.target.value)} />
+    <div className="grid lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="min-w-0">
+        <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-3 border-b border-line-hairline">
+          <Chips
+            value={direction}
+            onChange={(v) => switchDirection(v as MoveDirection)}
+            items={[
+              { value: "to_office", label: "Склад → Офис", count: main.length },
+              { value: "to_main", label: "Офис → Склад", count: office.length },
+            ]}
+          />
+          <div className="flex gap-2 xl:ml-auto min-w-0">
+            {flowers.length > 1 && (
+              <select className="input !w-36" value={flower} onChange={(e) => setFlower(e.target.value)}>
+                <option value="">Все цветы</option>
+                {flowers.map((f) => (
+                  <option key={f} value={f}>
+                    {FLOWER_TYPE_LABELS[f] ?? f}
+                  </option>
+                ))}
+              </select>
+            )}
+            <input className="input !w-auto xl:w-[200px] min-w-0 flex-1" placeholder="Найти сорт…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
         </div>
         <div className="table-scroll table-cards">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-ink-secondary border-b border-line-hairline">
+              <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
                 <th className="px-4 py-2.5 font-medium">Позиция</th>
                 <th className="px-3 py-2.5 font-medium text-right">{direction === "to_office" ? "На складе" : "В офисе"}</th>
-                <th className="px-3 py-2.5 font-medium text-right">Переместить, шт</th>
+                <th className="px-4 py-2.5 font-medium text-right">Переместить, шт</th>
               </tr>
             </thead>
             <tbody>
-              {visible.map((p) => {
+              {pageSlice(visible, page).map((p) => {
                 const k = positionKey(p);
                 const v = Number(qty[k]) || 0;
                 return (
-                  <tr key={k} className="border-b border-line-hairline last:border-0">
+                  <tr key={k} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
                     <td className="px-4 py-2">{positionLabel(p)}</td>
                     <td data-label="Есть" className="px-3 py-2 text-right tabular-nums text-ink-secondary">
                       {nf(p.stock)}
                     </td>
-                    <td data-label="Переместить, шт" className="px-3 py-2 text-right">
+                    <td data-label="Переместить, шт" className="px-4 py-2 text-right">
                       <input
                         className={clsx("input !w-28 text-right", v > p.stock && "!border-status-critical")}
                         inputMode="numeric"
@@ -155,7 +153,7 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
               })}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-ink-muted">
+                  <td colSpan={3} className="px-4 py-10 text-center text-ink-muted">
                     {positions.length === 0
                       ? direction === "to_office"
                         ? "На основном складе ничего нет."
@@ -167,9 +165,16 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
             </tbody>
           </table>
         </div>
+        <Pager total={visible.length} page={page} onPage={setPage} what="позиций" />
       </div>
 
-      <div className="card space-y-3">
+      <div className="space-y-3 px-4 sm:px-5 py-4 border-t lg:border-t-0 lg:border-l border-line-hairline">
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="font-display text-[15px] font-bold">{direction === "to_office" ? "В офис" : "Обратно на склад"}</h3>
+          <span className="text-sm text-ink-secondary tabular-nums">
+            {lines.length > 0 ? `${lines.length} поз. · ${nf(total)} шт.` : "ничего не вписано"}
+          </span>
+        </div>
         <label className="text-sm block">
           <span className="label">Примечание</span>
           <input
@@ -184,27 +189,25 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
         </label>
 
         {plan && (
-          <div className="border border-line-hairline rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <tbody>
-                {plan.lines.map((l, i) => (
-                  <tr key={i} className="border-b border-line-hairline last:border-0 align-top">
-                    <td className="px-3 py-2">{positionLabel(l)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{nf(l.quantity)} шт.</td>
-                    <td className="px-3 py-2 text-xs">
-                      {plan.result.errors[i] ? (
-                        <span className="text-status-critical">{plan.result.errors[i]}</span>
-                      ) : (
-                        <span className="text-ink-muted">
-                          {plan.result.byLine[i].map((b) => `${nf(b.quantity)} из срезки ${formatDay(b.harvestDate)}`).join(", ")}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="border border-line-hairline rounded-lg divide-y divide-line-hairline text-sm max-h-[45vh] overflow-y-auto">
+            {plan.lines.map((l, i) => (
+              <li key={i} className="px-3 py-2">
+                <div className="flex justify-between gap-3">
+                  <span className="min-w-0">{positionLabel(l)}</span>
+                  <span className="tabular-nums whitespace-nowrap font-medium">{nf(l.quantity)} шт.</span>
+                </div>
+                <div className="text-xs mt-0.5">
+                  {plan.result.errors[i] ? (
+                    <span className="text-status-critical">{plan.result.errors[i]}</span>
+                  ) : (
+                    <span className="text-ink-muted">
+                      {plan.result.byLine[i].map((b) => `${nf(b.quantity)} из срезки ${formatDay(b.harvestDate)}`).join(", ")}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
 
         {error && <div className="text-sm text-status-critical bg-status-critical/10 rounded-lg px-3 py-2">{error}</div>}
@@ -212,12 +215,12 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
 
         <div className="flex flex-wrap items-center gap-3">
           {!planOk ? (
-            <button type="button" className="btn-primary" disabled={busy || lines.length === 0} onClick={check}>
+            <button type="button" className="btn-primary flex-1" disabled={busy || lines.length === 0} onClick={check}>
               {busy ? "Проверяю…" : `Проверить${total > 0 ? ` · ${nf(total)} шт.` : ""}`}
             </button>
           ) : (
             <>
-              <button type="button" className="btn-primary" disabled={busy} onClick={apply}>
+              <button type="button" className="btn-primary flex-1" disabled={busy} onClick={apply}>
                 {busy ? "Перемещаю…" : direction === "to_office" ? `Переместить в офис ${nf(plan!.result.total)} шт.` : `Вернуть на склад ${nf(plan!.result.total)} шт.`}
               </button>
               <button type="button" className="btn-secondary" disabled={busy} onClick={() => setPlan(null)}>

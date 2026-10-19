@@ -1,26 +1,18 @@
-import Link from "next/link";
-import ItemsCell from "@/components/ItemsCell";
-import ShipQueueTable from "@/components/ShipQueueTable";
-import { orderCode } from "@/lib/paymentStage";
+import KpiTile from "@/components/KpiTile";
+import ShipQueueBoard from "@/components/ShipQueueBoard";
+import { buildQueue, queueAlerts } from "@/lib/shipQueueRows";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listBatches } from "@/lib/repo/batches";
 import { getSettings } from "@/lib/repo/settings";
 import { computeBatchStorageInfo } from "@/lib/shelfLife";
-import OrderStageBadge from "@/components/OrderStageBadge";
-import { byUrgency, orderStage } from "@/lib/orderStage";
 import { localDayKey } from "@/lib/timezone";
-import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
 import { officeTabsFor } from "../tabs";
-import { formatDay } from "@/lib/formatDate";
-import { canShipUnpaid, isReadyToShip } from "@/lib/orderReady";
 import { inStore, isOfficeRole } from "@/lib/officeStore";
 import { confirmRefusal } from "@/lib/orderRules";
-import ConfirmOrderButton from "@/components/ConfirmOrderButton";
 
 export const dynamic = "force-dynamic";
 
@@ -38,30 +30,18 @@ export default async function OfficeShipPage() {
 
   const scoped = inStore(orders, "office").filter((o) => o.items.length > 0);
 
-  // В очереди — то, что ещё есть отгружать СВОИМ цветком: заявка, по которой
-  // своё уже уехало целиком, здесь только мешает (раньше она висела с кнопкой
-  // «Отгрузить» при 600/600). Сначала опоздавшие — давние выше, дальше по дню
-  // доставки (`byUrgency`): по живой базе 63 % отгрузок отмечались уже после
-  // дня доставки, и главная причина — прошлые заявки терялись среди будущих.
+  // Новый вид (19.10.2026): цифры сверху, ниже одна карточка «Можно отгружать / Ждут / Срок хранения».
   const today = localDayKey();
-  const stageOf = (o: (typeof scoped)[number]) => orderStage(o, today);
-  const pending = scoped
-    .filter((o) => {
-      const k = stageOf(o).key;
-      return k !== "shipped" && k !== "cancelled";
-    })
-    .sort(byUrgency(stageOf));
-  const lateCount = pending.filter((o) => isReadyToShip(o) && stageOf(o).lateDays > 0).length;
-
-  const readyToShip = pending.filter((o) => isReadyToShip(o));
-  const waiting = pending.filter((o) => !isReadyToShip(o));
-
-  const alerts = inStore(batches, "office")
-    .filter((b) => b.quantityRemaining > 0)
-    .map((b) => computeBatchStorageInfo(b, settings))
-    .filter((s) => s.status === "warning" || s.status === "critical")
-    .sort((a, b) => b.percentUsed - a.percentUsed)
-    .slice(0, 5);
+  const { ready, waiting } = buildQueue(scoped, today, (o) => confirmRefusal(o, role, myEmail, true) === "");
+  const lateCount = ready.filter((r) => r.stage.lateDays > 0).length;
+  const todayCount = ready.filter((r) => r.group === "today").length;
+  const alerts = queueAlerts(
+    inStore(batches, "office")
+      .filter((b) => b.quantityRemaining > 0)
+      .map((b) => computeBatchStorageInfo(b, settings))
+  );
+  const alertStems = alerts.reduce((s, a) => s + a.qty, 0);
+  const canShip = isOfficeRole(role) || role === "admin";
 
   return (
     <div>
@@ -73,134 +53,35 @@ export default async function OfficeShipPage() {
         tabs={officeTabsFor(role)}
       />
 
-      {alerts.length > 0 && (
-        <Section tone="warn" icon="alert" title="Срок хранения">
-          <ul className="text-sm space-y-1">
-            {alerts.map((a) => (
-              <li key={a.batch.batchId} className="flex justify-between gap-3 text-ink-secondary">
-                <span className="min-w-0 truncate">
-                  {FLOWER_TYPE_LABELS[a.batch.flowerType]} {a.batch.variety} — {a.batch.quantityRemaining.toLocaleString("ru-RU")} шт.
-                </span>
-                <span
-                  className={
-                    "shrink-0 whitespace-nowrap font-medium " +
-                    (a.status === "critical" ? "text-status-critical" : "text-[#8a5a00]")
-                  }
-                >
-                  {a.daysInStorage} дн.{a.daysInStorage >= a.maxDays ? ` · срок ${a.maxDays}` : ` из ${a.maxDays}`}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm">
-            <Link href="/office/writeoff" className="text-series-1">
-              Списание →
-            </Link>
-          </div>
-        </Section>
-      )}
-
-      <Section
-        tone="stock"
-        icon="truck"
-        title="Можно отгружать"
-        aside={
-          lateCount > 0 && (
-            <span className="badge bg-status-critical/10 text-status-critical align-middle">
-              опаздывают: {lateCount}
-            </span>
-          )
-        }
-        flush
-      >
-        <ShipQueueTable
-          orders={readyToShip}
-          today={today}
-          stageOf={stageOf}
-          showPhone={true}
-          empty={waiting.length > 0 ? "Готовых заявок нет" : "Заявок офиса нет"}
-          action={(o) =>
-            isOfficeRole(role) || role === "admin" ? (
-              <Link href={`/warehouse/ship/${o.orderId}`} className="btn-primary !py-1">
-                Отгрузить
-              </Link>
-            ) : (
-              <Link href={`/orders/${o.orderId}`} className="text-series-1 hover:underline">
-                Открыть
-              </Link>
-            )}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <KpiTile icon="truck" label="Можно отгружать" value={ready.length.toLocaleString("ru-RU")} hint="готовы к сборке" />
+        <KpiTile
+          icon="calendar"
+          label="На сегодня"
+          value={todayCount.toLocaleString("ru-RU")}
+          hint={lateCount > 0 ? `${lateCount} опаздывают` : "опозданий нет"}
+          tone={lateCount > 0 ? "bad" : undefined}
         />
-      </Section>
+        <KpiTile icon="clock" label="Ждут подтверждения или оплаты" value={waiting.length.toLocaleString("ru-RU")} hint="отгружать пока нельзя" />
+        <KpiTile
+          icon="alert"
+          label="Срок хранения на исходе"
+          value={alertStems.toLocaleString("ru-RU")}
+          hint={alerts.length > 0 ? `шт. в ${alerts.length} парт.` : "всё в сроке"}
+          tone={alerts.some((a) => a.critical) ? "bad" : alerts.length > 0 ? "warn" : "good"}
+        />
+      </div>
 
-      {waiting.length > 0 && (
-        <Section tone="neutral" icon="clock" title="Ждут подтверждения или оплаты" flush>
-          <div className="table-scroll table-cards border-t border-line-hairline">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-ink-secondary border-b border-line-hairline">
-                  <th className="px-4 py-3 font-medium">Клиент</th>
-                  <th className="px-4 py-3 font-medium">Доставка</th>
-                  <th className="px-4 py-3 font-medium">Позиции</th>
-                  <th className="px-4 py-3 font-medium">Чего ждём</th>
-                </tr>
-              </thead>
-              <tbody>
-                {waiting.map((o) => (
-                  <tr
-                    key={o.orderId}
-                    className="border-b border-line-hairline last:border-0 hover:bg-surface-plane align-top"
-                  >
-                    <td className="px-4 py-3">
-                      {(() => {
-                        const title = (
-                          <>
-                            <div className="font-medium truncate max-w-[220px]" title={o.clientName}>
-                              {o.clientName || "—"}
-                            </div>
-                            <div className="text-[11px] text-ink-muted font-mono font-normal">№ {orderCode(o.orderId)}</div>
-                          </>
-                        );
-                        return role === "office" ? (
-                          title
-                        ) : (
-                          <Link href={`/orders/${o.orderId}`} className="hover:underline">
-                            {title}
-                          </Link>
-                        );
-                      })()}
-                      {o.clientPhone && (
-                        <a href={`tel:${o.clientPhone}`} className="block text-xs text-ink-secondary font-normal whitespace-nowrap">
-                          {o.clientPhone}
-                        </a>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-ink-secondary" data-label="Доставка">{formatDay(o.deliveryDate)}</td>
-                    <td className="px-4 py-3 text-ink-secondary" data-label="Позиции">
-                      <ItemsCell
-                        lines={o.items.map((i) => `${i.variety} ${i.shippedQuantity}/${i.quantity}`)}
-                        width="max-w-[260px]"
-                      />
-                    </td>
-                    <td className="px-4 py-3" data-label="Чего ждём">
-                      <OrderStageBadge stage={stageOf(o)} compact showActor />
-                      {canShipUnpaid(o) && (
-                        <Link href={`/warehouse/ship/${o.orderId}`} className="block mt-1 text-xs text-series-1 hover:underline">
-                          Уже уехал? Отгрузить без оплаты →
-                        </Link>
-                      )}
-                      {!o.managerConfirmed && confirmRefusal(o, role, myEmail, true) === "" && (
-                        <div className="mt-2">
-                          <ConfirmOrderButton orderId={o.orderId} />
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-      )}
+      <ShipQueueBoard
+        ready={ready}
+        waiting={waiting}
+        alerts={alerts}
+        alertLinks={[{ href: "/office/writeoff", label: "Списание" }]}
+        shipAction={canShip ? "ship" : "open"}
+        clientLink={role !== "office"}
+        showPhone
+        emptyReady={waiting.length > 0 ? "Готовых заявок нет" : "Заявок офиса нет"}
+      />
     </div>
   );
 }

@@ -41,7 +41,7 @@ export default async function ReceivePage() {
   const nf = (n: number) => n.toLocaleString("ru-RU");
 
   return (
-    <div className="space-y-6">
+    <div>
       <PageHeader
         area="stock"
         title={`Приёмка с производства${farm ? ` · ${farmLabel(farm)}` : ""}`}
@@ -49,12 +49,14 @@ export default async function ReceivePage() {
         tabs={WAREHOUSE_TABS}
       />
 
-      <div>
-        <h2 className="font-medium mb-2">Одна партия</h2>
-        <BatchReceiveForm varieties={varieties} allowedTypes={allowedTypes} today={today} />
-      </div>
-
-      <BatchImportForm />
+      {/* Форма слева, «Принято сегодня» справа (новый вид, 19.10.2026): видно, что уже приняли, не уходя от формы. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start">
+        <div className="space-y-4 min-w-0">
+          <Section tone="stock" icon="upload" title="Одна партия" className="!mb-0">
+            <BatchReceiveForm varieties={varieties} allowedTypes={allowedTypes} today={today} />
+          </Section>
+          <BatchImportForm />
+        </div>
 
       <Section
         tone="stock"
@@ -68,13 +70,14 @@ export default async function ReceivePage() {
           )
         }
         flush
+        className="!mb-0 xl:sticky xl:top-4"
       >
         {todayBatches.length === 0 ? (
-          <p className="pl-5 pr-4 pb-4 text-sm text-ink-muted">Сегодня ещё ничего не принимали.</p>
+          <p className="px-4 sm:px-5 pb-5 text-sm text-ink-muted">Сегодня ещё ничего не принимали.</p>
         ) : (
           <>
             {dupCount > 0 && (
-              <p className="ml-5 mr-4 mb-3 text-sm text-[#8a5a00] bg-status-warning/10 rounded-lg px-3 py-2">
+              <p className="mx-4 sm:mx-5 mb-3 text-sm text-[#8a5a00] bg-status-warning/10 rounded-lg px-3 py-2">
                 Похоже на повтор приёмки: {dupCount}.{" "}
                 <Link href="/warehouse/batches" className="underline">
                   Исправить в «Партиях»
@@ -115,6 +118,7 @@ export default async function ReceivePage() {
           </>
         )}
       </Section>
+      </div>
     </div>
   );
 }

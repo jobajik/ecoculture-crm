@@ -16,6 +16,8 @@ import { openAiConfigured } from "@/lib/openai";
 import { greenConfig } from "@/lib/greenApi";
 import PageHeader from "@/components/PageHeader";
 import Section from "@/components/Section";
+import PaneTabs from "@/components/PaneTabs";
+import PagedList from "@/components/PagedList";
 import BotSettingsForm from "@/components/BotSettingsForm";
 import HandoffRelease from "@/components/HandoffRelease";
 import { clientsTabsFor } from "../../tabs";
@@ -67,81 +69,92 @@ export default async function BotPage() {
     );
   };
 
+  const handoffRows = handoffs.map((c) => (
+    <li key={c.phone} className="px-4 py-3 text-sm space-y-1">
+      <div>
+        {who(c.phone)} <span className="text-xs text-ink-muted">· {formatMoment(c.handoffAt)}</span>
+      </div>
+      {c.handoffReason && <div className="text-ink-secondary">{c.handoffReason}</div>}
+      {c.context.length > 0 && (
+        <div className="text-xs text-ink-muted line-clamp-2">
+          Последнее от клиента: {[...c.context].reverse().find((m) => m.role === "client")?.text ?? "—"}
+        </div>
+      )}
+      <HandoffRelease phone={c.phone} />
+    </li>
+  ));
+  const recentRows = recent.map((c) => (
+    <li key={c.phone} className="px-4 py-3 text-sm space-y-1">
+      <div>
+        {who(c.phone)}{" "}
+        <span className="text-xs text-ink-muted">
+          · {MODE_LABEL[c.mode] ?? c.mode} · ответов бота: {c.botReplies} · {formatMoment(c.updatedAt)}
+        </span>
+      </div>
+      <details>
+        <summary className="cursor-pointer text-xs text-accent">переписка</summary>
+        <div className="mt-2 space-y-1">
+          {c.context.map((m, i) => (
+            <div key={i} className={m.role === "client" ? "" : "text-series-1"}>
+              <b>{m.role === "client" ? "Клиент" : "Мы"}:</b> {m.text}
+            </div>
+          ))}
+        </div>
+      </details>
+    </li>
+  ));
+
   return (
-    <div className="space-y-6">
+    <div>
       <PageHeader
         area="leads"
         title="Бот WhatsApp"
         tabs={clientsTabsFor(undefined, role)}
         actions={
-          <Link href="/clients/broadcasts" className="text-sm text-ink-secondary hover:underline">
-            ← рассылки
+          <Link href="/clients/broadcasts" className="btn-secondary">
+            ← Рассылки
           </Link>
         }
       />
 
       {(!greenConfig() || !openAiConfigured()) && (
-        <div className="rounded-xl bg-status-warning/10 px-4 py-3 text-sm text-[#8a5a00]">
+        <div className="rounded-xl bg-status-warning/10 px-4 py-3 text-sm text-[#8a5a00] mb-5">
           {!greenConfig() && "WhatsApp (Green API) не подключён — ключи вводятся в whatsapp-key.bat. "}
           {!openAiConfigured() && "ИИ (OpenAI) не подключён — без него бот только передаёт чаты менеджеру."}
         </div>
       )}
 
-      <Section tone="leads" icon="gear" title="Настройки">
-        <BotSettingsForm initial={settings} dailyLimit={dailyLimitOf(map.BroadcastDailyLimit)} todayNote={todayLimitNote(map)} />
-      </Section>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start">
+        <PaneTabs
+          boxed
+          initial={handoffs.length > 0 ? "handoffs" : "recent"}
+          tabs={[
+            {
+              key: "handoffs",
+              label: "Заказы и тревоги",
+              count: handoffs.length,
+              alert: handoffs.length > 0,
+              content: (
+                <PagedList
+                  items={handoffRows}
+                  what="записок"
+                  empty={<p className="px-4 py-6 text-sm text-ink-muted">За 3 дня бот ничего не оставил — сейчас ничего не ждёт.</p>}
+                />
+              ),
+            },
+            {
+              key: "recent",
+              label: "Последние разговоры",
+              count: recent.length,
+              content: <PagedList items={recentRows} what="разговоров" empty={<p className="px-4 py-6 text-sm text-ink-muted">Бот ещё никому не отвечал.</p>} />,
+            },
+          ]}
+        />
 
-      <Section tone="warn" icon="alert" title={`Заказы и тревоги от бота: ${handoffs.length}`} flush>
-        {handoffs.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-ink-muted">Сейчас ничего не ждёт.</p>
-        ) : (
-          <ul className="divide-y divide-line-hairline">
-            {handoffs.map((c) => (
-              <li key={c.phone} className="px-4 py-3 text-sm space-y-1">
-                <div>
-                  {who(c.phone)} <span className="text-xs text-ink-muted">· {formatMoment(c.handoffAt)}</span>
-                </div>
-                {c.handoffReason && <div className="text-ink-secondary">{c.handoffReason}</div>}
-                {c.context.length > 0 && (
-                  <div className="text-xs text-ink-muted line-clamp-2">
-                    Последнее от клиента: {[...c.context].reverse().find((m) => m.role === "client")?.text ?? "—"}
-                  </div>
-                )}
-                <HandoffRelease phone={c.phone} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <Section tone="leads" icon="list" title="Последние разговоры бота" flush>
-        {recent.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-ink-muted">Бот ещё никому не отвечал.</p>
-        ) : (
-          <ul className="divide-y divide-line-hairline">
-            {recent.map((c) => (
-              <li key={c.phone} className="px-4 py-3 text-sm space-y-1">
-                <div>
-                  {who(c.phone)}{" "}
-                  <span className="text-xs text-ink-muted">
-                    · {MODE_LABEL[c.mode] ?? c.mode} · ответов бота: {c.botReplies} · {formatMoment(c.updatedAt)}
-                  </span>
-                </div>
-                <details>
-                  <summary className="cursor-pointer text-xs text-accent">переписка</summary>
-                  <div className="mt-2 space-y-1">
-                    {c.context.map((m, i) => (
-                      <div key={i} className={m.role === "client" ? "" : "text-series-1"}>
-                        <b>{m.role === "client" ? "Клиент" : "Мы"}:</b> {m.text}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+        <Section tone="leads" icon="gear" title="Настройки" className="!mb-0 min-w-0">
+          <BotSettingsForm initial={settings} dailyLimit={dailyLimitOf(map.BroadcastDailyLimit)} todayNote={todayLimitNote(map)} />
+        </Section>
+      </div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { buildFinanceAnalytics, type DebtorRow } from "@/lib/financeAnalytics";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
 import PageHeader from "@/components/PageHeader";
-import Section from "@/components/Section";
+import PagedList from "@/components/PagedList";
 import PeriodPicker from "@/components/PeriodPicker";
 import Hint from "@/components/Hint";
 import Change from "@/components/Change";
@@ -39,7 +39,7 @@ const AGING_TONE: Record<string, string> = {
  * «Оплаты → Аналитика»: деньги месяца в сравнении с прошлым и долг сейчас.
  * Расчёт — `buildFinanceAnalytics()` в `src/lib/financeAnalytics.ts`.
  */
-export default async function FinanceAnalyticsPage({ searchParams }: { searchParams?: { period?: string } }) {
+export default async function FinanceAnalyticsPage({ searchParams }: { searchParams?: { period?: string; view?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
   if (!canSeeFinance(role)) redirect("/?error=forbidden");
@@ -65,202 +65,197 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
   const debtAging = a.debt.aging.filter((b) => b.amount > 0);
   const maxWeek = Math.max(1, ...a.weeks.map((w) => Math.max(w.billed, w.cashIn)));
 
+  const VIEWS = [
+    { key: "breakdown", label: "Разрезы месяца" },
+    { key: "weeks", label: "По неделям и возраст долга" },
+    { key: "debtors", label: `Кто должен (${a.debtors.length})` },
+  ];
+  const view = VIEWS.some((v) => v.key === searchParams?.view) ? searchParams!.view! : "breakdown";
+  const viewHref = (v: string) => {
+    const q = new URLSearchParams();
+    if (searchParams?.period) q.set("period", period);
+    if (v !== "breakdown") q.set("view", v);
+    const str = q.toString();
+    return `/finance/analytics${str ? `?${str}` : ""}`;
+  };
+  const facts = [
+    c.daysToPay !== null
+      ? `срок оплаты ${nf(c.daysToPay)} ${dayWord(Math.round(c.daysToPay))} после доставки${c.closedOrders > 0 ? `, до неё платят ${Math.round((c.prepaidOrders / c.closedOrders) * 100)} %` : ""}`
+      : "",
+    c.orders > 0 ? `отметка «счёт отправлен» у ${nf(a.invoiceMarked)} из ${nf(c.orders)} заявок` : "",
+    a.debt.shippedUnpaid > 0 ? `отгружено, но не оплачено: ${money(a.debt.shippedUnpaid)}` : "",
+    a.debt.brokenPromises > 0 ? `обещали и не заплатили: ${nf(a.debt.brokenPromises)} на ${money(a.debt.brokenAmount)}` : "",
+    a.debt.onConsignment > 0 ? `на реализации (пожарка): ${money(a.debt.onConsignment)}` : "",
+    a.overpaid > 0 ? `переплата: ${money(a.overpaid)}` : "",
+  ].filter(Boolean);
+
   return (
     <div className="space-y-5">
-      <PageHeader area="money" title="Аналитика" icon="chart" tabs={financeTabsFor(role)} />
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <PeriodPicker period={period} />
-        <span className="text-sm text-ink-muted">
-          {hasPrev ? `сравнение с: ${prevName}` : `за ${prevName} денег нет — сравнивать не с чем`}
-          <Hint>
-            «Выставлено» — счета заявок, оформленных в месяце; «собрано» — сколько по ним уже пришло.
-            «Поступило» — деньги, пришедшие в месяце по дню поступления, за любые заявки (как в кассе).
-            Поэтому два числа и не обязаны совпадать. Долг — сейчас, по всей базе; просрочка — дольше{" "}
-            {DEBT_OVERDUE_DAYS} дней после доставки. Отменённые и наши магазины не считаются.
-          </Hint>
-        </span>
-      </div>
-
-      {/* --- Итоги месяца ------------------------------------------------------ */}
-      <section className="card">
-        <dl className="grid grid-cols-2 lg:grid-cols-6 gap-x-4 gap-y-5">
-          <Stat
-            title="Выставлено"
-            value={money(c.billed)}
-            note={`${nf(c.orders)} ${orderWord(c.orders)}`}
-            now={c.billed}
-            before={p.billed}
-            hasPrev={hasPrev}
-          />
-          <Stat
-            title="Поступило"
-            value={money(c.cashIn)}
-            note={c.cashInRegions > 0 ? `в т.ч. опт на город ${money(c.cashInRegions)}` : `${nf(c.paymentLines)} ${payWord(c.paymentLines)}`}
-            now={c.cashIn}
-            before={p.cashIn}
-            hasPrev={hasPrev}
-          />
-          <Stat
-            title="Собрано по счетам"
-            value={c.billed > 0 ? `${Math.round((c.collected / c.billed) * 100)} %` : "—"}
-            note={c.billed > 0 ? `${money(c.collected)} из ${money(c.billed)}` : ""}
-            warn={c.billed > 0 && c.collected / c.billed < 0.5}
-          />
-          <Stat
-            title="Долг сейчас"
-            value={money(a.debt.total)}
-            note={a.debt.orders > 0 ? `${nf(a.debt.clients)} ${clientWord(a.debt.clients)} · ${nf(a.debt.orders)} ${orderWord(a.debt.orders)}` : "никто не должен"}
-          />
-          <Stat
-            title="Просрочено"
-            value={money(a.debt.overdue)}
-            note={a.debt.total > 0 ? `${Math.round((a.debt.overdue / a.debt.total) * 100)} % долга` : ""}
-            danger={a.debt.overdue > 0}
-          />
-          <Stat
-            title="Срок оплаты"
-            value={c.daysToPay !== null ? `${nf(c.daysToPay)} ${dayWord(Math.round(c.daysToPay))}` : "—"}
-            note={
-              c.closedOrders > 0
-                ? `после доставки · до неё платят ${Math.round((c.prepaidOrders / c.closedOrders) * 100)} %`
-                : "за месяц заявок не закрыли"
-            }
-          />
-        </dl>
-        <p className="mt-4 pt-3 border-t border-line-hairline text-xs text-ink-muted">
-          {c.orders > 0 && `Отметка «счёт отправлен» у ${nf(a.invoiceMarked)} из ${nf(c.orders)} заявок месяца`}
-          {a.debt.shippedUnpaid > 0 && ` · отгружено целиком, но не оплачено: ${money(a.debt.shippedUnpaid)}`}
-          {a.debt.brokenPromises > 0 && ` · обещали и не заплатили: ${nf(a.debt.brokenPromises)} на ${money(a.debt.brokenAmount)}`}
-          {a.debt.onConsignment > 0 && ` · на реализации (пожарка): ${money(a.debt.onConsignment)}`}
-          {a.overpaid > 0 && ` · переплата: ${money(a.overpaid)}`}
-        </p>
-      </section>
-
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
-        {/* --- По неделям ------------------------------------------------------ */}
-        <Section
-          tone="money"
-          icon="chart"
-          className="!mb-0 min-w-0"
-          title={
-            <>
-              По неделям
-              <span className="normal-case tracking-normal font-normal">
-                <Hint>Слева — счета заявок, оформленных за неделю, справа — деньги, пришедшие за неделю.</Hint>
-              </span>
-            </>
-          }
-        >
-          <div className="space-y-3">
-            <div className="flex gap-4 text-xs text-ink-secondary">
-              <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent/35" />выставлено</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />поступило</span>
-            </div>
-            <ul className="space-y-2.5">
-              {a.weeks.map((w) => (
-                <li key={w.label} className="text-sm">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className={w.future ? "text-ink-muted" : ""}>{w.label}</span>
-                    <span className="tabular-nums text-xs text-ink-secondary whitespace-nowrap">
-                      {w.future && w.billed === 0 && w.cashIn === 0 ? "ещё впереди" : `${money(w.billed)} / ${money(w.cashIn)}`}
-                    </span>
-                  </div>
-                  <div className="mt-1 space-y-0.5">
-                    <div className="h-1.5 rounded-full bg-accent/35" style={{ width: `${(w.billed / maxWeek) * 100}%` }} />
-                    <div className="h-1.5 rounded-full bg-accent" style={{ width: `${(w.cashIn / maxWeek) * 100}%` }} />
-                  </div>
-                </li>
-              ))}
-            </ul>
+      <PageHeader
+        area="money"
+        title="Аналитика"
+        icon="chart"
+        tabs={financeTabsFor(role)}
+        actions={
+          <div className="flex items-center gap-2">
+            <PeriodPicker period={period} />
+            <Hint>
+              {hasPrev ? `Сравнение с: ${prevName}. ` : `За ${prevName} денег нет — сравнивать не с чем. `}
+              «Выставлено» — счета заявок, оформленных в месяце; «собрано» — сколько по ним уже пришло. «Поступило» —
+              деньги, пришедшие в месяце по дню поступления, за любые заявки (как в кассе). Поэтому два числа и не обязаны
+              совпадать. Долг — сейчас, по всей базе; просрочка — дольше {DEBT_OVERDUE_DAYS} дней после доставки.
+              Отменённые и наши магазины не считаются.
+            </Hint>
           </div>
-        </Section>
-
-        {/* --- Возраст долга --------------------------------------------------- */}
-        <Section
-          tone="warn"
-          icon="clock"
-          className="!mb-0 min-w-0"
-          title={
-            <>
-              Возраст долга
-              <span className="normal-case tracking-normal font-normal">
-                <Hint>Сколько дней прошло с доставки (нет даты доставки — с оформления) по каждой неоплаченной заявке. Реализация (пожарка) долгом не считается.</Hint>
-              </span>
-            </>
-          }
-        >
-          <div className="space-y-3">
-            {debtAging.length === 0 ? (
-              <p className="text-sm text-ink-muted">Долгов нет.</p>
-            ) : (
-              <>
-                <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Долг по возрасту">
-                  {debtAging.map((b) => (
-                    <div key={b.key} className={AGING_TONE[b.key]} style={{ width: `${(b.amount / a.debt.total) * 100}%` }} title={`${b.label}: ${money(b.amount)}`} />
-                  ))}
-                </div>
-                <ul className="space-y-1.5 text-sm">
-                  {debtAging.map((b) => (
-                    <li key={b.key} className="flex items-baseline gap-2">
-                      <span className={`inline-block w-2.5 h-2.5 rounded-sm ${AGING_TONE[b.key]}`} />
-                      <span className="flex-1 min-w-0">
-                        {b.label} <span className="text-ink-muted">· {nf(b.orders)} {orderWord(b.orders)}</span>
-                      </span>
-                      <span className="tabular-nums text-ink-secondary">{Math.round((b.amount / a.debt.total) * 100)} %</span>
-                      <span className="shrink-0 text-right tabular-nums sm:w-32">{money(b.amount)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        </Section>
-      </div>
-
-      <FinanceBreakdown
-        rows={{ manager: a.byManager, company: a.byCompany, method: a.byMethod, terms: a.byTerms }}
-        prevLabel={prevName}
+        }
       />
 
-      {/* --- Кто должен больше всех ------------------------------------------- */}
-      <Section
-        tone="money"
-        icon="client"
-        flush
-        className="!mb-0 min-w-0"
-        title={
-          <>
-            Кто должен · {a.debtors.length}
-            <span className="normal-case tracking-normal font-normal">
-              <Hint>Сверху — у кого больше просрочено, дальше — по сумме долга. Сорванное обещание — красная метка.</Hint>
-            </span>
-          </>
-        }
-        aside={
-          <Link href="/finance/debts" className="text-sm text-accent hover:underline">
-            Долги и звонки →
-          </Link>
-        }
-      >
-        {a.debtors.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-ink-muted">Никто не должен.</p>
-        ) : (
-          <ul className="divide-y divide-line-hairline/70 border-t border-line-hairline">
-            {a.debtors.slice(0, 12).map((d) => (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <Stat
+          title="Выставлено"
+          value={money(c.billed)}
+          note={`${nf(c.orders)} ${orderWord(c.orders)}`}
+          now={c.billed}
+          before={p.billed}
+          hasPrev={hasPrev}
+        />
+        <Stat
+          title="Поступило"
+          value={money(c.cashIn)}
+          note={c.cashInRegions > 0 ? `в т.ч. опт на город ${money(c.cashInRegions)}` : `${nf(c.paymentLines)} ${payWord(c.paymentLines)}`}
+          now={c.cashIn}
+          before={p.cashIn}
+          hasPrev={hasPrev}
+        />
+        <Stat
+          title="Собрано по счетам"
+          value={c.billed > 0 ? `${Math.round((c.collected / c.billed) * 100)} %` : "—"}
+          note={c.billed > 0 ? `${money(c.collected)} из ${money(c.billed)}` : ""}
+          warn={c.billed > 0 && c.collected / c.billed < 0.5}
+          bar={c.billed > 0 ? (c.collected / c.billed) * 100 : undefined}
+        />
+        <Stat
+          title="Долг сейчас"
+          value={money(a.debt.total)}
+          note={
+            a.debt.orders > 0
+              ? `просрочено ${money(a.debt.overdue)} · ${nf(a.debt.clients)} ${clientWord(a.debt.clients)}`
+              : "никто не должен"
+          }
+          danger={a.debt.overdue > 0}
+        />
+      </div>
+
+      {facts.length > 0 && (
+        <p className="text-xs text-ink-muted -mt-1">{facts.join(" · ")}</p>
+      )}
+
+      <div className="card !p-0 overflow-hidden">
+        <div className="flex gap-1 px-2 border-b border-line-hairline overflow-x-auto scroll-x-hidden">
+          {VIEWS.map((v) => (
+            <Link
+              key={v.key}
+              href={viewHref(v.key)}
+              scroll={false}
+              className={
+                "px-4 py-3 text-sm border-b-2 -mb-px whitespace-nowrap transition-colors " +
+                (view === v.key
+                  ? "border-section-money text-ink-primary font-semibold"
+                  : "border-transparent text-ink-secondary hover:text-ink-primary")
+              }
+            >
+              {v.label}
+            </Link>
+          ))}
+          {view === "debtors" && (
+            <Link href="/finance/debts" className="ml-auto self-center px-3 text-sm text-accent hover:underline whitespace-nowrap">
+              Долги и звонки →
+            </Link>
+          )}
+        </div>
+
+        {view === "breakdown" && (
+          <FinanceBreakdown
+            bare
+            rows={{ manager: a.byManager, company: a.byCompany, method: a.byMethod, terms: a.byTerms }}
+            prevLabel={prevName}
+          />
+        )}
+
+        {view === "weeks" && (
+          <div className="grid lg:grid-cols-2 lg:divide-x divide-line-hairline">
+            <div className="p-4 sm:p-5 space-y-3 min-w-0">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-secondary">
+                <span className="font-semibold text-ink-primary text-sm mr-2">
+                  По неделям
+                  <Hint>Слева — счета заявок, оформленных за неделю, справа — деньги, пришедшие за неделю.</Hint>
+                </span>
+                <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent/35" />выставлено</span>
+                <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />поступило</span>
+              </div>
+              <ul className="space-y-2.5">
+                {a.weeks.map((w) => (
+                  <li key={w.label} className="text-sm">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className={w.future ? "text-ink-muted" : ""}>{w.label}</span>
+                      <span className="tabular-nums text-xs text-ink-secondary whitespace-nowrap">
+                        {w.future && w.billed === 0 && w.cashIn === 0 ? "ещё впереди" : `${money(w.billed)} / ${money(w.cashIn)}`}
+                      </span>
+                    </div>
+                    <div className="mt-1 space-y-0.5">
+                      <div className="h-1.5 rounded-full bg-accent/35" style={{ width: `${(w.billed / maxWeek) * 100}%` }} />
+                      <div className="h-1.5 rounded-full bg-accent" style={{ width: `${(w.cashIn / maxWeek) * 100}%` }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="p-4 sm:p-5 space-y-3 min-w-0 border-t lg:border-t-0 border-line-hairline">
+              <div className="font-semibold text-sm">
+                Возраст долга
+                <Hint>
+                  Сколько дней прошло с доставки (нет даты доставки — с оформления) по каждой неоплаченной заявке.
+                  Реализация (пожарка) долгом не считается.
+                </Hint>
+              </div>
+              {debtAging.length === 0 ? (
+                <p className="text-sm text-ink-muted">Долгов нет.</p>
+              ) : (
+                <>
+                  <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Долг по возрасту">
+                    {debtAging.map((b) => (
+                      <div key={b.key} className={AGING_TONE[b.key]} style={{ width: `${(b.amount / a.debt.total) * 100}%` }} title={`${b.label}: ${money(b.amount)}`} />
+                    ))}
+                  </div>
+                  <ul className="space-y-1.5 text-sm">
+                    {debtAging.map((b) => (
+                      <li key={b.key} className="flex items-baseline gap-2">
+                        <span className={`inline-block w-2.5 h-2.5 rounded-sm ${AGING_TONE[b.key]}`} />
+                        <span className="flex-1 min-w-0">
+                          {b.label} <span className="text-ink-muted">· {nf(b.orders)} {orderWord(b.orders)}</span>
+                        </span>
+                        <span className="tabular-nums text-ink-secondary">{Math.round((b.amount / a.debt.total) * 100)} %</span>
+                        <span className="shrink-0 text-right tabular-nums sm:w-32">{money(b.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {view === "debtors" && (
+          <PagedList
+            what="должников"
+            className="divide-y divide-line-hairline/70"
+            empty={<p className="px-4 py-6 text-sm text-ink-muted">Никто не должен.</p>}
+            items={a.debtors.map((d) => (
               <DebtorLine key={d.clientKey} d={d} />
             ))}
-            {a.debtors.length > 12 && (
-              <li className="px-4 py-2 text-xs text-ink-muted">
-                и ещё {a.debtors.length - 12} —{" "}
-                <Link href="/finance/debts" className="text-accent hover:underline">
-                  весь список
-                </Link>
-              </li>
-            )}
-          </ul>
+          />
         )}
-      </Section>
+      </div>
     </div>
   );
 }
@@ -287,6 +282,7 @@ function Stat({
   hasPrev,
   warn,
   danger,
+  bar,
 }: {
   title: string;
   value: string;
@@ -296,12 +292,23 @@ function Stat({
   hasPrev?: boolean;
   warn?: boolean;
   danger?: boolean;
+  /** Полоска под числом, 0–100. */
+  bar?: number;
 }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-sm text-ink-secondary">{title}</dt>
-      <dd className={`font-display text-xl font-extrabold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}>{value}</dd>
-      <dd className="text-xs text-ink-muted">
+    <div className="card !p-4 sm:!p-5 min-w-0">
+      <div className="text-xs text-ink-muted mb-1.5">{title}</div>
+      <div
+        className={`font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}
+      >
+        {value}
+      </div>
+      {bar !== undefined && (
+        <div className="mt-2 h-1.5 rounded-full bg-surface-sunk overflow-hidden">
+          <div className="h-full rounded-full bg-section-money" style={{ width: `${Math.max(0, Math.min(100, bar))}%` }} />
+        </div>
+      )}
+      <div className="text-xs text-ink-secondary mt-2">
         {hasPrev && now !== undefined && before !== undefined && (
           <>
             <Change now={now} before={before} />
@@ -309,7 +316,7 @@ function Stat({
           </>
         )}
         {note}
-      </dd>
+      </div>
     </div>
   );
 }

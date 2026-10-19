@@ -79,50 +79,54 @@ export default async function ForecastPage({
     .pop();
 
   return (
-    <div className="space-y-5">
+    <div>
       {/* Администратору показываем вкладки раздела «Планы»: у него прогноз
           срезки не отдельный пункт меню, а вкладка внутри планирования. */}
       <PageHeader
         area="forecast"
         title={`Прогноз срезки${farm ? ` · ${farmLabel(farm)}` : ""}`}
-        subtitle="Скачайте шаблон, заполните в Excel и загрузите обратно."
         icon="leaf"
         tabs={role === ROLES.ADMIN ? plansTabsFor(role) : undefined}
+        actions={
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {isAdmin && (
+              <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1">
+                {[
+                  { key: "", label: "Все" },
+                  ...FARM_ORDER.map((f) => ({ key: f, label: farmLabel(f) })),
+                ].map((f) => (
+                  <Link
+                    key={f.key || "all"}
+                    href={farmHref(f.key)}
+                    className={
+                      (farm ?? "") === f.key
+                        ? "rounded-md px-3 py-1.5 text-sm bg-surface shadow-sm font-medium"
+                        : "rounded-md px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary"
+                    }
+                  >
+                    {f.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+            <PeriodPicker period={month} />
+          </div>
+        }
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <PeriodPicker period={month} />
-          {isAdmin && (
-            <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1">
-              {[
-                { key: "", label: "Все" },
-                ...FARM_ORDER.map((f) => ({ key: f, label: farmLabel(f) })),
-              ].map((f) => (
-                <Link
-                  key={f.key || "all"}
-                  href={farmHref(f.key)}
-                  className={
-                    (farm ?? "") === f.key
-                      ? "rounded-md px-3 py-1.5 text-sm bg-surface shadow-sm font-medium"
-                      : "rounded-md px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary"
-                  }
-                >
-                  {f.label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-        <p className="text-sm text-ink-muted">
-          {filledWeeks > 0
-            ? `Заполнено недель: ${filledWeeks} из ${weeks.length}`
-            : "Файл за этот месяц ещё не загружали"}
-          {lastUpdate && ` · последняя правка ${new Date(lastUpdate).toLocaleString("ru-RU")}`}
-        </p>
+      <div className="mb-5">
+        <ForecastImportForm
+          key={`import-${month}-${farm ?? ""}`}
+          month={month}
+          farm={farm}
+          status={
+            <>
+              {filledWeeks > 0 ? `Заполнено недель: ${filledWeeks} из ${weeks.length}` : "Файл за этот месяц ещё не загружали"}
+              {lastUpdate && ` · последняя правка ${new Date(lastUpdate).toLocaleString("ru-RU")}`}
+            </>
+          }
+        />
       </div>
-
-      <ForecastImportForm key={`import-${month}-${farm ?? ""}`} month={month} farm={farm} />
 
       <ForecastView key={`${month}-${farm ?? ""}`} summary={summary} />
     </div>
