@@ -355,12 +355,14 @@ export function botSaleAlertText(input: {
   deliveryDate: string;
   store: string;
   invoices: InvoiceOutcome[];
+  /** Кто оформил: пусто — бот; «ИИ-помощник Ильяса» — помощник на номере менеджера. */
+  who?: string;
 }): string {
   const total = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const sent = input.invoices.filter((i) => i.result === "sent");
   const notSent = input.invoices.filter((i) => i.result !== "sent");
   return [
-    `*Бот оформил заказ №${input.code}*`,
+    `*${input.who || "Бот"} оформил заказ №${input.code}*`,
     "",
     `Клиент: ${[input.clientName, input.phone, input.city].filter(Boolean).join(", ")}`,
     ...input.items.map((i) => `• ${itemName(i.flowerType, i.variety, i.grade)} — ${i.quantity} шт. × ${money(i.unitPrice)}`),

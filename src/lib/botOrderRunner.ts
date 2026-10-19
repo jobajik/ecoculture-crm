@@ -24,7 +24,9 @@ import { apiPayConfig, cancelInvoice } from "./apipay";
 import { issueKaspiInvoice } from "./kaspiIssue";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText, kaspiPhone, prettyKaspiPhone } from "./kaspiInvoice";
 import { stockMap } from "./botKnowledge";
-import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
+import { BOT_MANAGER_EMAIL } from "./botIdentity";
+import { isNotASale } from "./orderKind";
+import { formatGrade, FLOWER_TYPE_LABELS } from "./constants";
 import {
   BOT_DEFAULT_CITY,
   botCancelledText,
@@ -36,6 +38,9 @@ import {
   type InvoiceOutcome,
 } from "./botOrder";
 import { notifyBotSale } from "./botSalesAlert";
+import { BOT_CHANNEL, channelLogText, isChannelOrder, orderNoteHead, type SellerChannel } from "./sellerChannel";
+import { genitiveName } from "./waLines";
+import { notifyLineManager } from "./lineNotify";
 import type { KaspiInvoice, OrderWithItems } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -50,14 +55,14 @@ const waPhoneText = (phone: string) => {
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\s/g, " ")} ₸`;
 
-/** Заявки бота этого номера за 14 дней, свежие сверху. */
-function botOrdersOf(orders: OrderWithItems[], phone: string, clientId: string): OrderWithItems[] {
+/** Заявки бота (или помощника номера менеджера — `ch`) этого номера за 14 дней, свежие сверху. */
+function botOrdersOf(orders: OrderWithItems[], phone: string, clientId: string, ch: SellerChannel = BOT_CHANNEL): OrderWithItems[] {
   const key = phoneKey(phone);
   const since = Date.now() - 14 * 24 * 3600000;
   return orders
     .filter(
       (o) =>
-        isBotEmail(o.managerEmail) &&
+        isChannelOrder(o, ch) &&
         o.status !== ORDER_STATUSES.CANCELLED &&
         Date.parse(o.createdAt || "") >= since &&
         ((key && phoneKey(o.clientPhone) === key) || (clientId && o.clientId === clientId))
@@ -72,14 +77,14 @@ function lastInvoice(invoices: KaspiInvoice[], orderId: string, farm: string): K
 }
 
 /** Выставить счёт на неоплаченную часть одной компании; что вышло — для текста. */
-async function invoicePart(order: OrderWithItems, farm: string, amount: number, phone: string): Promise<InvoiceOutcome> {
+async function invoicePart(order: OrderWithItems, farm: string, amount: number, phone: string, actorEmail: string = BOT_MANAGER_EMAIL): Promise<InvoiceOutcome> {
   const farmLabel = FARM_LABELS[farm] ?? farm;
   const num = kaspiPhone(phone);
   if (!apiPayConfig(farm)) return { farmLabel, amount, result: "manual", phone: num };
   if (!num) return { farmLabel, amount, result: "failed", phone: "", error: "нет номера Kaspi" };
   try {
     // Бот действует как система: права «кто выставляет счёт» — у бухгалтера и админа.
-    await issueKaspiInvoice({ orderId: order.orderId, farm, phone: num, amount, email: BOT_MANAGER_EMAIL, role: ROLES.ADMIN });
+    await issueKaspiInvoice({ orderId: order.orderId, farm, phone: num, amount, email: actorEmail, role: ROLES.ADMIN });
     return { farmLabel, amount, result: "sent", phone: num };
   } catch (err) {
     return { farmLabel, amount, result: "failed", phone: num, error: err instanceof Error ? err.message : String(err) };
@@ -102,8 +107,12 @@ export async function placeBotOrder(input: {
   senderName: string;
   draft: BotOrderDraft;
   kaspiPhone: string;
+  /** Кто продаёт: бот (по умолчанию) или помощник на номере менеджера — тогда заявка и новая карточка на менеджера. */
+  channel?: SellerChannel;
 }): Promise<{ text: string; orderId: string; note: string }> {
   const { draft, phone } = input;
+  const ch = input.channel ?? BOT_CHANNEL;
+  const who = ch.line ? `ИИ-помощник${ch.managerName ? ` ${genitiveName(ch.managerName)}` : ""}` : "";
   try {
     await prefetchTables([
       SHEET_TABS.CLIENTS,
@@ -149,7 +158,7 @@ export async function placeBotOrder(input: {
       const lead = key ? (await listLeads()).find((l) => phoneKey(l.phone) === key && l.stage !== "lost") : undefined;
       if (lead) {
         city = lead.city || draft.city || BOT_DEFAULT_CITY;
-        const linked = await ensureClientForLead(lead, BOT_MANAGER_EMAIL, { city });
+        const linked = await ensureClientForLead(lead, ch.managerEmail, { city });
         clientId = linked.clientId;
         clientName = lead.name;
       } else {
@@ -167,10 +176,8 @@ export async function placeBotOrder(input: {
           address: draft.address,
           paymentTerms: "",
           source: "Написали в WhatsApp",
-          note: draft.shopName && draft.city
-            ? "Клиента завёл бот WhatsApp"
-            : "Клиента завёл бот WhatsApp — уточнить название точки и город",
-          managerEmail: BOT_MANAGER_EMAIL,
+          note: `Клиента завёл ${who || "бот WhatsApp"}${draft.shopName && draft.city ? "" : " — уточнить название точки и город"}`,
+          managerEmail: ch.managerEmail,
           paymentMethod: "Каспи",
           kaspiPay1: "",
           kaspiPay2: "",
@@ -183,7 +190,7 @@ export async function placeBotOrder(input: {
     // второй заявки не будет: та же заявка за последние 30 минут.
     const signature = (items: { flowerType: string; variety: string; grade: string; quantity: number }[]) =>
       items.map((i) => `${i.flowerType}|${i.variety}|${i.grade}|${i.quantity}`).sort().join(";");
-    const recent = botOrdersOf(await listOrdersWithItems(), phone, clientId).find(
+    const recent = botOrdersOf(await listOrdersWithItems(), phone, clientId, ch).find(
       (o) => Date.now() - Date.parse(o.createdAt) < 30 * 60000 && signature(o.items) === signature(plan.items)
     );
     if (recent) {
@@ -195,14 +202,14 @@ export async function placeBotOrder(input: {
     }
 
     const notes = [
-      "Заказ принял бот WhatsApp.",
+      orderNoteHead(ch),
       draft.address ? `Адрес: ${draft.address}.` : "",
       draft.note ? `Пожелания: ${draft.note}.` : "",
     ]
       .filter(Boolean)
       .join(" ");
     const orderId = await createOrder({
-      managerEmail: BOT_MANAGER_EMAIL,
+      managerEmail: ch.managerEmail,
       confirmed: true,
       paymentMethod: "Каспи",
       clientId,
@@ -215,10 +222,10 @@ export async function placeBotOrder(input: {
       items: plan.items.map((i) => ({ ...i, flowerType: i.flowerType as never })),
     });
     await logMoney({
-      actorEmail: BOT_MANAGER_EMAIL,
+      actorEmail: ch.managerEmail,
       orderId,
       action: MONEY_LOG_ACTIONS.MANAGER_CONFIRMED,
-      details: "Подтверждена клиентом в WhatsApp (бот)",
+      details: channelLogText(ch, "Подтверждена клиентом в WhatsApp"),
       amountBefore: 0,
       amountAfter: 0,
     });
@@ -226,7 +233,7 @@ export async function placeBotOrder(input: {
     const order = await getOrderById(orderId);
     const invoices: InvoiceOutcome[] = [];
     if (order) {
-      for (const part of dueParts(order)) invoices.push(await invoicePart(order, part.farm, part.due, input.kaspiPhone || phone));
+      for (const part of dueParts(order)) invoices.push(await invoicePart(order, part.farm, part.due, input.kaspiPhone || phone, ch.managerEmail));
     }
     const code = orderCode(orderId);
     let text = botOrderText({
@@ -241,19 +248,21 @@ export async function placeBotOrder(input: {
     if (invoices.some((i) => i.result === "failed" && !i.phone)) {
       text += "\nНапишите номер, к которому привязан ваш Kaspi, — выставлю счёт на него.";
     }
-    // Команде — «бот продал» (Руслан, владелец, Данияр: настройка BotSalesPhones).
-    await notifyBotSale(
-      botSaleAlertText({
-        code,
-        clientName,
-        phone: waPhoneText(phone),
-        city,
-        items: plan.items,
-        deliveryDate: plan.deliveryDate,
-        store,
-        invoices,
-      })
-    );
+    // Команде — «бот продал» (Руслан, владелец, Данияр: настройка BotSalesPhones); заказ помощника — ещё и
+    // самому менеджеру номера (владелец, 19.10: «Ильяс получает сообщение „оформил заказ №…“»).
+    const saleText = botSaleAlertText({
+      code,
+      clientName,
+      phone: waPhoneText(phone),
+      city,
+      items: plan.items,
+      deliveryDate: plan.deliveryDate,
+      store,
+      invoices,
+      who,
+    });
+    await notifyBotSale(saleText);
+    if (ch.line) await notifyLineManager(ch.line, saleText);
     const total = plan.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
     const problems = invoices
       .filter((i) => i.result !== "sent")
@@ -273,7 +282,7 @@ export async function placeBotOrder(input: {
  * Клиент прислал другой номер для Kaspi: заново выставить счета по заявкам
  * бота, у которых последний счёт не дошёл, истёк или отменён. Пусто — нечего.
  */
-export async function reissueBotInvoices(phone: string, newPhone: string): Promise<string> {
+export async function reissueBotInvoices(phone: string, newPhone: string, ch: SellerChannel = BOT_CHANNEL): Promise<string> {
   // Пустой номер — «выставьте ещё раз»: на тот же номер, что и прошлый счёт.
   const given = kaspiPhone(newPhone);
   if (newPhone && !given) return "";
@@ -281,13 +290,13 @@ export async function reissueBotInvoices(phone: string, newPhone: string): Promi
     await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.KASPI_INVOICES]);
     const [orders, invoices] = await Promise.all([listOrdersWithItems(), listKaspiInvoices({ fresh: true })]);
     const lines: string[] = [];
-    for (const order of botOrdersOf(orders, phone, "")) {
+    for (const order of botOrdersOf(orders, phone, "", ch)) {
       for (const part of dueParts(order)) {
         const last = lastInvoice(invoices, order.orderId, part.farm);
         if (last && (isOpenKaspiStatus(last.status) || isPaidKaspiStatus(last.status))) continue;
         const num = given || kaspiPhone(last?.phone) || kaspiPhone(phone);
         if (!num) continue;
-        const r = await invoicePart(order, part.farm, part.due, num);
+        const r = await invoicePart(order, part.farm, part.due, num, ch.managerEmail);
         if (r.result === "sent") lines.push(`Выставил счёт Kaspi по заказу №${orderCode(order.orderId)} на ${money(part.due)} на номер ${prettyKaspiPhone(num)} — оплатите в приложении Kaspi.`);
       }
     }
@@ -305,11 +314,11 @@ export async function reissueBotInvoices(phone: string, newPhone: string): Promi
  * один такой заказ — отменяется он. Открытый счёт Kaspi отменяется тоже: иначе
  * клиент оплатит заказ, которого нет.
  */
-export async function cancelBotOrder(phone: string, code: string): Promise<{ text: string; note: string; cancelled: boolean }> {
+export async function cancelBotOrder(phone: string, code: string, ch: SellerChannel = BOT_CHANNEL): Promise<{ text: string; note: string; cancelled: boolean }> {
   try {
     await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.KASPI_INVOICES]);
     const [orders, invoices] = await Promise.all([listOrdersWithItems(), listKaspiInvoices({ fresh: true })]);
-    const mine = botOrdersOf(orders, phone, "");
+    const mine = botOrdersOf(orders, phone, "", ch);
     const want = code.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
     const unpaid = mine.filter((o) => !(Number(o.paidAmount) > 1) && o.items.every((i) => i.shippedQuantity === 0));
     const order = mine.find((o) => orderCode(o.orderId).toUpperCase() === want) ?? (unpaid.length === 1 ? unpaid[0] : undefined);
@@ -335,10 +344,10 @@ export async function cancelBotOrder(phone: string, code: string): Promise<{ tex
     }
     await updateOrderStatus(order.orderId, ORDER_STATUSES.CANCELLED);
     await logMoney({
-      actorEmail: BOT_MANAGER_EMAIL,
+      actorEmail: ch.managerEmail,
       orderId: order.orderId,
       action: MONEY_LOG_ACTIONS.ORDER_CANCELLED,
-      details: "Клиент отказался в WhatsApp (бот)",
+      details: channelLogText(ch, "Клиент отказался в WhatsApp"),
       amountBefore: order.totalAmount,
       amountAfter: 0,
     });
@@ -349,8 +358,43 @@ export async function cancelBotOrder(phone: string, code: string): Promise<{ tex
   }
 }
 
+/**
+ * Клиент менеджера глазами помощника (19.10.2026, владелец: «знает клиента Ильяса»): что и когда брал у
+ * любого менеджера, сколько должен, что берёт обычно и как давно не заказывал. Только факты из базы.
+ */
+export function clientHistoryLines(input: { orders: OrderWithItems[]; phone: string; clientId: string; now: Date }): string[] {
+  const key = phoneKey(input.phone);
+  const mine = input.orders
+    .filter(
+      (o) =>
+        o.status !== ORDER_STATUSES.CANCELLED &&
+        !isNotASale(o) &&
+        ((input.clientId && o.clientId === input.clientId) || (key && phoneKey(o.clientPhone) === key))
+    )
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  if (mine.length === 0) return ["Заказов у клиента в базе ещё не было."];
+  const lines: string[] = [];
+  const days = Math.floor((input.now.getTime() - Date.parse(mine[0].createdAt)) / 86400000);
+  lines.push(`Заказов в базе: ${mine.length}; последний — ${mine[0].createdAt.slice(0, 10)}${Number.isFinite(days) ? ` (${days} дн. назад)` : ""}.`);
+  const debt = mine.reduce((s, o) => s + Math.max(0, o.totalAmount - Math.min(o.paidAmount, o.totalAmount)), 0);
+  if (debt >= 1) lines.push(`Долг клиента сейчас: ${money(debt)}. О долге сам не напоминай (это дело менеджера); просит в долг или отсрочку — alert.`);
+  const qty = new Map<string, number>();
+  for (const o of mine.slice(0, 15)) for (const i of o.items) {
+    const name = `${FLOWER_TYPE_LABELS[i.flowerType] ?? i.flowerType} ${i.variety}, ${formatGrade(i.grade)}`;
+    qty.set(name, (qty.get(name) ?? 0) + i.quantity);
+  }
+  const usual = Array.from(qty.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  if (usual.length) lines.push(`Обычно берёт: ${usual.map(([n, q]) => `${n} (всего ${q} шт.)`).join("; ")}.`);
+  for (const o of mine.slice(0, 5)) {
+    const items = o.items.map((i) => `${i.variety} ${formatGrade(i.grade)} ${i.quantity} шт. по ${money(i.unitPrice)}`).join(", ");
+    const paid = o.paidAmount >= o.totalAmount - 1 ? "оплачен" : o.paidAmount > 1 ? `оплачен частично, остаток ${money(o.totalAmount - o.paidAmount)}` : "не оплачен";
+    lines.push(`• ${o.createdAt.slice(0, 10)}: ${items} — ${money(o.totalAmount)}, ${paid}, ${o.status === ORDER_STATUSES.SHIPPED ? "отгружен" : "не отгружен"}.`);
+  }
+  return lines;
+}
+
 /** Что бот знает о клиенте: карточка и его заказы через бота — для подсказки модели. */
-export async function botClientContext(phone: string): Promise<string> {
+export async function botClientContext(phone: string, ch: SellerChannel = BOT_CHANNEL): Promise<string> {
   try {
     await prefetchTables([SHEET_TABS.CLIENTS, SHEET_TABS.LEADS, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.KASPI_INVOICES]);
     const [clients, leads, orders, invoices] = await Promise.all([listClients(), listLeads(), listOrdersWithItems(), listKaspiInvoices()]);
@@ -362,6 +406,8 @@ export async function botClientContext(phone: string): Promise<string> {
       lines.push(`Клиент в базе: «${client.name}», город ${client.city || "не указан"}.`);
       // Условия оплаты из карточки: «По факту» / «Отсрочка N дней» — оплата после отгрузки для него нормальна.
       if (client.paymentTerms) lines.push(`Условия оплаты по карточке: ${client.paymentTerms}.`);
+      if (ch.line && client.paymentMethod) lines.push(`Чем обычно платит: ${client.paymentMethod}.`);
+      if (ch.line && client.managerEmail && client.managerEmail.toLowerCase() !== ch.managerEmail) lines.push("Карточка клиента записана на другого менеджера — продавай как обычно, заказ будет твой.");
     }
     else if (lead) lines.push(`Клиент есть в лидах: «${lead.name}», город ${lead.city || "не указан — спроси город доставки"}.`);
     else
@@ -369,7 +415,12 @@ export async function botClientContext(phone: string): Promise<string> {
         "Клиента нет в базе. Название точки и город НЕ спрашивай до заказа: назвал позицию и количество — оформляй сразу " +
           "(shopName и city — если прозвучали в переписке, иначе пусто; карточка заведётся сама, город по умолчанию Алматы)."
       );
-    const mine = botOrdersOf(orders, phone, client?.clientId ?? "").slice(0, 5);
+    // Помощник менеджера знает всю историю клиента (у любого менеджера): что брал, долг, что обычно.
+    if (ch.line && (client || lead)) {
+      lines.push("История заказов:", ...clientHistoryLines({ orders, phone, clientId: client?.clientId ?? "", now: new Date() }));
+    }
+    const mine = botOrdersOf(orders, phone, client?.clientId ?? "", ch).slice(0, 5);
+    if (ch.line && mine.length) lines.push("Заказы, которые оформил ты (счета Kaspi):");
     for (const o of mine) {
       const items = o.items.map((i) => `${i.variety} ${i.grade} ${i.quantity} шт.`).join(", ");
       const parts = farmPayments(o).map((p) => {
@@ -392,4 +443,4 @@ export async function botClientContext(phone: string): Promise<string> {
   }
 }
 
-export { dueParts, lastInvoice, botOrdersOf, invoicePart };
+export { dueParts, lastInvoice, botOrdersOf, invoicePart, money as moneyText };

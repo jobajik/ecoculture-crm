@@ -10,7 +10,7 @@ import { pullLineHistory, setupLine } from "@/lib/leadsLineSetup";
 import { sealSecret } from "@/lib/secretBox";
 import { listUsers } from "@/lib/repo/users";
 import { listWaLines, managerLineConfig, saveWaLine, updateWaLine } from "@/lib/repo/waLines";
-import { lineCodeFor, lineInputRefusal, type AssistantMode, type WaLine } from "@/lib/waLines";
+import { lineCodeFor, lineInputRefusal, parseAssistantMode, type AssistantMode, type WaLine } from "@/lib/waLines";
 
 /**
  * «Настройки → WhatsApp менеджеров» (16.10.2026). Подключает номера только администратор: ключ даёт
@@ -142,7 +142,7 @@ async function setWaLineModeActionInner(code: string, input: { assistant?: strin
   await requireAdmin();
   await lineByCode(code);
   const changes: Record<string, string> = { UpdatedAt: new Date().toISOString() };
-  if (input.assistant !== undefined) changes.Assistant = (input.assistant === "off" ? "off" : "on") as AssistantMode;
+  if (input.assistant !== undefined) changes.Assistant = parseAssistantMode(input.assistant) as AssistantMode;
   if (input.active !== undefined) changes.Active = input.active ? "TRUE" : "FALSE";
   await updateWaLine(code, changes);
   refresh();

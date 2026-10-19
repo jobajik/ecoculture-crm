@@ -10,6 +10,7 @@ import { isInfoPhoto, nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhot
 import { photoFileUrl } from "./catalogFiles";
 import { botPhotoSentWrite } from "./repo/botPhotos";
 import { phoneKey } from "./leads";
+import { mergeMessages, messageText } from "./whatsapp";
 import { parsePush, pushItemFor, SALES_PUSH_SETTING } from "./salesPush";
 import { botSettingsFrom, EMPTY_NUDGE, pushContext } from "./broadcast";
 import { NUDGE_DECISION_SCHEMA, NUDGE_GAPS_HOURS, nudgeDecisionPrompt, nudgeDue, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
@@ -31,6 +32,12 @@ import { notifyBotSale } from "./botSalesAlert";
 import { dueParts, invoicePart, lastInvoice } from "./botOrderRunner";
 import type { KaspiInvoice } from "./types";
 import { invoiceReminderBlocked } from "./botTurn";
+import { isAssistantOrder } from "./sellerChannel";
+import { sendLineOrderMessage } from "./lineSeller";
+import { notifyLineManager } from "./lineNotify";
+import { listAssistantLog, listWaLines } from "./repo/waLines";
+import { listWaMessages } from "./repo/talks";
+import type { BotChat } from "./broadcast";
 
 // ---------------------------------------------------------------------------
 // Бот доводит заказ до денег: пишет клиенту, когда оплата пришла или счёт не
@@ -81,7 +88,12 @@ export async function onBotInvoiceUpdate(invoice: KaspiInvoice, status: string, 
     const declined = status === "cancelled" && invoice.status !== "cancelling";
     if (!paid && status !== "error" && !declined) return;
     const order = await getOrderById(invoice.orderId);
-    if (!order || !isBotEmail(order.managerEmail) || !order.clientPhone) return;
+    if (!order || !order.clientPhone) return;
+    // Заказ помощника номера менеджера (19.10.2026) — клиенту пишем с ТОГО номера, где он заказывал.
+    const assistant = !isBotEmail(order.managerEmail) && isAssistantOrder(order);
+    if (!isBotEmail(order.managerEmail) && !assistant) return;
+    const send = (text: string, note = "") =>
+      assistant ? sendLineOrderMessage(order.managerEmail, order.clientPhone, text, note) : sendBotMessage(order.clientPhone, text, note);
     const code = orderCode(order.orderId);
     if (declined) {
       if (order.status === ORDER_STATUSES.CANCELLED || order.paid) return;
@@ -90,17 +102,16 @@ export async function onBotInvoiceUpdate(invoice: KaspiInvoice, status: string, 
         (i) => i.orderId === invoice.orderId && i.farm === invoice.farm && i.invoiceId !== invoice.invoiceId && i.createdAt > invoice.createdAt
       );
       if (newer) return;
-      await sendBotMessage(order.clientPhone, botDeclinedText({ code, amount: invoice.amount }), `внимание: клиент отклонил счёт Kaspi по заказу №${code}`);
+      await send(botDeclinedText({ code, amount: invoice.amount }), `внимание: клиент отклонил счёт Kaspi по заказу №${code}`);
       return;
     }
     const text = paid
       ? botPaidText({ code, amount: invoice.amount, fullyPaid: order.paid, deliveryDate: order.deliveryDate })
       : botInvoiceErrorText({ code, phone: invoice.phone, reason: kaspiErrorText(errorCode, errorMessage) });
-    await sendBotMessage(order.clientPhone, text);
+    await send(text);
     if (paid) {
-      // Команде — «оплачено, можно собирать» (настройка BotSalesPhones).
-      await notifyBotSale(
-        botPaidAlertText({
+      // Команде — «оплачено, можно собирать» (настройка BotSalesPhones); заказ помощника — и менеджеру номера.
+      const paidText = botPaidAlertText({
           code,
           clientName: order.clientName,
           amount: invoice.amount,
@@ -109,8 +120,12 @@ export async function onBotInvoiceUpdate(invoice: KaspiInvoice, status: string, 
           items: order.items,
           deliveryDate: order.deliveryDate,
           store: order.store,
-        })
-      );
+        });
+      await notifyBotSale(paidText);
+      if (assistant) {
+        const line = (await listWaLines()).find((l) => l.active && l.assistant === "sell" && l.managerEmail === order.managerEmail.trim().toLowerCase());
+        if (line) await notifyLineManager(line.code, paidText);
+      }
     }
   } catch (err) {
     console.error("bot invoice follow-up:", err instanceof Error ? err.message : err);
@@ -147,16 +162,38 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
       listBotChats().catch(() => [] as Awaited<ReturnType<typeof listBotChats>>),
     ]);
     const since = now.getTime() - 7 * 24 * 3600000;
+    // Заказы помощника на номере менеджера (19.10.2026) напоминаются с ТОГО номера; переписка — из WaMessages.
+    const sellLines = (await listWaLines()).filter((l) => l.active && l.assistant === "sell");
+    let lineData: { messages: Awaited<ReturnType<typeof listWaMessages>>; autoIds: Set<string> } | null = null;
+    const lineChat = async (code: string, phone: string): Promise<Pick<BotChat, "mode" | "humanAt" | "handoffAt" | "handoffReason" | "context">> => {
+      if (!lineData) {
+        const [messages, log] = await Promise.all([listWaMessages({ lines: "all" }), listAssistantLog()]);
+        lineData = { messages, autoIds: new Set(log.filter((r) => r.kind === "auto" || r.kind === "nudge").map((r) => r.messageId)) };
+      }
+      const key = phoneKey(phone);
+      const chat = mergeMessages(lineData.messages.filter((m) => m.line === code && phoneKey(m.phone) === key));
+      const human = [...chat].reverse().find((m) => m.direction === "out" && !lineData!.autoIds.has(m.messageId));
+      return {
+        mode: "bot",
+        humanAt: human?.at ?? "",
+        handoffAt: "",
+        handoffReason: "",
+        context: chat.map((m) => ({ role: m.direction === "in" ? ("client" as const) : ("us" as const), text: messageText(m), at: m.at })),
+      };
+    };
     for (const order of orders) {
-      if (!isBotEmail(order.managerEmail) || order.status === ORDER_STATUSES.CANCELLED || order.paid || !order.clientPhone) continue;
+      if (order.status === ORDER_STATUSES.CANCELLED || order.paid || !order.clientPhone) continue;
+      const line = !isBotEmail(order.managerEmail) && isAssistantOrder(order) ? sellLines.find((l) => l.managerEmail === order.managerEmail.trim().toLowerCase()) : undefined;
+      if (!isBotEmail(order.managerEmail) && !line) continue;
+      const remindEmail = line ? `assistant:${line.code}` : BOT_MANAGER_EMAIL;
       const created = Date.parse(order.createdAt || "");
       if (!(created >= since) || now.getTime() - created < REMIND_AFTER_HOURS * 3600000) continue;
       const lastReminder = reminders
-        .filter((r) => r.orderIds.includes(order.orderId) && r.sentByEmail === BOT_MANAGER_EMAIL)
+        .filter((r) => r.orderIds.includes(order.orderId) && r.sentByEmail === remindEmail)
         .reduce((max, r) => Math.max(max, Date.parse(r.sentAt) || 0), 0);
       if (now.getTime() - lastReminder < REMIND_GAP_HOURS * 3600000) continue;
       // Клиент после заказа спорил об оплате, писал менеджер или была тревога про оплату — не напоминаем (`botTurn.ts`).
-      const chat = chats.find((c) => phoneKey(c.phone) === phoneKey(order.clientPhone)) ?? null;
+      const chat = line ? await lineChat(line.code, order.clientPhone) : chats.find((c) => phoneKey(c.phone) === phoneKey(order.clientPhone)) ?? null;
       if (invoiceReminderBlocked(chat, order.createdAt)) continue;
 
       const texts: string[] = [];
@@ -175,7 +212,7 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
           texts.push(botDeclinedReminderText({ code: orderCode(order.orderId), amount: part.due }));
           amount += part.due;
         } else if (last.status === "expired") {
-          const r = await invoicePart(order, part.farm, part.due, last.phone);
+          const r = await invoicePart(order, part.farm, part.due, last.phone, line ? order.managerEmail : BOT_MANAGER_EMAIL);
           if (r.result === "sent") {
             texts.push(botReminderText({ code: orderCode(order.orderId), amount: part.due, reissued: true }));
             amount += part.due;
@@ -186,7 +223,7 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
       let messageId = "";
       let error = "";
       try {
-        messageId = await sendBotMessage(order.clientPhone, texts.join("\n"));
+        messageId = line ? await sendLineOrderMessage(order.managerEmail, order.clientPhone, texts.join("\n")) : await sendBotMessage(order.clientPhone, texts.join("\n"));
         sent += 1;
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
@@ -199,7 +236,7 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
         amount,
         messageId,
         kaspiInvoices: "",
-        sentByEmail: BOT_MANAGER_EMAIL,
+        sentByEmail: remindEmail,
         error,
       });
     }

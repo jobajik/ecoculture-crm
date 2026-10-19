@@ -2,14 +2,17 @@ import { chatJson, openAiConfigured } from "./openai";
 import { salesKnowledge } from "./botEngine";
 import { toWhatsApp } from "./botOrder";
 import { sendText } from "./greenApi";
-import { staffPhoneKeys } from "./botSalesAlert";
+import { ourPhoneKeys } from "./lineNotify";
 import { phoneKey } from "./leads";
 import { mergeMessages, messageText } from "./whatsapp";
 import { appendWaMessages, listWaMessages } from "./repo/talks";
 import { settingsMap } from "./repo/broadcasts";
+import { saveSettings } from "./repo/settings";
+import { chainBusy, parseChainLock } from "./autoBroadcast";
 import { listUsers } from "./repo/users";
 import { appendAssistantLog, listAssistantLog, listWaLines, managerLineConfig } from "./repo/waLines";
 import { assistantVerdict, type WaLine } from "./waLines";
+import { sellerTurn } from "./lineSeller";
 import type { WaMessage } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -172,6 +175,10 @@ export interface SweepResult {
   replied: number;
   notes: number;
   skipped: string[];
+  /** Клиент ждёт, ответить можно будет через столько мс (режим «продаёт сам») — сторожу номера ждать. */
+  pendingMs?: number;
+  /** Номера в режиме «продаёт сам», где кто-то ждёт: общий проход их не трогает, а будит сторожа номера. */
+  watch?: string[];
 }
 
 /**
@@ -181,34 +188,46 @@ export interface SweepResult {
  * никто не ответил (журнал перечитывается свежим перед каждой отправкой).
  */
 export async function runAssistantSweep(
-  options: { limit?: number; budgetMs?: number; only?: { line: string; phone: string }; quick?: boolean } = {}
+  options: {
+    limit?: number;
+    budgetMs?: number;
+    only?: { line: string; phone?: string };
+    quick?: boolean;
+    /** Проход сторожа номера «продаёт сам» (`/api/assistant/sweep?watch=…`): только он отвечает на таких номерах. */
+    watcher?: boolean;
+  } = {}
 ): Promise<SweepResult> {
-  const result: SweepResult = { checked: 0, replied: 0, notes: 0, skipped: [] };
+  const result: SweepResult = { checked: 0, replied: 0, notes: 0, skipped: [], watch: [] };
   if (!openAiConfigured()) return result;
   const started = Date.now();
-  const lines = (await listWaLines()).filter((l) => l.active && l.assistant === "on" && (!options.only || l.code === options.only.line));
+  const lines = (await listWaLines()).filter((l) => l.active && l.assistant !== "off" && (!options.only || l.code === options.only.line));
   if (lines.length === 0) return result;
   const codes = new Set(lines.map((l) => l.code));
   const [messages, log, map] = await Promise.all([listWaMessages({ lines: "all" }), listAssistantLog(), settingsMap()]);
-  const autoIds = new Set(log.filter((r) => r.kind === "auto").map((r) => r.messageId));
-  const staff = staffPhoneKeys(map);
-  for (const l of await listWaLines()) if (l.phone) staff.add(phoneKey(l.phone));
+  const autoIds = new Set(log.filter((r) => r.kind === "auto" || r.kind === "nudge").map((r) => r.messageId));
+  const staff = await ourPhoneKeys(map);
   const now = new Date();
 
-  type Due = { line: WaLine; phone: string; chat: WaMessage[]; lastInAt: string };
+  type Due = { line: WaLine; phone: string; chat: WaMessage[]; lastInAt: string; lastIn: WaMessage };
   const due: Due[] = [];
   for (const line of lines) {
     const byKey = new Map<string, WaMessage[]>();
     for (const m of messages) {
       if (m.line !== line.code || !codes.has(m.line)) continue;
       const key = phoneKey(m.phone);
-      if (!key || (options.only && key !== phoneKey(options.only.phone))) continue;
+      if (!key || (options.only?.phone && key !== phoneKey(options.only.phone))) continue;
       byKey.set(key, [...(byKey.get(key) ?? []), m]);
     }
     for (const [key, chat] of Array.from(byKey.entries())) {
       result.checked++;
       const v = assistantVerdict({ chat, autoIds, now, staff: staff.has(key), mode: line.assistant, quick: options.quick });
-      if (v.due && v.lastIn) due.push({ line, phone: v.lastIn.phone, chat, lastInAt: v.lastIn.at });
+      if (line.assistant === "sell" && !options.watcher) {
+        // Номер «продаёт сам» ведёт только его сторож (один на номер, под замком) — иначе два прохода ответили бы дважды.
+        if ((v.due || v.retryInMs) && !result.watch!.includes(line.code)) result.watch!.push(line.code);
+        continue;
+      }
+      if (v.due && v.lastIn) due.push({ line, phone: v.lastIn.phone, chat, lastInAt: v.lastIn.at, lastIn: v.lastIn });
+      else if (v.retryInMs && line.assistant === "sell") result.pendingMs = Math.min(result.pendingMs ?? Infinity, v.retryInMs);
     }
   }
   // Дольше ждущие — первыми.
@@ -216,7 +235,11 @@ export async function runAssistantSweep(
   const limit = options.limit ?? 6;
   const names = new Map<string, string>();
   for (const d of due) {
-    if (result.replied >= limit || Date.now() - started > (options.budgetMs ?? 30000)) break;
+    if (result.replied >= limit || Date.now() - started > (options.budgetMs ?? 30000)) {
+      // Не успели — сторож номера «продаёт сам» вернётся к ним сразу.
+      if (d.line.assistant === "sell") result.pendingMs = Math.min(result.pendingMs ?? Infinity, 1000);
+      break;
+    }
     // Свежий журнал: другой проход мог ответить этому клиенту секунду назад.
     const fresh = await listAssistantLog({ fresh: true });
     if (fresh.some((r) => r.kind === "auto" && r.line === d.line.code && phoneKey(r.phone) === phoneKey(d.phone) && r.at > d.lastInAt)) {
@@ -225,6 +248,13 @@ export async function runAssistantSweep(
     }
     try {
       if (!names.has(d.line.managerEmail)) names.set(d.line.managerEmail, await managerNameOf(d.line.managerEmail));
+      if (d.line.assistant === "sell") {
+        // Продающий помощник: тот же продавец, что бот, — с заказом, счётом и фото (`lineSeller.ts`).
+        const r = await sellerTurn({ line: d.line, phone: d.phone, chat: d.chat, lastIn: d.lastIn, managerName: names.get(d.line.managerEmail) ?? "" });
+        if (r.sent) result.replied++;
+        else result.skipped.push(`…${d.phone.slice(-4)}: ${r.why}`);
+        continue;
+      }
       const a = await assistantAnswer(d.chat, d.phone, names.get(d.line.managerEmail) ?? "", AUTO_TASK);
       if (a.silent) {
         result.skipped.push(`…${d.phone.slice(-4)}: ИИ решил промолчать`);
@@ -274,6 +304,69 @@ export async function kickAssistantChat(origin: string, line: string, phone: str
       headers: { Authorization: `Bearer ${secret}` },
       signal: AbortSignal.timeout(1500),
     });
+  } catch {
+    // Оборвали сами.
+  }
+}
+
+// --- Сторож номера «продаёт сам» ------------------------------------------------------
+//
+// Владелец выбрал «отвечать, если менеджер молчит 5 минут». Расписание у Vercel — раз в час, а вебхук
+// не может ждать 5 минут, поэтому на номер — один сторож: функция под замком (настройка
+// `AssistantWatch:<код>`, тот же приём, что у цепочки рассылок) проходит по чатам номера, отвечает тем,
+// кому пора, ждёт до ближайшего «пора» (не дольше ~50 с) и, если кто-то ещё ждёт, будит себя снова.
+// Никто не ждёт (менеджер ответил, ночь) — отпускает замок. Будят: вебхук номера на входящем, общий
+// проход помощника и расписание раз в час.
+
+const WATCH_PREFIX = "AssistantWatch:";
+const WATCH_STEP_MS = 50000;
+const WATCH_MAX_HOPS = 40;
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function runLineWatch(
+  code: string,
+  origin: string,
+  token: string,
+  hop: number
+): Promise<{ ok: boolean; busy?: boolean; handed?: boolean; replied: number; skipped: string[] }> {
+  const key = `${WATCH_PREFIX}${code}`;
+  const my = token || `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const lock = parseChainLock((await settingsMap(true))[key]);
+  if (chainBusy(lock, my, new Date())) return { ok: true, busy: true, replied: 0, skipped: [] };
+  await saveSettings({ [key]: JSON.stringify({ token: my, at: new Date().toISOString(), note: `шаг ${hop}` }) });
+  await pause(1200);
+  if (parseChainLock((await settingsMap(true))[key]).token !== my) return { ok: true, busy: true, replied: 0, skipped: [] };
+  const started = Date.now();
+  let replied = 0;
+  const skipped: string[] = [];
+  for (;;) {
+    const r = await runAssistantSweep({ only: { line: code }, limit: 3, budgetMs: 25000, watcher: true });
+    replied += r.replied;
+    skipped.push(...r.skipped);
+    const pending = r.pendingMs;
+    const left = WATCH_STEP_MS - (Date.now() - started);
+    if (!pending || !Number.isFinite(pending)) break;
+    if (pending <= left - 3000) {
+      await pause(pending);
+      continue;
+    }
+    if (hop >= WATCH_MAX_HOPS) break;
+    await pause(Math.max(0, Math.min(pending, left) - 1500));
+    await saveSettings({ [key]: JSON.stringify({ token: my, at: new Date().toISOString(), note: `шаг ${hop + 1}` }) }).catch(() => undefined);
+    await kickLineWatch(origin, code, my, hop + 1);
+    return { ok: true, handed: true, replied, skipped };
+  }
+  await saveSettings({ [key]: "" }).catch(() => undefined);
+  return { ok: true, replied, skipped };
+}
+
+/** Разбудить сторожа номера «продаёт сам» (запрос обрывается через 1,5 с — сторож идёт своей функцией). */
+export async function kickLineWatch(origin: string, code: string, token = "", hop = 0): Promise<void> {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || !origin) return;
+  try {
+    const q = new URLSearchParams({ watch: code, hop: String(hop), ...(token ? { token } : {}) });
+    await fetch(`${origin}/api/assistant/sweep?${q.toString()}`, { headers: { Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(1500) });
   } catch {
     // Оборвали сами.
   }

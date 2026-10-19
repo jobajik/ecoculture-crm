@@ -22,12 +22,16 @@ export interface WaLineRow {
   state: string;
   stateAt: string;
   active: boolean;
-  assistant: "on" | "off";
+  assistant: "on" | "off" | "sell";
   hasKey: boolean;
   messages: number;
 }
 
-const ASSISTANT_MODE_LABELS = { on: "подсказывает и отвечает, когда менеджер молчит", off: "только подсказывает" };
+const ASSISTANT_MODE_LABELS = {
+  sell: "продаёт сам — заказ и счёт (через 5 мин молчания)",
+  on: "подсказывает и отвечает, когда менеджер молчит",
+  off: "только подсказывает",
+};
 
 const STATE_TEXT: Record<string, { text: string; tone: string }> = {
   authorized: { text: "подключён", tone: "bg-status-good/10 text-status-good" },
@@ -165,6 +169,7 @@ function LineRow({ line: l }: { line: WaLineRow }) {
           disabled={!!busy}
           onChange={(e) => run("mode", async () => unwrap(await setWaLineModeAction(l.code, { assistant: e.target.value })))}
         >
+          <option value="sell">ИИ: {ASSISTANT_MODE_LABELS.sell}</option>
           <option value="on">ИИ: {ASSISTANT_MODE_LABELS.on}</option>
           <option value="off">ИИ: {ASSISTANT_MODE_LABELS.off}</option>
         </select>

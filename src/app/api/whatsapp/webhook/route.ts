@@ -17,8 +17,9 @@ import { draftFromIncoming } from "@/lib/waOrderRunner";
 import { kickFollowup } from "@/lib/botFollowUpRun";
 import { listWaLines } from "@/lib/repo/waLines";
 import { genitiveName, isManagerLine, isWorkTime, type WaLine } from "@/lib/waLines";
-import { kickAssistant, kickAssistantChat } from "@/lib/lineAssistant";
+import { kickAssistant, kickAssistantChat, kickLineWatch } from "@/lib/lineAssistant";
 import { staffPhoneKeys } from "@/lib/botSalesAlert";
+import { ourPhoneKeys } from "@/lib/lineNotify";
 import { settingsMap } from "@/lib/repo/broadcasts";
 import { cancelFromWhatsApp, kickBroadcast } from "@/lib/autoBroadcastRunner";
 import { isCancelText } from "@/lib/autoBroadcast";
@@ -178,6 +179,7 @@ async function leadsLine(body: unknown) {
  * Сообщение с номера менеджера (16.10.2026): записать (голосовое — с расшифровкой), статусы его рассылок,
  * авто-лид на менеджера (только входящее с незнакомого номера), а вне рабочего времени — ответ ИИ-помощника
  * сразу после серии сообщений. Днём помощника будит проход (`kickAssistant`): он ответит, если менеджер молчит 20 минут.
+ * Номер в режиме «продаёт сам» — его сторож (`kickLineWatch`): 5 минут молчания менеджера.
  */
 async function managerLine(body: unknown, code: string, request: Request) {
   const line = (await listWaLines()).find((l) => l.code === code);
@@ -218,7 +220,10 @@ async function managerLine(body: unknown, code: string, request: Request) {
   } catch (err) {
     console.error("whatsapp line auto-lead:", err instanceof Error ? err.message : err);
   }
-  if (message.direction === "in" && line.assistant === "on" && !isWorkTime(new Date())) {
+  if (message.direction === "in" && line.assistant === "sell") {
+    // «Продаёт сам» (19.10.2026): сторож номера ответит, когда менеджер помолчит 5 минут (вечером — после серии).
+    await kickLineWatch(siteOrigin(request), code);
+  } else if (message.direction === "in" && line.assistant === "on" && !isWorkTime(new Date())) {
     // Вне рабочего времени — отдельной функцией (Green API не ждёт вебхук долго): она дождётся конца серии
     // сообщений клиента и ответит этому чату.
     await kickAssistantChat(siteOrigin(request), code, message.phone);
@@ -249,8 +254,7 @@ async function autoLead(message: WaMessage, line?: WaLine) {
   const day = localDayKey();
   if (line) {
     // Сотрудники и наши же номера лидами не становятся.
-    for (const k of Array.from(staffPhoneKeys(await settingsMap()))) known.add(k);
-    for (const l of await listWaLines()) if (l.phone) known.add(phoneKey(l.phone));
+    for (const k of Array.from(await ourPhoneKeys(await settingsMap()))) known.add(k);
     const name = users.find((u) => u.email.toLowerCase() === line.managerEmail)?.name || line.label;
     const lead = autoLeadFromMessage(message, known, line.managerEmail, day, { whose: genitiveName(name), origin: "", incomingOnly: true });
     if (lead) await createLead(lead, day);

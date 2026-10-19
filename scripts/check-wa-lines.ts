@@ -5,7 +5,11 @@
  *   npx tsx scripts/check-wa-lines.ts
  */
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "check-secret";
-import { assistantVerdict, buildChatList, genitiveName, isWorkTime, lineCodeFor, lineInputRefusal } from "../src/lib/waLines";
+import { assistantVerdict, buildChatList, genitiveName, isWorkTime, lineCodeFor, lineInputRefusal, parseAssistantMode } from "../src/lib/waLines";
+import { BOT_CHANNEL, isAssistantOrder, isChannelOrder, lineChannel, orderNoteHead } from "../src/lib/sellerChannel";
+import { lineAlertText, lineBotChat, lineMorningPlanText, lineNudgeStatus } from "../src/lib/lineSellerRules";
+import { systemPrompt } from "../src/lib/botEngine";
+import { BOT_MANAGER_EMAIL } from "../src/lib/botIdentity";
 import { openSecret, sealSecret } from "../src/lib/secretBox";
 import { parseAssistantAnswer, assistantTranscript } from "../src/lib/lineAssistant";
 import { autoLeadFromMessage } from "../src/lib/waAutoLead";
@@ -116,6 +120,77 @@ check("решения: Земфира — свои с рекламы", scope("le
 // --- Темп рассылки ------------------------------------------------------------------------
 check("темп: номер менеджера — осторожный", [paceFor("m-ilyas") === MANAGER_PACE, paceFor("leads") === LEADS_PACE, paceFor("") === MAIN_PACE], [true, true, true]);
 check("темп менеджера: до 20 в час", MANAGER_PACE.hourly, 20);
+
+// --- Продающий помощник (режим «sell», 19.10.2026) ---------------------------------------
+check("режим из ячейки", ["sell", "off", "", "on", "x"].map(parseAssistantMode), ["sell", "off", "on", "on", "on"]);
+const sv = (chat: WaMessage[], now: Date, extra: Partial<Parameters<typeof assistantVerdict>[0]> = {}) =>
+  assistantVerdict({ chat, autoIds: new Set(), now, mode: "sell", ...extra });
+check("продаёт: днём ждёт 6 мин — отвечает", sv(base, new Date("2026-10-16T06:36:00Z")).due, true);
+const early = sv(base, new Date("2026-10-16T06:33:00Z"));
+check("продаёт: ждёт 3 мин — нет, проверить через ~2 мин", [early.due, Math.round((early.retryInMs ?? 0) / 1000)], [false, 122]);
+check("«подсказывает»: 6 мин — ещё нет (20 мин)", v(base, new Date("2026-10-16T06:36:00Z")).due, false);
+const aiTalk = [M("t1", "2026-10-16T06:00:00Z", "in"), M("t2", "2026-10-16T06:05:00Z", "out", "Altaj 3 кат — 270 ₸"), M("t3", "2026-10-16T06:10:00Z", "in", "А 4 категория есть?")];
+const leadV = sv(aiTalk, new Date("2026-10-16T06:10:30Z"), { autoIds: new Set(["t2"]) });
+check("ИИ ведёт разговор — отвечает после серии, без 5 минут", [leadV.due, leadV.reason], [true, "ИИ ведёт разговор"]);
+const humanMid = [...aiTalk.slice(0, 2), M("t2b", "2026-10-16T06:07:00Z", "out", "Сейчас уточню"), aiTalk[2]];
+check("менеджер вмешался — снова ждём его 5 минут", sv(humanMid, new Date("2026-10-16T06:10:30Z"), { autoIds: new Set(["t2"]) }).due, false);
+check("продаёт: 4 ответа ИИ подряд — ещё отвечает (предел 12)", sv([...threeAi], fri12, { autoIds: new Set(["a2", "a4", "a6"]) }).due, true);
+check("продаёт: ночью — нет", sv([M("1", "2026-10-16T20:00:00Z", "out"), M("2", "2026-10-16T20:30:00Z", "in")], new Date("2026-10-16T21:00:00Z")).due, false);
+
+const ilyas = lineChannel({ code: "m-ilyas", managerEmail: "Ilyas@X.kz" }, "Ильяс Каримов");
+check("канал номера: почта и имя", [ilyas.managerEmail, ilyas.managerName, ilyas.line], ["ilyas@x.kz", "Ильяс", "m-ilyas"]);
+check("заметка заявки помощника", orderNoteHead(ilyas), "Заказ оформил ИИ-помощник Ильяса в WhatsApp.");
+check("заметка заявки бота — как раньше", orderNoteHead(BOT_CHANNEL), "Заказ принял бот WhatsApp.");
+check("заказ помощника — его", isChannelOrder({ managerEmail: "ilyas@x.kz", notes: "Заказ оформил ИИ-помощник Ильяса в WhatsApp. Адрес: …" }, ilyas), true);
+check("заказ Ильяса руками — не помощника", isChannelOrder({ managerEmail: "ilyas@x.kz", notes: "Как в прошлый раз" }, ilyas), false);
+check("заказ бота — не помощника Ильяса", isChannelOrder({ managerEmail: BOT_MANAGER_EMAIL, notes: "Заказ принял бот WhatsApp." }, ilyas), false);
+check("заказ бота — бота", isChannelOrder({ managerEmail: BOT_MANAGER_EMAIL, notes: "" }, BOT_CHANNEL), true);
+check("метка помощника в заметке", [isAssistantOrder({ notes: orderNoteHead(ilyas) }), isAssistantOrder({ notes: "" })], [true, false]);
+
+const mem = lineBotChat("+7 701 000 00 01", [
+  { ...M("c1", "2026-10-16T06:00:00Z", "in", "Почём Altaj?"), senderName: "Айгуль" },
+  M("c2", "2026-10-16T06:02:00Z", "out", "Третья — 270 ₸"),
+]);
+check("память из переписки номера", [mem.phone, mem.name, mem.context.map((c) => c.role)], ["77010000001", "Айгуль", ["client", "us"]]);
+
+const persona = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-19", managerName: "Ильяс" });
+const botP = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-19" });
+check("подсказка помощника: от имени Ильяса, в мужском роде", [persona.startsWith("Ты — Ильяс, менеджер"), persona.includes("передала"), persona.includes("наберу вас")], [true, false, true]);
+check("подсказка бота — прежняя", [botP.startsWith("Ты — сильный продавец"), botP.includes("передала руководителю")], [true, true]);
+
+const N = (id: string, at: string, d: "in" | "out", text = "Почём хризантема?") => M(id, at, d, text);
+const talk = [N("n1", "2026-10-16T05:00:00Z", "in"), N("n2", "2026-10-16T05:10:00Z", "out", "Altaj 3 кат — 270 ₸, сколько поставить?")];
+const ns = (now: string, extra: Partial<Parameters<typeof lineNudgeStatus>[0]> = {}) =>
+  lineNudgeStatus({ chat: talk, nudges: [], now: new Date(now), hour: 13, ...extra });
+check("дожим: через 3 ч после нас — первое касание", ns("2026-10-16T08:20:00Z").attempt, 1);
+check("дожим: через 2 ч — рано", ns("2026-10-16T07:10:00Z").attempt, 0);
+check("дожим: назавтра — второе", ns("2026-10-17T05:00:00Z", { nudges: [{ at: "2026-10-16T08:20:00Z", closed: false }] }).attempt, 2);
+check("дожим: два было — хватит", ns("2026-10-18T06:00:00Z", { nudges: [{ at: "2026-10-16T08:20:00Z", closed: false }, { at: "2026-10-17T05:00:00Z", closed: false }] }).attempt, 0);
+check("дожим: модель сказала «не писать»", ns("2026-10-16T08:20:00Z", { nudges: [{ at: "2026-10-16T08:00:00Z", closed: true }] }).reason, "дожим закрыт: модель решила не писать");
+check("дожим: заказ оформлен — не надо", ns("2026-10-16T08:20:00Z", { orderAt: ["2026-10-16T05:30:00Z"] }).reason, "заказ уже оформлен");
+check("дожим: клиент не отвечал (рассылка) — нет", lineNudgeStatus({ chat: [talk[1]], nudges: [], now: new Date("2026-10-16T09:00:00Z"), hour: 13 }).attempt, 0);
+check("дожим: вечером — нет", ns("2026-10-16T16:00:00Z", { hour: 21 }).attempt, 0);
+check("дожим: сотрудник — нет", ns("2026-10-16T08:20:00Z", { staff: true }).attempt, 0);
+check("дожим: клиент последним — ждёт ответа", lineNudgeStatus({ chat: [...talk, N("n3", "2026-10-16T05:20:00Z", "in", "А 4?")], nudges: [], now: new Date("2026-10-16T09:00:00Z"), hour: 13 }).attempt, 0);
+
+const plan = lineMorningPlanText({
+  managerName: "Ильяс",
+  now: new Date("2026-10-19T04:00:00Z"),
+  waiting: [{ name: "Цветы Достык", phone: "77010000001", text: "Есть 4 категория?", sinceIso: "2026-10-18T14:00:00Z" }],
+  yesterday: { replies: 7, chats: 3, orders: [{ code: "AB12C", amount: 54000, paid: true }] },
+  nudgeToday: 2,
+  sleeping: [{ name: "Магнолия", phone: "77010000002", days: 12, usual: "Хризантема Altaj, Третья" }],
+  openNotes: ["…0001: просит отсрочку"],
+  link: "https://www.crm-ecoculture.kz/clients/chats?line=m-ilyas",
+});
+check("план: все блоки", ["Доброе утро, Ильяс!", "Ждут ответа: 1", "Помощник просит сделать: 1", "Оформил заказов: 1 на *54 000 ₸* — №AB12C ✓", "напомнит о себе 2", "Давно не заказывали: 1"].map((x) => plan.includes(x)), [true, true, true, true, true, true]);
+check("план: нечего сказать — не отправлять", lineMorningPlanText({ managerName: "", now: new Date(), waiting: [], yesterday: { replies: 0, chats: 0, orders: [] }, nudgeToday: 0, sleeping: [], openNotes: [], link: "x" }), "");
+check("тревога менеджеру", lineAlertText({ phone: "77010000001", name: "Айгуль", note: "внимание: просит оплату при получении", lastClient: "Можно наличными при доставке?" }).split("\n"), [
+  "⚠️ *Помощник просит вас*",
+  "Айгуль, +77010000001",
+  "просит оплату при получении",
+  "Клиент: «Можно наличными при доставке?»",
+]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

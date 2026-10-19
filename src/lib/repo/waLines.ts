@@ -3,7 +3,7 @@ import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import { greenConfig, greenLeadsConfig, type GreenConfig } from "../greenApi";
 import { openSecret } from "../secretBox";
-import { isManagerLine, type AssistantMode, type WaLine } from "../waLines";
+import { isManagerLine, parseAssistantMode, type WaLine } from "../waLines";
 
 /**
  * Номера WhatsApp менеджеров (вкладка WaLines) и журнал ИИ-помощника (AssistantLog).
@@ -17,7 +17,6 @@ type Cache = { at: number; lines: WaLine[] };
 const g = globalThis as unknown as { __waLines?: Cache };
 
 function toLine(r: Record<string, string>): WaLine {
-  const mode = (r.Assistant || "").trim();
   const active = (r.Active || "").trim().toUpperCase();
   return {
     code: (r.Code || "").trim(),
@@ -27,7 +26,7 @@ function toLine(r: Record<string, string>): WaLine {
     instance: String(r.Instance || "").trim(),
     tokenEnc: (r.TokenEnc || "").trim(),
     active: !["FALSE", "НЕТ", "NO", "0", "-"].includes(active),
-    assistant: (mode === "off" ? "off" : "on") as AssistantMode,
+    assistant: parseAssistantMode(r.Assistant),
     createdAt: toIsoDateTime(r.CreatedAt),
     updatedAt: toIsoDateTime(r.UpdatedAt),
     phone: String(r.Phone || "").replace(/\D/g, ""),
@@ -121,8 +120,8 @@ export interface AssistantLogRow {
   at: string;
   line: string;
   phone: string;
-  /** auto — ответил помощник сам; crm — отправил человек из CRM; note — нужен менеджер. */
-  kind: "auto" | "crm" | "note";
+  /** auto — ответил помощник сам; nudge — дожим помощника; crm — отправил человек из CRM; note — нужен менеджер. */
+  kind: "auto" | "nudge" | "crm" | "note";
   messageId: string;
   text: string;
   note: string;
@@ -143,7 +142,7 @@ export async function listAssistantLog(options: { fresh?: boolean } = {}): Promi
           at: toIsoDateTime(r.At),
           line: (r.Line || "").trim(),
           phone: String(r.Phone || "").replace(/\D/g, ""),
-          kind: (kind === "crm" || kind === "note" ? kind : "auto") as AssistantLogRow["kind"],
+          kind: (kind === "crm" || kind === "note" || kind === "nudge" ? kind : "auto") as AssistantLogRow["kind"],
           messageId: (r.MessageID || "").trim(),
           text: r.Text || "",
           note: r.Note || "",

@@ -19,11 +19,23 @@ import type { WaMessage } from "./types";
 export const MANAGER_LINE_PREFIX = "m-";
 export const isManagerLine = (line: string | null | undefined) => (line || "").startsWith(MANAGER_LINE_PREFIX);
 
-export type AssistantMode = "on" | "off";
+/**
+ * on — подсказывает и отвечает, когда менеджер молчит 20 минут (заказ оформляет менеджер);
+ * sell — продаёт сам (19.10.2026, владелец про Ильяса: «мощный помощник, который бы смог продавать»):
+ * отвечает, когда менеджер молчит 5 минут, оформляет заказ на менеджера и выставляет счёт Kaspi,
+ * шлёт фото и каталог, дожимает молчащих (`lineSeller.ts`); off — только подсказывает.
+ */
+export type AssistantMode = "on" | "off" | "sell";
 export const ASSISTANT_MODE_LABELS: Record<AssistantMode, string> = {
+  sell: "Продаёт сам: отвечает через 5 минут молчания, оформляет заказ и счёт",
   on: "Подсказывает и отвечает, когда менеджер молчит",
   off: "Только подсказывает",
 };
+
+export function parseAssistantMode(raw: string | null | undefined): AssistantMode {
+  const v = (raw || "").trim();
+  return v === "off" ? "off" : v === "sell" ? "sell" : "on";
+}
 
 export interface WaLine {
   code: string;
@@ -83,8 +95,18 @@ export function lineInputRefusal(input: { managerEmail: string; instance: string
 export const ASSISTANT_WAIT_MINUTES = 20;
 /** Вне рабочего времени — почти сразу: после стольких минут тишины (клиент дописывает серию). */
 export const ASSISTANT_AFTER_HOURS_MINUTES = 2;
+/** Режим «продаёт сам»: менеджер молчит столько минут в рабочее время — отвечает помощник. */
+export const ASSISTANT_SELL_WAIT_MINUTES = 5;
+/**
+ * Режим «продаёт сам»: помощник уже ведёт разговор (наше последнее сообщение — его, не старше этого) —
+ * следующий ответ после конца серии, без новых 5 минут: продажа идёт 5–8 ходов, и пауза на каждом
+ * выглядела бы для клиента как брошенный разговор. Менеджер вмешался — снова ждём его 5 минут.
+ */
+export const ASSISTANT_SELL_LEAD_HOURS = 2;
 /** Больше стольких ответов помощника подряд без менеджера — молчит и ждёт человека. */
 export const ASSISTANT_MAX_IN_ROW = 3;
+/** То же в режиме «продаёт сам»: разговор до заказа длиннее. */
+export const ASSISTANT_SELL_MAX_IN_ROW = 12;
 /** Сообщение клиента старше этого — отвечать поздно, это дело менеджера. */
 export const ASSISTANT_STALE_HOURS = 12;
 /** Рабочее время менеджеров: пн–сб 9:00–19:00 по Алматы. Писать сам помощник может 8:00–23:00. */
@@ -114,6 +136,8 @@ export interface AssistantVerdict {
   waitingSince: string | null;
   /** Последнее сообщение клиента — на него и отвечать. */
   lastIn: WaMessage | null;
+  /** Ждать осталось только время (клиент ждёт, менеджер ещё может ответить): через сколько мс проверить снова. */
+  retryInMs?: number;
 }
 
 /**
@@ -136,7 +160,8 @@ export function assistantVerdict(input: {
     waitingSince,
     lastIn,
   });
-  if (input.mode !== "on") return no("помощник только подсказывает");
+  if (input.mode === "off") return no("помощник только подсказывает");
+  const sell = input.mode === "sell";
   if (input.staff) return no("номер сотрудника");
   const chat = mergeMessages(input.chat);
   const last = chat[chat.length - 1];
@@ -161,16 +186,30 @@ export function assistantVerdict(input: {
     if (!input.autoIds.has(m.messageId)) break;
     inRow++;
   }
-  if (inRow >= ASSISTANT_MAX_IN_ROW) return no(`ИИ ответил ${inRow} раза подряд — ждёт менеджера`, waitingSince, last);
+  const maxInRow = sell ? ASSISTANT_SELL_MAX_IN_ROW : ASSISTANT_MAX_IN_ROW;
+  if (inRow >= maxInRow) return no(`ИИ ответил ${inRow} раз подряд — ждёт менеджера`, waitingSince, last);
   const { hour } = almatyParts(input.now);
   if (hour < SEND_FROM || hour >= SEND_TO) return no("ночь — ответит утром", waitingSince, last);
   const work = isWorkTime(input.now);
   const waitMin = (nowMs - Date.parse(waitingSince)) / 60000;
   const quietMin = (nowMs - lastMs) / 60000;
-  const need = work ? ASSISTANT_WAIT_MINUTES : input.quick ? 0.3 : ASSISTANT_AFTER_HOURS_MINUTES;
-  if (waitMin < need) return no(work ? `ждёт ${Math.floor(waitMin)} мин — менеджер ещё может ответить` : "клиент только что написал", waitingSince, last);
-  if (quietMin < (input.quick ? 0.3 : 1)) return no("клиент ещё пишет", waitingSince, last);
-  return { due: true, reason: work ? "клиент ждёт ответа дольше 20 минут" : "нерабочее время", waitingSince, lastIn: last };
+  // Помощник уже ведёт этот разговор: наше последнее сообщение — его и свежее.
+  const lastOut = [...chat].reverse().find((m) => m.direction === "out");
+  const aiLeads = sell && !!lastOut && input.autoIds.has(lastOut.messageId) && nowMs - Date.parse(lastOut.at) < ASSISTANT_SELL_LEAD_HOURS * 3600000;
+  const quick = input.quick || aiLeads;
+  const need = work && !aiLeads ? (sell ? ASSISTANT_SELL_WAIT_MINUTES : ASSISTANT_WAIT_MINUTES) : quick ? 0.3 : ASSISTANT_AFTER_HOURS_MINUTES;
+  const quietNeed = quick ? 0.3 : 1;
+  const retryInMs = Math.max((need - waitMin) * 60000, (quietNeed - quietMin) * 60000, 0) + 2000;
+  if (waitMin < need) {
+    return { ...no(work && !aiLeads ? `ждёт ${Math.floor(waitMin)} мин — менеджер ещё может ответить` : "клиент только что написал", waitingSince, last), retryInMs };
+  }
+  if (quietMin < quietNeed) return { ...no("клиент ещё пишет", waitingSince, last), retryInMs };
+  const reason = aiLeads
+    ? "ИИ ведёт разговор"
+    : work
+      ? `клиент ждёт ответа дольше ${sell ? ASSISTANT_SELL_WAIT_MINUTES : ASSISTANT_WAIT_MINUTES} минут`
+      : "нерабочее время";
+  return { due: true, reason, waitingSince, lastIn: last };
 }
 
 // --- Список переписок ----------------------------------------------------------------

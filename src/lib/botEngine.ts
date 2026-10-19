@@ -4,7 +4,8 @@ import { localDayKey } from "./timezone";
 import { getCurrentPrices } from "./repo/prices";
 import { listBatches } from "./repo/batches";
 import { almatyHourOf, botStoreFor, botStoreNote, inStore } from "./officeStore";
-import { notifyBotSale, staffPhoneKeys } from "./botSalesAlert";
+import { notifyBotSale } from "./botSalesAlert";
+import { ourPhoneKeys } from "./lineNotify";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
 import { harvestForBot, lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "./botKnowledge";
@@ -51,6 +52,7 @@ import type { BotIncoming } from "./greenOut";
 import { phoneKey } from "./leads";
 import { parsePush, pushLines, pushPromptBlock, SALES_PUSH_SETTING } from "./salesPush";
 import { priceFor } from "./priceList";
+import { BOT_CHANNEL, type SellerChannel } from "./sellerChannel";
 
 // ---------------------------------------------------------------------------
 // Бот-автоответчик WhatsApp (Green API). Зовётся из вебхука ПОСЛЕ того, как
@@ -223,7 +225,7 @@ export async function salesKnowledge(phone: string): Promise<{
  * переключать на менеджеров, он должен продать… сделай его максимально
  * продажным»). Менеджер получает только записку: собранный заказ или тревогу.
  */
-function systemPrompt(p: {
+export function systemPrompt(p: {
   instructions: string;
   prices: string;
   stock: string;
@@ -236,15 +238,32 @@ function systemPrompt(p: {
   harvest?: string;
   /** «Распродаём в первую очередь» (`pushPromptBlock`). */
   push?: string;
+  /** Пишем с номера менеджера от его имени (`lineSeller.ts`): его имя. Пусто — бот основного номера. */
+  managerName?: string;
 }): string {
   const { instructions, prices, stock, broadcast, client, today, harvest } = p;
   const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${today}T12:00:00`).getDay()];
-  return [
-    "Ты — сильный продавец оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома).",
-    "Продаём оптом салонам, магазинам и цветочникам. Пишешь клиентам в WhatsApp от имени компании. Твоя единственная цель — ПРОДАТЬ:",
-    "довести разговор до подтверждённого заказа. Цены, наличие, каталог, фото, заказ — ведёшь сам и не пишешь «передам менеджеру»,",
-    "«менеджер свяжется». Руководителю передаёшь только три вещи (ниже): оплату не вперёд, документы и фото собранного заказа,",
-    "просьбу поговорить с живым человеком.",
+  const intro = p.managerName
+    ? [
+        `Ты — ${p.managerName}, менеджер по продажам оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство:`,
+        "розы, хризантемы, эустома). Продаём оптом салонам, магазинам и цветочникам. Пишешь клиентам со своего рабочего WhatsApp,",
+        "от первого лица, в мужском роде («оформил», «передал»). Это твои клиенты: со многими уже работали — смотри «О клиенте»",
+        "и переписку выше, говори как человек, который их знает (без обращения по имени). Твоя единственная цель — ПРОДАТЬ:",
+        "довести разговор до подтверждённого заказа. Цены, наличие, каталог, фото, заказ — ведёшь сам. Руководителю передаёшь",
+        "только три вещи (ниже): оплату не вперёд, документы и фото собранного заказа, просьбу поговорить по телефону.",
+        "Если в переписке раньше договаривались о том, чего нет в данных ниже (своя цена, отсрочка, доставка ко времени, «как",
+        "в прошлый раз»), — не спорь и не отменяй договорённость: коротко «уточню и отпишусь» и alert с сутью.",
+        "Сообщения выше в переписке «Мы:» писал ты сам — продолжай их, не противоречь им.",
+      ]
+    : [
+        "Ты — сильный продавец оптовой цветочной компании Ecoculture (Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома).",
+        "Продаём оптом салонам, магазинам и цветочникам. Пишешь клиентам в WhatsApp от имени компании. Твоя единственная цель — ПРОДАТЬ:",
+        "довести разговор до подтверждённого заказа. Цены, наличие, каталог, фото, заказ — ведёшь сам и не пишешь «передам менеджеру»,",
+        "«менеджер свяжется». Руководителю передаёшь только три вещи (ниже): оплату не вперёд, документы и фото собранного заказа,",
+        "просьбу поговорить с живым человеком.",
+      ];
+  const text = [
+    ...intro,
     "",
     "Стиль: как живой человек в WhatsApp — коротко, тепло, по-разному, на языке клиента (русский или казахский).",
     "Начинай естественно («Да, есть!», «Конечно», «Смотрите», «Отлично») и НИКОГДА не повторяй уже сказанное в переписке:",
@@ -366,6 +385,14 @@ function systemPrompt(p: {
       ? `\nПлан срезки агронома (прогноз, стеблей за неделю по сорту, без длины; продать можно только то, что уже на складе):\n${harvest}`
       : "",
   ].join("\n");
+  // Менеджер — мужчина: «передал», а не «передала» (бот писал от лица компании в женском роде).
+  if (!p.managerName) return text;
+  return text
+    .replace(
+      "Просят живого человека или телефон для звонка —\nне спорь, что ты и есть менеджер: «передала руководителю, он свяжется здесь», alert обязательно.",
+      "Просят позвонить или\nпоговорить голосом — «хорошо, наберу вас» и alert («просит позвонить»); сам звонок не обещай ко времени."
+    )
+    .replace(/передала/g, "передал");
 }
 
 function transcript(chat: BotChat): string {
@@ -388,8 +415,8 @@ export async function runBot(all: BotIncoming[]): Promise<boolean> {
     const settings = botSettingsFrom(map);
     const byKey = new Map(chats.map((c) => [phoneKey(c.phone), c]));
 
-    // Сотрудникам (сводка, продажи бота) бот не отвечает.
-    const staff = staffPhoneKeys(map);
+    // Сотрудникам (сводка, продажи бота) и номерам менеджеров (им основной номер пишет о делах помощника) бот не отвечает.
+    const staff = await ourPhoneKeys(map);
     const phones = Array.from(new Set(messages.map((m) => phoneKey(m.phone)).filter(Boolean))).filter((k) => !staff.has(k));
     const writes: WriteOp[] = [];
     const pending: { chat: BotChat; existing: (BotChat & { rowNumber: number }) | null }[] = [];
@@ -474,7 +501,9 @@ async function reply(chat: BotChat, to: BotIncoming, text: string): Promise<bool
 export async function botPrompt(
   chat: BotChat,
   instructions: string,
-  task = "Ответь на последнее сообщение клиента."
+  task = "Ответь на последнее сообщение клиента.",
+  /** Кто продаёт: бот основного номера (по умолчанию) или помощник на номере менеджера. */
+  channel: SellerChannel = BOT_CHANNEL
 ): Promise<{ system: string; user: string }> {
   // Прайс, склад, рассылка и заказы — одним запросом и только когда бот правда отвечает (грабли 1.17).
   await prefetchTables([
@@ -493,15 +522,27 @@ export async function botPrompt(
   const [prices, stockInfo, broadcast, client, harvest, push] = await Promise.all([
     priceText(),
     stockText(),
-    broadcastText(chat.phone),
-    botClientContext(chat.phone),
+    // Рассылка основного номера к разговору на номере менеджера отношения не имеет.
+    channel.line ? Promise.resolve("") : broadcastText(chat.phone),
+    botClientContext(chat.phone, channel),
     listHarvestForecast()
       .then((rows) => harvestForBot(rows, localDayKey()))
       .catch(() => ""),
     pushText(),
   ]);
   return {
-    system: systemPrompt({ instructions, prices, stock: stockInfo.text, storeNote: stockInfo.storeNote, broadcast, client, today: localDayKey(), harvest, push }),
+    system: systemPrompt({
+      instructions,
+      prices,
+      stock: stockInfo.text,
+      storeNote: stockInfo.storeNote,
+      broadcast,
+      client,
+      today: localDayKey(),
+      harvest,
+      push,
+      managerName: channel.line ? channel.managerName || "менеджер" : "",
+    }),
     user: `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
   };
 }
@@ -510,9 +551,10 @@ export async function botReply(
   chat: BotChat,
   instructions: string,
   /** Своё задание вместо «ответь на последнее сообщение» — дожим молчащего (`botNudge.ts`). */
-  task = "Ответь на последнее сообщение клиента."
+  task = "Ответь на последнее сообщение клиента.",
+  channel: SellerChannel = BOT_CHANNEL
 ): Promise<ReturnType<typeof botDecision>> {
-  const { system, user } = await botPrompt(chat, instructions, task);
+  const { system, user } = await botPrompt(chat, instructions, task, channel);
   const { data } = await chatJson(system, user, "bot_reply", BOT_SCHEMA, { fast: true });
   return botDecision(data);
 }
@@ -523,7 +565,8 @@ export async function botReply(
  */
 export async function botAct(
   chat: BotChat,
-  decision: ReturnType<typeof botDecision>
+  decision: ReturnType<typeof botDecision>,
+  channel: SellerChannel = BOT_CHANNEL
 ): Promise<{ text: string; note: string; files: BotFile[] }> {
   if (decision.silent) return { text: "", note: "", files: [] };
   let text = decision.reply;
@@ -531,17 +574,17 @@ export async function botAct(
   // Отмена — первой: если следом новый заказ (клиент поменял количество), старый не должен висеть рядом.
   let cancelledText = "";
   if (decision.cancelOrder) {
-    const c = await cancelBotOrder(chat.phone, decision.cancelOrder);
+    const c = await cancelBotOrder(chat.phone, decision.cancelOrder, channel);
     if (c.note) notes.unshift(c.note);
     if (c.text) cancelledText = c.text;
     if (!decision.order.confirmed && c.text) text = c.cancelled && decision.reply ? `${c.text} ${decision.reply}` : c.text;
   }
   if (decision.order.confirmed) {
-    const placed = await placeBotOrder({ phone: chat.phone, senderName: chat.name, draft: decision.order, kaspiPhone: decision.kaspiPhone });
+    const placed = await placeBotOrder({ phone: chat.phone, senderName: chat.name, draft: decision.order, kaspiPhone: decision.kaspiPhone, channel });
     text = cancelledText ? `${cancelledText}\n${placed.text}` : placed.text;
     if (placed.note) notes.unshift(placed.note);
   } else if (decision.kaspiPhone || decision.invoiceAgain) {
-    const again = await reissueBotInvoices(chat.phone, decision.kaspiPhone);
+    const again = await reissueBotInvoices(chat.phone, decision.kaspiPhone, channel);
     if (again) text = again;
   }
   const files = decision.catalog ? await catalogForChat(decision.catalog) : [];

@@ -56,7 +56,7 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
       if (k) parties.set(k, { kind: "client", id: c.clientId, name: c.name, managerEmail: c.managerEmail });
     }
   }
-  const autoIds = new Set(log.filter((r) => r.kind === "auto").map((r) => r.messageId));
+  const autoIds = new Set(log.filter((r) => r.kind === "auto" || r.kind === "nudge").map((r) => r.messageId));
   const crmIds = new Set(log.filter((r) => r.kind === "crm").map((r) => r.messageId));
   const now = new Date();
   const since = new Date(now.getTime() - 60 * 86400000).toISOString();
