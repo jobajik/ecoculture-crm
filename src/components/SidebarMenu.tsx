@@ -101,7 +101,7 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
   return (
     <div className="flex flex-col h-full">
       <Link href="/" onClick={onNavigate} className="flex items-center px-2 pt-1 pb-4 mb-4 border-b border-line-hairline">
-        <Image src="/logo.png" alt="Ecoculture" width={120} height={70} priority className="h-10 w-auto object-contain" />
+        <Image src="/logo.png" alt="Ecoculture" width={1020} height={593} priority className="w-full max-w-[200px] h-auto object-contain" />
       </Link>
 
       <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
