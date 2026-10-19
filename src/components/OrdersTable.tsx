@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FLOWER_TYPE_LABELS } from "@/lib/constants";
 import type { OrderWithItems } from "@/lib/types";
 import OrderStageBadge from "./OrderStageBadge";
 import ItemsCell from "./ItemsCell";
@@ -14,6 +13,11 @@ import DeleteOrder from "./DeleteOrder";
 import { managerOptions } from "@/lib/financeManagers";
 import { orderCode } from "@/lib/paymentStage";
 import { matchesOrderListSearch } from "@/lib/orderListSearch";
+import type { PayState } from "@/lib/orderPay";
+import { formatGrade } from "@/lib/constants";
+import Pill from "./Pill";
+import Icon, { type IconName } from "./Icon";
+import clsx from "clsx";
 
 /** Фильтр списка: этап заявки, «опаздывают» или все. */
 export const STAGE_FILTERS: { value: string; label: string }[] = [
@@ -54,8 +58,11 @@ export default function OrdersTable({
   viewerRole = "",
   viewerEmail = "",
   canAdmin = false,
+  payStates = {},
 }: {
   orders: OrderWithItems[];
+  /** Деньги по заявке (`orderPayState`, считается на сервере). */
+  payStates?: Record<string, PayState>;
   /** Почта → имя из вкладки `Users`. Без неё в колонке стоял бы адрес. */
   managerNames?: NameByEmail;
   /** Сегодня по Алматы — от сервера, чтобы опоздание не зависело от часов телефона. */
@@ -147,45 +154,85 @@ export default function OrdersTable({
   const hidden = filtered.length - shown.length;
 
   const itemText = (i: OrderWithItems["items"][number]) =>
-    `${FLOWER_TYPE_LABELS[i.flowerType] ?? i.flowerType} ${i.variety} ×${i.quantity.toLocaleString("ru-RU")}`;
+    `${i.variety}, ${formatGrade(i.grade)} · ${i.quantity.toLocaleString("ru-RU")}`;
+
+  // Плитки и счётчики фильтров (новый вид, 19.10.2026) — по заявкам выбранного менеджера, без поиска.
+  const base = manager ? orders.filter((o) => o.managerEmail.toLowerCase() === manager) : orders;
+  const month = today.slice(0, 7);
+  const tomorrow = (() => {
+    const d = new Date(`${today}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  let monthCount = 0;
+  let monthSum = 0;
+  let shipToday = 0;
+  let lateCount = 0;
+  let waitSum = 0;
+  let overdueSum = 0;
+  const counts: Record<string, number> = {};
+  for (const o of base) {
+    const st = stageOf(o);
+    const pay = payStates[o.orderId];
+    counts.all = (counts.all ?? 0) + 1;
+    counts[st.key] = (counts[st.key] ?? 0) + 1;
+    const open = st.key !== "shipped" && st.key !== "cancelled";
+    if (open) counts.open = (counts.open ?? 0) + 1;
+    if (st.lateDays > 0) counts.late = (counts.late ?? 0) + 1;
+    if (open && !o.deliveryDate) counts.nodate = (counts.nodate ?? 0) + 1;
+    if (o.createdAt.slice(0, 7) === month && st.key !== "cancelled") {
+      monthCount += 1;
+      if (pay?.sale) monthSum += o.totalAmount;
+    }
+    if ((st.key === "ready" || st.key === "partly") && o.deliveryDate === today) shipToday += 1;
+    if (open && st.lateDays > 0) lateCount += 1;
+    if (pay?.sale) {
+      waitSum += pay.debt;
+      if (pay.late) overdueSum += pay.debt;
+    }
+  }
+  const chips: { value: string; label: string }[] = [
+    { value: "all", label: "Все" },
+    { value: "open", label: "Открытые" },
+    { value: "wait_confirm", label: "Ждут подтверждения" },
+    { value: "wait_money", label: "Ждут оплату" },
+    { value: "ready", label: "Готовы к отгрузке" },
+    { value: "late", label: "Опаздывают" },
+    { value: "nodate", label: "Без даты" },
+    { value: "partly", label: "Частично отгружены" },
+    { value: "shipped", label: "Отгружены" },
+    { value: "cancelled", label: "Отменены" },
+  ];
+  const deliveryLabel = (d: string) => (!d ? "—" : d === today ? "сегодня" : d === tomorrow ? "завтра" : formatDay(d));
+  const initials = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase())
+      .join("") || "?";
+  const short = (v: number) =>
+    v >= 1_000_000 ? `${(v / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} млн ₸` : `${Math.round(v).toLocaleString("ru-RU")} ₸`;
 
   return (
     <div>
-      <div className="flex flex-wrap gap-3 mb-4">
-        <select
-          id="orders-stage"
-          aria-label="Этап заявки"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="input !w-auto"
-        >
-          {STAGE_FILTERS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        {managers.length > 1 && (
-          <select
-            id="orders-manager"
-            aria-label="Менеджер"
-            value={manager}
-            onChange={(e) => setManager(e.target.value)}
-            className="input !w-auto"
-          >
-            <option value="">Все менеджеры</option>
-            {managers.map((m) => (
-              <option key={m.email} value={m.email}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        )}
-        <input
-          className="input !w-auto flex-1 min-w-[200px]"
-          placeholder="Клиент, телефон, сорт, менеджер, №"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <Tile icon="order" label="Заявок за месяц" value={monthCount.toLocaleString("ru-RU")} hint="без отменённых" />
+        <Tile icon="wallet" label="На сумму" value={short(monthSum)} hint="продажи месяца" />
+        <Tile
+          icon="truck"
+          label="К отгрузке сегодня"
+          value={shipToday.toLocaleString("ru-RU")}
+          hint={lateCount > 0 ? `${lateCount} опаздывают` : "опозданий нет"}
+          bad={lateCount > 0}
+          onClick={lateCount > 0 ? () => setStatus("late") : undefined}
+        />
+        <Tile
+          icon="clock"
+          label="Ждём оплату"
+          value={short(waitSum)}
+          hint={overdueSum > 0 ? `из них ${short(overdueSum)} просрочено` : "просрочки нет"}
+          bad={overdueSum > 0}
         />
       </div>
 
@@ -196,22 +243,77 @@ export default function OrdersTable({
           <span className="text-ink-muted"> · без отменённых в сумме</span>
         </p>
       )}
-      <div className="card !p-0 table-scroll table-cards">
+      <div className="card !p-0 overflow-hidden">
+        <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-3 border-b border-line-hairline">
+          <div className="flex gap-2 overflow-x-auto scroll-x-hidden xl:flex-wrap -mx-1 px-1">
+            {chips
+              .filter((c) => c.value === "all" || c.value === status || (counts[c.value] ?? 0) > 0)
+              .map((c) => {
+                const on = status === c.value;
+                const n = counts[c.value] ?? 0;
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setStatus(c.value)}
+                    className={clsx(
+                      "h-8 px-3 rounded-full border text-[13px] whitespace-nowrap flex items-center gap-1.5 transition-colors flex-none",
+                      on
+                        ? "bg-ink-primary text-white border-ink-primary"
+                        : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
+                    )}
+                  >
+                    {c.label}
+                    <b className={clsx("font-semibold tabular-nums", !on && c.value === "late" && "text-status-critical")}>
+                      {n.toLocaleString("ru-RU")}
+                    </b>
+                  </button>
+                );
+              })}
+          </div>
+          <div className="flex gap-2 xl:ml-auto xl:flex-none">
+            <input
+              className="input !w-auto flex-1 xl:w-[220px] min-w-0"
+              placeholder="Клиент, телефон, сорт, №"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {managers.length > 1 && (
+              <select
+                id="orders-manager"
+                aria-label="Менеджер"
+                value={manager}
+                onChange={(e) => setManager(e.target.value)}
+                className="input !w-auto"
+              >
+                <option value="">Все менеджеры</option>
+                {managers.map((m) => (
+                  <option key={m.email} value={m.email}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+      <div className="table-scroll table-cards">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-3 py-3 font-medium">Заявка</th>
-              <th className="px-3 py-3 font-medium">Клиент</th>
-              <th className="px-3 py-3 font-medium">Менеджер</th>
-              <th className="px-3 py-3 font-medium">Позиции</th>
-              <th className="px-3 py-3 font-medium text-right">Сумма</th>
-              <th className="px-3 py-3 font-medium">Доставка</th>
-              <th className="px-3 py-3 font-medium">Этап</th>
+            <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
+              <th className="px-3 py-2.5 font-medium">№</th>
+              <th className="px-3 py-2.5 font-medium">Клиент</th>
+              <th className="px-3 py-2.5 font-medium">Доставка</th>
+              <th className="px-3 py-2.5 font-medium">Что заказали</th>
+              <th className="px-3 py-2.5 font-medium text-right">Сумма</th>
+              <th className="px-3 py-2.5 font-medium">Оплата</th>
+              <th className="px-3 py-2.5 font-medium">Этап</th>
             </tr>
           </thead>
           <tbody>
             {shown.map((o) => {
               const stage = stageOf(o);
+              const pay = payStates[o.orderId];
+              const mName = personName(o.managerEmail, managerNames);
               return (
                 <Fragment key={o.orderId}>
                 <tr
@@ -222,17 +324,17 @@ export default function OrdersTable({
                         строки и в одиночку задирал высоту всей строки. */}
                     <Link
                       href={`/orders/${o.orderId}`}
-                      className="text-series-1 font-medium whitespace-nowrap font-mono"
+                      className="text-ink-secondary hover:text-accent font-medium whitespace-nowrap font-mono text-[12.5px]"
                       title={o.orderId}
                     >
-                      №{orderCode(o.orderId)}
+                      {orderCode(o.orderId)}
                     </Link>
                     <div className="text-xs text-ink-muted whitespace-nowrap">
                       {formatDay(o.createdAt)}
                       {o.store === "office" && <span className="ml-1.5 text-section-stock font-medium">· офис</span>}
                     </div>
                     {/* Действия админа — под номером, а не отдельной колонкой:
-                        восьмая колонка вылезала за край (боковой прокрутки в
+                        лишняя колонка вылезала за край (боковой прокрутки в
                         таблицах нет — см. CLAUDE.md). */}
                     {canAdmin && (
                       <div className="mt-1 flex gap-1 text-xs whitespace-nowrap">
@@ -241,7 +343,7 @@ export default function OrdersTable({
                           className="rounded px-1.5 py-0.5 text-ink-secondary hover:bg-surface-sunk hover:text-accent"
                           title="Изменить заявку"
                         >
-                          ✎ изменить
+                          ✎
                         </Link>
                         <button
                           type="button"
@@ -249,36 +351,41 @@ export default function OrdersTable({
                           className="rounded px-1.5 py-0.5 text-ink-muted hover:bg-status-critical/10 hover:text-status-critical"
                           title="Удалить заявку"
                         >
-                          ✕ удалить
+                          ✕
                         </button>
                       </div>
                     )}
                   </td>
                   <td className="px-3 py-3" data-label="Клиент">
-                    <div className="truncate max-w-[200px]" title={o.clientName}>
-                      {o.clientName}
+                    <Link href={`/orders/${o.orderId}`} className="block truncate max-w-[220px] font-semibold hover:text-accent" title={o.clientName}>
+                      {o.clientName || "—"}
+                    </Link>
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-ink-secondary min-w-0">
+                      <span className="w-5 h-5 rounded-full bg-accent-soft text-accent grid place-items-center text-[9px] font-bold flex-none">
+                        {initials(mName)}
+                      </span>
+                      <span className="truncate max-w-[160px]">{mName}</span>
                     </div>
                   </td>
-                  <td className="px-3 py-3 text-ink-secondary" data-label="Менеджер">
-                    <div className="truncate max-w-[130px]">
-                      {personName(o.managerEmail, managerNames)}
-                    </div>
+                  <td
+                    className={clsx("px-3 py-3 whitespace-nowrap", stage.lateDays > 0 ? "text-status-critical font-semibold" : "text-ink-secondary")}
+                    data-label="Доставка"
+                  >
+                    {deliveryLabel(o.deliveryDate)}
+                    {stage.lateDays > 0 && <div className="text-xs font-normal">опаздывает {stage.lateDays} дн.</div>}
                   </td>
-                  <td className="px-3 py-3 text-ink-secondary" data-label="Позиции">
+                  <td className="px-3 py-3 text-ink-secondary" data-label="Что заказали">
                     <ItemsCell lines={o.items.map(itemText)} />
                   </td>
-                  <td className="px-3 py-3 font-medium sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
+                  <td className="px-3 py-3 font-semibold sm:text-right whitespace-nowrap tabular-nums" data-label="Сумма">
                     {o.totalAmount.toLocaleString("ru-RU")} ₸
                   </td>
-                  <td className="px-3 py-3 text-ink-secondary whitespace-nowrap" data-label="Доставка">
-                    {formatDay(o.deliveryDate)}
+                  <td className="px-3 py-3" data-label="Оплата">
+                    {pay && pay.tone !== "muted" ? <Pill tone={pay.tone}>{pay.label}</Pill> : <span className="text-ink-muted text-xs">{pay?.label ?? "—"}</span>}
                   </td>
-                  {/* Один этап вместо пары «статус + готовность»: раньше у всех
-                      строк стояло одинаковое «Новая», а что мешает собрать
-                      заявку, было написано мелко под ним и пятью разными
-                      словами на разных экранах (`orderStage`). */}
+                  {/* Один этап вместо пары «статус + готовность» (`orderStage`). */}
                   <td className="px-3 py-3" data-label="Этап">
-                    <OrderStageBadge stage={stage} compact />
+                    <OrderStageBadge stage={{ ...stage, lateDays: 0 }} compact />
                     {stage.actor && (
                       <div className="text-xs text-ink-muted mt-1 whitespace-nowrap">ход: {stage.actor}</div>
                     )}
@@ -310,6 +417,7 @@ export default function OrdersTable({
           </tbody>
         </table>
       </div>
+      </div>
 
       {(hidden > 0 || (expanded && !narrowed)) && (
         <div className="mt-2 flex items-center gap-3">
@@ -325,5 +433,39 @@ export default function OrdersTable({
         </div>
       )}
     </div>
+  );
+}
+
+function Tile({
+  icon,
+  label,
+  value,
+  hint,
+  bad,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  value: string;
+  hint: string;
+  bad?: boolean;
+  onClick?: () => void;
+}) {
+  const body = (
+    <>
+      <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+        <Icon name={icon} className="w-3.5 h-3.5" />
+        {label}
+      </div>
+      <div className="font-display font-extrabold text-[22px] sm:text-[26px] tabular-nums mt-1.5 leading-none">{value}</div>
+      <div className={clsx("text-xs mt-2", bad ? "text-status-critical font-semibold" : "text-ink-secondary")}>{hint}</div>
+    </>
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} className="card !p-4 sm:!p-5 text-left hover:shadow-card-hover transition-shadow">
+      {body}
+    </button>
+  ) : (
+    <div className="card !p-4 sm:!p-5">{body}</div>
   );
 }

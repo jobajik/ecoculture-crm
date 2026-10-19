@@ -17,6 +17,7 @@ import PageHeader from "@/components/PageHeader";
 import { listUsers } from "@/lib/repo/users";
 import { nameIndex } from "@/lib/personName";
 import { localDayKey } from "@/lib/timezone";
+import { orderPayState } from "@/lib/orderPay";
 import { listClients } from "@/lib/repo/clients";
 import { listWaOrderDrafts } from "@/lib/repo/waOrders";
 import { draftSummary, freshDrafts, visibleDrafts } from "@/lib/waOrder";
@@ -142,6 +143,7 @@ export default async function OrdersPage({
         viewerRole={role ?? ""}
         viewerEmail={myEmail}
         canAdmin={role === ROLES.ADMIN}
+        payStates={Object.fromEntries(orders.map((o) => [o.orderId, orderPayState(o, localDayKey())]))}
       />
     </div>
   );

@@ -1,18 +1,21 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getClientById, listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { buildClientStats } from "@/lib/clientStats";
-import { FLOWER_TYPE_LABELS, ROLES, formatGrade } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, MONEY_EPSILON, ROLES, formatGrade } from "@/lib/constants";
+import { orderStage } from "@/lib/orderStage";
+import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
-import OrderStatusBadge from "@/components/OrderStatusBadge";
+import OrderStageBadge from "@/components/OrderStageBadge";
+import Pill from "@/components/Pill";
+import { orderPayState } from "@/lib/orderPay";
 import ClientCard from "@/components/ClientCard";
 import Section from "@/components/Section";
-import Icon from "@/components/Icon";
+import Icon, { type IconName } from "@/components/Icon";
 import { orderCode } from "@/lib/paymentStage";
 import { canSeeShop, isOwnShop, isRetailRole, retailLabel } from "@/lib/retail";
 import { withBotName } from "@/lib/botIdentity";
@@ -83,206 +86,271 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   const newOrderHref =
     !shop && client.active && canCreateClientOrder(role) ? newClientOrderHref(role, client.clientId) : "";
 
-  return (
-    <div className="max-w-4xl">
-      {/* «Лицо» клиента: имя крупно, главное о нём и четыре цифры. Синий — цвет
-          клиента по всему сайту (Section tone="client"). */}
-      <header className="relative overflow-hidden rounded-2xl border border-section-client/15 bg-gradient-to-br from-section-client-soft via-surface to-surface shadow-card mb-5">
-        <Image
-          src="/logo-mark.png"
-          alt=""
-          aria-hidden="true"
-          width={260}
-          height={260}
-          className="absolute -right-14 -top-20 w-64 h-64 object-contain opacity-[0.10] pointer-events-none select-none"
-        />
-        <div className="relative p-5 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-section-client">
-                <Icon name="client" className="w-4 h-4" />
-                {shop ? `Наш магазин · ${retailLabel(client.retail)}` : "Клиент"}
-              </div>
-              <h1 className="font-display text-[30px] leading-tight font-extrabold tracking-tight mt-1 break-words">
-                {client.name}
-              </h1>
-              <p className="text-sm text-ink-secondary mt-0.5">
-                {[client.city, client.shopName, client.clientType].filter(Boolean).join(" · ") || "—"}
-                {client.managerEmail && ` · ${nameByEmail.get(client.managerEmail) ?? client.managerEmail}`}
-              </p>
-              <div className="flex flex-wrap gap-2 mt-3">
-                {client.phone && (
-                  <a
-                    href={`tel:${client.phone.replace(/[^\d+]/g, "")}`}
-                    className="badge bg-surface border border-line-hairline text-ink-primary hover:border-section-client"
-                  >
-                    <Icon name="phone" className="w-3.5 h-3.5 text-section-client" />
-                    {client.phone}
-                  </a>
-                )}
-                {client.paymentMethod && (
-                  <span className="badge bg-surface border border-line-hairline text-ink-secondary">
-                    <Icon name="card" className="w-3.5 h-3.5" />
-                    {client.paymentMethod}
-                  </span>
-                )}
-                {client.paymentTerms && (
-                  <span className="badge bg-surface border border-line-hairline text-ink-secondary">
-                    <Icon name="clock" className="w-3.5 h-3.5" />
-                    {client.paymentTerms}
-                  </span>
-                )}
-                {row?.sleeping && (
-                  <span className="badge bg-status-warning/15 text-[#8a5a00]">
-                    молчит с {formatDay(row.lastOrderDate)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <Link
-                href={shop ? "/retail/shops" : "/clients"}
-                className="text-sm text-ink-secondary hover:underline"
-              >
-                {shop ? "← Все магазины" : "← Все клиенты"}
-              </Link>
-              {newOrderHref && (
-                <Link href={newOrderHref} className="btn-primary !py-1.5">
-                  + Заявка
-                </Link>
-              )}
-            </div>
-          </div>
+  // Деньги по клиенту полосой (новый вид, 19.10.2026): оплачено / ждём (срок не вышел) / просрочено — по продажам,
+  // без отменённых, перемещений и объёма на город. Срок — день доставки плюс отсрочка клиента (`dueDateOf`).
+  const today = localDayKey();
+  const money3 = { paid: 0, waiting: 0, overdue: 0 };
+  const payOf = new Map(myOrders.map((o) => [o.orderId, orderPayState(o, today)]));
+  for (const p of Array.from(payOf.values())) {
+    money3.paid += p.paid;
+    if (p.late) money3.overdue += p.debt;
+    else money3.waiting += p.debt;
+  }
+  const moneyTotal = money3.paid + money3.waiting + money3.overdue;
+  const share = (v: number) => (moneyTotal > 0 ? (v / moneyTotal) * 100 : 0);
+  const status = !row
+    ? null
+    : row.neverOrdered
+      ? ({ tone: "muted", label: "Ещё не заказывал" } as const)
+      : row.sleeping
+        ? ({ tone: "wait", label: `Молчит с ${formatDay(row.lastOrderDate)}` } as const)
+        : ({ tone: "good", label: "Покупает" } as const);
+  const managerName = nameByEmail.get(client.managerEmail) ?? client.managerEmail;
+  const phoneDigits = client.phone.replace(/[^\d+]/g, "");
+  const waDigits = client.phone.replace(/\D/g, "");
 
-          {row && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-px mt-5 rounded-xl overflow-hidden border border-line-hairline bg-line-hairline">
-              <Stat title="Заявок" value={String(row.orders)} hint={row.neverOrdered ? "ещё не заказывал" : `первый ${formatDay(row.firstOrderDate)}`} />
-              <Stat title="Выручка" value={money(row.revenue)} hint="по счетам" />
-              <Stat
-                title="Средний чек"
-                value={row.orders > 0 ? money(row.avgCheck) : "—"}
-                hint={row.orders > 0 ? `≈ ${Math.round(row.avgStems)} стеблей` : "заказов не было"}
-              />
-              <Stat
-                title={row.debt > 0 ? "Должен" : "Долгов нет"}
-                value={row.debt > 0 ? money(row.debt) : money(row.paid)}
-                hint={row.debt > 0 ? "остаток по счетам" : "оплачено всего"}
-                tone={row.debt > 0 ? "warn" : "good"}
-              />
+  return (
+    <div>
+      <header className="no-print mb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+          <span className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl grid place-items-center flex-none text-white shadow-sm bg-section-client">
+            <Icon name="client" className="w-5 h-5" />
+          </span>
+          <div className="min-w-0">
+            <div className="text-[12px] font-semibold text-section-client">
+              <Link href={shop ? "/retail/shops" : "/clients"} className="hover:underline">
+                {shop ? `Наши магазины · ${retailLabel(client.retail)}` : "Клиенты"}
+              </Link>
+              <span className="text-ink-muted"> › {client.name}</span>
             </div>
+            <h1 className="font-display text-[22px] sm:text-[26px] leading-tight font-extrabold tracking-tight break-words">
+              {client.name}
+            </h1>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {waDigits.length >= 10 && (
+            <a href={`https://wa.me/${waDigits}`} target="_blank" rel="noreferrer" className="btn-secondary">
+              <Icon name="message" className="w-4 h-4" />
+              WhatsApp
+            </a>
+          )}
+          {newOrderHref && (
+            <Link href={newOrderHref} className="btn-primary">
+              + Новая заявка
+            </Link>
           )}
         </div>
       </header>
 
-      <div className="mb-5">
-        <ClientCard
-          clientId={client.clientId}
-          canEdit={canEdit}
-          canSetRetail={role === ROLES.ADMIN || role === ROLES.SALES_HEAD}
-          managerName={nameByEmail.get(client.managerEmail) ?? client.managerEmail}
-          values={{
-            name: client.name,
-            city: client.city,
-            shopName: client.shopName,
-            clientType: client.clientType,
-            contactPerson: client.contactPerson,
-            phone: client.phone,
-            messenger: client.messenger,
-            address: client.address,
-            paymentTerms: client.paymentTerms,
-            paymentMethod: client.paymentMethod,
-            kaspiPay1: client.kaspiPay1,
-            kaspiPay2: client.kaspiPay2,
-            retail: client.retail,
-            source: client.source,
-            note: client.note,
-          }}
-        />
-      </div>
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        {/* Слева — кто это: главное о клиенте и анкета. */}
+        <div className="w-full lg:w-[380px] lg:flex-none space-y-5">
+          <div className="card">
+            <div className="flex items-center gap-3">
+              <span className="w-12 h-12 rounded-xl bg-section-client-soft text-section-client grid place-items-center font-display font-extrabold text-lg flex-none">
+                {client.name.trim().charAt(0).toUpperCase() || "?"}
+              </span>
+              <div className="min-w-0">
+                <div className="font-display font-bold text-[16px] leading-tight break-words">{client.name}</div>
+                <div className="text-xs text-ink-muted mt-0.5">
+                  {[client.clientType, client.city].filter(Boolean).join(" · ") || "—"}
+                </div>
+              </div>
+              {status && (
+                <span className="ml-auto">
+                  <Pill tone={status.tone}>{status.label}</Pill>
+                </span>
+              )}
+            </div>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-4 mt-5 text-sm">
+              <Fact icon="client" label="Менеджер">
+                {managerName || "—"}
+              </Fact>
+              <Fact icon="phone" label="Телефон">
+                {client.phone ? (
+                  <a href={`tel:${phoneDigits}`} className="hover:text-section-client">
+                    {client.phone}
+                  </a>
+                ) : (
+                  "—"
+                )}
+              </Fact>
+              <Fact icon="card" label="Чем платит">
+                {client.paymentMethod || "—"}
+              </Fact>
+              <Fact icon="clock" label="Условия">
+                {client.paymentTerms || "—"}
+              </Fact>
+              {row && !row.neverOrdered && (
+                <>
+                  <Fact icon="leaf" label="Обычно берёт">
+                    {row.topPosition || "—"}
+                  </Fact>
+                  <Fact icon="calendar" label="Последний заказ">
+                    {formatDay(row.lastOrderDate)}
+                  </Fact>
+                </>
+              )}
+            </dl>
+          </div>
 
-      <Section
-        tone="order"
-        icon="order"
-        title="История заказов"
-        aside={<span className="text-ink-muted">{myOrders.length}</span>}
-        flush
-      >
-      <div className="table-scroll table-cards border-t border-line-hairline">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-ink-secondary border-b border-line-hairline">
-              <th className="px-4 py-3 font-medium">Заявка</th>
-              <th className="px-4 py-3 font-medium">Оформлена</th>
-              <th className="px-4 py-3 font-medium">Доставка</th>
-              <th className="px-4 py-3 font-medium">Позиции</th>
-              <th className="px-4 py-3 font-medium text-right">Сумма</th>
-              <th className="px-4 py-3 font-medium">Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            {myOrders.map((o) => (
-              <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
-                <td data-label="Заявка" className="px-4 py-2.5 whitespace-nowrap">
-                  <Link href={`/orders/${o.orderId}`} className="font-display font-bold hover:text-accent">
-                    № {orderCode(o.orderId)}
-                  </Link>
-                </td>
-                <td data-label="Оформлена" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                  {formatDay(o.createdAt)}
-                </td>
-                <td data-label="Доставка" className="px-4 py-2.5 text-ink-secondary whitespace-nowrap">
-                  {formatDay(o.deliveryDate)}
-                </td>
-                <td data-label="Позиции" className="px-4 py-2.5 text-ink-secondary">
-                  {o.items
-                    .map((i) => `${i.variety} ${formatGrade(i.grade)} — ${i.quantity}`)
-                    .join(", ")}
-                </td>
-                <td data-label="Сумма" className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
-                  {money(o.totalAmount)}
-                </td>
-                <td data-label="Статус" className="px-4 py-2.5">
-                  <OrderStatusBadge status={o.status} />
-                </td>
-              </tr>
-            ))}
-            {myOrders.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
-                  Заказов пока не было
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          <ClientCard
+            clientId={client.clientId}
+            canEdit={canEdit}
+            canSetRetail={role === ROLES.ADMIN || role === ROLES.SALES_HEAD}
+            managerName={managerName}
+            values={{
+              name: client.name,
+              city: client.city,
+              shopName: client.shopName,
+              clientType: client.clientType,
+              contactPerson: client.contactPerson,
+              phone: client.phone,
+              messenger: client.messenger,
+              address: client.address,
+              paymentTerms: client.paymentTerms,
+              paymentMethod: client.paymentMethod,
+              kaspiPay1: client.kaspiPay1,
+              kaspiPay2: client.kaspiPay2,
+              retail: client.retail,
+              source: client.source,
+              note: client.note,
+            }}
+          />
+        </div>
+
+        {/* Справа — деньги и заявки. */}
+        <div className="w-full min-w-0 flex-1 space-y-5">
+          {row && (
+            <div className="card">
+              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                <h2 className="font-display text-[15px] font-bold mr-auto">Деньги по клиенту</h2>
+                <span className="text-sm text-ink-secondary">
+                  Заявок на <b className="font-display font-extrabold text-ink-primary">{money(row.revenue)}</b>
+                </span>
+                <span className="text-sm text-ink-secondary">
+                  Всего заявок <b className="font-display font-extrabold text-ink-primary">{row.orders}</b>
+                </span>
+              </div>
+              {moneyTotal > 0 ? (
+                <>
+                  <div className="flex h-2.5 gap-[3px] rounded-full overflow-hidden mt-4 mb-3 bg-surface-sunk">
+                    {money3.paid > 0 && <span className="bg-status-good rounded-full" style={{ width: `${share(money3.paid)}%` }} />}
+                    {money3.waiting > 0 && <span className="bg-status-warning rounded-full" style={{ width: `${share(money3.waiting)}%` }} />}
+                    {money3.overdue > 0 && <span className="bg-status-critical rounded-full" style={{ width: `${share(money3.overdue)}%` }} />}
+                  </div>
+                  <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-ink-secondary">
+                    <Legend color="bg-status-good" label="Оплачено" value={money(money3.paid)} />
+                    <Legend color="bg-status-warning" label="Ждём" value={money(money3.waiting)} />
+                    <Legend color="bg-status-critical" label="Просрочено" value={money(money3.overdue)} />
+                    {row.orders > 0 && (
+                      <span className="sm:ml-auto">
+                        Средний чек <b className="font-display font-extrabold text-ink-primary">{money(row.avgCheck)}</b>
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-ink-muted mt-3">Счетов пока не было.</p>
+              )}
+            </div>
+          )}
+
+          <Section
+            tone="order"
+            icon="order"
+            title="Заявки клиента"
+            aside={<span className="text-ink-muted">{myOrders.length}</span>}
+            flush
+          >
+            <div className="table-scroll table-cards border-t border-line-hairline">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-ink-muted text-xs border-b border-line-hairline bg-surface-plane/60">
+                    <th className="px-4 py-2.5 font-medium">№</th>
+                    <th className="px-4 py-2.5 font-medium">Дата</th>
+                    <th className="px-4 py-2.5 font-medium">Что заказали</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Сумма</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Оплачено</th>
+                    <th className="px-4 py-2.5 font-medium">Оплата</th>
+                    <th className="px-4 py-2.5 font-medium">Этап</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myOrders.map((o) => {
+                    const pay = payOf.get(o.orderId);
+                    const first = o.items[0];
+                    return (
+                      <tr key={o.orderId} className="border-b border-line-hairline last:border-0 hover:bg-surface-plane">
+                        <td data-label="Заявка" className="px-4 py-3 whitespace-nowrap">
+                          <Link href={`/orders/${o.orderId}`} className="font-mono text-[12.5px] text-ink-secondary hover:text-accent">
+                            {orderCode(o.orderId)}
+                          </Link>
+                        </td>
+                        <td data-label="Дата" className="px-4 py-3 text-ink-secondary whitespace-nowrap">
+                          {formatDay(o.deliveryDate || o.createdAt)}
+                        </td>
+                        <td data-label="Что заказали" className="px-4 py-3 text-ink-secondary">
+                          {first ? (
+                            <>
+                              <b className="font-semibold text-ink-primary">{first.variety}</b>, {formatGrade(first.grade)} ·{" "}
+                              {first.quantity.toLocaleString("ru-RU")}
+                              {o.items.length > 1 && <span className="text-ink-muted"> +{o.items.length - 1}</span>}
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td data-label="Сумма" className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
+                          {money(o.totalAmount)}
+                        </td>
+                        <td data-label="Оплачено" className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-ink-secondary">
+                          {o.paidAmount > MONEY_EPSILON ? money(Math.min(o.paidAmount, o.totalAmount)) : "—"}
+                        </td>
+                        <td data-label="Оплата" className="px-4 py-3">
+                          {pay && <Pill tone={pay.tone}>{pay.label}</Pill>}
+                        </td>
+                        <td data-label="Этап" className="px-4 py-3">
+                          <OrderStageBadge stage={orderStage(o, today)} compact />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {myOrders.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
+                        Заказов пока не было
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        </div>
       </div>
-      </Section>
     </div>
   );
 }
 
-function Stat({
-  title,
-  value,
-  hint,
-  tone,
-}: {
-  title: string;
-  value: string;
-  hint?: string;
-  tone?: "warn" | "good";
-}) {
+function Fact({ icon, label, children }: { icon: IconName; label: string; children: React.ReactNode }) {
   return (
-    <div className="bg-surface px-4 py-3">
-      <div className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">{title}</div>
-      <div
-        className={`font-display text-xl sm:text-2xl font-extrabold tabular-nums mt-0.5 ${
-          tone === "warn" ? "text-[#8a5a00]" : tone === "good" ? "text-status-good" : ""
-        }`}
-      >
-        {value}
-      </div>
-      {hint && <div className="text-xs text-ink-muted mt-0.5">{hint}</div>}
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1.5 text-xs text-ink-muted mb-1">
+        <Icon name={icon} className="w-3.5 h-3.5" />
+        {label}
+      </dt>
+      <dd className="font-semibold break-words">{children}</dd>
     </div>
+  );
+}
+
+function Legend({ color, label, value }: { color: string; label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+      <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
+      {label} <b className="font-display font-extrabold text-ink-primary">{value}</b>
+    </span>
   );
 }

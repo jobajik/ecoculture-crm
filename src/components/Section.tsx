@@ -81,15 +81,21 @@ export default function Section({
   const t = SECTION_TONE[tone];
   return (
     <section className={clsx("card !p-0 relative overflow-hidden mb-5", className)}>
-      <span className={clsx("absolute inset-y-0 left-0 w-1", t.stripe)} aria-hidden="true" />
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-5 pr-4 sm:pr-5 pt-4 pb-3">
-        <span className={clsx("w-7 h-7 rounded-lg grid place-items-center flex-none", t.chip)}>
+      {/* Новый вид (19.10.2026): заголовок карточки отделён линией, цвет раздела — у значка. */}
+      <header
+        className={clsx(
+          "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 sm:px-5 py-3.5",
+          // Таблица во всю ширину (flush) почти всегда сама начинается с линии — вторая была бы лишней.
+          !flush && "border-b border-line-hairline"
+        )}
+      >
+        <span className={clsx("w-8 h-8 rounded-lg grid place-items-center flex-none", t.chip)}>
           <Icon name={icon} className="w-4 h-4" />
         </span>
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-secondary">{title}</h2>
+        <h2 className="font-display text-[15px] font-bold text-ink-primary">{title}</h2>
         {aside && <div className="ml-auto text-sm">{aside}</div>}
       </header>
-      <div className={flush ? "" : "pl-5 pr-4 sm:pr-5 pb-5"}>{children}</div>
+      <div className={flush ? "" : "px-4 sm:px-5 py-4"}>{children}</div>
     </section>
   );
 }
