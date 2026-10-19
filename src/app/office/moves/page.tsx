@@ -23,7 +23,7 @@ export default async function OfficeMovesPage() {
   const back = recent.filter((m) => m.direction === "to_main").reduce((s, m) => s + m.quantity, 0);
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         area="stock"
         title="Перемещения"

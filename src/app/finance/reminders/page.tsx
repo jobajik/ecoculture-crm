@@ -54,7 +54,7 @@ export default async function RemindersPage() {
     .slice(0, 40);
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="space-y-5">
       <PageHeader
         area="money"
         icon="message"

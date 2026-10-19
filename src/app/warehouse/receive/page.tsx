@@ -41,7 +41,7 @@ export default async function ReceivePage() {
   const nf = (n: number) => n.toLocaleString("ru-RU");
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <PageHeader
         area="stock"
         title={`Приёмка с производства${farm ? ` · ${farmLabel(farm)}` : ""}`}

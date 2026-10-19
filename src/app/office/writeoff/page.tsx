@@ -14,7 +14,7 @@ export default async function OfficeWriteoffPage({ searchParams }: { searchParam
   const role = (await getServerSession(authOptions))?.user?.role ?? "";
   const positions = stockPositions(inStore(await listBatches(), "office"), null);
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader area="stock" title="Списание в офисе" subtitle="Снимается с самых старых партий позиции." icon="alert" tabs={officeTabsFor(role)} />
       {role === "sales_head" ? (
         <p className="card text-sm text-ink-secondary">Списывает склад офиса.</p>

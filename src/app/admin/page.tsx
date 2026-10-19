@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { listUsers } from "@/lib/repo/users";
@@ -86,7 +87,9 @@ const ROLE_GUIDE: { code: string; does: string; farm: string }[] = [
   },
 ];
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams?: { tab?: string } }) {
+  // Настройки вкладками, а не лентой на пять экранов (19.10.2026, владелец: «одностраничный и удобный»).
+  const tab = ["staff", "wa", "farms", "notify"].includes(searchParams?.tab ?? "") ? searchParams!.tab! : "staff";
   const [session, users, settings, map, waLines, waMessages] = await Promise.all([
     getServerSession(authOptions),
     listUsers(),
@@ -117,8 +120,33 @@ export default async function AdminPage() {
     .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "ru"));
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <PageHeader area="admin" title="Настройки" icon="gear" />
+
+      <nav className="flex flex-wrap gap-2 -mt-1">
+        {(
+          [
+            ["staff", "Сотрудники и роли"],
+            ["wa", "WhatsApp менеджеров"],
+            ["farms", "Производства и сроки"],
+            ["notify", "Сводка и уведомления"],
+          ] as const
+        ).map(([key, label]) => (
+          <Link
+            key={key}
+            href={key === "staff" ? "/admin" : `/admin?tab=${key}`}
+            className={
+              tab === key
+                ? "h-9 px-4 rounded-full bg-ink-primary text-white text-sm font-medium grid place-items-center"
+                : "h-9 px-4 rounded-full border border-line-hairline bg-surface text-sm text-ink-secondary hover:text-ink-primary grid place-items-center"
+            }
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+
+      {tab === "staff" && (
 
       <Section tone="admin" icon="client" title="Сотрудники и роли" className="!mb-0">
         <p className="text-sm text-ink-secondary mb-3">Права меняются в течение минуты.</p>
@@ -164,7 +192,9 @@ export default async function AdminPage() {
           </div>
         </details>
       </Section>
+      )}
 
+      {tab === "wa" && (
       <Section
         tone="leads"
         icon="message"
@@ -182,7 +212,10 @@ export default async function AdminPage() {
       >
         <WaLinesAdmin lines={lineRows} managers={lineManagers} />
       </Section>
+      )}
 
+      {tab === "farms" && (
+      <div className="grid gap-6 xl:grid-cols-2 items-start">
       <Section tone="admin" icon="leaf" title="Производства" className="!mb-0">
         <p className="text-sm text-ink-secondary mb-3">Зав. складом видит только свой цветок.</p>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -222,7 +255,11 @@ export default async function AdminPage() {
           save={saveShelfLifeAction}
         />
       </Section>
+      </div>
+      )}
 
+      {tab === "notify" && (
+      <div className="grid gap-6 xl:grid-cols-2 items-start">
       <Section
         tone="admin"
         icon="message"
@@ -256,10 +293,12 @@ export default async function AdminPage() {
             </Hint>
           </>
         }
-        className="!mb-0 mt-5"
+        className="!mb-0"
       >
         <BotSalesPhonesForm initial={map[BOT_SALES_SETTING] ?? ""} />
       </Section>
+      </div>
+      )}
     </div>
   );
 }

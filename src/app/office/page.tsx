@@ -49,7 +49,7 @@ export default async function OfficePage() {
   const canRecount = isOfficeRole(role) || role === "admin";
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         area="stock"
         title="Офис"

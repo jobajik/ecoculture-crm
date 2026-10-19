@@ -63,7 +63,7 @@ export default async function DebtsPage() {
   const broken = calls.filter((c) => c.promiseState === "broken").length;
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="space-y-5">
       <PageHeader
         area="money"
         icon="phone"

@@ -65,7 +65,7 @@ export default async function PlansOverviewPage({ searchParams }: { searchParams
 
   const q = `?period=${month}`;
   return (
-    <div className="space-y-5 max-w-6xl">
+    <div className="space-y-5">
       <PageHeader area="plans" title="Планы" tabs={plansTabsFor(role, month)} actions={<MonthPace ov={ov} />} />
 
       <PeriodPicker period={month} />

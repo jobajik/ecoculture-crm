@@ -98,7 +98,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
   );
 
   return (
-    <div className="max-w-2xl">
+    <div>
       <PageHeader
         area="stock"
         title={`Отгрузка № ${orderCode(order.orderId)}`}

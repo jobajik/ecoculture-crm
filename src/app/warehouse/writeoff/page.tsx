@@ -22,7 +22,7 @@ export default async function WriteoffPage({ searchParams }: { searchParams?: { 
   const positions = stockPositions(inStore(await listBatches(), ""), farm);
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         area="stock"
         title={`Списание${farm ? ` · ${farmLabel(farm)}` : ""}`}
