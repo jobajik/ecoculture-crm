@@ -87,7 +87,7 @@ export default function MobileNav() {
             onClick={() => setOpen(false)}
             className="absolute inset-0 bg-ink-primary/40"
           />
-          <div className="absolute inset-y-0 left-0 w-[300px] max-w-[86vw] bg-surface shadow-card-hover px-3.5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col">
+          <div className="absolute inset-y-0 left-0 w-[300px] max-w-[86vw] bg-surface shadow-card-hover overflow-hidden px-3.5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col">
             <button
               type="button"
               onClick={() => setOpen(false)}

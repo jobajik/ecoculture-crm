@@ -14,7 +14,7 @@ export default function Nav() {
   if (!session) return null;
   return (
     <aside className="no-print hidden lg:block w-[248px] flex-none">
-      <div className="sticky top-0 h-screen border-r border-line-hairline bg-surface px-3.5 py-4">
+      <div className="sticky top-0 h-screen overflow-hidden border-r border-line-hairline bg-surface px-3.5 py-4">
         <SidebarMenu />
       </div>
     </aside>

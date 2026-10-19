@@ -100,7 +100,17 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative flex flex-col h-full">
+      {/* Соцветие водяным знаком внизу колонки (19.10.2026, владелец: «добавь силуэта лого, как было в карточках
+          заявки») — за карточкой сотрудника, бледно; нажатия не перехватывает. */}
+      <Image
+        src="/logo-mark.png"
+        alt=""
+        aria-hidden="true"
+        width={180}
+        height={180}
+        className="absolute -right-12 bottom-10 w-44 h-44 object-contain opacity-[0.12] pointer-events-none select-none"
+      />
       {/* Логотип поменьше (19.10.2026, владелец: «как будто большой»): 150 px по ширине, а не на всю колонку. */}
       <Link href="/" onClick={onNavigate} className="flex items-center px-2 pt-0.5 pb-3 mb-3 border-b border-line-hairline">
         <Image src="/logo.png" alt="Ecoculture" width={1020} height={593} priority className="w-[150px] h-auto object-contain" />
