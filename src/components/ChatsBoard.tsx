@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { closeNoteAction, draftReplyAction, sendReplyAction } from "@/app/clients/chats/actions";
+import { applyDecisionAction } from "@/app/clients/leads/decide/actions";
+import { analyzeLeadTalkAction } from "@/app/clients/leads/talk-actions";
 import { unwrap, unwrapValue } from "@/lib/actionResult";
+import Pill, { type PillTone } from "./Pill";
+import { stageLabel } from "@/lib/leads";
 import Chips from "./Chips";
 import Pager, { pageSlice } from "./Pager";
 
@@ -16,7 +20,37 @@ export interface BoardNote {
   at: string;
   note: string;
 }
+/**
+ * Решение ИИ по лиду собеседника (19.10.2026, владелец: «поместить сюда Решения ИИ — сразу на чатах»): что делать,
+ * почему, готовый черновик; «done» — решение уже применено касанием, «none» — ещё не разбирали.
+ */
+export interface BoardDecision {
+  group: "sell" | "follow_up" | "lost" | "none" | "done";
+  /** «Написать позже»: в какой день (уже словами). */
+  days: string;
+  why: string;
+  draft: string;
+  summary: string;
+  analyzedAt: string;
+  /** Сообщений после разбора — решение могло устареть. */
+  newMessages: number;
+  /** Переписки слишком мало, чтобы разбирать. */
+  tooShort: boolean;
+  /** Применить и разобрать может менеджер лида, РОП и админ. */
+  canWork: boolean;
+}
+
+const DECISION_MARK: Record<BoardDecision["group"], { label: string; tone: PillTone } | null> = {
+  sell: { label: "продать", tone: "good" },
+  follow_up: { label: "позже", tone: "muted" },
+  lost: { label: "отказ", tone: "bad" },
+  done: { label: "решено", tone: "muted" },
+  none: null,
+};
+
 export interface BoardChat {
+  /** Решение ИИ по лиду; null — собеседник не лид или решений нет. */
+  decision: BoardDecision | null;
   phone: string;
   key: string;
   name: string;
@@ -40,7 +74,7 @@ export interface BoardMessage {
   by: "ai" | "crm" | "";
 }
 
-type View = "all" | "waiting" | "notes" | "ai";
+type View = "all" | "waiting" | "sell" | "notes" | "ai";
 
 /** Время по Алматы — одинаково на сервере и в браузере (иначе страница перерисовывается целиком). */
 function formatMoment(iso: string | null | undefined): string {
@@ -97,6 +131,7 @@ export default function ChatsBoard({
     const digits = q.replace(/\D/g, "");
     return chats.filter((c) => {
       if (view === "waiting" && !c.waitingSince) return false;
+      if (view === "sell" && c.decision?.group !== "sell") return false;
       if (view === "notes" && c.notes.length === 0) return false;
       if (view === "ai" && !c.lastByAssistant) return false;
       if (!qq) return true;
@@ -108,6 +143,7 @@ export default function ChatsBoard({
   useEffect(() => setPage(0), [view, q, line]);
   const waitingCount = chats.filter((c) => c.waitingSince).length;
   const aiCount = chats.filter((c) => c.lastByAssistant).length;
+  const sellCount = chats.filter((c) => c.decision?.group === "sell").length;
 
   return (
     <div>
@@ -140,6 +176,7 @@ export default function ChatsBoard({
               items={[
                 { value: "all", label: "Все", count: chats.length },
                 { value: "waiting", label: "Ждут ответа", count: waitingCount, alarm: true },
+                { value: "sell", label: "Продать сейчас", count: sellCount },
                 { value: "notes", label: "Нужен менеджер", count: notesCount, alarm: true },
                 { value: "ai", label: "Ответил ИИ", count: aiCount },
               ]}
@@ -157,6 +194,19 @@ export default function ChatsBoard({
                   {c.waitingSince && <span suppressHydrationWarning className="flex-none rounded bg-status-critical/10 text-status-critical px-1 text-[11px]">ждёт {waitWords(c.waitingSince)}</span>}
                   {c.notes.length > 0 && <span className="flex-none rounded bg-status-warning/15 text-[#8a5a00] px-1 text-[11px]">нужен менеджер</span>}
                   {c.lastByAssistant && !c.waitingSince && <span className="flex-none rounded bg-section-leads-soft text-section-leads px-1 text-[11px]">ИИ</span>}
+                  {c.decision && DECISION_MARK[c.decision.group] && (
+                    <span
+                      className={clsx(
+                        "flex-none rounded px-1 text-[11px]",
+                        c.decision.group === "sell" && "bg-status-good/10 text-[#157a4b] font-semibold",
+                        c.decision.group === "lost" && "bg-status-critical/10 text-status-critical",
+                        (c.decision.group === "follow_up" || c.decision.group === "done") && "bg-surface-sunk text-ink-secondary"
+                      )}
+                    >
+                      {DECISION_MARK[c.decision.group]!.label}
+                      {c.decision.group === "follow_up" && c.decision.days ? ` ${c.decision.days}` : ""}
+                    </span>
+                  )}
                   <span className="text-xs text-ink-muted truncate min-w-0">
                     {c.lastDirection === "out" ? "Мы: " : ""}
                     {c.lastText}
@@ -286,6 +336,19 @@ function Thread({
           </button>
         </div>
       )}
+      {chat.partyKind === "lead" && chat.decision && (
+        <DecisionStrip
+          leadId={chat.partyId}
+          d={chat.decision}
+          busy={busy}
+          setBusy={setBusy}
+          setMsg={setMsg}
+          onInsert={(t) => {
+            setText(t);
+            setAiNote("");
+          }}
+        />
+      )}
       <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-2 bg-surface-plane">
         {thread.map((m) => (
           <div key={m.id} className={clsx("flex", m.direction === "out" ? "justify-end" : "justify-start")}>
@@ -333,6 +396,117 @@ function Thread({
           {msg && <span className={clsx("text-sm", msg.ok ? "text-status-good" : "text-status-critical")}>{msg.text}</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Полоска «ИИ по этому разговору» над перепиской: решение меткой, почему, черновик — и три кнопки: вставить черновик в
+ * поле ответа, применить решение (касание, стадия, дата — как на вкладке «Решения ИИ»), разобрать переписку заново.
+ */
+function DecisionStrip({
+  leadId,
+  d,
+  busy,
+  setBusy,
+  setMsg,
+  onInsert,
+}: {
+  leadId: string;
+  d: BoardDecision;
+  busy: string;
+  setBusy: (v: string) => void;
+  setMsg: (m: { ok: boolean; text: string } | null) => void;
+  onInsert: (text: string) => void;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(true);
+  const mark = DECISION_MARK[d.group];
+  const title =
+    d.group === "sell"
+      ? "ИИ: продать сейчас"
+      : d.group === "follow_up"
+        ? `ИИ: написать позже${d.days ? ` · ${d.days}` : ""}`
+        : d.group === "lost"
+          ? "ИИ: отказ"
+          : d.group === "done"
+            ? `Решение применено${d.analyzedAt ? ` · разбор ${formatMoment(d.analyzedAt)}` : ""}`
+            : d.tooShort
+              ? "ИИ: переписки пока мало для разбора"
+              : "ИИ ещё не разбирал эту переписку";
+
+  async function analyze() {
+    setBusy("analyze");
+    setMsg(null);
+    try {
+      unwrap(await analyzeLeadTalkAction(leadId));
+      router.refresh();
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof Error ? err.message : "Не удалось разобрать" });
+    } finally {
+      setBusy("");
+    }
+  }
+  async function apply() {
+    setBusy("apply");
+    setMsg(null);
+    try {
+      const r = unwrapValue(await applyDecisionAction(leadId));
+      setMsg({ ok: true, text: `Решение применено: стадия «${stageLabel(r.stage)}»${r.nextTouchAt ? `, следующее касание ${r.nextTouchAt.split("-").reverse().join(".")}` : ""}` });
+      router.refresh();
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof Error ? err.message : "Не удалось применить" });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const canAnalyze = d.canWork && !d.tooShort;
+  const stale = d.newMessages > 0 && d.group !== "none";
+  return (
+    <div className={clsx("px-4 py-2.5 border-b border-line-hairline text-sm", d.group === "sell" ? "bg-status-good/[0.06]" : "bg-section-leads-soft/60")}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {mark && d.group !== "done" && <Pill tone={mark.tone}>{mark.label}</Pill>}
+        <span className="font-semibold">{title}</span>
+        {stale && <span className="text-xs text-[#8a5a00]">после разбора клиент писал ещё {d.newMessages} — лучше разобрать заново</span>}
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {d.group !== "none" && (
+            <button type="button" className="text-xs text-ink-muted hover:text-ink-primary" onClick={() => setOpen((v) => !v)}>
+              {open ? "свернуть" : "подробнее"}
+            </button>
+          )}
+          {canAnalyze && (
+            <button type="button" className="btn-secondary !py-1 text-xs" onClick={analyze} disabled={!!busy}>
+              {busy === "analyze" ? "Разбираю…" : d.group === "none" ? "Разобрать" : "Разобрать заново"}
+            </button>
+          )}
+        </span>
+      </div>
+      {open && d.group !== "none" && (
+        <div className="mt-2 space-y-1.5">
+          {d.why && <p className="text-ink-secondary">{d.why}</p>}
+          {!d.why && d.summary && <p className="text-ink-secondary">{d.summary}</p>}
+          {d.draft && (d.group === "sell" || d.group === "follow_up") && (
+            <div className="rounded-lg bg-surface border border-line-hairline px-3 py-2 whitespace-pre-line text-[13px]">{d.draft}</div>
+          )}
+          {d.group !== "done" && (
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              {d.draft && (
+                <button type="button" className="btn-secondary !py-1 text-xs" onClick={() => onInsert(d.draft)} disabled={!!busy}>
+                  Вставить в ответ
+                </button>
+              )}
+              {d.canWork && (
+                <button type="button" className="btn-primary !py-1 text-xs" onClick={apply} disabled={!!busy}>
+                  {busy === "apply" ? "Применяю…" : d.group === "lost" ? "Применить: отказ" : d.group === "follow_up" ? "Применить: написать позже" : "Применить: в работу"}
+                </button>
+              )}
+              {!d.canWork && <span className="text-xs text-ink-muted">решение — за менеджером лида</span>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

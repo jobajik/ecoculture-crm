@@ -3,8 +3,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prefetchTables } from "@/lib/sheets";
 import { SHEET_TABS } from "@/lib/constants";
-import { phoneKey } from "@/lib/leads";
-import { listLeads } from "@/lib/repo/leads";
+import { canSeeLead, canWorkLead, phoneKey } from "@/lib/leads";
+import { listLeads, listLeadTouches } from "@/lib/repo/leads";
+import { listLeadAnalyses } from "@/lib/repo/talks";
+import { buildDecisionBoard, type DecisionGroup, type DecisionRow } from "@/lib/leadDecisions";
+import { localDayKey } from "@/lib/timezone";
+import { formatDay } from "@/lib/formatDate";
 import { listClients } from "@/lib/repo/clients";
 import { listWaMessages } from "@/lib/repo/talks";
 import { listUsers } from "@/lib/repo/users";
@@ -15,7 +19,7 @@ import { mergeMessages } from "@/lib/whatsapp";
 import { openAiConfigured } from "@/lib/openai";
 import PageHeader from "@/components/PageHeader";
 import Hint from "@/components/Hint";
-import ChatsBoard, { type BoardChat, type BoardMessage, type BoardNote } from "@/components/ChatsBoard";
+import ChatsBoard, { type BoardChat, type BoardDecision, type BoardMessage, type BoardNote } from "@/components/ChatsBoard";
 import { clientsTabsFor } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -37,13 +41,23 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
   const wanted = searchParams?.line ?? null;
   const current = lines.find((l) => l.code === wanted) ?? lines[0] ?? null;
 
-  await prefetchTables([SHEET_TABS.WA_MESSAGES, SHEET_TABS.LEADS, SHEET_TABS.CLIENTS, SHEET_TABS.USERS, SHEET_TABS.ASSISTANT_LOG]);
-  const [messages, leads, clients, users, log] = await Promise.all([
+  await prefetchTables([
+    SHEET_TABS.WA_MESSAGES,
+    SHEET_TABS.LEADS,
+    SHEET_TABS.CLIENTS,
+    SHEET_TABS.USERS,
+    SHEET_TABS.ASSISTANT_LOG,
+    SHEET_TABS.LEAD_ANALYSES,
+    SHEET_TABS.LEAD_TOUCHES,
+  ]);
+  const [messages, leads, clients, users, log, analyses, touches] = await Promise.all([
     listWaMessages({ lines: "all" }),
     listLeads(),
     listClients(),
     listUsers(),
     listAssistantLog(),
+    listLeadAnalyses(),
+    listLeadTouches(),
   ]);
   const parties = new Map<string, ChatPartyInfo>();
   for (const l of leads) {
@@ -79,7 +93,39 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
     }
   }
   const nameOf = (e: string) => users.find((u) => u.email.toLowerCase() === e)?.name || e;
+
+  // Решения ИИ прямо в чатах (19.10.2026, владелец: «поместить сюда Решения ИИ — сразу на чатах»): по лиду собеседника —
+  // продать / позже / отказ, почему и черновик; применено ли уже. Те же правила, что на вкладке «Решения ИИ»
+  // (`buildDecisionBoard`), только разложены по номерам телефонов.
+  const today = localDayKey();
+  const board = buildDecisionBoard({
+    leads: leads.filter((l) => canSeeLead(role, email, l)),
+    messages,
+    analyses,
+    touches,
+    today,
+    toDay: (iso) => (iso ? localDayKey(new Date(iso)) : ""),
+  });
+  const decisionByLead = new Map<string, BoardDecision>();
+  const put = (r: DecisionRow, group: DecisionGroup | "done") => {
+    const lead = leads.find((l) => l.leadId === r.leadId);
+    decisionByLead.set(r.leadId, {
+      group,
+      days: group === "follow_up" ? (r.dueDay ? formatDay(r.dueDay) : "") : "",
+      why: r.why,
+      draft: r.draft,
+      summary: r.summary,
+      analyzedAt: r.analyzedAt,
+      newMessages: r.newMessages,
+      tooShort: r.tooShort,
+      canWork: !!lead && canWorkLead(role, email, lead),
+    });
+  };
+  for (const g of ["sell", "follow_up", "lost", "none"] as const) for (const r of board.groups[g]) put(r, g);
+  for (const r of board.done) put(r, "done");
+
   const boardChats: BoardChat[] = chats.map((c) => ({
+    decision: c.party?.kind === "lead" ? decisionByLead.get(c.party.id) ?? null : null,
     phone: c.phone,
     key: c.key,
     name: c.name,
