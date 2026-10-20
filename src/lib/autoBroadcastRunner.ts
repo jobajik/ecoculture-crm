@@ -207,7 +207,8 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
     for (const [line, list] of Array.from(byLine.entries())) {
       const who = managerOfLine(line);
       const lineLabel = line === "" ? "рабочий номер" : who ? `номер ${genitiveName(who)}` : line === LEADS_LINE ? "номер лидов" : `номер ${line}`;
-      specs.push({ rule: "leads", line, lineLabel, fileId: "", fileName: "", audience: `Автопилот: лиды с касанием на сегодня или просроченным (${list.length})`, recipients: list });
+      // С фото из ротации — цветок и сорт берутся из личного текста (20.10.2026, владелец: «мало шлёшь фоток… это же визуал»).
+      specs.push({ rule: "leads", line, lineLabel, fileId: ROTATION_FILE, fileName: "Фото из ротации", audience: `Автопилот: лиды с касанием на сегодня или просроченным (${list.length})`, recipients: list });
     }
   }
 
@@ -292,7 +293,7 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
       taken.add(phoneKey(h.phone));
     }
     mainLeft -= list.length;
-    mainSpec("sleeping", list, `Автопилот: клиенты, которые молчат дольше обычного (${list.length})`, false);
+    mainSpec("sleeping", list, `Автопилот: клиенты, которые молчат дольше обычного (${list.length})`, true);
   }
 
   // --- Распродажа — тем, кто уже брал эту позицию ------------------------------------------------------------

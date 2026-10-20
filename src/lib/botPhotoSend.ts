@@ -66,7 +66,7 @@ export function photoPrices(photo: Pick<BotPhoto, "flowerType" | "variety" | "gr
  * + вопрос) и запись «отправлено» для ротации. Нет фото — null.
  */
 export function rotationPhoto(ctx: PhotoContext, opts: { flowers?: string[]; question: string; caption?: string }): { url: string; name: string; caption: string; after: WriteOp; photo: Photo } | null {
-  const photo = pickRotationPhoto(ctx.photos, { flowers: opts.flowers }) as Photo | null;
+  const photo = pickRotationPhoto(ctx.photos, { flowers: opts.flowers, text: opts.caption }) as Photo | null;
   if (!photo) return null;
   const caption = opts.caption ?? photoMessage({ caption: photo.caption, prices: photoPrices(photo, ctx), question: opts.question });
   // В памяти тоже отметить: следующий получатель в этом же запуске получит другое фото.

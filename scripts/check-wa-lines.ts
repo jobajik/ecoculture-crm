@@ -80,8 +80,15 @@ check("менеджер ответил между — снова можно", v(
 check("автоответ магазина — нет", v([M("1", "2026-10-16T06:00:00Z", "out"), M("2", "2026-10-16T06:01:00Z", "in", "Спасибо за обращение! Ответим в ближайшее время.")], fri12).reason, "похоже на автоответ");
 
 // --- Ответ модели и переписка для неё -----------------------------------------------------
-check("ответ: молчать", parseAssistantAnswer({ reply: "x", silent: true, needs_manager: "" }), { reply: "", silent: true, note: "" });
-check("ответ: **жирный** → *жирный*", parseAssistantAnswer({ reply: "Цена **270 ₸**", silent: false, needs_manager: "оформить заказ" }), { reply: "Цена *270 ₸*", silent: false, note: "оформить заказ" });
+const noPhoto = { flowerType: "", variety: "", grade: "" };
+check("ответ: молчать", parseAssistantAnswer({ reply: "x", silent: true, needs_manager: "" }), { reply: "", silent: true, note: "", photo: noPhoto });
+check("ответ: **жирный** → *жирный*", parseAssistantAnswer({ reply: "Цена **270 ₸**", silent: false, needs_manager: "оформить заказ" }), { reply: "Цена *270 ₸*", silent: false, note: "оформить заказ", photo: noPhoto });
+check(
+  "ответ: фото позиции",
+  parseAssistantAnswer({ reply: "Мини-микс кустовые — 120 ₸", silent: false, needs_manager: "", photo: { flowerType: "rose", variety: "Мини-микс кустовые", grade: "Мини-микс" } }).photo,
+  { flowerType: "rose", variety: "Мини-микс кустовые", grade: "Мини-микс" }
+);
+check("ответ: незнакомый цветок — без фото", parseAssistantAnswer({ reply: "x", silent: false, needs_manager: "", photo: { flowerType: "tulip", variety: "A", grade: "" } }).photo, noPhoto);
 check("ответ: пустой — молчать", parseAssistantAnswer({ reply: " ", silent: false, needs_manager: "" }).silent, true);
 check("переписка: клиент и мы", assistantTranscript(base).split("\n").map((l) => l.replace(/^\[[^\]]*\] /, "")), ["Мы: Здравствуйте", "Клиент: Сколько стоит хризантема?"]);
 

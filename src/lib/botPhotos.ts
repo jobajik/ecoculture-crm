@@ -68,15 +68,30 @@ export function photoRefusal(input: { flowerType: string; caption: string; fileI
  * есть), из них — давнее всех отправленное, потом реже отправленное, потом
  * новое. `exclude` — уже отправленные этому человеку сегодня.
  */
-export function pickRotationPhoto(photos: BotPhoto[], opts: { flowers?: string[]; exclude?: string[] } = {}): BotPhoto | null {
+export function pickRotationPhoto(photos: BotPhoto[], opts: { flowers?: string[]; exclude?: string[]; text?: string } = {}): BotPhoto | null {
   const exclude = new Set(opts.exclude ?? []);
   const live = photos.filter((p) => p.active && p.fileId && !isInfoPhoto(p) && !exclude.has(p.photoId));
   const wanted = (opts.flowers ?? []).filter(Boolean);
   const pool = wanted.length ? live.filter((p) => wanted.includes(p.flowerType)) : [];
-  const list = pool.length ? pool : live;
+  // Сорт, названный в тексте («Jumilia 60 — 220 ₸»), — фото этого сорта (20.10.2026: фото к позиции, а не любое фото цветка).
+  const named = namedInText(pool.length ? pool : live, opts.text || "");
+  const list = named.length ? named : pool.length ? pool : live;
   if (list.length === 0) return null;
   const t = (iso: string) => Date.parse(iso || "") || 0;
   return [...list].sort((a, b) => t(a.lastSentAt) - t(b.lastSentAt) || a.sentCount - b.sentCount || (a.createdAt < b.createdAt ? 1 : -1))[0];
+}
+
+/** Фото, чей сорт (или «мини-микс») назван в тексте. */
+export function namedInText(photos: BotPhoto[], text: string): BotPhoto[] {
+  const norm = (x: string) => x.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+  const t = norm(text);
+  if (!t) return [];
+  const mini = /мини[\s-]?микс/.test(t);
+  return photos.filter((p) => {
+    const v = norm(p.variety || "");
+    if (v && v.length >= 3 && t.includes(v)) return true;
+    return mini && /мини[\s-]?микс/.test(norm(`${p.variety} ${p.grade}`));
+  });
 }
 
 /**

@@ -1,7 +1,11 @@
 import { chatJson, openAiConfigured } from "./openai";
 import { salesKnowledge } from "./botEngine";
 import { toWhatsApp } from "./botOrder";
-import { sendText, type GreenConfig } from "./greenApi";
+import { sendFileByUrl, sendText, type GreenConfig } from "./greenApi";
+import { isInfoPhoto, photoLabel, pickItemPhoto, type BotPhoto } from "./botPhotos";
+import { listBotPhotos, botPhotoSentWrite } from "./repo/botPhotos";
+import { photoFileUrl } from "./catalogFiles";
+import { commitAtomic } from "./sheets";
 import { ourPhoneKeys } from "./lineNotify";
 import { phoneKey } from "./leads";
 import { mergeMessages, messageText } from "./whatsapp";
@@ -32,11 +36,23 @@ const S = (description: string) => ({ type: "string", description });
 export const ASSISTANT_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "silent", "needs_manager"],
+  required: ["reply", "silent", "needs_manager", "photo"],
   properties: {
     reply: S("Сообщение клиенту в WhatsApp. Пусто, если silent"),
     silent: { type: "boolean", description: "true — не отвечать: автоответ, кивок, не про цветы, сотрудник, поставщик, водитель, личное" },
     needs_manager: S("Что сделать менеджеру одной фразой: оформить заказ (позиции, количество, день), дать ответ на вопрос, позвонить. Иначе пусто"),
+    photo: {
+      type: "object",
+      additionalProperties: false,
+      required: ["flowerType", "variety", "grade"],
+      description:
+        "О какой позиции твой ответ (предлагаешь её или клиент о ней спрашивает) — система приложит её фото из теплицы, ответ уйдёт подписью к фото. Нет конкретной позиции — пустые строки.",
+      properties: {
+        flowerType: { type: "string", enum: ["", "rose", "chrysanthemum", "eustoma"] },
+        variety: { type: "string" },
+        grade: { type: "string" },
+      },
+    },
   },
 };
 
@@ -76,6 +92,11 @@ export function assistantSystemPrompt(p: {
     "- цены — ТОЛЬКО из прайса ниже (тенге за стебель), наличие — ТОЛЬКО по складу ниже; точное число стеблей не называй;",
     "- на вопрос «что есть» — 3–5 ходовых позиций со склада с ценами; объём не назван — предложи одно число с суммой;",
     "- «дорого» — предложи категорию ниже или другой сорт с суммой; «подумаю» — пробную партию.",
+    "- Спрашивают о цветах (что есть, сорт, категория, цена, мини-микс, свежесть) — отвечай С ФОТО: заполни photo позицией,",
+    "  о которой речь (на общий вопрос — ходовой сорт со склада, который предлагаешь; объясняешь, что такое мини-микс, —",
+    "  grade «Мини-микс»). Живое фото с теплицы продаёт лучше слов.",
+    "  Тогда reply уйдёт ПОДПИСЬЮ к фото: коротко, что за позиция, цена и одна живая деталь. Не пиши «отправляю фото» —",
+    "  оно придёт само, если есть. Без фото (photo пустой): отказ, раздражение, оплата, доставка, документы, автоответ, «спасибо».",
     "Что НЕЛЬЗЯ, это решает менеджер (тогда честно «уточню и отпишусь» и заполни needs_manager):",
     "- оформлять заказ и выставлять счёт: клиент назвал позицию и количество или согласился — подтверди коротко",
     leads
@@ -129,13 +150,39 @@ export interface AssistantAnswer {
   reply: string;
   silent: boolean;
   note: string;
+  /** О какой позиции ответ — к нему уйдёт её фото (20.10.2026, владелец: «мало шлёшь фоток… это же визуал»). */
+  photo: { flowerType: string; variety: string; grade: string };
 }
+
+const PHOTO_FLOWERS = ["rose", "chrysanthemum", "eustoma"];
 
 export function parseAssistantAnswer(raw: unknown): AssistantAnswer {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const silent = r.silent === true;
   const reply = silent ? "" : toWhatsApp(String(r.reply || "").trim()).slice(0, 3000);
-  return { reply, silent: silent || !reply, note: String(r.needs_manager || "").trim().slice(0, 400) };
+  const ph = (r.photo && typeof r.photo === "object" ? r.photo : {}) as Record<string, unknown>;
+  const flowerType = PHOTO_FLOWERS.includes(String(ph.flowerType || "")) ? String(ph.flowerType) : "";
+  const photo = flowerType
+    ? { flowerType, variety: String(ph.variety || "").trim().slice(0, 80), grade: String(ph.grade || "").trim().slice(0, 40) }
+    : { flowerType: "", variety: "", grade: "" };
+  return { reply, silent: silent || !reply, note: String(r.needs_manager || "").trim().slice(0, 400), photo };
+}
+
+/**
+ * Фото позиции к ответу помощника: то же правило, что у бота (`pickItemPhoto`) — живые первыми, фото, уже
+ * ушедшее этому человеку (подпись есть в переписке), второй раз не идёт. Нет фото или ответ длиннее подписи — null.
+ */
+export async function assistantPhotoFor(chat: WaMessage[], a: AssistantAnswer): Promise<(BotPhoto & { rowNumber: number }) | null> {
+  if (!a.photo.flowerType || !a.reply || a.reply.length > 1024) return null;
+  try {
+    const photos = await listBotPhotos();
+    const recent = chat.map((m) => messageText(m)).join("\n");
+    const live = photos.filter((p) => !isInfoPhoto(p));
+    return pickItemPhoto(live, a.photo, recent, []) as (BotPhoto & { rowNumber: number }) | null;
+  } catch (err) {
+    console.error("assistant photo:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 /** Ответ помощника на переписку ОДНОЙ линии с ОДНИМ номером — без отправки. `line` — чей номер (Земфира пишет иначе). */
@@ -162,10 +209,18 @@ async function managerNameOf(email: string): Promise<string> {
 }
 
 /** Отправить текст с номера линии (менеджера или Земфиры), записать в переписку и журнал. Возвращает номер сообщения. */
-export async function sendFromLine(line: WaLine, phone: string, text: string, kind: "auto" | "crm", byEmail: string, note = ""): Promise<string> {
+export async function sendFromLine(
+  line: WaLine,
+  phone: string,
+  text: string,
+  kind: "auto" | "crm",
+  byEmail: string,
+  note = "",
+  photo: (BotPhoto & { rowNumber: number }) | null = null
+): Promise<string> {
   const cfg = assistantLineConfig(line);
   if (!cfg) throw new Error("Номер не подключён или выключен — проверьте в «Настройках → WhatsApp менеджеров».");
-  return sendOnLine(line.code, cfg, phone, text, kind, byEmail, note);
+  return sendOnLine(line.code, cfg, phone, text, kind, byEmail, note, photo);
 }
 
 /**
@@ -173,8 +228,20 @@ export async function sendFromLine(line: WaLine, phone: string, text: string, ki
  * сообщение из CRM сразу было видно в чате, не дожидаясь уведомления Green API (19.10.2026: «Отправить» и на номере
  * Земфиры — владелец: «нажать „предложить ответ“ и реально отправить»).
  */
-export async function sendOnLine(code: string, cfg: GreenConfig, phone: string, text: string, kind: "auto" | "crm", byEmail: string, note = ""): Promise<string> {
-  const id = await sendText(cfg, phone, text);
+export async function sendOnLine(
+  code: string,
+  cfg: GreenConfig,
+  phone: string,
+  text: string,
+  kind: "auto" | "crm",
+  byEmail: string,
+  note = "",
+  photo: (BotPhoto & { rowNumber: number }) | null = null
+): Promise<string> {
+  // С фото — ответ подписью к нему; в переписку — с пометкой фото и началом его подписи (как у бота), чтобы то же
+  // фото этому человеку второй раз не ушло.
+  const id = photo ? await sendFileByUrl(cfg, phone, photoFileUrl(photo), photo.fileName || "photo.jpg", text) : await sendText(cfg, phone, text);
+  if (photo) await commitAtomic([botPhotoSentWrite(photo)]).catch(() => undefined);
   const now = new Date().toISOString();
   const msg: WaMessage = {
     messageId: id,
@@ -182,8 +249,8 @@ export async function sendOnLine(code: string, cfg: GreenConfig, phone: string, 
     chatId: `${phone}@c.us`,
     phone,
     direction: "out",
-    type: "text",
-    text,
+    type: photo ? "image" : "text",
+    text: photo ? `[фото: ${photoLabel(photo)} — ${photo.caption.slice(0, 40)}] ${text}` : text,
     mediaUrl: "",
     senderName: "",
     source: kind === "auto" ? "assistant" : "crm",
@@ -288,7 +355,8 @@ export async function runAssistantSweep(
         }
         continue;
       }
-      await sendFromLine(d.line, d.phone, a.reply, "auto", "assistant");
+      const pic = await assistantPhotoFor(d.chat, a);
+      await sendFromLine(d.line, d.phone, a.reply, "auto", "assistant", "", pic);
       result.replied++;
       if (a.note) {
         await appendAssistantLog([{ at: new Date().toISOString(), line: d.line.code, phone: d.phone, kind: "note", messageId: "", text: a.reply, note: a.note, byEmail: "assistant" }]);

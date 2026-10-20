@@ -70,6 +70,14 @@ async function main() {
   check("нужный цветок — из его фото", pickRotationPhoto(photos, { flowers: ["chrysanthemum"] })?.photoId, "2");
   check("фото цветка нет — любое", pickRotationPhoto(photos, { flowers: ["eustoma"] })?.photoId, "3");
   check("выключенное не уходит", pickRotationPhoto([ph("4", { active: false })]), null);
+  const named = [
+    ph("r1", { flowerType: "rose", variety: "Prestige", lastSentAt: "" }),
+    ph("r2", { flowerType: "rose", variety: "Jumilia", lastSentAt: "2026-10-10T00:00:00Z" }),
+    ph("r3", { flowerType: "rose", variety: "", grade: "Мини-микс", lastSentAt: "2026-10-11T00:00:00Z" }),
+  ];
+  check("сорт из текста — его фото", pickRotationPhoto(named, { flowers: ["rose"], text: "• Роза Jumilia 60 — 220 ₸" })?.photoId, "r2");
+  check("мини-микс в тексте — фото мини-микса", pickRotationPhoto(named, { flowers: ["rose"], text: "Роза мини-микс кустовые — 120 ₸" })?.photoId, "r3");
+  check("сорт не назван — обычная ротация", pickRotationPhoto(named, { flowers: ["rose"], text: "Свежий срез роз" })?.photoId, "r1");
   check("для каталога — фото цветка, свежие первыми", catalogPhotos([ph("a", { createdAt: "2026-09-01" }), ph("b", { createdAt: "2026-10-01" }), ph("c", { flowerType: "rose" })], "chrysanthemum").map((p) => p.photoId), ["b", "a"]);
   check("подпись: текст, цены списком, вопрос", photoMessage({ caption: "Свежий срез Altaj.", prices: [{ label: "Хризантема Altaj, Высшая", price: 620 }], question: nudgePhotoQuestion(1) }).split("\n"), [
     "Свежий срез Altaj.",
