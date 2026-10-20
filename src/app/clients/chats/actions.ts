@@ -12,7 +12,8 @@ import { closeAssistantNotes, listAssistantLog, listWaLines } from "@/lib/repo/w
 import { assistantAnswer, DRAFT_TASK, sendFromLine, sendOnLine } from "@/lib/lineAssistant";
 import { greenLeadsConfig } from "@/lib/greenApi";
 import { canSendOnLeadsLine } from "@/lib/chatAccess";
-import { isManagerLine } from "@/lib/waLines";
+import { isManagerLine, LEADS_LINE } from "@/lib/waLines";
+import { leadsLineOwner } from "@/lib/waAutoLead";
 import { listUsers } from "@/lib/repo/users";
 
 /**
@@ -37,9 +38,11 @@ async function draftReplyActionInner(line: string, phone: string): Promise<{ tex
   const { email, role } = await requireChatUser();
   if (!(await canSeeLine(role, email, line))) throw new Error("Это чужой номер");
   const chat = await chatOf(line, phone);
-  const owner = isManagerLine(line) ? (await listWaLines()).find((l) => l.code === line)?.managerEmail ?? "" : email;
-  const name = ((await listUsers()).find((u) => u.email.toLowerCase() === owner)?.name || "").split(/\s+/)[0] || "";
-  const a = await assistantAnswer(chat, chat[chat.length - 1].phone, name, DRAFT_TASK);
+  const users = await listUsers();
+  // Чьим именем писать: номер менеджера — его, номер Земфиры — её (а не того, кто нажал кнопку), основной — свой.
+  const owner = isManagerLine(line) ? (await listWaLines()).find((l) => l.code === line)?.managerEmail ?? "" : line === LEADS_LINE ? leadsLineOwner(users) || email : email;
+  const name = (users.find((u) => u.email.toLowerCase() === owner)?.name || "").split(/\s+/)[0] || "";
+  const a = await assistantAnswer(chat, chat[chat.length - 1].phone, name, DRAFT_TASK, line);
   return { text: a.reply, note: a.note, silent: a.silent };
 }
 

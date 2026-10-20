@@ -10,7 +10,8 @@ import { pullLineHistory, setupLine } from "@/lib/leadsLineSetup";
 import { sealSecret } from "@/lib/secretBox";
 import { listUsers } from "@/lib/repo/users";
 import { listWaLines, managerLineConfig, saveWaLine, updateWaLine } from "@/lib/repo/waLines";
-import { lineCodeFor, lineInputRefusal, parseAssistantMode, type AssistantMode, type WaLine } from "@/lib/waLines";
+import { LEADS_ASSISTANT_SETTING, lineCodeFor, lineInputRefusal, parseAssistantMode, parseLeadsAssistantMode, type AssistantMode, type WaLine } from "@/lib/waLines";
+import { saveSettings } from "@/lib/repo/settings";
 
 /**
  * «Настройки → WhatsApp менеджеров» (16.10.2026). Подключает номера только администратор: ключ даёт
@@ -149,6 +150,21 @@ async function setWaLineModeActionInner(code: string, input: { assistant?: strin
   return { ok: true };
 }
 
+/**
+ * Режим помощника на номере Земфиры (20.10.2026, владелец: «или автоматом, чтобы сам ИИ отправлял» — выбрал «подсказывает и
+ * отвечает при молчании»). Строки в `WaLines` у её номера нет — режим хранится настройкой `LeadsAssistant`.
+ */
+async function setLeadsAssistantModeActionInner(mode: string) {
+  await requireAdmin();
+  if (!greenLeadsConfig()) throw new Error("Номер Земфиры не подключён (ключи GREENAPI_LEADS_* не заданы)");
+  await saveSettings({ [LEADS_ASSISTANT_SETTING]: parseLeadsAssistantMode(mode) });
+  refresh();
+  return { ok: true };
+}
+
+export async function setLeadsAssistantModeAction(...args: Parameters<typeof setLeadsAssistantModeActionInner>) {
+  return guard(() => setLeadsAssistantModeActionInner(...args));
+}
 export async function saveWaLineAction(...args: Parameters<typeof saveWaLineActionInner>) {
   return guard(() => saveWaLineActionInner(...args));
 }

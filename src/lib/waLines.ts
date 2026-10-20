@@ -37,6 +37,41 @@ export function parseAssistantMode(raw: string | null | undefined): AssistantMod
   return v === "off" ? "off" : v === "sell" ? "sell" : "on";
 }
 
+/**
+ * Помощник на номере Земфиры (20.10.2026, владелец про чат с её номера: «нажать „предложить ответ“ и реально отправить —
+ * или автоматом, чтобы сам ИИ отправлял»; выбрал «подсказывает и отвечает при молчании»). У её номера нет строки в
+ * `WaLines` (ключи — в переменных `GREENAPI_LEADS_*`), поэтому режим живёт настройкой `LeadsAssistant` в `Settings`:
+ * «on» — отвечает, когда Земфира молчит 20 минут (вечером и в выходные — сразу), иначе «off» — только черновик по кнопке.
+ * «Продаёт сам» на этом номере не бывает: лиды с рекламы она передаёт менеджерам по оформлению, заказ оформляют они.
+ * По умолчанию выключен — 13.10.2026 решили, что на её номере отвечает она сама.
+ */
+export const LEADS_LINE = "leads";
+export const LEADS_ASSISTANT_SETTING = "LeadsAssistant";
+
+export function parseLeadsAssistantMode(raw: string | null | undefined): AssistantMode {
+  return (raw || "").trim() === "on" ? "on" : "off";
+}
+
+/** Номер Земфиры в виде линии помощника — чтобы проход, «Переписки» и журнал обращались с ним как с номером менеджера. */
+export function leadsAssistantLine(input: { connected: boolean; mode: string | null | undefined; ownerEmail: string }): WaLine | null {
+  if (!input.connected) return null;
+  return {
+    code: LEADS_LINE,
+    managerEmail: (input.ownerEmail || "").trim().toLowerCase(),
+    label: "Земфира (реклама)",
+    url: "",
+    instance: "",
+    tokenEnc: "",
+    active: true,
+    assistant: parseLeadsAssistantMode(input.mode),
+    createdAt: "",
+    updatedAt: "",
+    phone: "",
+    state: "",
+    stateAt: "",
+  };
+}
+
 export interface WaLine {
   code: string;
   managerEmail: string;

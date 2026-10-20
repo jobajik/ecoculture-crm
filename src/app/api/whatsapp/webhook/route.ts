@@ -15,7 +15,7 @@ import { botIncomingOf, parseGreenStatus } from "@/lib/greenOut";
 import { runBot } from "@/lib/botEngine";
 import { draftFromIncoming } from "@/lib/waOrderRunner";
 import { kickFollowup } from "@/lib/botFollowUpRun";
-import { listWaLines } from "@/lib/repo/waLines";
+import { leadsLine as zemfiraLine, listWaLines } from "@/lib/repo/waLines";
 import { genitiveName, isManagerLine, isWorkTime, type WaLine } from "@/lib/waLines";
 import { kickAssistant, kickAssistantChat, kickLineWatch } from "@/lib/lineAssistant";
 import { staffPhoneKeys } from "@/lib/botSalesAlert";
@@ -67,10 +67,7 @@ export async function POST(request: Request) {
   const lineParam = new URL(request.url).searchParams.get("line") || "";
   // Автопилот рассылок шлёт с сайта; любое уведомление днём будит его цепочку (не чаще раза в 2 мин).
   await kickBroadcast(siteOrigin(request));
-  if (lineParam === "leads") {
-    await kickAssistant(siteOrigin(request));
-    return leadsLine(body);
-  }
+  if (lineParam === "leads") return leadsLine(body, request);
   // Номер менеджера (`?line=m-…`, 16.10.2026): переписка, авто-лид на него и ИИ-помощник.
   if (isManagerLine(lineParam)) return managerLine(body, lineParam, request);
 
@@ -137,8 +134,12 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-/** Сообщение с номера Земфиры: записать (голосовое — с расшифровкой) и ничего больше. */
-async function leadsLine(body: unknown) {
+/**
+ * Сообщение с номера Земфиры: записать (голосовое — с расшифровкой), авто-лид, и — если помощник на её номере включён
+ * (настройка `LeadsAssistant`, 20.10.2026) — разбудить его: вне рабочего времени ответ этому чату сразу после серии
+ * сообщений, днём — общий проход (ответит, если Земфира молчит 20 минут). Бота и черновиков заявок здесь нет.
+ */
+async function leadsLine(body: unknown, request: Request) {
   // Статусы сообщений рассылки с номера Земфиры (15.10.2026) — для «прочитали». С её телефона — нет (`sendByApi`).
   const status = parseGreenStatus(body);
   if (status) {
@@ -175,6 +176,13 @@ async function leadsLine(body: unknown) {
     await autoLead(message);
   } catch (err) {
     console.error("whatsapp leads auto-lead:", err instanceof Error ? err.message : err);
+  }
+  try {
+    const zemfira = message.direction === "in" ? await zemfiraLine() : null;
+    if (zemfira?.assistant === "on" && !isWorkTime(new Date())) await kickAssistantChat(siteOrigin(request), zemfira.code, message.phone);
+    else await kickAssistant(siteOrigin(request));
+  } catch (err) {
+    console.error("whatsapp leads assistant:", err instanceof Error ? err.message : err);
   }
   return NextResponse.json({ ok: true });
 }

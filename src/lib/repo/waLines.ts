@@ -3,7 +3,10 @@ import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import { greenConfig, greenLeadsConfig, type GreenConfig } from "../greenApi";
 import { openSecret } from "../secretBox";
-import { isManagerLine, parseAssistantMode, type WaLine } from "../waLines";
+import { isManagerLine, LEADS_ASSISTANT_SETTING, LEADS_LINE, leadsAssistantLine, parseAssistantMode, type WaLine } from "../waLines";
+import { leadsLineOwner } from "../waAutoLead";
+import { settingsMap } from "./broadcasts";
+import { listUsers } from "./users";
 
 /**
  * Номера WhatsApp менеджеров (вкладка WaLines) и журнал ИИ-помощника (AssistantLog).
@@ -103,6 +106,29 @@ export function managerLineConfig(line: WaLine | undefined | null): GreenConfig 
   const token = openSecret(line.tokenEnc);
   if (!token) return null;
   return { url: line.url || "https://api.green-api.com", instance: line.instance, token };
+}
+
+/**
+ * Номер Земфиры как линия помощника (20.10.2026): ключи — из `GREENAPI_LEADS_*`, режим — настройка `LeadsAssistant`,
+ * «менеджер» линии — активная роль «Лиды с рекламы». Не подключён — null.
+ */
+export async function leadsLine(): Promise<WaLine | null> {
+  if (!greenLeadsConfig()) return null;
+  const [map, users] = await Promise.all([settingsMap(), listUsers().catch(() => [])]);
+  return leadsAssistantLine({ connected: true, mode: map[LEADS_ASSISTANT_SETTING], ownerEmail: leadsLineOwner(users) });
+}
+
+/** Все номера, по которым ходит помощник: номера менеджеров из `WaLines` и номер Земфиры. */
+export async function listAssistantLines(): Promise<WaLine[]> {
+  const [lines, leads] = await Promise.all([listWaLines(), leadsLine()]);
+  return leads ? [...lines, leads] : lines;
+}
+
+/** Ключи Green API линии помощника: номер Земфиры — из переменных, номер менеджера — из его строки. */
+export function assistantLineConfig(line: WaLine | undefined | null): GreenConfig | null {
+  if (!line) return null;
+  if (line.code === LEADS_LINE) return greenLeadsConfig();
+  return managerLineConfig(line);
 }
 
 /** Ключи любой линии: "" — основной номер, "leads" — Земфира, "m-…" — менеджер. */

@@ -10,8 +10,8 @@ import { settingsMap } from "./repo/broadcasts";
 import { saveSettings } from "./repo/settings";
 import { chainBusy, parseChainLock } from "./autoBroadcast";
 import { listUsers } from "./repo/users";
-import { appendAssistantLog, listAssistantLog, listWaLines, managerLineConfig } from "./repo/waLines";
-import { assistantVerdict, type WaLine } from "./waLines";
+import { appendAssistantLog, assistantLineConfig, listAssistantLog, listAssistantLines } from "./repo/waLines";
+import { assistantVerdict, genitiveName, LEADS_LINE, type WaLine } from "./waLines";
 import { sellerTurn } from "./lineSeller";
 import type { WaMessage } from "./types";
 
@@ -50,12 +50,22 @@ export function assistantSystemPrompt(p: {
   client: string;
   instructions: string;
   today: string;
+  /** Чей это номер — «leads» (Земфира) или номер менеджера: от этого зависит, что обещать клиенту. */
+  line?: string;
 }): string {
+  const leads = p.line === LEADS_LINE;
   const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${p.today}T12:00:00`).getDay()];
   return [
-    `Ты — помощник менеджера по продажам${p.managerName ? ` ${p.managerName}` : ""} оптовой цветочной компании Ecoculture`,
+    leads
+      ? `Ты — помощник ${genitiveName(p.managerName || "Земфира")}, специалиста по заявкам с рекламы оптовой цветочной компании Ecoculture`
+      : `Ты — помощник менеджера по продажам${p.managerName ? ` ${p.managerName}` : ""} оптовой цветочной компании Ecoculture`,
     "(Казахстан, своё тепличное хозяйство: розы, хризантемы, эустома; продаём оптом магазинам, салонам, цветочникам).",
-    "Пишешь клиенту в WhatsApp С РАБОЧЕГО НОМЕРА МЕНЕДЖЕРА, от его имени, пока он занят. Не говори, что ты бот, ИИ или помощник.",
+    leads
+      ? "Пишешь клиенту в WhatsApp С ЕЁ РАБОЧЕГО НОМЕРА, от её имени (женский род: «передала», «уточню»), пока она занята. Не говори, что ты бот, ИИ или помощник."
+      : "Пишешь клиенту в WhatsApp С РАБОЧЕГО НОМЕРА МЕНЕДЖЕРА, от его имени, пока он занят. Не говори, что ты бот, ИИ или помощник.",
+    leads
+      ? "На этот номер пишут по рекламе (Instagram и другие источники). Земфира отвечает на первые вопросы, а готового к заказу клиента ПЕРЕДАЁТ менеджеру по оформлению — заказ и счёт оформляет менеджер, с клиентом он связывается здесь же, в WhatsApp."
+      : "",
     "Цель — не потерять клиента и продать: ответить по существу, предложить конкретное, довести до согласия на заказ.",
     "",
     "Стиль: как живой человек — коротко, тепло, на языке клиента (русский или казахский), 1–3 коротких блока.",
@@ -68,8 +78,13 @@ export function assistantSystemPrompt(p: {
     "- «дорого» — предложи категорию ниже или другой сорт с суммой; «подумаю» — пробную партию.",
     "Что НЕЛЬЗЯ, это решает менеджер (тогда честно «уточню и отпишусь» и заполни needs_manager):",
     "- оформлять заказ и выставлять счёт: клиент назвал позицию и количество или согласился — подтверди коротко",
-    "  (позиция, количество, цена, сумма, день) и напиши, что оформляешь и подтверждение со счётом придёт сюда же;",
+    leads
+      ? "  (позиция, количество, цена, сумма, день) и напиши, что передаёшь менеджеру по оформлению — он напишет сюда же и выставит счёт;"
+      : "  (позиция, количество, цена, сумма, день) и напиши, что оформляешь и подтверждение со счётом придёт сюда же;",
     "  needs_manager = «оформить заказ: …»;",
+    leads
+      ? "- клиент спрашивает, когда с ним свяжутся или почему менеджер молчит, — извинись коротко, скажи, что менеджер напишет, needs_manager = «связаться с клиентом: …»;"
+      : "",
     "- оплата не вперёд (при получении, отсрочка, частями), скидки сверх прайса, документы, доставка ко времени, жалоба,",
     "  договорённости, о которых нет в переписке, просьба позвонить — needs_manager;",
     "- выдумывать то, чего нет в данных: цены, наличие, сроки, условия.",
@@ -123,11 +138,11 @@ export function parseAssistantAnswer(raw: unknown): AssistantAnswer {
   return { reply, silent: silent || !reply, note: String(r.needs_manager || "").trim().slice(0, 400) };
 }
 
-/** Ответ помощника на переписку ОДНОЙ линии с ОДНИМ номером — без отправки. */
-export async function assistantAnswer(chat: WaMessage[], phone: string, managerName: string, task: string): Promise<AssistantAnswer> {
+/** Ответ помощника на переписку ОДНОЙ линии с ОДНИМ номером — без отправки. `line` — чей номер (Земфира пишет иначе). */
+export async function assistantAnswer(chat: WaMessage[], phone: string, managerName: string, task: string, line = ""): Promise<AssistantAnswer> {
   if (!openAiConfigured()) throw new Error("ИИ не подключён — нужен ключ OpenAI.");
   const k = await salesKnowledge(phone);
-  const system = assistantSystemPrompt({ managerName, ...k });
+  const system = assistantSystemPrompt({ managerName, line, ...k });
   const user = `Переписка (последние сообщения):\n${assistantTranscript(mergeMessages(chat))}\n\n${task}`;
   const { data } = await chatJson(system, user, "manager_assistant", ASSISTANT_SCHEMA, { fast: true });
   return parseAssistantAnswer(data);
@@ -146,9 +161,9 @@ async function managerNameOf(email: string): Promise<string> {
   }
 }
 
-/** Отправить текст с номера линии, записать в переписку и журнал. Возвращает номер сообщения. */
+/** Отправить текст с номера линии (менеджера или Земфиры), записать в переписку и журнал. Возвращает номер сообщения. */
 export async function sendFromLine(line: WaLine, phone: string, text: string, kind: "auto" | "crm", byEmail: string, note = ""): Promise<string> {
-  const cfg = managerLineConfig(line);
+  const cfg = assistantLineConfig(line);
   if (!cfg) throw new Error("Номер не подключён или выключен — проверьте в «Настройках → WhatsApp менеджеров».");
   return sendOnLine(line.code, cfg, phone, text, kind, byEmail, note);
 }
@@ -191,8 +206,8 @@ export interface SweepResult {
 }
 
 /**
- * Пройти по номерам менеджеров с включённым помощником и ответить там, где клиент ждёт
- * (`assistantVerdict`). `only` — один чат (вебхук после сообщения вне рабочего времени).
+ * Пройти по номерам менеджеров (и номеру Земфиры, 20.10.2026 — режим в настройке `LeadsAssistant`) с включённым
+ * помощником и ответить там, где клиент ждёт (`assistantVerdict`). `only` — один чат (вебхук после сообщения вне рабочего времени).
  * Не больше `limit` ответов за проход; ответ уходит, только если после нашего чтения клиенту
  * никто не ответил (журнал перечитывается свежим перед каждой отправкой).
  */
@@ -209,7 +224,7 @@ export async function runAssistantSweep(
   const result: SweepResult = { checked: 0, replied: 0, notes: 0, skipped: [], watch: [] };
   if (!openAiConfigured()) return result;
   const started = Date.now();
-  const lines = (await listWaLines()).filter((l) => l.active && l.assistant !== "off" && (!options.only || l.code === options.only.line));
+  const lines = (await listAssistantLines()).filter((l) => l.active && l.assistant !== "off" && (!options.only || l.code === options.only.line));
   if (lines.length === 0) return result;
   const codes = new Set(lines.map((l) => l.code));
   const [messages, log, map] = await Promise.all([listWaMessages({ lines: "all" }), listAssistantLog(), settingsMap()]);
@@ -264,7 +279,7 @@ export async function runAssistantSweep(
         else result.skipped.push(`…${d.phone.slice(-4)}: ${r.why}`);
         continue;
       }
-      const a = await assistantAnswer(d.chat, d.phone, names.get(d.line.managerEmail) ?? "", AUTO_TASK);
+      const a = await assistantAnswer(d.chat, d.phone, names.get(d.line.managerEmail) ?? "", AUTO_TASK, d.line.code);
       if (a.silent) {
         result.skipped.push(`…${d.phone.slice(-4)}: ИИ решил промолчать`);
         if (a.note) {

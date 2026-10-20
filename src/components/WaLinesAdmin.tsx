@@ -9,6 +9,7 @@ import {
   connectWaLineAction,
   pullWaLineHistoryAction,
   saveWaLineAction,
+  setLeadsAssistantModeAction,
   setWaLineModeAction,
 } from "@/app/admin/wa-lines-actions";
 import { formatMoment } from "@/lib/formatDate";
@@ -47,7 +48,14 @@ function prettyPhone(d: string): string {
   return d.length === 11 ? `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7, 9)} ${d.slice(9)}` : d ? `+${d}` : "—";
 }
 
-export default function WaLinesAdmin({ lines, managers }: { lines: WaLineRow[]; managers: { email: string; name: string }[] }) {
+/** Номер Земфиры (20.10.2026): ключи в переменных сайта, режим ИИ — настройкой; null — не подключён. */
+export interface LeadsLineRow {
+  ownerName: string;
+  assistant: "on" | "off";
+  messages: number;
+}
+
+export default function WaLinesAdmin({ lines, managers, leads }: { lines: WaLineRow[]; managers: { email: string; name: string }[]; leads: LeadsLineRow | null }) {
   const router = useRouter();
   const [form, setForm] = useState({ managerEmail: "", instance: "", token: "", url: "" });
   const [busy, setBusy] = useState(false);
@@ -80,6 +88,8 @@ export default function WaLinesAdmin({ lines, managers }: { lines: WaLineRow[]; 
       ) : (
         <p className="text-sm text-ink-muted">Номеров менеджеров пока нет.</p>
       )}
+
+      {leads && <LeadsRow leads={leads} />}
 
       <details className="border border-line-hairline rounded-lg p-3" open={lines.length === 0}>
         <summary className="cursor-pointer font-medium">+ Подключить номер менеджера</summary>
@@ -128,6 +138,50 @@ export default function WaLinesAdmin({ lines, managers }: { lines: WaLineRow[]; 
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Номер Земфиры — лиды с рекламы (20.10.2026, владелец: «или автоматом, чтобы сам ИИ отправлял»; выбрал «подсказывает и
+ * отвечает при молчании»). Ключи этого номера живут в переменных сайта (`GREENAPI_LEADS_*`), здесь — только режим ИИ.
+ */
+function LeadsRow({ leads }: { leads: LeadsLineRow }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  return (
+    <div className="border border-line-hairline rounded-lg p-3 space-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="font-semibold">{leads.ownerName || "Земфира"}</span>
+        <span className="text-sm text-ink-secondary">номер для лидов с рекламы</span>
+        <span className="rounded px-1.5 py-0.5 text-[11px] bg-status-good/10 text-status-good">подключён</span>
+        <span className="text-xs text-ink-muted">сообщений в CRM: {leads.messages}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <select
+          className="input !py-1 !min-h-0 w-full sm:w-auto max-w-full"
+          value={leads.assistant}
+          disabled={busy}
+          onChange={async (e) => {
+            setBusy(true);
+            setErr("");
+            try {
+              unwrap(await setLeadsAssistantModeAction(e.target.value));
+              router.refresh();
+            } catch (x) {
+              setErr(x instanceof Error ? x.message : "Не удалось");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <option value="on">ИИ: {ASSISTANT_MODE_LABELS.on}</option>
+          <option value="off">ИИ: {ASSISTANT_MODE_LABELS.off}</option>
+        </select>
+        <span className="text-xs text-ink-muted">Заказ ИИ здесь не оформляет — готового клиента передаёт менеджеру, как Земфира.</span>
+      </div>
+      {err && <div className="text-sm text-status-critical">{err}</div>}
     </div>
   );
 }

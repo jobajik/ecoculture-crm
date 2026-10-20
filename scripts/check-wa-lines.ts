@@ -5,13 +5,13 @@
  *   npx tsx scripts/check-wa-lines.ts
  */
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "check-secret";
-import { assistantVerdict, buildChatList, genitiveName, isWorkTime, lineCodeFor, lineInputRefusal, parseAssistantMode } from "../src/lib/waLines";
+import { assistantVerdict, buildChatList, genitiveName, isWorkTime, leadsAssistantLine, lineCodeFor, lineInputRefusal, parseAssistantMode, parseLeadsAssistantMode } from "../src/lib/waLines";
 import { BOT_CHANNEL, isAssistantOrder, isChannelOrder, lineChannel, orderNoteHead } from "../src/lib/sellerChannel";
 import { lineAlertText, lineBotChat, lineMorningPlanText, lineNudgeStatus } from "../src/lib/lineSellerRules";
 import { systemPrompt } from "../src/lib/botEngine";
 import { BOT_MANAGER_EMAIL } from "../src/lib/botIdentity";
 import { lineHookKey, lineHookKeyOk, openSecret, sealSecret } from "../src/lib/secretBox";
-import { parseAssistantAnswer, assistantTranscript } from "../src/lib/lineAssistant";
+import { parseAssistantAnswer, assistantSystemPrompt, assistantTranscript } from "../src/lib/lineAssistant";
 import { autoLeadFromMessage } from "../src/lib/waAutoLead";
 import { decisionScope } from "../src/lib/leadDecisions";
 import { MANAGER_PACE, MAIN_PACE, LEADS_PACE, paceFor } from "../src/lib/broadcast";
@@ -194,6 +194,18 @@ check("тревога менеджеру", lineAlertText({ phone: "77010000001",
   "просит оплату при получении",
   "Клиент: «Можно наличными при доставке?»",
 ]);
+
+// --- Номер Земфиры как линия помощника (20.10.2026) ---------------------------------------
+check("режим Земфиры: по умолчанию выключен", [parseLeadsAssistantMode(""), parseLeadsAssistantMode(undefined), parseLeadsAssistantMode("on"), parseLeadsAssistantMode(" on "), parseLeadsAssistantMode("sell")], ["off", "off", "on", "on", "off"]);
+check("линия Земфиры: не подключена — нет", leadsAssistantLine({ connected: false, mode: "on", ownerEmail: "z@x" }), null);
+const zl = leadsAssistantLine({ connected: true, mode: "on", ownerEmail: "Zemfira@Eco.kz" })!;
+check("линия Земфиры: код, менеджер, режим", [zl.code, zl.managerEmail, zl.assistant, zl.active, zl.tokenEnc], ["leads", "zemfira@eco.kz", "on", true, ""]);
+check("линия Земфиры: без владельца — ничья, но активна", leadsAssistantLine({ connected: true, mode: "off", ownerEmail: "" })!.managerEmail, "");
+const zPrompt = assistantSystemPrompt({ managerName: "Земфира", prices: "", stock: "", storeNote: "", harvest: "", push: "", client: "", instructions: "", today: "2026-10-20", line: "leads" });
+check("подсказка Земфиры: от её имени, передаёт менеджеру, не оформляет", ["помощник Земфиры", "женский род", "ПЕРЕДАЁТ менеджеру по оформлению", "передаёшь менеджеру по оформлению", "связаться с клиентом"].map((x) => zPrompt.includes(x)), [true, true, true, true, true]);
+check("подсказка Земфиры: без обещания «оформляешь»", zPrompt.includes("напиши, что оформляешь"), false);
+const mPrompt = assistantSystemPrompt({ managerName: "Ильяс", prices: "", stock: "", storeNote: "", harvest: "", push: "", client: "", instructions: "", today: "2026-10-20" });
+check("подсказка менеджера: как раньше", [mPrompt.includes("помощник менеджера по продажам Ильяс"), mPrompt.includes("напиши, что оформляешь"), mPrompt.includes("Земфира")], [true, true, false]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

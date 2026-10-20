@@ -1,6 +1,6 @@
 import { ROLES } from "./constants";
 import { canManageLeads } from "./leads";
-import { listWaLines } from "./repo/waLines";
+import { leadsLine, listWaLines } from "./repo/waLines";
 import { isManagerLine, type WaLine } from "./waLines";
 
 /**
@@ -10,14 +10,16 @@ import { isManagerLine, type WaLine } from "./waLines";
 export async function visibleLines(role: string | null | undefined, email: string): Promise<{ code: string; label: string; line?: WaLine }[]> {
   const lines = await listWaLines();
   const me = email.toLowerCase();
+  // Номер Земфиры — тоже линия помощника (20.10.2026): по ней «Переписки» показывают, ответит ли ИИ сам.
+  const zemfira = (await leadsLine()) ?? undefined;
   if (canManageLeads(role)) {
     return [
       ...lines.map((l) => ({ code: l.code, label: l.label, line: l })),
-      { code: "leads", label: "Земфира (реклама)" },
+      { code: "leads", label: "Земфира (реклама)", line: zemfira },
       { code: "", label: "Основной номер (бот)" },
     ];
   }
-  if (role === ROLES.LEADGEN) return [{ code: "leads", label: "Мой номер" }];
+  if (role === ROLES.LEADGEN) return [{ code: "leads", label: "Мой номер", line: zemfira }];
   return lines.filter((l) => l.managerEmail === me).map((l) => ({ code: l.code, label: "Мой номер", line: l }));
 }
 

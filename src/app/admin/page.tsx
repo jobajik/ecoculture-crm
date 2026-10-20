@@ -13,7 +13,7 @@ import BotSalesPhonesForm from "@/components/BotSalesPhonesForm";
 import { BOT_SALES_SETTING } from "@/lib/botSalesAlert";
 import Hint from "@/components/Hint";
 import { settingsMap } from "@/lib/repo/broadcasts";
-import { listWaLines } from "@/lib/repo/waLines";
+import { leadsLine, listWaLines } from "@/lib/repo/waLines";
 import { listWaMessages } from "@/lib/repo/talks";
 import WaLinesAdmin from "@/components/WaLinesAdmin";
 import { lineHookKey } from "@/lib/secretBox";
@@ -114,6 +114,9 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
     // Адрес уведомлений одной строкой — вставить в кабинет Green API, если CRM не смогла прописать его сама.
     hookUrl: `${(process.env.NEXTAUTH_URL || "https://www.crm-ecoculture.kz").replace(/\/+$/, "")}/api/whatsapp/webhook?line=${encodeURIComponent(l.code)}&key=${lineHookKey(l.code)}`,
   }));
+  // Номер Земфиры: ключи в переменных сайта, режим ИИ — настройкой `LeadsAssistant` (20.10.2026).
+  const zemfira = await leadsLine();
+  const leadsRow = zemfira ? { ownerName: nameOf(zemfira.managerEmail), assistant: zemfira.assistant === "on" ? ("on" as const) : ("off" as const), messages: waMessages.filter((m) => m.line === "leads").length } : null;
   const lineManagers = users
     .filter((u) => u.active && ["manager", "sales_head", "admin", "leadgen"].includes(u.role))
     .map((u) => ({ email: u.email.toLowerCase(), name: u.name }))
@@ -210,7 +213,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
         }
         className="!mb-0"
       >
-        <WaLinesAdmin lines={lineRows} managers={lineManagers} />
+        <WaLinesAdmin lines={lineRows} managers={lineManagers} leads={leadsRow} />
       </Section>
       )}
 
