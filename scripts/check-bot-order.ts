@@ -20,6 +20,7 @@ import { staffPhoneKeys } from "../src/lib/botSalesAlert";
 import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "../src/lib/botIdentity";
 import { nameIndex, personName } from "../src/lib/personName";
 import { followupRunDue, followupRunText } from "../src/lib/botFollowUpRun";
+import { clientHistoryLines, duplicateOfHuman } from "../src/lib/botOrderRunner";
 import { parsePush, pushLineText, pushLines, pushPromptBlock, pushUnitPrice } from "../src/lib/salesPush";
 import { mentionedGrades, nudgeDue, nudgeStatus, nudgeTask, nudgeText, parseNudgeDecision, pickNudgeOffers } from "../src/lib/botNudge";
 import type { BotChat, BotSettings } from "../src/lib/broadcast";
@@ -350,6 +351,21 @@ async function main() {
   check("оплата: можно собирать с основного склада", [paidAlert.startsWith("*Оплачено — заказ №AB12C*"), paidAlert.includes("Можно собирать: основной склад")], [true, true]);
   check("оплата частями — ждём второй счёт", botPaidAlertText({ code: "X", clientName: "К", amount: 1, fullyPaid: false, farmLabel: "Rose Farm", items: [], deliveryDate: "", store: "" }).includes("второго счёта"), true);
   check("сотрудникам бот не отвечает: номера сводки и продаж", Array.from(staffPhoneKeys({ DigestPhones: "+77011112233", BotSalesPhones: "+7 702 444 55 66, 87011112233" })).sort(), ["7011112233", "7024445566"]);
+
+  console.log("\nДубль заявки менеджера (20.10.2026, Лена Фабричный)");
+  const sig = (items: { flowerType: string; variety: string; grade: string; quantity: number }[]) =>
+    items.map((i) => `${i.flowerType}|${i.variety}|${i.grade}|${i.quantity}`).sort().join(";");
+  const human = { ...order, orderId: "ORD-QPXPB", managerEmail: "emil@x.kz", clientPhone: "+77085755681", clientId: "CLI-1", createdAt: "2026-10-20T06:26:00Z", items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantity: 200, unitPrice: 580, shippedQuantity: 0 }] };
+  const want = [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantity: 200 }];
+  const at = new Date("2026-10-20T06:55:00Z");
+  check("та же заявка менеджера полчаса назад — дубль", duplicateOfHuman([human] as never, "+77085755681", "", want, sig, at)?.orderId ?? null, "ORD-QPXPB");
+  check("по карточке клиента — тоже дубль", duplicateOfHuman([human] as never, "+77000000000", "CLI-1", want, sig, at)?.orderId ?? null, "ORD-QPXPB");
+  check("другое количество — не дубль", duplicateOfHuman([human] as never, "+77085755681", "", [{ ...want[0], quantity: 300 }], sig, at), null);
+  check("отменённая не считается", duplicateOfHuman([{ ...human, status: "cancelled" }] as never, "+77085755681", "", want, sig, at), null);
+  check("старше суток — не дубль", duplicateOfHuman([{ ...human, createdAt: "2026-10-18T06:26:00Z" }] as never, "+77085755681", "", want, sig, at), null);
+  const hist = clientHistoryLines({ orders: [human] as never, phone: "+77085755681", clientId: "", now: at });
+  check("в подсказке модели — «уже оформлено, заново не оформляй»", hist.some((l) => l.startsWith("ВАЖНО") && l.includes("№QPXPB") && l.includes("НЕ оформляй")), true);
+  check("старый заказ в подсказке без «ВАЖНО»", clientHistoryLines({ orders: [{ ...human, createdAt: "2026-10-10T06:26:00Z" }] as never, phone: "+77085755681", clientId: "", now: at }).some((l) => l.startsWith("ВАЖНО")), false);
 
   console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
   process.exit(failed === 0 ? 0 : 1);

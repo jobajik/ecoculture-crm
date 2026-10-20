@@ -190,14 +190,21 @@ export async function placeBotOrder(input: {
     // второй заявки не будет: та же заявка за последние 30 минут.
     const signature = (items: { flowerType: string; variety: string; grade: string; quantity: number }[]) =>
       items.map((i) => `${i.flowerType}|${i.variety}|${i.grade}|${i.quantity}`).sort().join(";");
-    const recent = botOrdersOf(await listOrdersWithItems(), phone, clientId, ch).find(
+    const allOrders = await listOrdersWithItems();
+    const recent = botOrdersOf(allOrders, phone, clientId, ch).find(
       (o) => Date.now() - Date.parse(o.createdAt) < 30 * 60000 && signature(o.items) === signature(plan.items)
     );
-    if (recent) {
+    // Тот же заказ уже оформил ЧЕЛОВЕК (20.10.2026, Лена Фабричный: Эмиль оформил №QPXPB в 11:26, Юлия выставила счёт,
+    // клиент оплатил; через полчаса помощник Эмиля из той же переписки оформил №DKHCR и выставил второй счёт —
+    // «бот продублировал, нужно убрать»). Любая живая заявка клиента за сутки с теми же позициями — не повод для новой:
+    // отвечаем, что заказ уже оформлен, и оставляем менеджеру записку.
+    const human = duplicateOfHuman(allOrders, phone, clientId, plan.items.map((i) => ({ ...i })), signature, new Date());
+    if (recent || human) {
+      const o = (recent ?? human) as OrderWithItems;
       return {
-        text: `Этот заказ уже оформлен — №${orderCode(recent.orderId)}. ${recent.paid ? "Он оплачен и передан на сборку." : "Счёт Kaspi ждёт оплаты в приложении Kaspi."}`,
+        text: `Этот заказ уже оформлен — №${orderCode(o.orderId)}. ${o.paid ? "Он оплачен и передан на сборку." : "Счёт Kaspi ждёт оплаты в приложении Kaspi."}`,
         orderId: "",
-        note: "",
+        note: human && !recent ? `внимание: клиент повторно подтвердил заказ, который уже оформлен менеджером — №${orderCode(human.orderId)}; новую заявку не завёл` : "",
       };
     }
 
@@ -376,6 +383,15 @@ export function clientHistoryLines(input: { orders: OrderWithItems[]; phone: str
   const lines: string[] = [];
   const days = Math.floor((input.now.getTime() - Date.parse(mine[0].createdAt)) / 86400000);
   lines.push(`Заказов в базе: ${mine.length}; последний — ${mine[0].createdAt.slice(0, 10)}${Number.isFinite(days) ? ` (${days} дн. назад)` : ""}.`);
+  // Свежая заявка за последние сутки — скорее всего, тот самый заказ, о котором идёт разговор: менеджер уже оформил.
+  const fresh = mine.filter((o) => input.now.getTime() - Date.parse(o.createdAt) < 24 * 3600000);
+  if (fresh.length) {
+    lines.push(
+      `ВАЖНО: за последние сутки у клиента уже оформлено: ${fresh
+        .map((o) => `№${orderCode(o.orderId)} (${o.items.map((i) => `${i.variety} ${formatGrade(i.grade)} ${i.quantity} шт.`).join(", ")}, ${o.paidAmount >= o.totalAmount - 1 ? "оплачен" : "счёт ждёт оплаты"})`)
+        .join("; ")}. Если клиент говорит об этом же заказе — НЕ оформляй его заново и не выставляй второй счёт: отвечай по уже оформленной заявке. Новый заказ — только если клиент явно хочет ЕЩЁ, сверх этого.`
+    );
+  }
   const debt = mine.reduce((s, o) => s + Math.max(0, o.totalAmount - Math.min(o.paidAmount, o.totalAmount)), 0);
   if (debt >= 1) lines.push(`Долг клиента сейчас: ${money(debt)}. О долге сам не напоминай (это дело менеджера); просит в долг или отсрочку — alert.`);
   const qty = new Map<string, number>();
@@ -391,6 +407,34 @@ export function clientHistoryLines(input: { orders: OrderWithItems[]; phone: str
     lines.push(`• ${o.createdAt.slice(0, 10)}: ${items} — ${money(o.totalAmount)}, ${paid}, ${o.status === ORDER_STATUSES.SHIPPED ? "отгружен" : "не отгружен"}.`);
   }
   return lines;
+}
+
+/**
+ * Живая заявка клиента (любой менеджер, не только бот) за последние сутки с теми же позициями и количеством —
+ * повторять её нельзя. Чистая функция; проверка — `check-bot-order`.
+ */
+export function duplicateOfHuman(
+  orders: OrderWithItems[],
+  phone: string,
+  clientId: string,
+  items: { flowerType: string; variety: string; grade: string; quantity: number }[],
+  signature: (items: { flowerType: string; variety: string; grade: string; quantity: number }[]) => string,
+  now: Date
+): OrderWithItems | null {
+  const key = phoneKey(phone);
+  const since = now.getTime() - 24 * 3600000;
+  const want = signature(items);
+  return (
+    orders
+      .filter(
+        (o) =>
+          o.status !== ORDER_STATUSES.CANCELLED &&
+          Date.parse(o.createdAt || "") >= since &&
+          ((key && phoneKey(o.clientPhone) === key) || (clientId && o.clientId === clientId)) &&
+          signature(o.items) === want
+      )
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] ?? null
+  );
 }
 
 /** Что бот знает о клиенте: карточка и его заказы через бота — для подсказки модели. */
