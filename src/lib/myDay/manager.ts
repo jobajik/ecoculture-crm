@@ -102,7 +102,8 @@ const minutesSince = (iso: string, now: Date) => Math.max(0, Math.round((now.get
 /** Кто ждёт ответа на номерах менеджера: дольше всех ждущие — первыми. */
 export function waitingChats(chats: ChatSummary[], now: Date): { rows: DayChat[]; total: number } {
   const waiting = chats
-    .filter((c) => c.waitingSince)
+    // Коллега (номер из карточки сотрудника) в «ждут ответа» не идёт — это не клиент.
+    .filter((c) => c.waitingSince && c.party?.kind !== "staff")
     .map((c) => {
       const waitingMinutes = minutesSince(c.waitingSince as string, now);
       return {

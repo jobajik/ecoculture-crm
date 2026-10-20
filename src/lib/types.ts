@@ -7,6 +7,8 @@ export interface AppUser {
   /** Производство, за которое отвечает зав. складом. У менеджеров и админа — null. */
   farm: string | null;
   active: boolean;
+  /** Номер WhatsApp сотрудника («+7701…», пусто — не указан): по нему бот и помощник не продают своим, а авто-лид не заводится. */
+  phone: string;
 }
 
 export interface Order {

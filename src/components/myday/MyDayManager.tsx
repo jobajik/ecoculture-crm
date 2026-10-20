@@ -71,6 +71,10 @@ async function loadManagerDay(user: DayUser): Promise<ManagerDay> {
       if (k) parties.set(k, { kind: "client", id: c.clientId, name: c.name, managerEmail: c.managerEmail });
     }
   }
+  for (const u of users) {
+    const k = phoneKey(u.phone);
+    if (k) parties.set(k, { kind: "staff", id: u.email, name: u.name || u.email, managerEmail: "" });
+  }
   const autoIds = new Set(log.filter((r) => r.kind === "auto" || r.kind === "nudge").map((r) => r.messageId));
   const since = new Date(now.getTime() - 60 * 86_400_000).toISOString();
   const lineCodes = lines.map((l) => l.code);

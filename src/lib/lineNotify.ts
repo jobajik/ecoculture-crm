@@ -3,6 +3,7 @@ import { listWaLines } from "./repo/waLines";
 import { saveSettings } from "./repo/settings";
 import { staffPhoneKeys } from "./botSalesAlert";
 import { phoneKey } from "./leads";
+import { listUsers } from "./repo/users";
 
 /**
  * Сообщение менеджеру о том, что сделал его ИИ-помощник (заказ, тревога, утренний план), — с ОСНОВНОГО
@@ -48,11 +49,17 @@ export async function mainLinePhone(map: Record<string, string>): Promise<string
 }
 
 /**
- * Наши номера: сотрудники (сводка, продажи бота), номера менеджеров и основной номер. Им не отвечают ни бот,
- * ни помощник, и лидами они не становятся.
+ * Наши номера: сотрудники (сводка, продажи бота, WhatsApp из карточки сотрудника — 20.10.2026, владелец: «Разия
+ * Теплица у всех менеджеров — зав. склада, Диана тоже, Нина — РОП»), номера менеджеров и основной номер. Им не
+ * отвечают ни бот, ни помощник, и лидами они не становятся.
  */
 export async function ourPhoneKeys(map: Record<string, string>): Promise<Set<string>> {
   const keys = staffPhoneKeys(map);
+  try {
+    for (const u of await listUsers()) if (u.phone) keys.add(phoneKey(u.phone));
+  } catch {
+    /* без карточек сотрудников — как раньше */
+  }
   try {
     for (const l of await listWaLines()) if (l.phone) keys.add(phoneKey(l.phone));
   } catch {

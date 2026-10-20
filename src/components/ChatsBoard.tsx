@@ -54,7 +54,7 @@ export interface BoardChat {
   phone: string;
   key: string;
   name: string;
-  partyKind: "client" | "lead" | "";
+  partyKind: "client" | "lead" | "staff" | "";
   partyId: string;
   partyManager: string;
   lastAt: string;
@@ -317,6 +317,7 @@ function Thread({
             клиент{chat.partyManager ? ` · ${chat.partyManager}` : ""} →
           </Link>
         )}
+        {chat.partyKind === "staff" && <span className="text-xs rounded px-1.5 py-0.5 bg-surface-sunk text-ink-secondary">наш сотрудник — ИИ ему не отвечает</span>}
         {!chat.partyKind && <span className="text-xs text-ink-muted">нет ни в лидах, ни в клиентах</span>}
         <a href={wa} target="_blank" rel="noreferrer" className="ml-auto text-sm text-status-good font-medium">
           WhatsApp ↗

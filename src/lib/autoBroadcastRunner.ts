@@ -154,7 +154,7 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
   const autoOf = new Map(broadcasts.map((b) => [b.broadcastId, b.auto]));
   const ctx: ExclusionContext = {
     now,
-    staff: staffPhoneKeys(map),
+    staff: new Set([...Array.from(staffPhoneKeys(map)), ...users.filter((u) => u.phone).map((u) => phoneKey(u.phone))]),
     optedOut,
     facts: chatFacts(messages),
     sent: sentFacts(recipients, autoOf),

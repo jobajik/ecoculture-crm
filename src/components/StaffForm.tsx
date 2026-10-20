@@ -7,6 +7,7 @@ import { FARMS, FARM_LABELS, ROLES, ROLE_LABELS, isFarmBoundRole } from "@/lib/c
 import { staffSaveRefusal, type StaffDraft } from "@/lib/staffRules";
 import { unwrapValue } from "@/lib/actionResult";
 import type { AppUser } from "@/lib/types";
+import { PhoneInput } from "./PhoneInput";
 
 /**
  * Сотрудники: завести, сменить роль, закрыть доступ.
@@ -23,7 +24,7 @@ import type { AppUser } from "@/lib/types";
 const ROLE_CODES: string[] = Object.values(ROLES);
 const FARM_CODES: string[] = Object.values(FARMS);
 
-const EMPTY: StaffDraft = { email: "", name: "", role: "", farm: "", active: true };
+const EMPTY: StaffDraft = { email: "", name: "", role: "", farm: "", active: true, phone: "" };
 
 export default function StaffForm({
   users,
@@ -51,6 +52,7 @@ export default function StaffForm({
       role: user.role,
       farm: user.farm ?? "",
       active: user.active,
+      phone: user.phone ?? "",
     });
     setOpen(true);
     setError("");
@@ -117,6 +119,7 @@ export default function StaffForm({
               <th className="px-4 py-3 font-medium">Почта</th>
               <th className="px-4 py-3 font-medium">Роль</th>
               <th className="px-4 py-3 font-medium">Производство</th>
+              <th className="px-4 py-3 font-medium">WhatsApp</th>
               <th className="px-4 py-3 font-medium">Доступ</th>
               <th className="px-4 py-3 font-medium"></th>
             </tr>
@@ -133,6 +136,7 @@ export default function StaffForm({
                 <td data-label="Производство" className="px-4 py-2.5 text-ink-secondary">
                   {u.farm ? FARM_LABELS[u.farm] ?? u.farm : "—"}
                 </td>
+                <td data-label="WhatsApp" className="px-4 py-2.5 text-ink-secondary tabular-nums">{u.phone || "—"}</td>
                 <td data-label="Доступ" className="px-4 py-2.5">
                   <span className={u.active ? "text-status-good" : "text-ink-muted"}>
                     {u.active ? "открыт" : "закрыт"}
@@ -232,6 +236,15 @@ export default function StaffForm({
                   Без производства человек не увидит ни одной партии.
                 </p>
               )}
+            </div>
+            <div>
+              <label className="label">
+                WhatsApp <span className="font-normal">— необязательно</span>
+              </label>
+              <PhoneInput value={draft.phone ?? ""} onChange={(v) => setDraft({ ...draft, phone: v })} />
+              <p className="text-xs text-ink-muted mt-1">
+                По номеру бот и ИИ-помощник узнают своего: не продают ему и не заводят лидом.
+              </p>
             </div>
           </div>
 

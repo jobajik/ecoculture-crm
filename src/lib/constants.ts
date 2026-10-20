@@ -74,7 +74,8 @@ export const SHEET_TABS = {
 export const SHEET_HEADERS: Record<string, string[]> = {
   // Farm стоит последней колонкой намеренно: так в уже работающей таблице
   // существующие строки не «съезжают» при добавлении производств.
-  [SHEET_TABS.USERS]: ["Email", "Name", "Role", "Active", "Farm"],
+  // Phone — последней (20.10.2026): номер WhatsApp сотрудника, чтобы бот, помощник и авто-лиды узнавали своих (грабли 1.1).
+  [SHEET_TABS.USERS]: ["Email", "Name", "Role", "Active", "Farm", "Phone"],
   // Колонки оплаты стоят в конце — как и Farm, чтобы уже заполненные строки
   // не «съезжали» при добавлении (см. CLAUDE.md, раздел «Грабли»).
   [SHEET_TABS.ORDERS]: [

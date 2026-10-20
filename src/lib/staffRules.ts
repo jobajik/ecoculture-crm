@@ -1,5 +1,6 @@
 import { FARM_BOUND_ROLES, FARMS, ROLES, isFarmBoundRole } from "./constants";
 import type { AppUser } from "./types";
+import { formatPhone, phoneComplete } from "./phone";
 
 /**
  * Кого и как можно заводить в систему.
@@ -38,6 +39,12 @@ export interface StaffDraft {
   /** Производство: обязательно у зав. складом и агронома, у остальных пусто. */
   farm: string;
   active: boolean;
+  /**
+   * Номер WhatsApp сотрудника (20.10.2026, владелец: «Разия Теплица у всех менеджеров — зав. склада, Диана тоже,
+   * Нина — РОП»): по нему бот и помощник не продают своим, а авто-лид на номере менеджера не заводится.
+   * Необязателен; есть — только полный номер.
+   */
+  phone?: string;
 }
 
 export interface StaffContext {
@@ -62,6 +69,7 @@ export function cleanStaff(draft: StaffDraft): StaffDraft {
     // настоящее ограничение и приводит к пустому складу (грабли 1.1).
     farm: isFarmBoundRole(role) ? (draft.farm || "").trim().toLowerCase() : "",
     active: Boolean(draft.active),
+    phone: formatPhone(draft.phone ?? ""),
   };
 }
 
@@ -106,6 +114,9 @@ export function staffSaveRefusal(ctx: StaffContext, draft: StaffDraft): string {
     }
     if (!FARM_CODES.includes(clean.farm)) return `Производство «${clean.farm}» не существует.`;
   }
+  if (clean.phone && !phoneComplete(clean.phone)) {
+    return "Номер WhatsApp неполный — нужен вид +7 701 555 20 30 (или оставьте поле пустым).";
+  }
 
   // --- Запреты, которые не дают запереть себя снаружи ------------------------
   if (existing && existing.email === actor) {
@@ -143,6 +154,7 @@ export function staffChangeSummary(before: AppUser | null, after: StaffDraft): s
   if (before.active !== clean.active) {
     parts.push(clean.active ? "доступ открыт" : "доступ закрыт");
   }
+  if ((before.phone || "") !== (clean.phone || "")) parts.push(`WhatsApp: ${before.phone || "—"} → ${clean.phone || "—"}`);
   return parts.length ? parts.join(", ") : "без изменений";
 }
 

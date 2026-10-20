@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prefetchTables } from "@/lib/sheets";
-import { SHEET_TABS } from "@/lib/constants";
+import { ROLE_LABELS, SHEET_TABS } from "@/lib/constants";
 import { canSeeLead, canWorkLead, phoneKey } from "@/lib/leads";
 import { listLeads, listLeadTouches } from "@/lib/repo/leads";
 import { listLeadAnalyses } from "@/lib/repo/talks";
@@ -69,6 +69,11 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
       const k = phoneKey(p);
       if (k) parties.set(k, { kind: "client", id: c.clientId, name: c.name, managerEmail: c.managerEmail });
     }
+  }
+  // Сотрудники с номером — поверх клиентов и лидов: Нина (РОП) в чате Эмиля — коллега, а не клиент (20.10.2026).
+  for (const u of users) {
+    const k = phoneKey(u.phone);
+    if (k) parties.set(k, { kind: "staff", id: u.email, name: `${u.name || u.email} · ${ROLE_LABELS[u.role] ?? u.role}`, managerEmail: "" });
   }
   const autoIds = new Set(log.filter((r) => r.kind === "auto" || r.kind === "nudge").map((r) => r.messageId));
   const crmIds = new Set(log.filter((r) => r.kind === "crm").map((r) => r.messageId));

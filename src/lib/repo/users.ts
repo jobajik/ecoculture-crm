@@ -1,6 +1,7 @@
 import { appendRow, readTable, rowToRecord, updateRow, SHEET_TABS } from "../sheets";
 import type { AppUser } from "../types";
 import type { Role } from "../constants";
+import { formatPhone } from "../phone";
 
 /**
  * Что в колонке Active считается «отключён».
@@ -23,6 +24,7 @@ function toUser(record: Record<string, string>): AppUser {
     role: (record.Role || "").trim() as Role,
     farm: (record.Farm || "").trim().toLowerCase() || null,
     active: !INACTIVE.has(active),
+    phone: formatPhone(record.Phone || ""),
   };
 }
 
@@ -85,6 +87,7 @@ export async function saveUser(user: {
   role: string;
   farm: string;
   active: boolean;
+  phone?: string;
 }): Promise<{ created: boolean }> {
   const email = user.email.trim().toLowerCase();
   const table = await readTable(SHEET_TABS.USERS);
@@ -105,6 +108,7 @@ export async function saveUser(user: {
     // «Active» человек толкует как угодно.
     Active: user.active ? "TRUE" : "FALSE",
     Farm: user.farm.trim().toLowerCase(),
+    Phone: formatPhone(user.phone ?? ""),
   };
 
   if (rowNumber === null) {

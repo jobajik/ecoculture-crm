@@ -250,7 +250,8 @@ export function assistantVerdict(input: {
 // --- Список переписок ----------------------------------------------------------------
 
 export interface ChatPartyInfo {
-  kind: "client" | "lead";
+  /** staff — наш сотрудник (номер из карточки сотрудника): бот и помощник ему не продают, лидом он не станет. */
+  kind: "client" | "lead" | "staff";
   id: string;
   name: string;
   managerEmail: string;

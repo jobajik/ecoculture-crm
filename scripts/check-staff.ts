@@ -37,6 +37,7 @@ const user = (p: Partial<AppUser> & { email: string }): AppUser => ({
   role: ROLES.MANAGER,
   farm: null,
   active: true,
+  phone: "",
   ...p,
 });
 
@@ -248,6 +249,17 @@ check(
   "в таблицу ложится теми же ключами, что читаются",
   shelfLifeValues(life({ rose: 9 }, 80)),
   { ShelfLifeDays_rose: "9", WarningThresholdPercent: "80" }
+);
+
+// --- Номер WhatsApp сотрудника (20.10.2026) --------------------------------------
+allows("без номера — можно", staffSaveRefusal(asOwner(), draft({ email: "novyy@ecoculture.kz" })));
+allows("номер в любом виде приводится к +7…", staffSaveRefusal(asOwner(), draft({ email: "novyy@ecoculture.kz", phone: "8 (701) 555-20-30" })));
+check("номер записывается как +77015552030", cleanStaff(draft({ email: "novyy@ecoculture.kz", phone: "8 (701) 555-20-30" })).phone, "+77015552030");
+refuses("неполный номер — отказ", staffSaveRefusal(asOwner(), draft({ email: "novyy@ecoculture.kz", phone: "+7701555" })));
+check(
+  "в сводке изменений виден новый номер",
+  staffChangeSummary(user({ email: "novyy@ecoculture.kz", name: "Нина", role: ROLES.SALES_HEAD }), draft({ email: "novyy@ecoculture.kz", name: "Нина", role: ROLES.SALES_HEAD, phone: "87015552030" })),
+  "WhatsApp: — → +77015552030"
 );
 
 console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
