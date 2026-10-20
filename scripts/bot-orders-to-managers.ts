@@ -9,7 +9,10 @@ dotenv.config();
  * переносит уже оформленные. Клиент — по карточке заявки (ClientID), менеджер — действующий с ролью «менеджер».
  * Отменённые не трогаются. Без --yes — показ; с --yes — копия таблицы, запись, строка в журнале денег.
  *
- *   npx tsx scripts/bot-orders-to-managers.ts [--from ГГГГ-ММ-ДД] [--yes]
+ *   npx tsx scripts/bot-orders-to-managers.ts [--from ГГГГ-ММ-ДД] [--all] [--yes]
+ *
+ * Карточку, которую бот завёл сам при этом заказе (новый клиент), а менеджера ей поставили позже, скрипт не трогает —
+ * это продажа бота; --all переносит и такие.
  */
 import { listOrdersWithItems } from "../src/lib/repo/orders";
 import { listClients } from "../src/lib/repo/clients";
@@ -32,15 +35,28 @@ async function main() {
   const [orders, clients, users] = await Promise.all([listOrdersWithItems(), listClients(), listUsers()]);
   const managers = new Map(users.filter((u) => u.active && u.role === ROLES.MANAGER).map((u) => [u.email.toLowerCase(), u.name || u.email]));
   const cardOf = new Map(clients.map((c) => [c.clientId, c]));
+  const keepBotsOwn = !args.includes("--all");
+  /** Карточка появилась не раньше чем за 15 минут до заявки — её завёл бот, оформляя этот заказ. */
+  const botMadeCard = (o: { clientId: string; createdAt: string }): boolean => {
+    const c = cardOf.get(o.clientId);
+    if (!c?.createdAt) return false;
+    return Date.parse(c.createdAt) >= Date.parse(o.createdAt) - 15 * 60_000;
+  };
 
   const moves = orders
     .filter((o) => isBotEmail(o.managerEmail) && o.status !== ORDER_STATUSES.CANCELLED && (!from || o.createdAt.slice(0, 10) >= from))
     .map((o) => ({ o, to: (cardOf.get(o.clientId)?.managerEmail || "").trim().toLowerCase() }))
     .filter((x) => managers.has(x.to))
+    // Карточку завёл сам бот при этом заказе (новый клиент), а менеджера ей поставили потом — это продажа бота.
+    .filter((x) => keepBotsOwn ? !botMadeCard(x.o) : true)
     .sort((a, b) => (a.o.createdAt < b.o.createdAt ? -1 : 1));
   const stays = orders.filter((o) => isBotEmail(o.managerEmail) && o.status !== ORDER_STATUSES.CANCELLED && (!from || o.createdAt.slice(0, 10) >= from)).length - moves.length;
 
   console.log(`Заявки бота${from ? ` с ${from}` : ""}: переходят менеджерам ${moves.length}, остаются за ботом ${stays}.`);
+  for (const o of orders.filter((x) => isBotEmail(x.managerEmail) && x.status !== ORDER_STATUSES.CANCELLED && (!from || x.createdAt.slice(0, 10) >= from) && !moves.some((m) => m.o === x))) {
+    const c = cardOf.get(o.clientId);
+    console.log(`  остаётся: №${orderCode(o.orderId)} · ${o.createdAt.slice(0, 16)} · ${o.clientName} · ${money(o.totalAmount)} · карточка ${c ? `с ${c.createdAt.slice(0, 16)}, менеджер ${managers.get((c.managerEmail || "").toLowerCase()) || c.managerEmail || "—"}` : "нет"}`);
+  }
   const byManager = new Map<string, { n: number; sum: number; paid: number }>();
   for (const { o, to } of moves) {
     const m = byManager.get(to) ?? { n: 0, sum: 0, paid: 0 };
@@ -48,7 +64,8 @@ async function main() {
     m.sum += o.totalAmount;
     m.paid += Math.min(o.paidAmount, o.totalAmount);
     byManager.set(to, m);
-    console.log(`  №${orderCode(o.orderId)} · ${o.createdAt.slice(0, 10)} · ${o.clientName} · ${money(o.totalAmount)} (оплачено ${money(Math.min(o.paidAmount, o.totalAmount))}) → ${managers.get(to)}`);
+    const c = cardOf.get(o.clientId);
+    console.log(`  №${orderCode(o.orderId)} · ${o.createdAt.slice(0, 16)} · ${o.clientName} · ${money(o.totalAmount)} (оплачено ${money(Math.min(o.paidAmount, o.totalAmount))}) → ${managers.get(to)} · карточка с ${(c?.createdAt || "?").slice(0, 16)}${c?.source ? `, ${c.source}` : ""}`);
   }
   for (const [to, m] of byManager) console.log(`ИТОГО ${managers.get(to)}: ${m.n} заявок на ${money(m.sum)}, оплачено ${money(m.paid)}`);
   if (!apply || moves.length === 0) return console.log(apply ? "Переносить нечего." : "Только показ. Записать: --yes");
