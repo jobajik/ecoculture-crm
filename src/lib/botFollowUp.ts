@@ -26,13 +26,13 @@ import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade } from "./constants";
 import { orderCode } from "./paymentStage";
 import { FARM_LABELS, ORDER_STATUSES } from "./constants";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText } from "./kaspiInvoice";
-import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
+import { BOT_MANAGER_EMAIL } from "./botIdentity";
 import { botDeclinedReminderText, botDeclinedText, botInvoiceErrorText, botPaidAlertText, botPaidText, botReminderText } from "./botOrder";
 import { notifyBotSale } from "./botSalesAlert";
 import { dueParts, invoicePart, lastInvoice } from "./botOrderRunner";
 import type { KaspiInvoice } from "./types";
 import { invoiceReminderBlocked } from "./botTurn";
-import { isAssistantOrder } from "./sellerChannel";
+import { isAssistantOrder, isBotOrder } from "./sellerChannel";
 import { sendLineOrderMessage } from "./lineSeller";
 import { notifyLineManager } from "./lineNotify";
 import { listAssistantLog, listWaLines } from "./repo/waLines";
@@ -90,8 +90,9 @@ export async function onBotInvoiceUpdate(invoice: KaspiInvoice, status: string, 
     const order = await getOrderById(invoice.orderId);
     if (!order || !order.clientPhone) return;
     // Заказ помощника номера менеджера (19.10.2026) — клиенту пишем с ТОГО номера, где он заказывал.
-    const assistant = !isBotEmail(order.managerEmail) && isAssistantOrder(order);
-    if (!isBotEmail(order.managerEmail) && !assistant) return;
+    // Заказ бота — по метке, а не по почте: заявка клиента менеджера, оформленная ботом, записана на менеджера (20.10.2026).
+    const assistant = !isBotOrder(order) && isAssistantOrder(order);
+    if (!isBotOrder(order) && !assistant) return;
     const send = (text: string, note = "") =>
       assistant ? sendLineOrderMessage(order.managerEmail, order.clientPhone, text, note) : sendBotMessage(order.clientPhone, text, note);
     const code = orderCode(order.orderId);
@@ -183,8 +184,8 @@ export async function remindBotInvoices(now: Date = new Date()): Promise<{ sent:
     };
     for (const order of orders) {
       if (order.status === ORDER_STATUSES.CANCELLED || order.paid || !order.clientPhone) continue;
-      const line = !isBotEmail(order.managerEmail) && isAssistantOrder(order) ? sellLines.find((l) => l.managerEmail === order.managerEmail.trim().toLowerCase()) : undefined;
-      if (!isBotEmail(order.managerEmail) && !line) continue;
+      const line = !isBotOrder(order) && isAssistantOrder(order) ? sellLines.find((l) => l.managerEmail === order.managerEmail.trim().toLowerCase()) : undefined;
+      if (!isBotOrder(order) && !line) continue;
       const remindEmail = line ? `assistant:${line.code}` : BOT_MANAGER_EMAIL;
       const created = Date.parse(order.createdAt || "");
       if (!(created >= since) || now.getTime() - created < REMIND_AFTER_HOURS * 3600000) continue;

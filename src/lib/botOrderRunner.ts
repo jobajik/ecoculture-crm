@@ -38,7 +38,9 @@ import {
   type InvoiceOutcome,
 } from "./botOrder";
 import { notifyBotSale } from "./botSalesAlert";
-import { BOT_CHANNEL, channelLogText, isChannelOrder, orderNoteHead, type SellerChannel } from "./sellerChannel";
+import { BOT_CHANNEL, botSaleOwner, channelLogText, isChannelOrder, orderNoteHead, type SellerChannel } from "./sellerChannel";
+import { listUsers } from "./repo/users";
+import { listWaLines } from "./repo/waLines";
 import { genitiveName } from "./waLines";
 import { notifyLineManager } from "./lineNotify";
 import type { KaspiInvoice, OrderWithItems } from "./types";
@@ -152,11 +154,14 @@ export async function placeBotOrder(input: {
     }
     let clientId = client?.clientId ?? "";
     let clientName = client?.name ?? "";
+    // Чей клиент (карточки или лида) — от этого зависит, чья продажа (`botSaleOwner`).
+    let cardManager = client?.managerEmail ?? "";
     let city = client?.city || draft.city;
     if (!client) {
       const key = phoneKey(phone);
       const lead = key ? (await listLeads()).find((l) => phoneKey(l.phone) === key && l.stage !== "lost") : undefined;
       if (lead) {
+        cardManager = lead.managerEmail || "";
         city = lead.city || draft.city || BOT_DEFAULT_CITY;
         const linked = await ensureClientForLead(lead, ch.managerEmail, { city });
         clientId = linked.clientId;
@@ -215,8 +220,15 @@ export async function placeBotOrder(input: {
     ]
       .filter(Boolean)
       .join(" ");
+    // Клиент менеджера — заявка на менеджера (его продажа и бонус), новый человек — продажа бота (20.10.2026).
+    const owner = botSaleOwner({
+      channel: ch,
+      cardManagerEmail: cardManager,
+      activeManagers: (await listUsers().catch(() => [])).filter((u) => u.active && u.role === ROLES.MANAGER).map((u) => u.email),
+    });
+    const ownerNote = owner !== ch.managerEmail ? `Клиент менеджера — продажа его, бот помог.` : "";
     const orderId = await createOrder({
-      managerEmail: ch.managerEmail,
+      managerEmail: owner,
       confirmed: true,
       paymentMethod: "Каспи",
       clientId,
@@ -224,7 +236,7 @@ export async function placeBotOrder(input: {
       clientPhone: waPhoneText(phone),
       deliveryDate: plan.deliveryDate,
       direction: directionForCity(city),
-      notes,
+      notes: [notes, ownerNote].filter(Boolean).join(" "),
       store,
       items: plan.items.map((i) => ({ ...i, flowerType: i.flowerType as never })),
     });
@@ -270,6 +282,11 @@ export async function placeBotOrder(input: {
     });
     await notifyBotSale(saleText);
     if (ch.line) await notifyLineManager(ch.line, saleText);
+    else if (owner !== ch.managerEmail) {
+      // Клиент менеджера заказал у бота — менеджеру то же сообщение на его номер (если номер подключён к CRM).
+      const ownLine = (await listWaLines().catch(() => [])).find((l) => l.active && l.managerEmail === owner);
+      if (ownLine) await notifyLineManager(ownLine.code, `Ваш клиент заказал у бота — продажа ваша.\n\n${saleText}`);
+    }
     const total = plan.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
     const problems = invoices
       .filter((i) => i.result !== "sent")

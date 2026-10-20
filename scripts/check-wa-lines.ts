@@ -6,7 +6,7 @@
  */
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "check-secret";
 import { assistantVerdict, buildChatList, genitiveName, isWorkTime, leadsAssistantLine, lineCodeFor, lineInputRefusal, parseAssistantMode, parseLeadsAssistantMode } from "../src/lib/waLines";
-import { BOT_CHANNEL, isAssistantOrder, isChannelOrder, lineChannel, orderNoteHead } from "../src/lib/sellerChannel";
+import { BOT_CHANNEL, botSaleOwner, isAssistantOrder, isBotOrder, isChannelOrder, lineChannel, orderNoteHead } from "../src/lib/sellerChannel";
 import { lineAlertText, lineBotChat, lineMorningPlanText, lineNudgeStatus } from "../src/lib/lineSellerRules";
 import { systemPrompt } from "../src/lib/botEngine";
 import { BOT_MANAGER_EMAIL } from "../src/lib/botIdentity";
@@ -194,6 +194,17 @@ check("тревога менеджеру", lineAlertText({ phone: "77010000001",
   "просит оплату при получении",
   "Клиент: «Можно наличными при доставке?»",
 ]);
+
+// --- Чья продажа, которую оформил бот (20.10.2026) ------------------------------------------
+const mgrs = ["emil@x.kz", "ilyas@x.kz"];
+check("клиент менеджера — заявка на менеджера", botSaleOwner({ channel: BOT_CHANNEL, cardManagerEmail: "Emil@x.kz", activeManagers: mgrs }), "emil@x.kz");
+check("новый человек — продажа бота", botSaleOwner({ channel: BOT_CHANNEL, cardManagerEmail: "", activeManagers: mgrs }), BOT_MANAGER_EMAIL);
+check("карточка на боте — продажа бота", botSaleOwner({ channel: BOT_CHANNEL, cardManagerEmail: BOT_MANAGER_EMAIL, activeManagers: mgrs }), BOT_MANAGER_EMAIL);
+check("уволенный / не менеджер (Земфира, РОП) — продажа бота", botSaleOwner({ channel: BOT_CHANNEL, cardManagerEmail: "zemfira@x.kz", activeManagers: mgrs }), BOT_MANAGER_EMAIL);
+check("помощник номера — всегда на своего менеджера", botSaleOwner({ channel: lineChannel({ code: "m-ilyas", managerEmail: "ilyas@x.kz" }, "Ильяс"), cardManagerEmail: "emil@x.kz", activeManagers: mgrs }), "ilyas@x.kz");
+const botNote = orderNoteHead(BOT_CHANNEL);
+check("заказ бота на менеджера узнаётся по метке", [isBotOrder({ managerEmail: "emil@x.kz", notes: `${botNote} Клиент менеджера — продажа его, бот помог.` }), isChannelOrder({ managerEmail: "emil@x.kz", notes: botNote }, BOT_CHANNEL)], [true, true]);
+check("заказ менеджера без метки — не бота", isBotOrder({ managerEmail: "emil@x.kz", notes: "" }), false);
 
 // --- Номер Земфиры как линия помощника (20.10.2026) ---------------------------------------
 check("режим Земфиры: по умолчанию выключен", [parseLeadsAssistantMode(""), parseLeadsAssistantMode(undefined), parseLeadsAssistantMode("on"), parseLeadsAssistantMode(" on "), parseLeadsAssistantMode("sell")], ["off", "off", "on", "on", "off"]);

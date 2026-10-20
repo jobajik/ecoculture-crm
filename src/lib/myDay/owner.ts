@@ -1,6 +1,6 @@
 import { FARM_ORDER, ORDER_STATUSES, farmLabel, getFarmFor } from "../constants";
 import { isNotASale } from "../orderKind";
-import { isAssistantOrder } from "../sellerChannel";
+import { isAssistantOrder, isBotOrder } from "../sellerChannel";
 import { isBotEmail } from "../botIdentity";
 import { isAdsLead } from "../leads";
 import { normalizeStore, storeLabel } from "../officeStore";
@@ -189,11 +189,11 @@ export function buildOwnerDay(input: OwnerDayInput): OwnerDay {
       .map((m) => m.phone.replace(/\D/g, "").slice(-10))
   );
   const freshOrders = orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && fresh(o.createdAt));
-  const botOrders = freshOrders.filter((o) => isBotEmail(o.managerEmail));
+  const botOrders = freshOrders.filter((o) => isBotOrder(o));
   const assistantOrders = freshOrders.filter((o) => isAssistantOrder(o));
   const broadcastOrders = freshOrders.filter((o) => {
     const key = (o.clientPhone || "").replace(/\D/g, "").slice(-10);
-    return key && sentPhones.has(key) && !isBotEmail(o.managerEmail);
+    return key && sentPhones.has(key) && !isBotOrder(o);
   });
   const log = input.assistantLog.filter((r) => fresh(r.at));
   const mainIncoming = new Set(input.messages.filter((m) => !(m.line || "").trim() && m.direction === "in" && fresh(m.at)).map((m) => m.phone));

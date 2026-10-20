@@ -34,15 +34,36 @@ export function isAssistantOrder(order: { notes?: string | null }): boolean {
   return (order.notes || "").includes(ASSISTANT_ORDER_MARK);
 }
 
+/** Метка в заметке заявки: заказ принял бот основного номера (на кого бы ни была заявка). */
+export const BOT_ORDER_MARK = "Заказ принял бот WhatsApp";
+
+/**
+ * Кто владеет продажей, которую оформил бот основного номера (20.10.2026, владелец: «все бонусы менеджеров должны
+ * сохраняться за ними, даже если бот помогает» и «продажи, которые бот делает сам, — продажи бота»). Клиент или лид
+ * записан на действующего менеджера — заявка на менеджера: его продажа, его бонус, бот только помог. Новый человек,
+ * ничей или записанный на бота — продажа бота (без бонуса). Помощник номера менеджера и так оформляет на менеджера.
+ */
+export function botSaleOwner(input: { channel: SellerChannel; cardManagerEmail: string; activeManagers: string[] }): string {
+  if (input.channel.line) return input.channel.managerEmail;
+  const card = (input.cardManagerEmail || "").trim().toLowerCase();
+  if (card && !isBotEmail(card) && input.activeManagers.map((e) => e.trim().toLowerCase()).includes(card)) return card;
+  return input.channel.managerEmail;
+}
+
+/** Заказ принял бот основного номера: на бота — или на менеджера клиента с меткой бота в заметке. */
+export function isBotOrder(order: { managerEmail: string; notes?: string | null }): boolean {
+  return isBotEmail(order.managerEmail) || (order.notes || "").includes(BOT_ORDER_MARK);
+}
+
 /** Заказ этого канала: у бота — заявки бота, у номера менеджера — заявки, оформленные его помощником. */
 export function isChannelOrder(order: { managerEmail: string; notes?: string | null }, ch: SellerChannel): boolean {
-  if (!ch.line) return isBotEmail(order.managerEmail);
+  if (!ch.line) return isBotOrder(order);
   return (order.managerEmail || "").trim().toLowerCase() === ch.managerEmail && isAssistantOrder(order);
 }
 
 /** Первая фраза заметки заявки. */
 export function orderNoteHead(ch: SellerChannel): string {
-  if (!ch.line) return "Заказ принял бот WhatsApp.";
+  if (!ch.line) return `${BOT_ORDER_MARK}.`;
   return `${ASSISTANT_ORDER_MARK}${ch.managerName ? ` ${genitiveName(ch.managerName)}` : ""} в WhatsApp.`;
 }
 
