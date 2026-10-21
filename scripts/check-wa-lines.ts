@@ -15,6 +15,8 @@ import { parseAssistantAnswer, assistantSystemPrompt, assistantTranscript } from
 import { looksLikeRefusal } from "../src/lib/clientRefusal";
 import { ASSISTANT_MAX_CHARS, ensureGreeting, startsWithGreeting, tooLong } from "../src/lib/assistantText";
 import { sellableForBot } from "../src/lib/botKnowledge";
+import { shortCaption } from "../src/lib/botPhotos";
+import { isAckOnly } from "../src/lib/broadcast";
 import { addressableName } from "../src/lib/talkAnalysis";
 import { autoLeadFromMessage } from "../src/lib/waAutoLead";
 import { decisionScope } from "../src/lib/leadDecisions";
@@ -265,6 +267,13 @@ check("что есть и почём: только склад с ценой, П�
 const gPrompt = assistantSystemPrompt({ managerName: "Земфира", prices: "прайс", stock: "склад", sellable, storeNote: "", harvest: "", push: "", client: "", instructions: "", today: "2026-10-21", line: "leads" });
 check("подсказка: один список «что есть», прайс и склад отдельно не идут, город раньше условий", [gPrompt.includes("Что есть сейчас и почём"), gPrompt.includes("Действующий прайс"), gPrompt.includes("СПРОСИ ГОРОД"), gPrompt.includes("не больше 300 знаков")], [true, false, true, true]);
 check("имя для обращения: номер и заглушка — нет", [addressableName("19"), addressableName("Клиент WhatsApp 0014"), addressableName("Aza")], ["", "", "Aza"]);
+
+// --- Меньше спама и текста на номерах менеджеров (21.10.2026) ------------------------
+check("подпись дожима — одно предложение", shortCaption("Свежие хризантемы с крупными, плотными соцветиями и крепкими стеблями сохраняют насыщенный цвет долгое время в вазе. Идеальны для букетов и витрин. Срез каждый день."), "Свежие хризантемы с крупными, плотными соцветиями и крепкими стеблями сохраняют насыщенный цвет долгое время в вазе.");
+check("подпись дожима — длинное предложение режется по слову", shortCaption("а".repeat(50) + " " + "б".repeat(50) + " " + "в".repeat(60), 120).endsWith("…"), true);
+check("подпись дожима — пусто", shortCaption(""), "");
+check("кивки: норм, ладно, түсіндім — да; хорошо — нет", ["Норм", "ладно", "Түсіндім", "принято!", "Хорошо", "норм, а 4 категория есть?"].map(isAckOnly), [true, true, true, true, false, false]);
+check("подсказка бота: коротко, город сначала, одно «здравствуйте» — один вопрос", [botP.includes("КОРОТКО И ПО СУТИ"), botP.includes("сначала СПРОСИ ГОРОД"), botP.includes("Одно «здравствуйте» без вопроса"), botP.includes("2–3 ходовые позиции")], [true, true, true, true]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

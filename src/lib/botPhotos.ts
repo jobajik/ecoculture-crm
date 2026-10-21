@@ -127,6 +127,19 @@ export function photoMessage(input: { caption: string; prices: { label: string; 
   return parts.filter(Boolean).join("\n\n").slice(0, 1024);
 }
 
+/**
+ * Подпись для дожима — одно предложение (21.10.2026, владелец: «лаконично»): полная подпись ИИ к фото — три строки
+ * маркетинга, и дожим с ней читался как рассылка. Берём первое предложение, не длиннее 140 знаков.
+ */
+export function shortCaption(caption: string, max = 140): string {
+  const t = String(caption || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  const first = t.split(/(?<=[.!?…])\s+/)[0] || t;
+  if (first.length <= max) return first;
+  const cut = first.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 60)).trim()}…`;
+}
+
 /** Вопрос под фото по номеру касания дожима. */
 export function nudgePhotoQuestion(attempt: number): string {
   if (attempt <= 1) return "Поставить вам на завтра? Для пробы — от 50 шт.";

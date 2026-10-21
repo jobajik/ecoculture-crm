@@ -7,7 +7,7 @@ import { getSettings, saveSettings } from "./repo/settings";
 import { getCurrentPrices } from "./repo/prices";
 import { listOrdersWithItems } from "./repo/orders";
 import { loadPhotoContext } from "./botPhotoSend";
-import { nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhoto, type BotPhoto } from "./botPhotos";
+import { nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhoto, shortCaption, type BotPhoto } from "./botPhotos";
 import { photoFileUrl } from "./catalogFiles";
 import { botPhotoSentWrite } from "./repo/botPhotos";
 import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
@@ -121,7 +121,7 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
         photoCtx ??= await loadPhotoContext();
         const pic = pickItemPhoto(photoCtx.photos, offers[0], transcriptText, []);
         if (pic) {
-          const caption = photoMessage({ caption: pic.caption, prices: offers.slice(0, 1).map((o) => ({ label: label(o), price: o.price })), question: nudgePhotoQuestion(d.attempt) });
+          const caption = photoMessage({ caption: shortCaption(pic.caption), prices: offers.slice(0, 1).map((o) => ({ label: label(o), price: o.price })), question: nudgePhotoQuestion(d.attempt) });
           file = { url: photoFileUrl(pic), name: pic.fileName || "photo.jpg", caption, memo: `[фото: ${photoLabel(pic)}] ${caption}` };
           await commitAtomic([botPhotoSentWrite(pic as BotPhoto & { rowNumber: number })]).catch(() => undefined);
         }

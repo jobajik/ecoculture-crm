@@ -6,7 +6,7 @@ import { botChatWrite, emptyBotChat, listBotChats, settingsMap } from "./repo/br
 import { appendDebtReminder, listDebtReminders } from "./repo/debtReminders";
 import { greenConfig, sendFileByUrl, sendText } from "./greenApi";
 import { loadPhotoContext, rotationPhoto, type PhotoContext } from "./botPhotoSend";
-import { isInfoPhoto, nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhoto, type BotPhoto } from "./botPhotos";
+import { isInfoPhoto, nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhoto, type BotPhoto, shortCaption } from "./botPhotos";
 import { photoFileUrl } from "./catalogFiles";
 import { botPhotoSentWrite } from "./repo/botPhotos";
 import { phoneKey } from "./leads";
@@ -339,7 +339,7 @@ export async function runBotNudges(options: { limit?: number; budgetMs?: number 
                   url: photoFileUrl(itemPic),
                   name: itemPic.fileName || "photo.jpg",
                   caption: photoMessage({
-                    caption: itemPic.caption,
+                    caption: shortCaption(itemPic.caption),
                     prices: offers.slice(0, 1).map((o) => ({ label: label(o), price: o.price })),
                     question: nudgePhotoQuestion(attempt),
                   }),
