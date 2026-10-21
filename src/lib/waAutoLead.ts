@@ -81,3 +81,18 @@ export function namedFromWhatsApp(
   if (!name || name.startsWith("Клиент WhatsApp")) return null;
   return { Name: name, ContactPerson: lead.contactPerson || (message.senderName || "").trim().slice(0, 80) };
 }
+
+/**
+ * Кто из авто-лидов на один номер остаётся, если два вебхука завели их одновременно (20.10.2026: у Земфиры «Асима» и
+ * «Клиент WhatsApp 0574» в одну минуту). Решают оба вебхука одинаково: самый ранний, при равенстве — меньший номер;
+ * проигравший удаляет свой. Пусто — свой лид оставить.
+ */
+export function autoLeadLoser(ownId: string, sameKey: Pick<Lead, "leadId" | "createdAt" | "note">[], now: Date, windowMin = 10): boolean {
+  const recentAuto = sameKey.filter((l) => /Заведён автоматически/.test(l.note) && now.getTime() - Date.parse(l.createdAt) <= windowMin * 60000);
+  if (!recentAuto.some((l) => l.leadId === ownId)) return false;
+  // Есть лид старше окна или заведённый человеком — свой лишний.
+  if (sameKey.some((l) => l.leadId !== ownId && !recentAuto.includes(l))) return true;
+  const keeper = [...recentAuto].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.leadId < b.leadId ? -1 : 1))[0];
+  return keeper.leadId !== ownId;
+}
+

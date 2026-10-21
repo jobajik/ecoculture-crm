@@ -3,13 +3,14 @@ import { downloadMedia, webhookTokenOk } from "@/lib/greenApi";
 import { openAiConfigured, transcribeAudio } from "@/lib/openai";
 import { parseGreenWebhook } from "@/lib/whatsapp";
 import { appendWaMessages } from "@/lib/repo/talks";
-import { createLead, listLeads, updateLead } from "@/lib/repo/leads";
-import { listClients } from "@/lib/repo/clients";
+import { createLead, listLeadsStrict, updateLead } from "@/lib/repo/leads";
+import { listClientsStrict } from "@/lib/repo/clients";
+import { deleteWhere, SHEET_TABS } from "@/lib/sheets";
 import { listUsers } from "@/lib/repo/users";
 import { phoneKey } from "@/lib/leads";
-import { autoLeadFromMessage, leadsLineOwner, namedFromWhatsApp } from "@/lib/waAutoLead";
+import { autoLeadFromMessage, autoLeadLoser, leadsLineOwner, namedFromWhatsApp } from "@/lib/waAutoLead";
 import { localDayKey } from "@/lib/timezone";
-import type { WaMessage } from "@/lib/types";
+import type { Client, Lead, WaMessage } from "@/lib/types";
 import { appendWaStatuses } from "@/lib/repo/broadcasts";
 import { botIncomingOf, parseGreenStatus } from "@/lib/greenOut";
 import { runBot } from "@/lib/botEngine";
@@ -25,6 +26,7 @@ import { settingsMap } from "@/lib/repo/broadcasts";
 import { cancelFromWhatsApp, kickBroadcast } from "@/lib/autoBroadcastRunner";
 import { isCancelText } from "@/lib/autoBroadcast";
 import { greenConfig, sendText } from "@/lib/greenApi";
+import { handleStaffMessage } from "@/lib/staffCommandRunner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -122,6 +124,16 @@ export async function POST(request: Request) {
       }
     } catch (err) {
       console.error("auto broadcast cancel:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Сотрудник пишет основному номеру поручение («отправь фото … клиенту …», 21.10.2026) — выполняет `staffCommandRunner`.
+  // Бот сотрудникам не отвечает и черновиков заявок с их сообщений не делает.
+  if (message.direction === "in") {
+    try {
+      if (await handleStaffMessage(message)) return NextResponse.json({ ok: true, staff: true });
+    } catch (err) {
+      console.error("staff message:", err instanceof Error ? err.message : err);
     }
   }
 
@@ -252,28 +264,46 @@ async function managerLine(body: unknown, code: string, request: Request) {
 async function autoLead(message: WaMessage, line?: WaLine) {
   const key = phoneKey(message.phone);
   if (!key) return;
-  // Лиды — свежие: клиент пишет тремя сообщениями подряд, лид должен завестись один раз.
-  const leads = await listLeads({ fresh: true });
+  // Лиды и клиенты — строгим чтением: Google не ответил — лид НЕ заводим (иначе пустой список читается как «номера
+  // нет», и на один номер копятся лиды — 20–21.10.2026 у Маргариты их стало три). Свежие: клиент пишет подряд.
+  let leads: Lead[];
+  let clients: Client[];
+  try {
+    [leads, clients] = await Promise.all([listLeadsStrict(), listClientsStrict()]);
+  } catch (err) {
+    console.error("auto lead read:", err instanceof Error ? err.message : err);
+    return;
+  }
   const own = leads.find((l) => phoneKey(l.phone) === key);
   if (own) {
     const named = namedFromWhatsApp(own, message);
     if (named) await updateLead(own.leadId, named);
     return;
   }
-  const [clients, users] = await Promise.all([listClients(), listUsers()]);
+  const users = await listUsers();
   const known = new Set<string>();
   for (const c of clients) for (const p of [c.phone, c.messenger, c.kaspiPay1, c.kaspiPay2]) if (phoneKey(p)) known.add(phoneKey(p));
   const day = localDayKey();
+  let lead;
   if (line) {
     // Сотрудники и наши же номера лидами не становятся.
     for (const k of Array.from(await ourPhoneKeys(await settingsMap()))) known.add(k);
     const name = users.find((u) => u.email.toLowerCase() === line.managerEmail)?.name || line.label;
-    const lead = autoLeadFromMessage(message, known, line.managerEmail, day, { whose: genitiveName(name), origin: "", incomingOnly: true });
-    if (lead) await createLead(lead, day);
-    return;
+    lead = autoLeadFromMessage(message, known, line.managerEmail, day, { whose: genitiveName(name), origin: "", incomingOnly: true });
+  } else {
+    lead = autoLeadFromMessage(message, known, leadsLineOwner(users), day);
   }
-  const lead = autoLeadFromMessage(message, known, leadsLineOwner(users), day);
-  if (lead) await createLead(lead, day);
+  if (!lead) return;
+  const id = await createLead(lead, day);
+  // Два сообщения подряд — два вебхука одновременно: оба не нашли лида и оба завели. Через пару секунд перечитываем;
+  // лишний (не самый ранний) удаляет себя сам (`autoLeadLoser`).
+  try {
+    await new Promise((r) => setTimeout(r, 2500));
+    const same = (await listLeadsStrict()).filter((l) => phoneKey(l.phone) === key);
+    if (autoLeadLoser(id, same, new Date())) await deleteWhere(SHEET_TABS.LEADS, (r) => r.LeadID === id);
+  } catch (err) {
+    console.error("auto lead settle:", err instanceof Error ? err.message : err);
+  }
 }
 
 /** Адрес сайта для своего же вызова: основной (с www), иначе — тот, куда пришёл вебхук. */

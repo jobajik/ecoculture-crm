@@ -45,6 +45,12 @@ function toClient(record: Record<string, string>): Client {
   };
 }
 
+/** То же, что `listClients`, но сбой чтения — ошибка (для решения «номера нет в базе — заводим лид»). */
+export async function listClientsStrict(): Promise<Client[]> {
+  const table = await readTable(SHEET_TABS.CLIENTS);
+  return table.rows.map((row) => toClient(rowToRecord(SHEET_TABS.CLIENTS, row))).filter((c) => c.clientId && c.name);
+}
+
 export async function listClients(): Promise<Client[]> {
   try {
     const table = await readTable(SHEET_TABS.CLIENTS);

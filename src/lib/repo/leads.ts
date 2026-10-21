@@ -65,6 +65,16 @@ export async function listLeads(options: { fresh?: boolean } = {}): Promise<Lead
   }
 }
 
+/**
+ * То же, что `listLeads`, но сбой чтения — ошибка, а не пустой список. Для решений «такого лида нет — заводим»:
+ * 20–21.10.2026 Google не ответил на чтение (лимит), пустой список прочитался как «лида нет», и у Маргариты (номер
+ * Эмиля) за сутки стало три лида на один номер (грабли 1.14: «не смог прочитать» — не «нет»).
+ */
+export async function listLeadsStrict(): Promise<Lead[]> {
+  const table = await readTable(SHEET_TABS.LEADS, { fresh: true });
+  return table.rows.map((row) => toLead(rowToRecord(SHEET_TABS.LEADS, row))).filter((l) => l.leadId && l.name);
+}
+
 export async function listLeadTouches(options: { fresh?: boolean } = {}): Promise<LeadTouch[]> {
   try {
     const table = await readTable(SHEET_TABS.LEAD_TOUCHES, options);

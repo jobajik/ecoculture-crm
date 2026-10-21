@@ -902,6 +902,32 @@ WhatsApp, что и клиенты, и до этого программа зна
 именем — `scripts/diag-line-contacts.ts <код|all> <слово…>` (Green API `getContacts`); записать номер и закрыть ошибочные
 авто-лиды «Неверный контакт» — `scripts/set-staff-phone.ts <почта> <номер> [--yes]`. После новой колонки — `npm run setup-sheet`.
 
+**Поручения сотрудников основному номеру** (21.10.2026, владелец со снимком: сотрудник написал на рабочий номер «Отправь
+фотографии хризантемы всех категорий и эустому белого и розового цвета, клиенту Маргарита Пожарка», ответа не было — «почему ты
+не отправил по запросу менеджера?»). Номерам сотрудников бот не отвечает (`ourPhoneKeys`), а поручений раньше не понимал вовсе;
+Эмиль отправил фото сам через три часа. Правила — `src/lib/staffCommand.ts`, работа — `src/lib/staffCommandRunner.ts`
+(`handleStaffMessage` из вебхука основного номера до бота), проверка — `check-staff-command`.
+
+- **что умеет**: отправить клиенту фото (сорт, категория, «все категории», цвет эустомы → сорт) и/или текст. Разбирает модель
+  (`STAFF_COMMAND_SCHEMA`: intent send / other / none, кому, номер, позиции, текст); «ок», «спасибо», ответы на сводку — молчит;
+  просьба, которую не умеет, — «пока умею только фото и сообщение» (`STAFF_OTHER_TEXT`);
+- **кому — решает код** (`matchTargets`): в имени карточки клиента, лида или имени в WhatsApp должны найтись ВСЕ слова поручения
+  (по основе слова — «Маргарите Пожарке» тоже); один номер — одна строка; свои клиенты сотрудника выше. Один — отправляет;
+  несколько — список «ответьте цифрой» (настройка `StaffAsk:<номер>`, 3 часа), ответ цифрой или номером телефона — выполняет;
+  никого — просит номер. Угадывать по одному слову нельзя: «Маргарит» в базе шесть;
+- **с какого номера** (`sendingLine`): где клиент переписывался последним (номер менеджера, Земфиры, основной), иначе номер
+  самого сотрудника, иначе основной. Фото — подписью с ценами (`photoMessage` + `photoPrices`), под последним — «Какие
+  интересуют?», не больше 10 за поручение (`STAFF_MAX_PHOTOS`), «все категории» — до 4 разных сортов, инфографика — последней;
+  в переписку и журнал помощника — kind crm от почты сотрудника. Сотруднику — отчёт «Отправил … с номера Эмиля: • …» и чего
+  нет в CRM. Что сделал бы, без отправки, — `scripts/staff-command-try.ts <файл с текстом> <номер>`; что писали сотрудники
+  основному номеру — `diag-staff-request.ts [дней] [слово | @файл]`.
+
+**Авто-лид не задваивается** (21.10.2026: у Маргариты на номере Эмиля за сутки три лида на один номер, у Земфиры — два в одну
+минуту). Две причины: чтение лидов при сбое Google отдавало пустой список, и вебхук решал «лида нет» (грабли 1.14) — теперь
+`listLeadsStrict` / `listClientsStrict`, сбой — лид не заводится; и два сообщения подряд — два вебхука одновременно — теперь
+через 2,5 с перечитываем, и лишний удаляет себя сам (`autoLeadLoser`: остаётся самый ранний; есть старый или заведённый
+человеком — новый лишний). Двойники — `scripts/diag-lead-dupes.ts`, убрать авто-дубли без касаний — `lead-dupes-fix.ts [--yes]`.
+
 **Продающий помощник на номере менеджера — режим «продаёт сам»** (19.10.2026, владелец про Ильяса: «хочу, чтобы это был
 мощный помощник для него, который бы смог продавать»; выбрал: отвечает, если Ильяс молчит 5 минут; сам оформляет заявку и
 счёт; дожим молчащих; утренний план Ильясу; фото и каталог в ответах; знает клиента Ильяса). Режим `sell` в `WaLines.Assistant`
@@ -3159,7 +3185,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`, `check-wa-lines`, `check-auto-broadcast`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`, `check-wa-lines`, `check-auto-broadcast`, `check-staff-command`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

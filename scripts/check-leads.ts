@@ -5,7 +5,7 @@
  */
 import type { LeadRow } from "../src/lib/leads";
 import { isUntouchedCallBase, leadGroup, matchesQuery, matchesView, nextTouchLabel, originOf, sortLeadsForWork } from "../src/lib/leadsView";
-import { autoLeadFromMessage, leadsLineOwner, namedFromWhatsApp } from "../src/lib/waAutoLead";
+import { autoLeadFromMessage, autoLeadLoser, leadsLineOwner, namedFromWhatsApp } from "../src/lib/waAutoLead";
 import {
   buildLeadRows,
   canSeeLead,
@@ -280,6 +280,23 @@ check("нет заголовков — понятная ошибка", !!parseLe
     nextTouchLabel(rowsV[1], "2026-10-15", fd), nextTouchLabel(rowsV[2], "2026-10-15", fd), nextTouchLabel(rowsV[0], "2026-10-15", fd),
     nextTouchLabel(rowsV[4], "2026-10-15", fd), nextTouchLabel(rowsV[5], "2026-10-15", fd),
   ], ["сегодня", "просрочено 3 дн.", "20.10", "не назначено", "Дорого"]);
+}
+
+// Два авто-лида на один номер одновременно (20.10.2026, Земфира: «Асима» и «Клиент WhatsApp 0574» в одну минуту;
+// у Маргариты на номере Эмиля — три лида за сутки): лишний удаляет себя сам, решают оба одинаково.
+{
+  const now = new Date("2026-10-20T06:40:00Z");
+  const auto = (id: string, at: string) => ({ leadId: id, createdAt: at, note: "Сам написал… Заведён автоматически — уточните…" });
+  const a = auto("LEAD-A", "2026-10-20T06:39:01Z");
+  const b = auto("LEAD-B", "2026-10-20T06:39:02Z");
+  check("гонка: ранний остаётся", autoLeadLoser("LEAD-A", [a, b], now), false);
+  check("гонка: поздний удаляет себя", autoLeadLoser("LEAD-B", [a, b], now), true);
+  check("один лид — остаётся", autoLeadLoser("LEAD-A", [a], now), false);
+  const old = { leadId: "LEAD-OLD", createdAt: "2026-10-19T10:53:00Z", note: "Заведён автоматически" };
+  check("уже был старый лид — новый лишний", autoLeadLoser("LEAD-A", [old, a], now), true);
+  const manual = { leadId: "LEAD-M", createdAt: "2026-10-20T06:39:30Z", note: "завела руками" };
+  check("лид, заведённый человеком, главнее", autoLeadLoser("LEAD-A", [a, manual], now), true);
+  check("чужой (не авто) лид не трогаем", autoLeadLoser("LEAD-M", [a, manual], now), false);
 }
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
