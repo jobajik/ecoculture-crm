@@ -9,7 +9,7 @@ dotenv.config();
  * пометкой в заметке; карточки клиентов не трогаются (сотрудник, который ещё и покупает, — редкость, и это
  * решает человек). Без --yes — показ. Номер в любом виде: «+7 701…», «8701…».
  *
- *   npx tsx scripts/set-staff-phone.ts <почта сотрудника> <номер> [--yes]
+ *   npx tsx scripts/set-staff-phone.ts <почта сотрудника> <номер | line:<код линии>> [--yes]
  *
  * 20.10.2026, владелец: «Разия Теплица у всех менеджеров — зав. склада, Диана тоже, Нина — РОП».
  */
@@ -18,12 +18,16 @@ import { listLeads, updateLead } from "../src/lib/repo/leads";
 import { listClients } from "../src/lib/repo/clients";
 import { CLOSED_STAGES, phoneKey } from "../src/lib/leads";
 import { formatPhone, phoneComplete } from "../src/lib/phone";
+import { listWaLines } from "../src/lib/repo/waLines";
 
 async function main() {
   const [emailRaw, phoneRaw] = process.argv.slice(2);
   const apply = process.argv.includes("--yes");
   const email = (emailRaw || "").trim().toLowerCase();
-  const phone = formatPhone(phoneRaw || "");
+  // «line:<код>» — номер, который Green API назвал у подключённой линии менеджера (полный номер в чат не пишем).
+  const fromLine = (phoneRaw || "").startsWith("line:") ? (await listWaLines({ fresh: true })).find((l) => l.code === phoneRaw.slice(5)) : null;
+  if ((phoneRaw || "").startsWith("line:") && !fromLine?.phone) throw new Error(`у линии ${phoneRaw.slice(5)} нет номера`);
+  const phone = formatPhone(fromLine ? fromLine.phone : phoneRaw || "");
   if (!email || !phoneComplete(phone)) throw new Error("нужны почта сотрудника и полный номер");
 
   const users = await listUsers();
