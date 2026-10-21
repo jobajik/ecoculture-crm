@@ -1,5 +1,12 @@
 import { EMPTY_NUDGE, isAckOnly, type BotChat } from "./broadcast";
-import { NUDGE_FROM_HOUR, NUDGE_GAPS_HOURS, NUDGE_MAX_SILENCE_DAYS, NUDGE_TO_HOUR } from "./botNudge";
+import { NUDGE_FROM_HOUR, NUDGE_MAX_SILENCE_DAYS, NUDGE_TO_HOUR } from "./botNudge";
+
+/**
+ * Дожим с номера менеджера — ОДНО касание через 3 ч (21.10.2026, владелец: «по менеджерам тоже надо уменьшить спам»).
+ * У бота основного номера их два (3 ч и назавтра); на номере менеджера второе — дело самого менеджера: клиент есть в его
+ * утреннем плане, и третье сообщение подряд от «Ильяса» без ответа выглядит как робот.
+ */
+export const LINE_NUDGE_GAPS_HOURS = [3];
 import { mergeMessages, messageText } from "./whatsapp";
 import type { WaMessage } from "./types";
 
@@ -79,10 +86,10 @@ export function lineNudgeStatus(input: {
   if ((input.orderAt ?? []).some((at) => at > lastClient.at)) return no("заказ уже оформлен");
   if (input.nudges.some((n) => n.closed && n.at > lastClient.at)) return no("дожим закрыт: модель решила не писать");
   const after = input.nudges.filter((n) => !n.closed && n.at > lastClient.at).map((n) => n.at).sort();
-  if (after.length >= NUDGE_GAPS_HOURS.length) return no(`все ${NUDGE_GAPS_HOURS.length} касания были`);
+  if (after.length >= LINE_NUDGE_GAPS_HOURS.length) return no(LINE_NUDGE_GAPS_HOURS.length === 1 ? "касание уже было — дальше менеджер" : `все ${LINE_NUDGE_GAPS_HOURS.length} касания были`);
   const from = after.length ? after[after.length - 1] : last.at;
   const passed = (input.now.getTime() - Date.parse(from)) / 3600000;
-  const gap = NUDGE_GAPS_HOURS[after.length];
+  const gap = LINE_NUDGE_GAPS_HOURS[after.length];
   if (passed < gap) return no(`рано: прошло ${passed.toFixed(1)} ч из ${gap}`);
   return { attempt: after.length + 1, reason: "пора" };
 }

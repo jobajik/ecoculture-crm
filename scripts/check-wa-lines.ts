@@ -178,8 +178,7 @@ const ns = (now: string, extra: Partial<Parameters<typeof lineNudgeStatus>[0]> =
   lineNudgeStatus({ chat: talk, nudges: [], now: new Date(now), hour: 13, ...extra });
 check("дожим: через 3 ч после нас — первое касание", ns("2026-10-16T08:20:00Z").attempt, 1);
 check("дожим: через 2 ч — рано", ns("2026-10-16T07:10:00Z").attempt, 0);
-check("дожим: назавтра — второе", ns("2026-10-17T05:00:00Z", { nudges: [{ at: "2026-10-16T08:20:00Z", closed: false }] }).attempt, 2);
-check("дожим: два было — хватит", ns("2026-10-18T06:00:00Z", { nudges: [{ at: "2026-10-16T08:20:00Z", closed: false }, { at: "2026-10-17T05:00:00Z", closed: false }] }).attempt, 0);
+check("дожим: одно касание было — дальше менеджер (21.10.2026: меньше спама)", ns("2026-10-17T05:00:00Z", { nudges: [{ at: "2026-10-16T08:20:00Z", closed: false }] }), { attempt: 0, reason: "касание уже было — дальше менеджер" });
 check("дожим: модель сказала «не писать»", ns("2026-10-16T08:20:00Z", { nudges: [{ at: "2026-10-16T08:00:00Z", closed: true }] }).reason, "дожим закрыт: модель решила не писать");
 check("дожим: заказ оформлен — не надо", ns("2026-10-16T08:20:00Z", { orderAt: ["2026-10-16T05:30:00Z"] }).reason, "заказ уже оформлен");
 check("дожим: клиент не отвечал (рассылка) — нет", lineNudgeStatus({ chat: [talk[1]], nudges: [], now: new Date("2026-10-16T09:00:00Z"), hour: 13 }).attempt, 0);

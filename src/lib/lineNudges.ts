@@ -10,7 +10,7 @@ import { loadPhotoContext } from "./botPhotoSend";
 import { nudgePhotoQuestion, photoLabel, photoMessage, pickItemPhoto, type BotPhoto } from "./botPhotos";
 import { photoFileUrl } from "./catalogFiles";
 import { botPhotoSentWrite } from "./repo/botPhotos";
-import { NUDGE_DECISION_SCHEMA, NUDGE_GAPS_HOURS, nudgeDecisionPrompt, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
+import { NUDGE_DECISION_SCHEMA, nudgeDecisionPrompt, nudgeText, parseNudgeDecision, pickNudgeOffers } from "./botNudge";
 import { chatJson, openAiConfigured } from "./openai";
 import { stockMap } from "./botKnowledge";
 import { almatyHourOf, botStoreFor, inStore } from "./officeStore";
@@ -20,14 +20,14 @@ import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade, ORDER_STATUSES } from "
 import { phoneKey } from "./leads";
 import { mergeMessages, messageText } from "./whatsapp";
 import { ourPhoneKeys } from "./lineNotify";
-import { lineNudgeStatus } from "./lineSellerRules";
+import { LINE_NUDGE_GAPS_HOURS, lineNudgeStatus } from "./lineSellerRules";
 import { sendLineNudge } from "./lineSeller";
 import type { WaMessage } from "./types";
 
 // ---------------------------------------------------------------------------
 // Дожим молчащих на номере менеджера (19.10.2026, владелец выбрал для Ильяса «дожим молчащих клиентов»).
-// Те же правила, что у бота основного номера (`botNudge.ts`): клиент проявлял интерес и замолчал — два
-// касания, через 3 ч и назавтра, днём; писать ли — решает модель узким вопросом (по умолчанию — нет);
+// Те же правила, что у бота основного номера (`botNudge.ts`), но касание ОДНО — через 3 ч, днём
+// (`LINE_NUDGE_GAPS_HOURS`; 21.10.2026, владелец: «уменьшить спам»): клиент проявлял интерес и замолчал; писать ли — решает модель узким вопросом (по умолчанию — нет);
 // текст и цены собирает код из склада и прайса; первое касание — с фото позиции, если оно есть.
 // Только номера в режиме «продаёт сам». Не чаще раза в 20 минут (метка `LineNudgeLastRun`).
 // ---------------------------------------------------------------------------
@@ -114,9 +114,10 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
         isPush: (f, g) => !!pushItemFor(push, f, g),
       });
       if (out.sent > 0) await pause(3000 + Math.floor(Math.random() * 4000));
-      // Первое касание — фото той позиции, о которой шла речь, с ценой; нет фото — текст. Последнее — мягко.
+      // Касание — фото той позиции, о которой шла речь, с ценой и одним вопросом; нет фото — короткий текст с одной-двумя
+      // позициями (21.10.2026: касание на номере менеджера одно — `LINE_NUDGE_GAPS_HOURS`).
       let file: { url: string; name: string; caption: string; memo: string } | undefined;
-      if (d.attempt < NUDGE_GAPS_HOURS.length && offers.length) {
+      if (d.attempt <= LINE_NUDGE_GAPS_HOURS.length && offers.length) {
         photoCtx ??= await loadPhotoContext();
         const pic = pickItemPhoto(photoCtx.photos, offers[0], transcriptText, []);
         if (pic) {
@@ -125,7 +126,7 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
           await commitAtomic([botPhotoSentWrite(pic as BotPhoto & { rowNumber: number })]).catch(() => undefined);
         }
       }
-      await sendLineNudge(d.line, d.phone, file ? { text: "", file } : { text: nudgeText(d.attempt, offers, label) });
+      await sendLineNudge(d.line, d.phone, file ? { text: "", file } : { text: nudgeText(Math.min(d.attempt, 1), offers.slice(0, 2), label) });
       out.sent += 1;
     } catch (err) {
       console.error("line nudge:", err instanceof Error ? err.message : err);
