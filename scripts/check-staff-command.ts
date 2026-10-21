@@ -76,7 +76,7 @@ const photos = [
 ];
 const pick = pickStaffPhotos(photos, cmd.items);
 const ids = pick.picked.map((p) => p.photoId);
-check("хризантема «все категории» — 4 фото разных сортов, живые первыми", ids.slice(0, 4), ["altaj", "bacardy", "chik", "yellow"]);
+check("хризантема «все категории» — 3 живых разных сорта и инфографика категорий", ids.slice(0, 4), ["altaj", "bacardy", "chik", "info"]);
 check("белая эустома — 2 фото", ids.filter((i) => i.startsWith("w")).length, 2);
 check("розовая — одно (второе выключено)", ids.filter((i) => i.startsWith("p")), ["p1"]);
 check("ничего не пропало", pick.missing, []);

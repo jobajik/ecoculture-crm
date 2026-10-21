@@ -203,12 +203,18 @@ export function pickStaffPhotos<T extends BotPhoto>(photos: T[], items: StaffIte
     const limit = it.many ? 4 : 2;
     const take: T[] = [];
     const varieties = new Set<string>();
+    // «Все категории»: инфографика категорий — как раз про это, ей место оставляем (живых — на одно меньше).
+    const info = it.many ? ordered.find((p) => isInfoPhoto(p)) : undefined;
+    const liveLimit = info ? limit - 1 : limit;
     // Сначала разные сорта, потом — что осталось.
     for (const p of ordered) {
-      if (take.length >= limit || varieties.has(n(p.variety))) continue;
+      if (isInfoPhoto(p) || take.length >= liveLimit || varieties.has(n(p.variety))) continue;
       take.push(p);
       varieties.add(n(p.variety));
     }
+    for (const p of ordered) if (!isInfoPhoto(p) && take.length < liveLimit && !take.includes(p)) take.push(p);
+    if (info) take.push(info);
+    // Инфографики нет, а места есть — добираем (о сорте: её инфографика рядом с живым фото).
     for (const p of ordered) if (take.length < limit && !take.includes(p)) take.push(p);
     // Инфографику — последней.
     take.sort((a, b) => Number(isInfoPhoto(a)) - Number(isInfoPhoto(b)));

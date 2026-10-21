@@ -7,7 +7,10 @@ import { listShipments } from "@/lib/repo/shipments";
 import { getSettings } from "@/lib/repo/settings";
 import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
 import { localDayKey } from "@/lib/timezone";
-import { isOfficeRole } from "@/lib/officeStore";
+import { isOfficeRole, stockStoreOfRole } from "@/lib/officeStore";
+import { getStockSnapshot } from "@/lib/stock";
+import { flowerTypesForFarm } from "@/lib/constants";
+import StockBoard from "../StockBoard";
 import KpiTile from "../KpiTile";
 import Pill from "../Pill";
 import DayCard, { DayEmpty, DayGroup, DayRow } from "./DayCard";
@@ -53,6 +56,7 @@ export default async function MyDayWarehouse({ user }: { user: DayUser }) {
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.BATCHES, SHEET_TABS.SHIPMENTS, SHEET_TABS.SETTINGS]);
   const now = new Date();
   const [orders, batches, shipments, settings] = await Promise.all([listOrdersWithItems(), listBatches(), listShipments(), getSettings()]);
+  const stock = await getStockSnapshot(now, { batches, settings }, user.farm, { shipments, store: stockStoreOfRole(user.role) });
   const day = buildWarehouseDay({
     role: user.role,
     farm: user.farm,
@@ -295,6 +299,9 @@ export default async function MyDayWarehouse({ user }: { user: DayUser }) {
             </DayCard>
           )}
         </div>
+
+        {/* «Сколько дней лежит» и остатки по позициям — как на прежней главной (21.10.2026). */}
+        <StockBoard initial={stock} allowedTypes={flowerTypesForFarm(user.farm)} initialView="age" />
       </div>
     </div>
   );

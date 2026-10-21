@@ -104,8 +104,11 @@ function relativeTime(iso: string, now: number) {
 export default function StockBoard({
   initial,
   allowedTypes,
+  initialView = "flowers",
 }: {
   initial: StockSnapshot;
+  /** С какой вкладки открыться: в «Моём дне» — «Сколько лежит» (21.10.2026, владелец: «она была крутой и нужной»). */
+  initialView?: "flowers" | "age" | "money" | "detail";
   /**
    * Какие типы цветка показывать колонками. Зав. складом получает только свои —
    * пустая колонка «Розы» на её экране это тоже чужая информация и лишний шум.
@@ -117,7 +120,7 @@ export default function StockBoard({
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(() => Date.now());
   // Вкладка карточки склада (новый вид, 19.10.2026).
-  const [view, setView] = useState<"flowers" | "age" | "money" | "detail">("flowers");
+  const [view, setView] = useState<"flowers" | "age" | "money" | "detail">(initialView);
 
   const refresh = useCallback(async () => {
     setLoading(true);

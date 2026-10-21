@@ -21,6 +21,7 @@ import { getCurrentPrices } from "@/lib/repo/prices";
 import { getSalesSnapshot } from "@/lib/salesAnalytics";
 import { getFinanceSnapshot } from "@/lib/finance";
 import { getStockSnapshot } from "@/lib/stock";
+import StockBoard from "../StockBoard";
 import { homeFocus } from "@/lib/homeFocus";
 import { paceOf } from "@/lib/planOverview";
 import { computeBatchStorageInfo } from "@/lib/shelfLife";
@@ -359,6 +360,10 @@ export default async function MyDayOwner({ user }: { user: DayUser }) {
             )}
           </DayCard>
         </div>
+
+        {/* Остатки со «Сколько дней лежит» — было на старой главной и пропало с «Моим днём» (21.10.2026, владелец:
+            «почему пропала аналитика с днями хранения? Она была крутой и нужной»). */}
+        <StockBoard initial={stock} initialView="age" />
       </div>
     </div>
   );
