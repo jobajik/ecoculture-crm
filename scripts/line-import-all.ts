@@ -32,6 +32,8 @@ import { localDayKey } from "../src/lib/timezone";
 import { mergeMessages } from "../src/lib/whatsapp";
 import type { WaMessage } from "../src/lib/types";
 
+const KEEP_MESSAGES = 3;
+
 const arg = (name: string, def: number) => {
   const i = process.argv.indexOf(name);
   return i >= 0 ? Number(process.argv[i + 1]) || def : def;
@@ -111,11 +113,6 @@ async function main() {
       empty++;
       continue;
     }
-    for (const m of history) {
-      if (have.has(m.messageId)) continue;
-      have.add(m.messageId);
-      fresh.push({ ...m, line: code });
-    }
     if (known.has(key)) {
       skippedKnown++;
       continue;
@@ -130,6 +127,13 @@ async function main() {
     if (!base) continue;
     const named = [...msgs].reverse().find((m) => m.direction === "in" && m.senderName);
     const name = c.name ? newClientName("", c.name, c.phone) : named ? newClientName("", named.senderName, c.phone) : base.name;
+    // В CRM — только последние сообщения нового лида (для карточки): вкладка WaMessages читается целиком на каждом
+    // проходе помощника, а у менеджера тысячи чатов; полную переписку «Переписки» дотягивают из Green API сами.
+    for (const m of history.slice(-KEEP_MESSAGES)) {
+      if (have.has(m.messageId)) continue;
+      have.add(m.messageId);
+      fresh.push({ ...m, line: code });
+    }
     known.add(key);
     out.push({ ...base, name, contactPerson: base.contactPerson || (c.name || named?.senderName || "").slice(0, 80) });
   }
@@ -141,7 +145,8 @@ async function main() {
   if (from + part.length < chats.length) console.log(`Продолжить: --from ${from + part.length}`);
   if (!apply) return console.log("Только показ. Записать: --yes");
   if (fresh.length) await appendWaMessages(fresh);
-  await createLeads(out, localDayKey());
+  // Без даты касания: иначе сотни старых чатов разом встали бы в «На сегодня», а автопилот начал бы их дожимать.
+  await createLeads(out, "");
   console.log(`Записано: лидов ${out.length}, сообщений ${fresh.length}.`);
 }
 
