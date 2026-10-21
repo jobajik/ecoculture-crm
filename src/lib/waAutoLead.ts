@@ -41,7 +41,7 @@ export function autoLeadFromMessage(
    * Номер менеджера (16.10.2026): чей номер в заметке («WhatsApp Ильяса»), лид обычный, не «с рекламы»,
    * и только ВХОДЯЩЕЕ — менеджер пишет первым и поставщикам, и водителям, и своим, а это не лиды.
    */
-  line?: { whose: string; origin: string; incomingOnly: boolean },
+  line?: { whose: string; origin: string; incomingOnly: boolean; city?: string },
 ): NewLead | null {
   const key = phoneKey(message.phone);
   if (!key || known.has(key)) return null;
@@ -52,16 +52,19 @@ export function autoLeadFromMessage(
   const first = incoming ? messageText(message).replace(/\s+/g, " ").trim().slice(0, 300) : "";
   const note = incoming
     ? `Сам написал в WhatsApp ${whose} ${day}${first ? `: «${first}»` : ""}.`
-    : `Земфира написала в WhatsApp ${day}.`;
+    : line
+      ? `Написали первыми с WhatsApp ${whose} ${day}.`
+      : `Земфира написала в WhatsApp ${day}.`;
   return {
     name: newClientName("", sender, message.phone),
-    city: "",
+    // Региональный менеджер (Салтанат — Астана): город её клиентов известен заранее.
+    city: line?.city || "",
     contactPerson: sender.slice(0, 80),
     phone: prettyWaPhone(message.phone),
     clientType: "",
     source: WA_AUTO_LEAD_SOURCE,
     address: "",
-    note: `${note} Заведён автоматически — уточните название точки и город.`,
+    note: `${note} Заведён автоматически — уточните название точки${line?.city ? "" : " и город"}.`,
     createdByEmail: ownerEmail || "whatsapp",
     managerEmail: ownerEmail,
     origin: line ? line.origin : LEAD_ORIGIN_ADS,

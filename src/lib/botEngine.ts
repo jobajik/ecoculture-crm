@@ -54,6 +54,7 @@ import { phoneKey } from "./leads";
 import { parsePush, pushLines, pushPromptBlock, SALES_PUSH_SETTING } from "./salesPush";
 import { priceFor } from "./priceList";
 import { BOT_CHANNEL, type SellerChannel } from "./sellerChannel";
+import { feminize, nextShipDay, regionPromptBlock } from "./managerProfile";
 
 // ---------------------------------------------------------------------------
 // Бот-автоответчик WhatsApp (Green API). Зовётся из вебхука ПОСЛЕ того, как
@@ -133,13 +134,15 @@ async function priceText(): Promise<string> {
  * после — два списка: «сегодня из офиса» и «на завтра» с основного (подсклад
  * «Офис», `officeStore.ts`). Сбой — пусто, бот тогда о наличии не говорит.
  */
-async function stockText(): Promise<{ text: string; storeNote: string }> {
+async function stockText(mainOnly = false): Promise<{ text: string; storeNote: string }> {
   try {
     const now = new Date();
     const hour = almatyHourOf(now);
     const [batches, settings] = await Promise.all([listSellableBatches(), getSettings()]);
     const office = inStore(batches, "office");
     const main = inStore(batches, "");
+    // Региональный менеджер: в регион уезжает только основной склад (фура), офис не предлагаем.
+    if (mainOnly) return { text: stockForBot(main, settings, now), storeNote: "" };
     const officeToday = botStoreFor(hour, stockMap(office, settings, now).size > 0) === "office";
     if (!officeToday) return { text: stockForBot(main, settings, now), storeNote: botStoreNote(false, hour) };
     return {
@@ -256,6 +259,10 @@ export function systemPrompt(p: {
   push?: string;
   /** Пишем с номера менеджера от его имени (`lineSeller.ts`): его имя. Пусто — бот основного номера. */
   managerName?: string;
+  /** Региональный менеджер (`managerProfile.ts`): город клиентов и день фуры — блок подсказки. */
+  region?: string;
+  /** Менеджер — женщина: подсказка в женском роде. */
+  female?: boolean;
 }): string {
   const { instructions, prices, stock, broadcast, client, today, harvest } = p;
   const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${today}T12:00:00`).getDay()];
@@ -404,7 +411,7 @@ export function systemPrompt(p: {
     "уже оформленного заказа («келди», «пришли», «выезжаю», «буду через 5 минут»). Не обещай позвонить, приехать или прислать файл.",
     "Никогда не проси номера карт, пароли и коды из SMS. Не обсуждай посторонние темы.",
     `\nСегодня ${today}, ${weekday} (Алматы). «Завтра», «в пятницу» переводи в дату сам.`,
-    ...(p.storeNote ? [p.storeNote] : []),
+    ...(p.region ? [p.region] : p.storeNote ? [p.storeNote] : []),
     client ? `\nО клиенте:\n${client}` : "",
     instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены и наличие):\n${instructions}` : "",
     p.push ? `\n${p.push}` : "",
@@ -415,14 +422,14 @@ export function systemPrompt(p: {
       ? `\nПлан срезки агронома (прогноз, стеблей за неделю по сорту, без длины; продать можно только то, что уже на складе):\n${harvest}`
       : "",
   ].join("\n");
-  // Менеджер — мужчина: «передал», а не «передала» (бот писал от лица компании в женском роде).
+  // Менеджер — мужчина: «передал», а не «передала» (бот писал от лица компании в женском роде); менеджер-женщина
+  // (Салтанат, 21.10.2026) — «передала», «оформила».
   if (!p.managerName) return text;
-  return text
-    .replace(
-      "Просят живого человека или телефон для звонка —\nне спорь, что ты и есть менеджер: «передала руководителю, он свяжется здесь», alert обязательно.",
-      "Просят позвонить или\nпоговорить голосом — «хорошо, наберу вас» и alert («просит позвонить»); сам звонок не обещай ко времени."
-    )
-    .replace(/передала/g, "передал");
+  const own = text.replace(
+    "Просят живого человека или телефон для звонка —\nне спорь, что ты и есть менеджер: «передала руководителю, он свяжется здесь», alert обязательно.",
+    "Просят позвонить или\nпоговорить голосом — «хорошо, наберу вас» и alert («просит позвонить»); сам звонок не обещай ко времени."
+  );
+  return p.female ? feminize(own) : own.replace(/передала/g, "передал");
 }
 
 function transcript(chat: BotChat): string {
@@ -549,9 +556,10 @@ export async function botPrompt(
     SHEET_TABS.HARVEST_FORECAST,
     SHEET_TABS.SETTINGS,
   ]).catch(() => undefined);
+  const profile = channel.profile ?? null;
   const [prices, stockInfo, broadcast, client, harvest, push] = await Promise.all([
     priceText(),
-    stockText(),
+    stockText(!!profile?.shipWeekday),
     // Рассылка основного номера к разговору на номере менеджера отношения не имеет.
     channel.line ? Promise.resolve("") : broadcastText(chat.phone),
     botClientContext(chat.phone, channel),
@@ -572,6 +580,8 @@ export async function botPrompt(
       harvest,
       push,
       managerName: channel.line ? channel.managerName || "менеджер" : "",
+      region: profile ? regionPromptBlock(profile, profile.shipWeekday ? nextShipDay(localDayKey(), profile.shipWeekday, almatyHourOf(new Date())) : "") : "",
+      female: !!profile?.female,
     }),
     user: `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
   };

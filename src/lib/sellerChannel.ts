@@ -1,5 +1,6 @@
 import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
 import { genitiveName } from "./waLines";
+import type { ManagerProfile } from "./managerProfile";
 
 // ---------------------------------------------------------------------------
 // Кто продаёт: бот основного номера или ИИ-помощник на номере менеджера (19.10.2026, владелец про
@@ -16,6 +17,8 @@ export interface SellerChannel {
   line: string;
   /** Имя менеджера (первое слово) — в подсказке модели и в заметке заявки; у бота пусто. */
   managerName: string;
+  /** Региональный менеджер (`managerProfile.ts`): город, день фуры, род. */
+  profile?: ManagerProfile | null;
 }
 
 export const BOT_CHANNEL: SellerChannel = { managerEmail: BOT_MANAGER_EMAIL, line: "", managerName: "" };
@@ -23,8 +26,8 @@ export const BOT_CHANNEL: SellerChannel = { managerEmail: BOT_MANAGER_EMAIL, lin
 /** Метка в заметке заявки: заказ оформил помощник (а не сам менеджер). По ней — оплата, напоминания, отмена. */
 export const ASSISTANT_ORDER_MARK = "Заказ оформил ИИ-помощник";
 
-export function lineChannel(line: { code: string; managerEmail: string }, managerName: string): SellerChannel {
-  return { managerEmail: line.managerEmail.trim().toLowerCase(), line: line.code, managerName: (managerName || "").trim().split(/\s+/)[0] || "" };
+export function lineChannel(line: { code: string; managerEmail: string }, managerName: string, profile: ManagerProfile | null = null): SellerChannel {
+  return { managerEmail: line.managerEmail.trim().toLowerCase(), line: line.code, managerName: (managerName || "").trim().split(/\s+/)[0] || "", profile };
 }
 
 export const isLineChannel = (ch: SellerChannel) => !!ch.line;

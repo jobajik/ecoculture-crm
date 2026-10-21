@@ -38,6 +38,9 @@ import {
 import { withBotName } from "@/lib/botIdentity";
 import { localDayKey } from "@/lib/timezone";
 import { addDaysToKey } from "@/lib/dayKey";
+import { MANAGER_PROFILES_SETTING, nextShipDay, parseManagerProfiles, profileOf } from "@/lib/managerProfile";
+import { almatyHourOf } from "@/lib/officeStore";
+import { settingsMap } from "@/lib/repo/broadcasts";
 import { canRepeatFrom, repeatFormItems } from "@/lib/repeatOrder";
 import { orderCode } from "@/lib/paymentStage";
 
@@ -248,7 +251,10 @@ export default async function NewOrderPage({
 
   // Дата: из черновика или адреса, иначе — завтра по Алматы (заявки собирают накануне).
   const today = localDayKey();
-  const initialDate = draftHit?.draft.deliveryDate || preselectedDate || addDaysToKey(today, 1);
+  // Региональный менеджер (Салтанат, Астана): заказы уезжают фурой — по умолчанию ближайший день фуры.
+  const myProfile = profileOf(parseManagerProfiles((await settingsMap())[MANAGER_PROFILES_SETTING]), myEmail);
+  const shipDay = myProfile?.shipWeekday ? nextShipDay(today, myProfile.shipWeekday, almatyHourOf(new Date())) : "";
+  const initialDate = draftHit?.draft.deliveryDate || preselectedDate || shipDay || addDaysToKey(today, 1);
 
   // Направление из адреса — так РОП попадает сюда из раздела «Регионы», нажав
   // «Заявка в Астану». Значение проверяется по закрытому списку: подставленное
@@ -303,6 +309,7 @@ export default async function NewOrderPage({
           initialClient={preselected}
           initialDeliveryDate={initialDate}
           today={today}
+          shipDay={shipDay}
           initialItems={
             draftHit
               ? (draftFormItems(draftHit.draft, priceMap, varieties) as DraftItem[])

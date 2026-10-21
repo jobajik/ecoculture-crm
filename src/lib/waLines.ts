@@ -96,6 +96,8 @@ export interface WaLine {
 export function genitiveName(name: string): string {
   const n = (name || "").trim().split(/\s+/)[0] || "";
   if (!n) return "менеджера";
+  // Казахские женские имена на согласную не склоняются: «номер Салтанат», а не «Салтаната» (21.10.2026).
+  if (/^(салтанат|айгерим|жанар|гульнар|гүлнар|меруерт|айжан|гаухар|ажар|шолпан|сымбат|асем|әсем|нургуль|нұргүл|аружан|жулдыз|жұлдыз|айдана?|мадина?|гульжан)$/i.test(n) && !/а$/i.test(n)) return n;
   if (/[ьй]$/i.test(n)) return `${n.slice(0, -1)}я`;
   if (/[кгхжчшщ]а$/i.test(n)) return `${n.slice(0, -1)}и`;
   if (/а$/i.test(n)) return `${n.slice(0, -1)}ы`;

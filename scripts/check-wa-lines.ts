@@ -20,6 +20,7 @@ import { isAckOnly } from "../src/lib/broadcast";
 import { addressableName } from "../src/lib/talkAnalysis";
 import { autoLeadFromMessage } from "../src/lib/waAutoLead";
 import { decisionScope } from "../src/lib/leadDecisions";
+import { feminize, isoWeekday, nextShipDay, parseManagerProfiles, profileOf, regionPromptBlock } from "../src/lib/managerProfile";
 import { MANAGER_PACE, MAIN_PACE, LEADS_PACE, paceFor } from "../src/lib/broadcast";
 import type { Lead, LeadAnalysis, WaMessage } from "../src/lib/types";
 
@@ -291,6 +292,23 @@ check("ответ помощника — не менеджер", managerTalkAt(s
 check("утренняя рассылка с телефона, клиент до неё молчал, — не разговор", managerTalkAt([sab[0], M("c9", "2026-10-21T06:10:00Z", "in", "А 3 сорт есть?")], new Set(), sabNow), "");
 check("разговор менеджера старше 6 ч — помощник снова оформляет", managerTalkAt(sab, new Set(), new Date("2026-10-21T12:30:00Z")), "");
 check("Сабина: помощник на «Всё хорошо поняла, спасибо» молчит", sv(sab, sabNow).reason, "клиент просто кивнул");
+
+// --- Региональный менеджер: Салтанат, Астана, фура в понедельник (21.10.2026) ------------
+const profs = parseManagerProfiles(JSON.stringify({ "Saltanat@x.kz": { city: "Астана", shipWeekday: 1, female: true }, bad: { city: "X" }, "e@x": { shipWeekday: 9 } }));
+check("профиль: почта без регистра, мусор отброшен, неверный день — нет", [profileOf(profs, "saltanat@x.kz")?.city, Object.keys(profs).length, profs["e@x"].shipWeekday], ["Астана", 2, null]);
+check("день недели", [isoWeekday("2026-10-21"), isoWeekday("2026-10-26"), isoWeekday("2026-10-25")], [3, 1, 7]);
+check("фура: со среды — ближайший понедельник; в понедельник до 12 — сегодня, после — через неделю", [
+  nextShipDay("2026-10-21", 1, 15), nextShipDay("2026-10-26", 1, 10), nextShipDay("2026-10-26", 1, 12), nextShipDay("2026-10-25", 1, 20),
+], ["2026-10-26", "2026-10-26", "2026-11-02", "2026-10-26"]);
+const rb = regionPromptBlock(profileOf(profs, "saltanat@x.kz")!, "2026-10-26");
+check("подсказка: город, фура, дата заказа", [rb.includes("Астана"), rb.includes("понедельник, 26.10"), rb.includes("deliveryDate = 2026-10-26")], [true, true, true]);
+const salP = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-21", managerName: "Салтанат", region: rb, female: true });
+check("подсказка Салтанат — женский род, блок региона вместо офиса", [salP.includes("в женском роде («оформила», «передала»)"), salP.includes("в мужском роде"), salP.includes("ТВОИ КЛИЕНТЫ — РЕГИОН"), /(^|[^а-яё])передал(?![а-яё])/i.test(salP)], [true, false, true, false]);
+check("женский род не портит другие слова", feminize("передали, передал. оформил заказ, оформила"), "передали, передала. оформила заказ, оформила");
+check("имя Салтанат не склоняется", [genitiveName("Салтанат"), genitiveName("Ильяс"), genitiveName("Айгерим Б.")], ["Салтанат", "Ильяса", "Айгерим"]);
+const outLead = autoLeadFromMessage(M("o1", "2026-10-21T06:00:00Z", "out", "Добрый день!"), new Set(), "saltanat@x.kz", "2026-10-21", { whose: "Салтанат", origin: "", incomingOnly: false, city: "Астана" });
+check("её исходящее незнакомому — лид с городом Астана", [outLead?.city, outLead?.managerEmail, outLead?.note.startsWith("Написали первыми с WhatsApp Салтанат"), outLead?.note.includes("и город")], ["Астана", "saltanat@x.kz", true, false]);
+check("у обычного менеджера исходящее — не лид", autoLeadFromMessage(M("o2", "2026-10-21T06:00:00Z", "out"), new Set(), "ilyas@x", "2026-10-21", { whose: "Ильяса", origin: "", incomingOnly: true }), null);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

@@ -26,6 +26,7 @@ export default function OrderForm({
   draftId = "",
   managers,
   today = "",
+  shipDay = "",
 }: {
   varieties: Record<string, string[]>;
   /** Действующий прайс: «цветок|сорт|градация» → цена. */
@@ -76,6 +77,8 @@ export default function OrderForm({
   managers?: { email: string; name: string }[];
   /** Сегодня по Алматы (от сервера) — для кнопок «Сегодня / Завтра / Послезавтра». */
   today?: string;
+  /** Региональный менеджер (`managerProfile.ts`): ближайший день фуры — кнопкой первой. */
+  shipDay?: string;
 }) {
   const router = useRouter();
   const [client, setClient] = useState<ClientOption | null>(initialClient);
@@ -214,6 +217,19 @@ export default function OrderForm({
           />
           {today && (
             <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {shipDay && (
+                <button
+                  type="button"
+                  onClick={() => setDeliveryDate(shipDay)}
+                  className={
+                    deliveryDate === shipDay
+                      ? "rounded-full px-3 py-1 text-xs border border-accent bg-accent-soft text-accent font-medium"
+                      : "rounded-full px-3 py-1 text-xs border border-line-hairline text-ink-secondary hover:bg-surface-plane"
+                  }
+                >
+                  Фура · {shipDay.slice(8, 10)}.{shipDay.slice(5, 7)}
+                </button>
+              )}
               {(["Сегодня", "Завтра", "Послезавтра"] as const).map((label, n) => {
                 const day = addDaysToKey(today, n);
                 return (

@@ -11,6 +11,7 @@ import { readTable, SHEET_TABS } from "./sheets";
 import { lineChannel, isChannelOrder } from "./sellerChannel";
 import { lineAlertText, lineBotChat, managerTalkAt } from "./lineSellerRules";
 import { notifyLineManager } from "./lineNotify";
+import { MANAGER_PROFILES_SETTING, parseManagerProfiles, profileOf } from "./managerProfile";
 import type { BotFile } from "./botEngine";
 import type { WaLine } from "./waLines";
 import type { WaMessage } from "./types";
@@ -107,10 +108,11 @@ export async function sellerTurn(input: { line: WaLine; phone: string; chat: WaM
   const { line, phone } = input;
   const cfg = managerLineConfig(line);
   if (!cfg) return { sent: false, why: "номер не подключён" };
-  const channel = lineChannel(line, input.managerName);
+  const settings = await settingsMap();
+  const channel = lineChannel(line, input.managerName, profileOf(parseManagerProfiles(settings[MANAGER_PROFILES_SETTING]), line.managerEmail));
   const chat = await withHistory(line, phone, input.chat);
   const memory = lineBotChat(phone, chat);
-  const instructions = ((await settingsMap()).BotInstructions || "").trim();
+  const instructions = (settings.BotInstructions || "").trim();
   let decision: ReturnType<typeof botDecision>;
   try {
     decision = await botReply(memory, instructions, "Ответь на последнее сообщение клиента.", channel);

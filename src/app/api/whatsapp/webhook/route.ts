@@ -27,6 +27,7 @@ import { cancelFromWhatsApp, kickBroadcast } from "@/lib/autoBroadcastRunner";
 import { isCancelText } from "@/lib/autoBroadcast";
 import { greenConfig, sendText } from "@/lib/greenApi";
 import { handleStaffMessage } from "@/lib/staffCommandRunner";
+import { MANAGER_PROFILES_SETTING, parseManagerProfiles, profileOf } from "@/lib/managerProfile";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -241,6 +242,8 @@ async function managerLine(body: unknown, code: string, request: Request) {
   }
   try {
     if (message.direction === "in") await autoLead(message, line);
+    // Региональный менеджер: и её исходящее незнакомому номеру — лид (клиентов не терять).
+    else if (profileOf(parseManagerProfiles((await settingsMap())[MANAGER_PROFILES_SETTING]), line.managerEmail)) await autoLead(message, line);
   } catch (err) {
     console.error("whatsapp line auto-lead:", err instanceof Error ? err.message : err);
   }
@@ -287,9 +290,18 @@ async function autoLead(message: WaMessage, line?: WaLine) {
   let lead;
   if (line) {
     // Сотрудники и наши же номера лидами не становятся.
-    for (const k of Array.from(await ourPhoneKeys(await settingsMap()))) known.add(k);
+    const map = await settingsMap();
+    for (const k of Array.from(await ourPhoneKeys(map))) known.add(k);
     const name = users.find((u) => u.email.toLowerCase() === line.managerEmail)?.name || line.label;
-    lead = autoLeadFromMessage(message, known, line.managerEmail, day, { whose: genitiveName(name), origin: "", incomingOnly: true });
+    // Региональный менеджер (Салтанат, Астана, 21.10.2026: «всех клиентов Салтанат не потерять»): лидом становится
+    // и тот, кому она написала первой, — с её городом. У остальных менеджеров — только входящие.
+    const profile = profileOf(parseManagerProfiles(map[MANAGER_PROFILES_SETTING]), line.managerEmail);
+    lead = autoLeadFromMessage(message, known, line.managerEmail, day, {
+      whose: genitiveName(name),
+      origin: "",
+      incomingOnly: !profile,
+      city: profile?.city || "",
+    });
   } else {
     lead = autoLeadFromMessage(message, known, leadsLineOwner(users), day);
   }

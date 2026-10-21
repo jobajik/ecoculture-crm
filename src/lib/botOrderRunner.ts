@@ -40,6 +40,7 @@ import {
   type InvoiceOutcome,
 } from "./botOrder";
 import { notifyBotSale } from "./botSalesAlert";
+import { MANAGER_PROFILES_SETTING, nextShipDay, parseManagerProfiles, profileOf, shipDayLabel } from "./managerProfile";
 import { BOT_CHANNEL, botSaleOwner, channelLogText, isChannelOrder, orderNoteHead, type SellerChannel } from "./sellerChannel";
 import { listUsers } from "./repo/users";
 import { listWaLines } from "./repo/waLines";
@@ -114,7 +115,8 @@ export async function placeBotOrder(input: {
   /** Кто продаёт: бот (по умолчанию) или помощник на номере менеджера — тогда заявка и новая карточка на менеджера. */
   channel?: SellerChannel;
 }): Promise<{ text: string; orderId: string; note: string }> {
-  const { draft, phone } = input;
+  const { phone } = input;
+  let draft = input.draft;
   const ch = input.channel ?? BOT_CHANNEL;
   const who = ch.line ? `ИИ-помощник${ch.managerName ? ` ${genitiveName(ch.managerName)}` : ""}` : "";
   try {
@@ -130,10 +132,24 @@ export async function placeBotOrder(input: {
     const today = localDayKey();
     const [allBatches, settings, prices, map] = await Promise.all([listSellableBatches(), getSettings(), getCurrentPrices(today), settingsMap()]);
     const push = parsePush(map[SALES_PUSH_SETTING]);
+    const now = new Date();
+    // Региональный менеджер (Салтанат, Астана, 21.10.2026): заказ его клиента — на ближайший день фуры, город — его,
+    // склад — основной. На номере менеджера — из канала; на основном номере — по менеджеру карточки или лида.
+    let regionEmail = ch.line ? ch.managerEmail : "";
+    if (!ch.line) {
+      const key = phoneKey(phone);
+      regionEmail =
+        clientForPhone(await listClients(), phone)?.managerEmail ||
+        (key ? (await listLeads()).find((l) => phoneKey(l.phone) === key && l.stage !== "lost")?.managerEmail : "") ||
+        "";
+    }
+    const profile = ch.profile ?? profileOf(parseManagerProfiles(map[MANAGER_PROFILES_SETTING]), regionEmail);
+    const shipDay = profile?.shipWeekday ? nextShipDay(today, profile.shipWeekday, almatyHourOf(now)) : "";
+    if (shipDay) draft = { ...draft, deliveryDate: shipDay };
+    const regionCity = profile?.city || "";
     // После 12:00 заказ НА СЕГОДНЯ — из подсклада «Офис», остальное — основной
     // склад (`officeStore.ts`): то же деление, что бот видел в подсказке.
-    const now = new Date();
-    const store = botOrderStore({
+    const store = shipDay ? "" : botOrderStore({
       almatyHour: almatyHourOf(now),
       deliveryDate: draft.deliveryDate,
       today,
@@ -192,13 +208,13 @@ export async function placeBotOrder(input: {
       const lead = key ? (await listLeads()).find((l) => phoneKey(l.phone) === key && l.stage !== "lost") : undefined;
       if (lead) {
         cardManager = lead.managerEmail || "";
-        city = lead.city || draft.city || BOT_DEFAULT_CITY;
+        city = lead.city || draft.city || regionCity || BOT_DEFAULT_CITY;
         const linked = await ensureClientForLead(lead, ch.managerEmail, { city });
         clientId = linked.clientId;
         clientName = lead.name;
       } else {
         // Название и город не повод откладывать заказ: карточка — по имени WhatsApp, город — Алматы, менеджер уточнит.
-        city = draft.city || BOT_DEFAULT_CITY;
+        city = draft.city || regionCity || BOT_DEFAULT_CITY;
         clientName = newClientName(draft.shopName, input.senderName, phone);
         clientId = await createClient({
           name: clientName,
@@ -492,6 +508,18 @@ export async function botClientContext(phone: string, ch: SellerChannel = BOT_CH
         "Клиента нет в базе. Название точки и город НЕ спрашивай до заказа: назвал позицию и количество — оформляй сразу " +
           "(shopName и city — если прозвучали в переписке, иначе пусто; карточка заведётся сама, город по умолчанию Алматы)."
       );
+    // Клиент регионального менеджера на основном номере (Салтанат, Астана): бот должен знать про фуру.
+    if (!ch.line) {
+      const owner = client?.managerEmail || lead?.managerEmail || "";
+      const profile = profileOf(parseManagerProfiles((await settingsMap())[MANAGER_PROFILES_SETTING]), owner);
+      if (profile?.shipWeekday) {
+        const day = nextShipDay(localDayKey(), profile.shipWeekday, almatyHourOf(new Date()));
+        lines.push(
+          `Это клиент регионального менеджера${profile.city ? ` (${profile.city})` : ""}: доставка — фурой, ближайшая отправка ${shipDayLabel(day)}; ` +
+            `заказ оформляй на ${day}, другой день не обещай, город не спрашивай.`
+        );
+      }
+    }
     // Помощник менеджера знает всю историю клиента (у любого менеджера): что брал, долг, что обычно.
     if (ch.line && (client || lead)) {
       lines.push("История заказов:", ...clientHistoryLines({ orders, phone, clientId: client?.clientId ?? "", now: new Date() }));
