@@ -12,9 +12,10 @@
  * код роли или производство у роли, которой оно не положено, останавливают
  * скрипт целиком, а не пишут половину.
  *
- * Запуск: npx tsx scripts/add-staff.ts
+ * Запуск: npx tsx scripts/add-staff.ts [файл JSON: [{ "email", "name", "role", "farm" }]]
  */
 import * as dotenv from "dotenv";
+import { readFileSync } from "node:fs";
 import { readTable, appendRows, rowToRecord, updateWhere, SHEET_TABS } from "../src/lib/sheets";
 import { ROLES, FARMS, isFarmBoundRole } from "../src/lib/constants";
 
@@ -25,7 +26,7 @@ dotenv.config();
  * Кого заводим. Имена — рабочие подписи, они видны в рейтинге и отчётах;
  * поменять их можно прямо в таблице, на вход в систему они не влияют.
  */
-const STAFF: { email: string; name: string; role: string; farm: string }[] = [
+const DEFAULT_STAFF: { email: string; name: string; role: string; farm: string }[] = [
   {
     email: "Latypovdenis503@gmail.com",
     name: "Агроном (розы)",
@@ -45,6 +46,10 @@ const STAFF: { email: string; name: string; role: string; farm: string }[] = [
     farm: "",
   },
 ];
+
+/** Файл JSON со списком (русские имена из .bat портятся кодировкой): `npx tsx scripts/add-staff.ts <файл>`. */
+const file = process.argv.slice(2).find((a) => !a.startsWith("--"));
+const STAFF: typeof DEFAULT_STAFF = file ? JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")) : DEFAULT_STAFF;
 
 async function main() {
   const known = Object.values(ROLES) as string[];
