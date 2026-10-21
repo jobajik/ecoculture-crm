@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
@@ -286,7 +287,7 @@ function toBotChat(r: Record<string, string>): BotChat {
     ourIds: (r.OurIDs || "").split(/[,\s]+/).filter(Boolean),
     context,
     name: r.Name || "",
-    botReplies: Number(r.BotReplies) || 0,
+    botReplies: sheetNumber(r.BotReplies),
     nudge: parseNudge(r.Nudge),
     infoPhotos: (r.InfoPhotos || "").split(/[,\s]+/).filter(Boolean),
   };
@@ -399,7 +400,7 @@ export async function latestBroadcastAnalyses(): Promise<Map<string, StoredBroad
       createdAt,
       createdBy: r.CreatedBy || "",
       model: r.Model || "",
-      replies: Number(r.Replies) || 0,
+      replies: sheetNumber(r.Replies),
       // Уже проверенное при записи — повторная проверка лишь отсекает порчу руками.
       analysis: parseBroadcastAnalysis(data, people.map((p) => String(p.phone || ""))),
     });

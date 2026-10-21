@@ -6,7 +6,7 @@
  * запятую («25.8 %» рядом с «5,6 дн.»), а в колонке «Менеджер» стоял почтовый
  * адрес вместо фамилии.
  */
-import { decimal, percent, shortMoney } from "../src/lib/formatNumber";
+import { decimal, moneyExact, percent, shortMoney } from "../src/lib/formatNumber";
 import { nameIndex, personName } from "../src/lib/personName";
 
 let fails = 0;
@@ -54,6 +54,12 @@ check(
 check("незнакомая почта показывается как есть", personName("kto@to.kz", names), "kto@to.kz");
 check("пустая почта — прочерк", personName("", names), "—");
 check("пустая строка в Users в список не попадает (бот — свой, служебный)", Object.keys(names), ["bot@ecoculture.kz", "rop@ecoculture.kz"]);
+
+// Деньги точно — с копейками, когда они есть (21.10.2026, цены по Киргизии).
+check("копейки показываются", moneyExact(154.5), "154,5 ₸");
+check("две копейки", moneyExact(1234.56).replace(/\s/g, " "), "1 234,56 ₸");
+check("целое — без хвоста", moneyExact(1000).replace(/\s/g, " "), "1 000 ₸");
+check("лишние знаки округляются до копеек", moneyExact(10.005), "10,01 ₸");
 
 console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyExact } from "@/lib/formatNumber";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -99,7 +100,7 @@ export default function OrderDrawer({
     }
   };
 
-  const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
+  const money = moneyExact;
 
   return (
     <aside
@@ -175,7 +176,7 @@ export default function OrderDrawer({
               <span className="whitespace-nowrap">
                 <b>{i.quantity.toLocaleString("ru-RU")}</b>
                 {i.shippedQuantity > 0 && <span className="text-ink-muted"> (отгр. {i.shippedQuantity.toLocaleString("ru-RU")})</span>}
-                {i.unitPrice > 0 && <span className="text-ink-muted"> × {i.unitPrice.toLocaleString("ru-RU")}</span>}
+                {i.unitPrice > 0 && <span className="text-ink-muted"> × {moneyExact(i.unitPrice)}</span>}
               </span>
             </div>
           ))}

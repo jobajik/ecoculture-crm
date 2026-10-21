@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyExact } from "@/lib/formatNumber";
 import { PhoneInput } from "@/components/PhoneInput";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,7 +26,7 @@ import { formatMoment } from "@/lib/formatDate";
 import { unwrap, unwrapValue } from "@/lib/actionResult";
 import type { KaspiInvoice } from "@/lib/types";
 
-const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
+const money = moneyExact;
 
 /** Пока счёт ждёт оплаты, статус спрашивается сам: первые 3 минуты — раз в 15 с, дальше — раз в минуту. */
 const FAST_POLL_MS = 15_000;

@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import type { BotPhoto } from "../botPhotos";
@@ -19,7 +20,7 @@ function toPhoto(r: Record<string, string>, rowNumber: number): Row {
     fileName: r.FileName || "",
     // Пусто — включено (новая строка); выключают явно.
     active: !/^(false|нет|no|0)$/i.test((r.Active || "").trim()),
-    sentCount: Number(r.SentCount) || 0,
+    sentCount: sheetNumber(r.SentCount),
     lastSentAt: r.LastSentAt || "",
     kind: (r.Kind || "").trim().toLowerCase() === "info" ? "info" : "",
     rowNumber,

@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import type { FlowerType } from "../constants";
@@ -15,8 +16,8 @@ export function toBatch(record: Record<string, string>): Batch {
     flowerType: (record.FlowerType || "rose") as FlowerType,
     variety: record.Variety || "",
     grade: record.Grade || "",
-    quantityIn: Number(record.QuantityIn) || 0,
-    quantityRemaining: Number(record.QuantityRemaining) || 0,
+    quantityIn: sheetNumber(record.QuantityIn),
+    quantityRemaining: sheetNumber(record.QuantityRemaining),
     location: record.Location || "",
     receivedByEmail: (record.ReceivedByEmail || "").toLowerCase(),
     store: (record.Store || "").trim().toLowerCase() === "office" ? "office" : "",
@@ -128,7 +129,7 @@ export async function deductBatchQuantity(batchId: string, quantity: number): Pr
     SHEET_TABS.BATCHES,
     (record) => record.BatchID === batchId,
     (record) => {
-      const remaining = Number(record.QuantityRemaining) || 0;
+      const remaining = sheetNumber(record.QuantityRemaining);
       if (remaining < quantity) {
         throw new Error(
           `Недостаточно остатка в партии ${batchId}: доступно ${remaining}, требуется ${quantity}`
@@ -156,8 +157,8 @@ export async function returnBatchQuantity(batchId: string, quantity: number): Pr
     SHEET_TABS.BATCHES,
     (record) => record.BatchID === batchId,
     (record) => {
-      const remaining = Number(record.QuantityRemaining) || 0;
-      const total = Number(record.QuantityIn) || 0;
+      const remaining = sheetNumber(record.QuantityRemaining);
+      const total = sheetNumber(record.QuantityIn);
       // Больше, чем приняли, в партии оказаться не может: если данные уже
       // разъехались, упираемся в приход, а не раздуваем склад.
       return { QuantityRemaining: total > 0 ? Math.min(total, remaining + quantity) : remaining + quantity };

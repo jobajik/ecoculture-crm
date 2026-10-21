@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
@@ -102,7 +103,7 @@ function toAnalysis(r: Record<string, string>): LeadAnalysis {
     managerEmail: (r.ManagerEmail || "").trim().toLowerCase(),
     messagesFrom: toIsoDateTime(r.MessagesFrom),
     messagesTo: toIsoDateTime(r.MessagesTo),
-    messageCount: Number(r.MessageCount) || 0,
+    messageCount: sheetNumber(r.MessageCount),
     model: r.Model || "",
     summary: r.Summary || "",
     needs: r.Needs || "",

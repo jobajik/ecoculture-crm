@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import { toIsoDateTime } from "../sheetDate";
 import type { KaspiInvoice } from "../types";
@@ -10,7 +11,7 @@ function toInvoice(r: Record<string, string>): KaspiInvoice {
     createdAt: toIsoDateTime(r.CreatedAt),
     orderId: r.OrderID || "",
     farm: (r.Farm || "").trim(),
-    amount: Number(r.Amount) || 0,
+    amount: sheetNumber(r.Amount),
     phone: r.Phone || "",
     status: (r.Status || "").trim(),
     kaspiInvoiceId: r.KaspiInvoiceID || "",

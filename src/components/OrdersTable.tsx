@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyExact } from "@/lib/formatNumber";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { OrderWithItems } from "@/lib/types";
@@ -380,7 +381,7 @@ export default function OrdersTable({
                     <ItemsCell lines={o.items.map(itemText)} />
                   </td>
                   <td className={clsx("px-3 py-2.5 font-semibold sm:text-right whitespace-nowrap tabular-nums", narrow)} data-label="Сумма">
-                    {o.totalAmount.toLocaleString("ru-RU")} ₸
+                    {moneyExact(o.totalAmount)}
                   </td>
                   <td className={clsx("px-3 py-2.5", narrow)} data-label="Оплата">
                     {pay && pay.tone !== "muted" ? <Pill tone={pay.tone}>{pay.label}</Pill> : <span className="text-ink-muted text-xs">{pay?.label ?? "—"}</span>}

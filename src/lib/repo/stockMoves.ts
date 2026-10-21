@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { toIsoDateTime } from "../sheetDate";
 import { generateId } from "../id";
@@ -31,7 +32,7 @@ export async function listStockMoves(): Promise<StockMove[]> {
         flowerType: r.FlowerType || "",
         variety: r.Variety || "",
         grade: r.Grade || "",
-        quantity: Number(r.Quantity) || 0,
+        quantity: sheetNumber(r.Quantity),
         fromBatchId: r.FromBatchID || "",
         toBatchId: r.ToBatchID || "",
         byEmail: (r.ByEmail || "").toLowerCase(),

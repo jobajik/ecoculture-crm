@@ -18,6 +18,7 @@ import {
   containsSheetError,
   isSheetError,
   recoverFromFormula,
+  sheetNumber,
   sheetSafeText,
 } from "../src/lib/sheetCell";
 
@@ -98,6 +99,15 @@ check("ссылку на ячейку не трогаем", recoverFromFormula("
 // не видно, и при чтении он не возвращается. Здесь это и проверяется.
 const phone = "+7 701 555 20 30";
 check("после защиты видно то же значение", sheetSafeText(phone).replace(/^'/, ""), phone);
+
+// Число — как бы таблица его ни показала (21.10.2026: цена 154,5 у Ильяса читалась как 0).
+check("дробная цена с запятой", sheetNumber("154,5"), 154.5);
+check("дробная цена с точкой", sheetNumber("154.5"), 154.5);
+check("с пробелом тысяч и копейками", sheetNumber("1 234,56"), 1234.56);
+check("неразрывный пробел тысяч", sheetNumber("1\u00a0234,5"), 1234.5);
+check("целое", sheetNumber("1200"), 1200);
+check("пусто — ноль", sheetNumber(""), 0);
+check("не число — ноль", sheetNumber("#ERROR!"), 0);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

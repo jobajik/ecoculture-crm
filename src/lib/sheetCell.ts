@@ -115,3 +115,20 @@ export function recoverFromFormula(formula: string | null | undefined): string {
   if (/^[A-Z]{1,3}\$?\d+/.test(body.trim())) return "";
   return body;
 }
+
+/**
+ * Число из ячейки — как бы Google его ни показал (грабли 1.9-bis, теперь про числа; 21.10.2026, владелец: «надо сделать
+ * дробные числа при указании прайса и денег, чтобы Ильяс мог по Киргизии показывать реальные деньги — а он не может»).
+ * Таблица русская, и записанное число 154.5 возвращается как «154,5», а с форматом «# ##0,00» — как «1 234,50»: `Number()`
+ * такого не понимает и отдавал 0 — цена «154,5 ₸» в заявке превращалась в ноль. Пробелы (в том числе неразрывные) убираем,
+ * запятую считаем десятичной. Пусто или не число — 0.
+ */
+export function sheetNumber(value: unknown): number {
+  const cleaned = String(value ?? "")
+    .replace(/[\s\u00a0\u202f]/g, "")
+    .replace(",", ".");
+  if (!cleaned) return 0;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+

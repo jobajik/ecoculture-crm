@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyExact } from "@/lib/formatNumber";
 import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -21,7 +22,7 @@ import { unwrap } from "@/lib/actionResult";
 import KaspiInvoiceBlock from "./KaspiInvoiceBlock";
 
 export function money(value: number): string {
-  return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
+  return moneyExact(value);
 }
 
 /**

@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyExact } from "@/lib/formatNumber";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -15,7 +16,7 @@ import Pager, { pageSlice } from "./Pager";
 import Chips from "./Chips";
 import Hint from "./Hint";
 
-const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
+const money = moneyExact;
 /** «Пришло сегодня» в боковой колонке — короткими порциями. */
 const TODAY_PAGE = 6;
 /** Страница сама перечитывает данные, пока открыта: Kaspi-оплаты приходят без бухгалтера. */

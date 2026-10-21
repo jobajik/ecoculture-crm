@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { toIsoDateTime } from "../sheetDate";
 import { generateId } from "../id";
@@ -14,7 +15,7 @@ function toShipment(record: Record<string, string>): Shipment {
     orderId: record.OrderID,
     itemId: record.ItemID,
     batchId: record.BatchID,
-    quantity: Number(record.Quantity) || 0,
+    quantity: sheetNumber(record.Quantity),
     warehouseEmail: (record.WarehouseEmail || "").toLowerCase(),
     notes: record.Notes || "",
   };

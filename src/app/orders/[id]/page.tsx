@@ -1,3 +1,4 @@
+import { moneyExact } from "@/lib/formatNumber";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
@@ -332,7 +333,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <div className="min-w-0">
             <div className="text-xs text-ink-muted">{region ? "Объём" : "Сумма"}</div>
             <div className="font-display text-[30px] leading-tight font-extrabold tabular-nums">
-              {region ? `${stems.toLocaleString("ru-RU")} шт.` : `${Math.round(order.totalAmount).toLocaleString("ru-RU")} ₸`}
+              {region ? `${stems.toLocaleString("ru-RU")} шт.` : moneyExact(order.totalAmount)}
             </div>
             {hasInvoice && (
               <span className={clsx("badge mt-1", SECTION_TONE[moneyTone].chip)}>
@@ -341,7 +342,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                   : isConsignment(order)
                     ? "на точку"
                     : order.paidAmount > 0
-                      ? `остаток ${Math.round(leftToPay).toLocaleString("ru-RU")} ₸`
+                      ? `остаток ${moneyExact(leftToPay)}`
                       : moneyTone === "bad"
                         ? `не оплачено · ${debtDays} дн.`
                         : "не оплачено"}
@@ -574,11 +575,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                   {item.shippedQuantity.toLocaleString("ru-RU")} / {item.quantity.toLocaleString("ru-RU")}
                 </td>
                 {!region && (
-                  <td className="px-4 py-3 tabular-nums" data-label="Цена">{item.unitPrice.toLocaleString("ru-RU")} ₸</td>
+                  <td className="px-4 py-3 tabular-nums" data-label="Цена">{moneyExact(item.unitPrice)}</td>
                 )}
                 {!region && (
                   <td className="px-4 py-3 font-medium tabular-nums" data-label="Сумма">
-                    {(item.quantity * item.unitPrice).toLocaleString("ru-RU")} ₸
+                    {moneyExact(item.quantity * item.unitPrice)}
                   </td>
                 )}
               </tr>
@@ -595,7 +596,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 </td>
               ) : (
                 <td className="px-4 py-3 font-display text-base font-extrabold tabular-nums whitespace-nowrap">
-                  {order.totalAmount.toLocaleString("ru-RU")} ₸
+                  {moneyExact(order.totalAmount)}
                 </td>
               )}
             </tr>

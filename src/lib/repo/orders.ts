@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { formatPhone } from "../phone";
 import { statusAfterShipping } from "../shipRules";
 import {
@@ -75,12 +76,8 @@ export function toOrder(record: Record<string, string>): Order {
   };
 }
 
-/** «1 200,50» и «1200.5» — одно и то же число. Пустая ячейка — ноль. */
-function toMoney(value: string | undefined): number {
-  const cleaned = String(value ?? "").replace(/\s/g, "").replace(",", ".");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : 0;
-}
+/** «1 200,50» и «1200.5» — одно и то же число. Пустая ячейка — ноль (`sheetNumber`). */
+const toMoney = (value: string | undefined): number => sheetNumber(value);
 
 export function toOrderItem(record: Record<string, string>): OrderItem {
   return {
@@ -89,9 +86,9 @@ export function toOrderItem(record: Record<string, string>): OrderItem {
     flowerType: (record.FlowerType || "rose") as FlowerType,
     variety: record.Variety || "",
     grade: record.Grade || "",
-    quantity: Number(record.Quantity) || 0,
-    unitPrice: Number(record.UnitPrice) || 0,
-    shippedQuantity: Number(record.ShippedQuantity) || 0,
+    quantity: sheetNumber(record.Quantity),
+    unitPrice: sheetNumber(record.UnitPrice),
+    shippedQuantity: sheetNumber(record.ShippedQuantity),
   };
 }
 
@@ -710,7 +707,7 @@ export async function incrementItemShippedQuantity(itemId: string, addQuantity: 
     SHEET_TABS.ORDER_ITEMS,
     (record) => record.ItemID === itemId,
     (record) => {
-      const newShipped = (Number(record.ShippedQuantity) || 0) + addQuantity;
+      const newShipped = sheetNumber(record.ShippedQuantity) + addQuantity;
       updatedRecord = { ...record, ShippedQuantity: String(newShipped) };
       return { ShippedQuantity: newShipped };
     }

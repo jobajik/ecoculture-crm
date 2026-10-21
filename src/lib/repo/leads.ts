@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { formatPhone } from "../phone";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS } from "../sheets";
 import { generateId } from "../id";
@@ -34,7 +35,7 @@ function toLead(r: Record<string, string>): Lead {
     segment: (r.Segment || "").trim(),
     history: r.History || "",
     firstSeenAt: toIsoDate(r.FirstSeenAt).slice(0, 10),
-    pastOrders: Number(r.PastOrders) || 0,
+    pastOrders: sheetNumber(r.PastOrders),
     origin: (r.Origin || "").trim().toLowerCase(),
     handedOverAt: toIsoDateTime(r.HandedOverAt),
     handedOverBy: (r.HandedOverBy || "").trim().toLowerCase(),

@@ -33,3 +33,15 @@ export function shortMoney(value: number): string {
   if (abs >= 1_000) return `${Math.round(value / 1_000).toLocaleString("ru-RU")} тыс ₸`;
   return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
 }
+
+/**
+ * Деньги точно, с копейками, если они есть: 154.5 → «154,5 ₸», 1 234.56 → «1 234,56 ₸», 1 000 → «1 000 ₸» (21.10.2026,
+ * владелец: «чтобы Ильяс мог по Киргизии показывать реальные деньги»). Для заявки, её позиций и оплаты — там сумма точная;
+ * отчёты и плитки по-прежнему округляют (`shortMoney`), копейки в миллионах не читаются.
+ */
+export function moneyExact(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const rounded = Math.round(value * 100) / 100;
+  return `${rounded.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₸`;
+}
+

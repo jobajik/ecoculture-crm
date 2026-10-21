@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import { ORDER_STATUSES, type FlowerType } from "../constants";
@@ -104,7 +105,7 @@ export async function commitReturn(input: {
   for (const line of plan.lines.filter((l) => l.fromShipped > 0)) {
     const own = journalRows
       .filter((r) => r.ItemID === line.itemId)
-      .map((r) => ({ batchId: r.BatchID, quantity: Number(r.Quantity) || 0, createdAt: r.CreatedAt || "" }));
+      .map((r) => ({ batchId: r.BatchID, quantity: sheetNumber(r.Quantity), createdAt: r.CreatedAt || "" }));
     const { parts, missing } = batchesToReturn(own, line.fromShipped);
     if (missing > 0) {
       throw new Error(
@@ -161,7 +162,7 @@ export async function commitReturn(input: {
         flowerType: String(r.FlowerType),
         variety: String(r.Variety),
         grade: String(r.Grade),
-        quantity: Number(r.Quantity),
+        quantity: sheetNumber(r.Quantity),
         shippedQuantity: 0,
       }));
       // Заявка магазину — с основного склада: офисные партии сюда не берём (`officeStore.ts`).

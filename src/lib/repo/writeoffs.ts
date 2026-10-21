@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { inStore, type StoreCode } from "../officeStore";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
@@ -11,7 +12,7 @@ function toWriteoff(record: Record<string, string>): Writeoff {
     writeoffId: record.WriteoffID,
     createdAt: toIsoDateTime(record.CreatedAt) || record.CreatedAt || "",
     batchId: record.BatchID,
-    quantity: Number(record.Quantity) || 0,
+    quantity: sheetNumber(record.Quantity),
     reason: record.Reason || "",
     warehouseEmail: (record.WarehouseEmail || "").toLowerCase(),
   };
@@ -104,7 +105,7 @@ export async function createWriteoffsByPlan(input: {
   await commitAtomic([
     ...Array.from(byBatch.entries()).map(([batchId, qty]): WriteOp => {
       const r = rows.find((x) => x.record.BatchID === batchId)!;
-      const remaining = Number(r.record.QuantityRemaining) || 0;
+      const remaining = sheetNumber(r.record.QuantityRemaining);
       return { kind: "update", tab: SHEET_TABS.BATCHES, rowNumber: r.rowNumber, changes: { QuantityRemaining: remaining - qty } };
     }),
     {

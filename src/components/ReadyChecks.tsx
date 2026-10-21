@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyExact } from "@/lib/formatNumber";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -76,7 +77,7 @@ export default function ReadyChecks({
   // сделано» и «оплачено». Без неё серая клетка означала сразу два разных
   // положения дел, и понять по ней, пора ли напоминать клиенту, было нельзя.
   const invoiceSent = !paid && !partial && Boolean((invoiceSentAt || "").trim());
-  const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
+  const money = moneyExact;
 
   function toggle() {
     if (!canConfirm) return;

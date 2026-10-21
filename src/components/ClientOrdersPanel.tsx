@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyExact } from "@/lib/formatNumber";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
@@ -57,7 +58,7 @@ export interface PanelMessage {
 
 type Tab = "orders" | "payments" | "kaspi" | "chat";
 const SIZE = 8;
-const money = (v: number) => `${Math.round(v).toLocaleString("ru-RU")} ₸`;
+const money = moneyExact;
 
 function downloadCsv(name: string, rows: (string | number)[][]) {
   const text = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\r\n");

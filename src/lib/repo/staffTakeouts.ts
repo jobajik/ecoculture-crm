@@ -1,3 +1,4 @@
+import { sheetNumber } from "../sheetCell";
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, updateWhere } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDate, toIsoDateTime } from "../sheetDate";
@@ -26,8 +27,8 @@ function toTakeout(record: Record<string, string>): StaffTakeout {
     flowerType: (record.FlowerType || "rose") as FlowerType,
     variety: record.Variety || "",
     grade: record.Grade || "",
-    quantity: Number(record.Quantity) || 0,
-    unitPrice: Number(record.UnitPrice) || 0,
+    quantity: sheetNumber(record.Quantity),
+    unitPrice: sheetNumber(record.UnitPrice),
     warehouseEmail: (record.WarehouseEmail || "").toLowerCase(),
     note: record.Note || "",
     kind: (record.Kind || "").trim().toLowerCase(),
