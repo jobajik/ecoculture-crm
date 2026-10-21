@@ -1,4 +1,6 @@
 import { cleanStage, isClosedStage, phoneKey } from "./leads";
+import { looksLikeRefusal } from "./clientRefusal";
+import { messageText } from "./whatsapp";
 import { OPT_OUT_LINE, waPhone } from "./broadcast";
 import { addDaysToKey } from "./dayKey";
 import type { NudgeOffer } from "./botNudge";
@@ -60,6 +62,7 @@ export const CHAT_QUIET_HOURS = 24;
 export const LEAD_MAX_UNANSWERED = 2;
 export const LEAD_REMIND_GAP_DAYS = 4;
 /** Свежий разбор (`Решения ИИ`) годится как текст, если он не старше этого и новых сообщений после него нет. */
+/** Черновик разбора старше стольких дней не годится (с 21.10.2026 автопилот черновики не шлёт вовсе — см. `LeadPick.draft`). */
 export const DRAFT_MAX_AGE_DAYS = 10;
 /** «Давно не заказывали»: молчит не меньше недели и в полтора раза дольше обычного, но не дольше двух месяцев. */
 export const SLEEP_MIN_DAYS = 7;
@@ -190,20 +193,25 @@ export interface ChatFacts {
   line: string;
   /** Последнее входящее (клиент писал), ISO или пусто. */
   lastInAt: string;
+  /** Текст последнего входящего — по нему видно, что клиент закрыл разговор («неактуально»). */
+  lastInText: string;
 }
 
-export function chatFacts(messages: Pick<WaMessage, "phone" | "at" | "direction" | "line">[]): Map<string, ChatFacts> {
+export function chatFacts(messages: (Pick<WaMessage, "phone" | "at" | "direction" | "line"> & Partial<Pick<WaMessage, "type" | "text">>)[]): Map<string, ChatFacts> {
   const out = new Map<string, ChatFacts>();
   for (const m of messages) {
     const k = phoneKey(m.phone);
     if (!k || !m.at) continue;
-    const cur = out.get(k) ?? { lastAt: "", lastDirection: "out" as const, line: "", lastInAt: "" };
+    const cur = out.get(k) ?? { lastAt: "", lastDirection: "out" as const, line: "", lastInAt: "", lastInText: "" };
     if (m.at > cur.lastAt) {
       cur.lastAt = m.at;
       cur.lastDirection = m.direction;
       cur.line = m.line || "";
     }
-    if (m.direction === "in" && m.at > cur.lastInAt) cur.lastInAt = m.at;
+    if (m.direction === "in" && m.at > cur.lastInAt) {
+      cur.lastInAt = m.at;
+      cur.lastInText = m.text ? messageText({ type: m.type || "text", text: m.text }) : "";
+    }
     out.set(k, cur);
   }
   return out;
@@ -261,7 +269,12 @@ export interface LeadPick {
   lead: Lead;
   phone: string;
   line: string;
-  /** Готовый текст из разбора ИИ (если свежий); иначе текст соберёт код. */
+  /**
+   * Текст из разбора ИИ. С 21.10.2026 всегда пусто — текст собирает код: черновики разбора писались «от имени
+   * менеджера» и обещали то, чего автопилот сделать не может («подтверждаю заказ, оформим сейчас», «готовлю счёт»),
+   * а потом никто не оформлял (Гера, Аида — замечания Земфиры). Поле оставлено для «Решений ИИ», где черновик
+   * отправляет человек.
+   */
   draft: string;
 }
 
@@ -272,6 +285,8 @@ export function pickLeadReminders(input: {
   today: string;
   lineOk: (line: string) => boolean;
   toDay: (iso: string) => string;
+  /** Номера, у которых есть карточка клиента (телефон или мессенджер): их ведёт менеджер, напоминание не идёт. */
+  clientKeys?: Set<string>;
 }): { take: LeadPick[]; skipped: Record<string, number>; waiting: Lead[] } {
   const { ctx, today } = input;
   const take: LeadPick[] = [];
@@ -290,6 +305,16 @@ export function pickLeadReminders(input: {
       skip(phone ? "номер повторяется" : "нет мобильного");
       continue;
     }
+    // Передан менеджеру — дальше пишет он, а не номер Земфиры (21.10.2026, Земфира: «бот повторно пишет
+    // клиентам, которых я уже передала Ильгару»); карточка клиента по номеру — то же самое.
+    if (lead.handedOverAt) {
+      skip("передан менеджеру");
+      continue;
+    }
+    if (input.clientKeys?.has(key)) {
+      skip("есть карточка клиента");
+      continue;
+    }
     const f = ctx.facts.get(key);
     if (!f) {
       skip("нет переписки в WhatsApp");
@@ -299,6 +324,10 @@ export function pickLeadReminders(input: {
       // Клиент написал последним — ему нужен живой ответ, а не напоминание.
       waiting.push(lead);
       skip("клиент ждёт ответа");
+      continue;
+    }
+    if (looksLikeRefusal(f.lastInText)) {
+      skip("клиент отказался");
       continue;
     }
     // Рассылку человека лиду тоже считаем: после неё напоминание через 4 дня, а не 7.
@@ -333,11 +362,9 @@ export function pickLeadReminders(input: {
       skip("предел на сегодня");
       continue;
     }
-    const fresh =
-      a && a.draft && (a.decision === "sell" || a.decision === "follow_up") && a.createdAt >= f.lastAt && hoursSince(a.createdAt, ctx.now) < DRAFT_MAX_AGE_DAYS * 24;
     seen.add(key);
     perLine.set(f.line, (perLine.get(f.line) ?? 0) + 1);
-    take.push({ lead, phone, line: f.line, draft: fresh ? a!.draft.trim() : "" });
+    take.push({ lead, phone, line: f.line, draft: "" });
   }
   return { take, skipped, waiting };
 }

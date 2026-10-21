@@ -2,6 +2,7 @@ import { isAckOnly } from "./broadcast";
 import { looksLikeAutoreply } from "./botTurn";
 import { phoneKey } from "./leads";
 import { mergeMessages, messageText } from "./whatsapp";
+import { looksLikeRefusal } from "./clientRefusal";
 import type { WaMessage } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -167,6 +168,8 @@ export interface AssistantVerdict {
   due: boolean;
   /** Почему нет — словами, для страницы и диагностики. */
   reason: string;
+  /** Лид передан менеджеру, а клиент написал сюда: помощник молчит, менеджеру сообщают. */
+  handed?: boolean;
   /** С какого момента клиент ждёт ответа (первое его сообщение после нашего). */
   waitingSince: string | null;
   /** Последнее сообщение клиента — на него и отвечать. */
@@ -188,6 +191,11 @@ export function assistantVerdict(input: {
   mode: AssistantMode;
   /** Вебхук после сообщения вне рабочего времени: ждать не 2 минуты, а только конец серии (~20 с). */
   quick?: boolean;
+  /**
+   * Номер Земфиры (21.10.2026, её замечания): лид передан менеджеру (`handedTo` — его имя), закрыт отказом
+   * (`closed`) или у номера есть карточка клиента (`client`) — помощник не отвечает: это разговор менеджера.
+   */
+  lead?: { handedTo?: string; closed?: boolean; client?: boolean };
 }): AssistantVerdict {
   const no = (reason: string, waitingSince: string | null = null, lastIn: WaMessage | null = null): AssistantVerdict => ({
     due: false,
@@ -208,6 +216,11 @@ export function assistantVerdict(input: {
   const series = chat.slice(i);
   const text = series.map((m) => messageText(m)).join(" ").trim();
   if (series.every((m) => isAckOnly(messageText(m)))) return no("клиент просто кивнул", waitingSince, last);
+  // Клиент закрыл разговор («неактуально», «для себя», саженцы) — не отвечаем и не прощаемся (Земфира, 21.10.2026).
+  if (looksLikeRefusal(text)) return no("клиент отказался — разговор закрыт", waitingSince, last);
+  if (input.lead?.handedTo) return { ...no(`лид передан — ответит ${input.lead.handedTo}`, waitingSince, last), handed: true };
+  if (input.lead?.closed) return no("лид закрыт (отказ) — не пишем", waitingSince, last);
+  if (input.lead?.client) return no("у клиента есть карточка — ведёт его менеджер", waitingSince, last);
   const context = chat.slice(Math.max(0, i - 6)).map((m) => ({ role: m.direction === "in" ? ("client" as const) : ("us" as const), text: messageText(m), at: m.at }));
   if (looksLikeAutoreply(text, context, waitingSince)) return no("похоже на автоответ", waitingSince, last);
   const nowMs = input.now.getTime();

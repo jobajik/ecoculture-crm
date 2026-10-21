@@ -191,7 +191,9 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
     const zemfira = users.find((u) => u.active && u.role === "leadgen");
     const managerOfLine = (line: string) =>
       line === LEADS_LINE ? firstName(zemfira?.name || "") : isManagerLine(line) ? firstName(userName.get((lineOf.get(line)?.managerEmail || "").toLowerCase()) || "") : "";
-    const picked = pickLeadReminders({ leads, analyses: latestByLead(analyses), ctx, today, lineOk, toDay });
+    const clientKeys = new Set<string>();
+    for (const c of clients) if (c.active) for (const p of [c.phone, c.messenger]) if (phoneKey(p)) clientKeys.add(phoneKey(p));
+    const picked = pickLeadReminders({ leads, analyses: latestByLead(analyses), ctx, today, lineOk, toDay, clientKeys });
     waiting = picked.waiting.length;
     for (const [why, n] of Object.entries(picked.skipped)) for (let i = 0; i < n; i++) skip("leads", why);
     const byLine = new Map<string, Recipient[]>();

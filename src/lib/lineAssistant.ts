@@ -14,10 +14,15 @@ import { settingsMap } from "./repo/broadcasts";
 import { saveSettings } from "./repo/settings";
 import { chainBusy, parseChainLock } from "./autoBroadcast";
 import { listUsers } from "./repo/users";
-import { appendAssistantLog, assistantLineConfig, listAssistantLog, listAssistantLines } from "./repo/waLines";
-import { assistantVerdict, genitiveName, LEADS_LINE, type WaLine } from "./waLines";
+import { listLeads } from "./repo/leads";
+import { listClients } from "./repo/clients";
+import { appendAssistantLog, assistantLineConfig, listAssistantLog, listAssistantLines, listWaLines } from "./repo/waLines";
+import { ASSISTANT_STALE_HOURS, assistantVerdict, genitiveName, LEADS_LINE, type WaLine } from "./waLines";
 import { sellerTurn } from "./lineSeller";
-import type { WaMessage } from "./types";
+import { cleanStage, isClosedStage } from "./leads";
+import { ensureGreeting, SHORT_TASK, tooLong } from "./assistantText";
+import { greenConfig } from "./greenApi";
+import type { Lead, WaMessage } from "./types";
 
 // ---------------------------------------------------------------------------
 // ИИ-помощник менеджера (16.10.2026, владелец выбрал «подсказывает, отвечает при
@@ -60,6 +65,8 @@ export function assistantSystemPrompt(p: {
   managerName: string;
   prices: string;
   stock: string;
+  /** Склад и цена одним списком (`sellableForBot`) — если есть, прайс и склад отдельно не показываются. */
+  sellable?: string;
   storeNote: string;
   harvest: string;
   push: string;
@@ -71,6 +78,13 @@ export function assistantSystemPrompt(p: {
 }): string {
   const leads = p.line === LEADS_LINE;
   const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${p.today}T12:00:00`).getDay()];
+  // Что есть и почём — одним списком (21.10.2026, Земфира: бот называл категории из прайса, которых нет на складе).
+  const goods = p.sellable
+    ? `\nЧто есть сейчас и почём (тенге за стебель; ТОЛЬКО эти позиции — чего нет в списке, того нет, и цену его не называй):\n${p.sellable}`
+    : [
+        p.prices ? `\nДействующий прайс:\n${p.prices}` : "\nПрайса сейчас нет — цены не называй.",
+        p.stock ? `\nСклад сейчас (можно продать):\n${p.stock}` : "\nДанных склада нет — о наличии не обещай.",
+      ].join("\n");
   return [
     leads
       ? `Ты — помощник ${genitiveName(p.managerName || "Земфира")}, специалиста по заявкам с рекламы оптовой цветочной компании Ecoculture`
@@ -84,14 +98,22 @@ export function assistantSystemPrompt(p: {
       : "",
     "Цель — не потерять клиента и продать: ответить по существу, предложить конкретное, довести до согласия на заказ.",
     "",
-    "Стиль: как живой человек — коротко, тепло, на языке клиента (русский или казахский), 1–3 коротких блока.",
-    "Не обращайся по имени. Не здоровайся заново, если в переписке уже здоровались. Не повторяй уже сказанное.",
-    "Вопрос клиенту — не больше одного, последней строкой. Позиции и цены — списком «• …». Не используй # и **.",
+    "Стиль — как живой человек в переписке, КОРОТКО: 2–4 предложения, одна тема за сообщение, не больше 300 знаков.",
+    "Не вываливай всё сразу: сорта, цены, наличие, доставку и условия — в одном сообщении нельзя. Ответь на то, что спросили,",
+    "предложи ОДНУ-ДВЕ позиции с ценой и задай один вопрос; остальное клиент спросит сам.",
+    "Первое наше сообщение в переписке начинай с приветствия («Здравствуйте!» / «Сәлеметсіз бе!»), даже если клиент",
+    "написал шаблоном с рекламы. Дальше заново не здоровайся. Не обращайся по имени. Не повторяй уже сказанное.",
+    "На языке клиента (русский или казахский). Вопрос клиенту — не больше одного, последней строкой.",
+    "Позиции и цены — списком «• …», не больше двух строк. Не используй # и **.",
     "",
     "Что можно:",
-    "- цены — ТОЛЬКО из прайса ниже (тенге за стебель), наличие — ТОЛЬКО по складу ниже; точное число стеблей не называй;",
-    "- на вопрос «что есть» — 3–5 ходовых позиций со склада с ценами; объём не назван — предложи одно число с суммой;",
+    "- цены и наличие — ТОЛЬКО из списка «Что есть сейчас» ниже; точное число стеблей не называй;",
+    "  категории или сорта, которых нет в списке, НЕ предлагай и не называй их цену — скажи «сейчас нет» и предложи, что есть;",
+    "- на «что есть» / «прайс и фото» — одна-две ходовые позиции с ценой (не весь список) и фото; объём не назван — одно число с суммой;",
     "- «дорого» — предложи категорию ниже или другой сорт с суммой; «подумаю» — пробную партию.",
+    "- Доставка: сначала СПРОСИ ГОРОД. Пока город неизвестен — одной фразой «доставляем, условия зависят от города — вы в",
+    "  каком городе?». Условия по Алматы и регионам, минимальный заказ и бесплатную доставку не перечисляй, пока не",
+    "  знаешь город и пока прямо не спросили.",
     "- Спрашивают о цветах (что есть, сорт, категория, цена, мини-микс, свежесть) — отвечай С ФОТО: заполни photo позицией,",
     "  о которой речь (на общий вопрос — ходовой сорт со склада, который предлагаешь; объясняешь, что такое мини-микс, —",
     "  grade «Мини-микс»). Живое фото с теплицы продаёт лучше слов.",
@@ -110,16 +132,16 @@ export function assistantSystemPrompt(p: {
     "  договорённости, о которых нет в переписке, просьба позвонить — needs_manager;",
     "- выдумывать то, чего нет в данных: цены, наличие, сроки, условия.",
     "silent=true — автоответ магазина, кивок без вопроса («ок», «спасибо», 👍), разговор не про цветы, сотрудник, водитель,",
-    "поставщик, личное. Сомневаешься, клиент ли это, — silent.",
+    "поставщик, личное, а также клиент закрыл разговор: «неактуально», «не надо», «для себя», нужны саженцы или растения",
+    "с корнями — не отвечай и не прощайся. Сомневаешься, клиент ли это, — silent.",
     "Если ответить по существу нечем — короткое «Принято, уточню и отпишусь здесь» и needs_manager.",
     `\nСегодня ${p.today}, ${weekday} (Алматы).`,
     p.storeNote ? p.storeNote : "",
     p.client ? `\nО клиенте:\n${p.client}` : "",
-    p.instructions ? `\nУказания владельца для продаж:\n${p.instructions}` : "",
+    p.instructions ? `\nУказания владельца для продаж (условия доставки из них — только когда известен город и прямо спросили):\n${p.instructions}` : "",
     p.push ? `\n${p.push}` : "",
-    p.prices ? `\nДействующий прайс:\n${p.prices}` : "\nПрайса сейчас нет — цены не называй.",
-    p.stock ? `\nСклад сейчас (можно продать):\n${p.stock}` : "\nДанных склада нет — о наличии не обещай.",
-    p.harvest ? `\nПлан срезки (прогноз, продать можно только то, что на складе):\n${p.harvest}` : "",
+    goods,
+    p.harvest ? `\nПлан срезки (прогноз; продать можно только то, что в списке «Что есть сейчас», остальное — «ожидаем срезку»):\n${p.harvest}` : "",
   ]
     .filter((x) => x !== "")
     .join("\n");
@@ -192,7 +214,17 @@ export async function assistantAnswer(chat: WaMessage[], phone: string, managerN
   const system = assistantSystemPrompt({ managerName, line, ...k });
   const user = `Переписка (последние сообщения):\n${assistantTranscript(mergeMessages(chat))}\n\n${task}`;
   const { data } = await chatJson(system, user, "manager_assistant", ASSISTANT_SCHEMA, { fast: true });
-  return parseAssistantAnswer(data);
+  const first = parseAssistantAnswer(data);
+  if (first.silent || !tooLong(first.reply)) return first;
+  // Длинно (21.10.2026, Земфира: «слишком длинные сообщения») — переспросить короче; не вышло — короткий вариант всё равно короче.
+  try {
+    const again = await chatJson(system, `${user}\n\nТвой прошлый ответ:\n${first.reply}\n\n${SHORT_TASK}`, "manager_assistant", ASSISTANT_SCHEMA, { fast: true });
+    const second = parseAssistantAnswer(again.data);
+    if (!second.silent && second.reply && second.reply.length < first.reply.length) return { ...second, note: second.note || first.note };
+  } catch (err) {
+    console.error("assistant shorten:", err instanceof Error ? err.message : err);
+  }
+  return first;
 }
 
 export const DRAFT_TASK = "Подготовь ответ на последнее сообщение клиента — менеджер посмотрит, поправит и отправит сам.";
@@ -261,6 +293,56 @@ export async function sendOnLine(
   return id;
 }
 
+// --- Один ответ на одно сообщение -------------------------------------------------------------------------
+//
+// 21.10.2026, 08:13 по Алматы: за ночь на номере Земфиры накопились вопросы, и в восемь утра их разбирали
+// сразу несколько проходов (расписание, вебхук, сторож) — Архат, Салтанат и Гүлжауһар получили по два разных
+// ответа на одно сообщение. Проверка «уже ответили» по журналу стояла ДО вызова модели, а модель думает
+// 5–10 секунд, и за это время второй проход проходил ту же проверку. Теперь перед ответом чат «занимается»:
+// заявка на ответ пишется в настройку `AssistantClaim:<код>` (на номер — одна, внутри — номера и время
+// сообщения), через 1,2 с перечитывается, и отвечает только тот, чья заявка устояла. Тот же приём, что у
+// цепочки рассылок и у авто-лида.
+
+const CLAIM_PREFIX = "AssistantClaim:";
+const CLAIM_TTL_MS = 3 * 60000;
+type Claim = { token: string; at: string; inAt: string };
+
+function parseClaims(raw: string | null | undefined): Record<string, Claim> {
+  try {
+    const o = JSON.parse(raw || "{}") as Record<string, unknown>;
+    const out: Record<string, Claim> = {};
+    for (const [k, v] of Object.entries(o)) {
+      const c = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+      if (typeof c.token === "string" && typeof c.at === "string") out[k] = { token: c.token, at: c.at, inAt: typeof c.inAt === "string" ? c.inAt : "" };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Занять ответ на сообщение `inAt` в чате: true — отвечаем мы, false — его уже взял другой проход. */
+async function claimReply(code: string, phone: string, inAt: string): Promise<boolean> {
+  const key = `${CLAIM_PREFIX}${code}`;
+  const chat = phoneKey(phone);
+  const my = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const now = Date.now();
+  const alive = (c: Claim | undefined) => !!c && now - Date.parse(c.at) < CLAIM_TTL_MS;
+  const read = async () => parseClaims((await settingsMap(true))[key]);
+  const cur = await read();
+  const mine = cur[chat];
+  if (alive(mine) && mine!.inAt === inAt) return false;
+  const next: Record<string, Claim> = {};
+  for (const [k, c] of Object.entries(cur)) if (alive(c)) next[k] = c;
+  next[chat] = { token: my, at: new Date(now).toISOString(), inAt };
+  await saveSettings({ [key]: JSON.stringify(next) });
+  await new Promise((r) => setTimeout(r, 1200));
+  return (await read())[chat]?.token === my;
+}
+
+/** Кому передан лид и закрыт ли он — по номеру; только для номера Земфиры. */
+type LeadFacts = { handedTo: string; closed: boolean; client: boolean; leadId: string };
+
 export interface SweepResult {
   checked: number;
   replied: number;
@@ -270,6 +352,57 @@ export interface SweepResult {
   pendingMs?: number;
   /** Номера в режиме «продаёт сам», где кто-то ждёт: общий проход их не трогает, а будит сторожа номера. */
   watch?: string[];
+}
+
+/** Лиды и карточки клиентов по номеру — для номера Земфиры. Лид передан — имя менеджера, закрыт — «отказ». */
+async function leadFactsByPhone(): Promise<Map<string, LeadFacts>> {
+  const [leads, clients, users] = await Promise.all([listLeads().catch(() => [] as Lead[]), listClients().catch(() => []), listUsers().catch(() => [])]);
+  const nameOf = (email: string) => {
+    const u = users.find((x) => x.email.toLowerCase() === (email || "").toLowerCase());
+    return (u?.name || "").split(/\s+/)[0] || email || "менеджер";
+  };
+  const out = new Map<string, LeadFacts>();
+  for (const l of leads) {
+    const k = phoneKey(l.phone);
+    if (!k) continue;
+    const cur = out.get(k) ?? { handedTo: "", closed: false, client: false, leadId: l.leadId };
+    if (l.handedOverAt) cur.handedTo = cur.handedTo || nameOf(l.managerEmail);
+    if (isClosedStage(cleanStage(l.stage))) cur.closed = true;
+    else cur.closed = false; // открытый лид с тем же номером перебивает закрытый
+    if (l.clientId) cur.client = true;
+    out.set(k, cur);
+  }
+  for (const c of clients) {
+    if (!c.active) continue;
+    for (const p of [c.phone, c.messenger]) {
+      const k = phoneKey(p);
+      if (!k) continue;
+      const cur = out.get(k) ?? { handedTo: "", closed: false, client: false, leadId: "" };
+      cur.client = true;
+      out.set(k, cur);
+    }
+  }
+  return out;
+}
+
+/**
+ * Переданный лид написал на номер Земфиры: записка в журнал и сообщение менеджеру с основного номера
+ * («Ваш клиент … написал на номер Земфиры: …»), один раз на сообщение клиента.
+ */
+async function tellManagerAboutHandedLead(line: WaLine, phone: string, lastIn: WaMessage, facts: LeadFacts, log: { kind: string; line: string; phone: string; at: string }[]): Promise<boolean> {
+  if (log.some((r) => r.kind === "note" && r.line === line.code && phoneKey(r.phone) === phoneKey(phone) && r.at > lastIn.at)) return false;
+  const text = messageText(lastIn).slice(0, 200);
+  const note = `клиент передан ${facts.handedTo}, написал на номер Земфиры: «${text}» — ответить должен он`;
+  await appendAssistantLog([{ at: new Date().toISOString(), line: line.code, phone, kind: "note", messageId: "", text: "", note, byEmail: "assistant" }]);
+  const [leads, users, waLines] = await Promise.all([listLeads().catch(() => [] as Lead[]), listUsers().catch(() => []), listWaLines().catch(() => [])]);
+  const lead = leads.find((l) => l.leadId === facts.leadId) ?? leads.find((l) => phoneKey(l.phone) === phoneKey(phone) && l.handedOverAt);
+  const email = (lead?.managerEmail || "").toLowerCase();
+  const managerPhone = (waLines.find((w) => w.managerEmail.toLowerCase() === email && w.phone)?.phone || users.find((u) => u.email.toLowerCase() === email)?.phone || "").replace(/\D/g, "");
+  const cfg = greenConfig();
+  if (!cfg || !managerPhone) return true;
+  const who = lead?.name ? `${lead.name} (…${phoneKey(phone).slice(-4)})` : `…${phoneKey(phone).slice(-4)}`;
+  await sendText(cfg, managerPhone, `Ваш клиент ${who}, переданный вам, написал на номер Земфиры:\n«${text}»\n\nОтветьте ему, пожалуйста, со своего номера.`, { linkPreview: false }).catch((err) => console.error("handed lead notify:", err instanceof Error ? err.message : err));
+  return true;
 }
 
 /**
@@ -298,9 +431,13 @@ export async function runAssistantSweep(
   const autoIds = new Set(log.filter((r) => r.kind === "auto" || r.kind === "nudge").map((r) => r.messageId));
   const staff = await ourPhoneKeys(map);
   const now = new Date();
+  // Номер Земфиры: лид передан менеджеру или закрыт, у номера есть карточка клиента — помощник не отвечает
+  // (21.10.2026, Земфира: «бот повторно пишет клиентам, которых я уже передала Ильгару, у которых уже есть заказы»).
+  const leadFacts = lines.some((l) => l.code === LEADS_LINE) ? await leadFactsByPhone() : new Map<string, LeadFacts>();
 
   type Due = { line: WaLine; phone: string; chat: WaMessage[]; lastInAt: string; lastIn: WaMessage };
   const due: Due[] = [];
+  const handed: { line: WaLine; phone: string; lastIn: WaMessage; facts: LeadFacts }[] = [];
   for (const line of lines) {
     const byKey = new Map<string, WaMessage[]>();
     for (const m of messages) {
@@ -311,7 +448,16 @@ export async function runAssistantSweep(
     }
     for (const [key, chat] of Array.from(byKey.entries())) {
       result.checked++;
-      const v = assistantVerdict({ chat, autoIds, now, staff: staff.has(key), mode: line.assistant, quick: options.quick });
+      const facts = line.code === LEADS_LINE ? leadFacts.get(key) : undefined;
+      const v = assistantVerdict({
+        chat,
+        autoIds,
+        now,
+        staff: staff.has(key),
+        mode: line.assistant,
+        quick: options.quick,
+        lead: facts ? { handedTo: facts.handedTo, closed: facts.closed, client: facts.client } : undefined,
+      });
       if (line.assistant === "sell" && !options.watcher) {
         // Номер «продаёт сам» ведёт только его сторож (один на номер, под замком) — иначе два прохода ответили бы дважды.
         if ((v.due || v.retryInMs) && !result.watch!.includes(line.code)) result.watch!.push(line.code);
@@ -319,6 +465,18 @@ export async function runAssistantSweep(
       }
       if (v.due && v.lastIn) due.push({ line, phone: v.lastIn.phone, chat, lastInAt: v.lastIn.at, lastIn: v.lastIn });
       else if (v.retryInMs && line.assistant === "sell") result.pendingMs = Math.min(result.pendingMs ?? Infinity, v.retryInMs);
+      else if (v.handed && v.lastIn && facts && now.getTime() - Date.parse(v.lastIn.at) < ASSISTANT_STALE_HOURS * 3600000)
+        handed.push({ line, phone: v.lastIn.phone, lastIn: v.lastIn, facts });
+    }
+  }
+  // Переданный лид написал на номер Земфиры — не отвечаем, а сообщаем его менеджеру (один раз на сообщение).
+  for (const h of handed) {
+    try {
+      const told = await tellManagerAboutHandedLead(h.line, h.phone, h.lastIn, h.facts, log);
+      if (told) result.notes++;
+      result.skipped.push(`…${h.phone.slice(-4)}: передан ${h.facts.handedTo}${told ? " — сообщили ему" : ""}`);
+    } catch (err) {
+      result.skipped.push(`…${h.phone.slice(-4)}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
     }
   }
   // Дольше ждущие — первыми.
@@ -335,6 +493,11 @@ export async function runAssistantSweep(
     const fresh = await listAssistantLog({ fresh: true });
     if (fresh.some((r) => r.kind === "auto" && r.line === d.line.code && phoneKey(r.phone) === phoneKey(d.phone) && r.at > d.lastInAt)) {
       result.skipped.push(`…${d.phone.slice(-4)}: уже ответили`);
+      continue;
+    }
+    // Журнал видит только отправленное, а модель думает секунды — занять чат, чтобы два прохода не ответили дважды.
+    if (!(await claimReply(d.line.code, d.phone, d.lastInAt))) {
+      result.skipped.push(`…${d.phone.slice(-4)}: отвечает другой проход`);
       continue;
     }
     try {
@@ -355,8 +518,16 @@ export async function runAssistantSweep(
         }
         continue;
       }
-      const pic = await assistantPhotoFor(d.chat, a);
-      await sendFromLine(d.line, d.phone, a.reply, "auto", "assistant", "", pic);
+      // Перед отправкой — ещё раз свежая переписка: клиент дописал или менеджер ответил, пока думала модель.
+      const latest = mergeMessages((await listWaMessages({ lines: "all", fresh: true })).filter((m) => m.line === d.line.code && phoneKey(m.phone) === phoneKey(d.phone)));
+      const lastNow = latest[latest.length - 1];
+      if (lastNow && lastNow.at > d.lastInAt) {
+        result.skipped.push(`…${d.phone.slice(-4)}: ${lastNow.direction === "in" ? "клиент дописал — ответим на новое" : "менеджер уже ответил"}`);
+        continue;
+      }
+      const reply = ensureGreeting(a.reply, d.chat);
+      const pic = await assistantPhotoFor(d.chat, { ...a, reply });
+      await sendFromLine(d.line, d.phone, reply, "auto", "assistant", "", pic);
       result.replied++;
       if (a.note) {
         await appendAssistantLog([{ at: new Date().toISOString(), line: d.line.code, phone: d.phone, kind: "note", messageId: "", text: a.reply, note: a.note, byEmail: "assistant" }]);

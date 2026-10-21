@@ -136,9 +136,16 @@ export const ANALYSIS_SCHEMA: Record<string, unknown> = {
 };
 
 export interface PromptInput {
-  lead: Pick<Lead, "name" | "city" | "clientType" | "stage" | "contactPerson">;
+  lead: Pick<Lead, "name" | "city" | "clientType" | "stage" | "contactPerson"> & Partial<Pick<Lead, "origin" | "handedOverAt">>;
   transcript: string;
   today: string;
+}
+
+/** Имя лида годится для обращения: не номер («19», «44» — так Земфира нумерует лиды) и не заглушка «Клиент WhatsApp 0014». */
+export function addressableName(name: string | null | undefined): string {
+  const n = String(name || "").trim();
+  if (!n || /^клиент whatsapp/i.test(n) || !/[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/.test(n)) return "";
+  return n;
 }
 
 export function buildPrompt(input: PromptInput): { system: string; user: string } {
@@ -161,11 +168,15 @@ export function buildPrompt(input: PromptInput): { system: string; user: string 
     "  follow_up — интерес неясен, клиент думает, просил написать позже или не ответил на наше последнее сообщение: написать снова через next_touch_in_days (обычно 2–7 дней; «не сейчас», «после праздника», сезон — до 30);",
     "  lost — клиент прямо отказался, ему нужен букет или розница, а не опт, нужно то, чего у нас нет (например, растения с корнями, горшечные), неверный номер, или клиент молчит после трёх и больше наших сообщений дольше недели; тогда suggested_stage = lost, next_touch_in_days = null и lost_reason обязателен;",
     "- decision_why — одна фраза, почему так, по фактам;",
-    "- message_draft — для sell и follow_up готовое сообщение клиенту в WhatsApp от имени менеджера: 2–4 коротких предложения, на языке клиента, по-человечески, один вопрос в конце. Не выдумывай цены, наличие, скидки и сроки — если их не было в переписке, предложи прислать прайс и фото. Для lost — пустая строка.",
+    "- message_draft — для sell и follow_up готовое сообщение клиенту в WhatsApp: 2–4 коротких предложения, на языке клиента, по-человечески, один вопрос в конце. Не выдумывай цены, наличие, скидки и сроки — если их не было в переписке, предложи прислать прайс и фото. Не обещай действий, которые делает человек («подтверждаю заказ», «оформляю», «готовлю счёт», «вышлю договор») — предложи и спроси. Не обращайся по имени, если имя не названо. Для lost — пустая строка.",
+    input.lead.origin === "ads" && !input.lead.handedOverAt
+      ? "  Переписку с этим лидом ведёт Земфира (лиды с рекламы): message_draft — от её имени, в женском роде («отправляла», «уточню»); заказ и счёт оформляет менеджер, которому она передаст клиента."
+      : "  message_draft — от имени менеджера.",
   ].join("\n");
+  const leadName = addressableName(input.lead.name);
   const user = [
     `Сегодня: ${input.today}.`,
-    `Лид: ${input.lead.name}${input.lead.city ? `, ${input.lead.city}` : ""}${input.lead.clientType ? `, ${input.lead.clientType}` : ""}.`,
+    `Лид: ${leadName || "имя не названо"}${input.lead.city ? `, ${input.lead.city}` : ""}${input.lead.clientType ? `, ${input.lead.clientType}` : ""}.`,
     input.lead.contactPerson ? `Контакт: ${input.lead.contactPerson}.` : "",
     `Текущая стадия в CRM: ${cleanStage(input.lead.stage)}.`,
     "",

@@ -12,6 +12,10 @@ import { systemPrompt } from "../src/lib/botEngine";
 import { BOT_MANAGER_EMAIL } from "../src/lib/botIdentity";
 import { lineHookKey, lineHookKeyOk, openSecret, sealSecret } from "../src/lib/secretBox";
 import { parseAssistantAnswer, assistantSystemPrompt, assistantTranscript } from "../src/lib/lineAssistant";
+import { looksLikeRefusal } from "../src/lib/clientRefusal";
+import { ASSISTANT_MAX_CHARS, ensureGreeting, startsWithGreeting, tooLong } from "../src/lib/assistantText";
+import { sellableForBot } from "../src/lib/botKnowledge";
+import { addressableName } from "../src/lib/talkAnalysis";
 import { autoLeadFromMessage } from "../src/lib/waAutoLead";
 import { decisionScope } from "../src/lib/leadDecisions";
 import { MANAGER_PACE, MAIN_PACE, LEADS_PACE, paceFor } from "../src/lib/broadcast";
@@ -224,6 +228,44 @@ check("подсказка Земфиры: от её имени, передаёт
 check("подсказка Земфиры: без обещания «оформляешь»", zPrompt.includes("напиши, что оформляешь"), false);
 const mPrompt = assistantSystemPrompt({ managerName: "Ильяс", prices: "", stock: "", storeNote: "", harvest: "", push: "", client: "", instructions: "", today: "2026-10-20" });
 check("подсказка менеджера: как раньше", [mPrompt.includes("помощник менеджера по продажам Ильяс"), mPrompt.includes("напиши, что оформляешь"), mPrompt.includes("Земфира")], [true, true, false]);
+
+// --- Замечания Земфиры к боту (21.10.2026) ------------------------------------------------
+check(
+  "отказ: да",
+  ["Спасибо, неактуально", "Не актуально уже", "Мне для себя нужно было", "Нам саженцы нужны", "Аа маған тамырмен керек!", "Рахмет маған егуге", "все спасибо ненадо", "Нет, спасибо", "не интересует", "Не пишите мне больше", "Керек емес"].map(looksLikeRefusal),
+  [true, true, true, true, true, true, true, true, true, true, true]
+);
+check(
+  "отказ: нет",
+  ["Нужно 200 штук первой категории", "Нет, 60 см не надо, давайте 50 см и доставку в Астану, завтра до обеда пожалуйста", "Сколько стоит?", "Нет", "", "Доставка не нужна, заберу сам, а розы 300 штук оформите пожалуйста на пятницу"].map(looksLikeRefusal),
+  [false, false, false, false, false, false]
+);
+const zv = (text: string, extra: Partial<Parameters<typeof assistantVerdict>[0]> = {}) => v([M("1", "2026-10-16T06:00:00Z", "out", "Для бизнеса или для себя?"), M("2", "2026-10-16T06:30:00Z", "in", text)], fri12, extra);
+check("помощник: клиент отказался — молчит", zv("Для себя, спасибо").reason, "клиент отказался — разговор закрыт");
+check("помощник: лид передан — молчит, менеджеру сообщаем", [zv("Нам нужен высший сорт", { lead: { handedTo: "Ильгар" } }).reason, zv("Нам нужен высший сорт", { lead: { handedTo: "Ильгар" } }).handed], ["лид передан — ответит Ильгар", true]);
+check("помощник: лид закрыт — молчит", zv("А розы есть?", { lead: { closed: true } }).due, false);
+check("помощник: есть карточка клиента — молчит", zv("А розы есть?", { lead: { client: true } }).due, false);
+check("помощник: обычный лид — отвечает", zv("А розы есть?", { lead: {} }).due, true);
+const adsChat = [M("1", "2026-10-16T06:00:00Z", "in", "Можете отправить прайс и фото хризантем")];
+check("приветствие: первое наше сообщение — здороваемся", ensureGreeting("Смотрите, что есть по хризантеме.", adsChat), "Здравствуйте! Смотрите, что есть по хризантеме.");
+check("приветствие: по-казахски", ensureGreeting("Хризантема бар, бағасы 180 ₸.", adsChat), "Сәлеметсіз бе! Хризантема бар, бағасы 180 ₸.");
+check("приветствие: уже есть — не дублируем", ensureGreeting("Добрый день! Есть Altaj.", adsChat), "Добрый день! Есть Altaj.");
+check("приветствие: мы уже писали — не здороваемся заново", ensureGreeting("Есть Altaj.", [M("0", "2026-10-15T06:00:00Z", "out", "Здравствуйте!"), ...adsChat]), "Есть Altaj.");
+check("приветствие: узнаётся", ["Сәлеметсіз бе!", "здравствуйте", "Добрый вечер", "Смотрите"].map(startsWithGreeting), [true, true, true, false]);
+check("длина: предел", [tooLong("к".repeat(ASSISTANT_MAX_CHARS)), tooLong("к".repeat(ASSISTANT_MAX_CHARS + 1))], [false, true]);
+const sellable = sellableForBot(
+  [
+    { flower: "chrysanthemum", variety: "Altaj", grade: "Четвёртая", qty: 40000 },
+    { flower: "chrysanthemum", variety: "Altaj", grade: "Первая", qty: 0 },
+    { flower: "rose", variety: "Prestige", grade: "50", qty: 2300 },
+    { flower: "rose", variety: "NoPrice", grade: "60", qty: 500 },
+  ],
+  (f, vr, g) => (vr === "NoPrice" ? 0 : g === "Четвёртая" ? 180 : g === "Первая" ? 580 : 195)
+);
+check("что есть и почём: только склад с ценой, Первой нет", sellable.split("\n"), ["Роза · Prestige: 50 см — 195 ₸ (около 2 000 шт.)", "Хризантема · Altaj: Четвёртая — 180 ₸ (около 40 000 шт.)"]);
+const gPrompt = assistantSystemPrompt({ managerName: "Земфира", prices: "прайс", stock: "склад", sellable, storeNote: "", harvest: "", push: "", client: "", instructions: "", today: "2026-10-21", line: "leads" });
+check("подсказка: один список «что есть», прайс и склад отдельно не идут, город раньше условий", [gPrompt.includes("Что есть сейчас и почём"), gPrompt.includes("Действующий прайс"), gPrompt.includes("СПРОСИ ГОРОД"), gPrompt.includes("не больше 300 знаков")], [true, false, true, true]);
+check("имя для обращения: номер и заглушка — нет", [addressableName("19"), addressableName("Клиент WhatsApp 0014"), addressableName("Aza")], ["", "", "Aza"]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

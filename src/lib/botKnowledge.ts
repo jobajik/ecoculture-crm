@@ -72,6 +72,39 @@ export function stockForBot(batches: Batch[], settings: Settings, now: Date): st
   return text.length > 6000 ? `${text.slice(0, 6000)}\n…` : text;
 }
 
+/**
+ * Что можно продать СЕЙЧАС — склад и цена одной строкой на сорт (21.10.2026, Земфира: «бот указывает неверное
+ * наличие — пишет, что есть Первая и Высшая категории, которых нет»). Помощнику прайс и склад шли двумя
+ * списками, и модель брала категории из прайса за наличие. Теперь у помощника один список: только позиции,
+ * которые лежат на складе и имеют цену; чего в нём нет — того нет. Позиция без цены в прайсе не идёт вовсе.
+ */
+export function sellableForBot(
+  stock: { flower: string; variety: string; grade: string; qty: number }[],
+  priceOf: (flower: string, variety: string, grade: string) => number
+): string {
+  const fi = (f: string) => {
+    const i = FLOWER_ORDER.indexOf(f);
+    return i < 0 ? 99 : i;
+  };
+  const rows = stock
+    .filter((r) => r.qty > 0)
+    .map((r) => ({ ...r, price: priceOf(r.flower, r.variety, r.grade) }))
+    .filter((r) => r.price > 0)
+    .sort((a, b) => fi(a.flower) - fi(b.flower) || a.variety.localeCompare(b.variety, "ru") || compareGrades(a.flower, a.grade, b.grade));
+  const byVariety = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const k = `${r.flower}|${r.variety}`;
+    byVariety.set(k, [...(byVariety.get(k) ?? []), r]);
+  }
+  const text = Array.from(byVariety.values())
+    .map((list) => {
+      const head = `${FLOWER_TYPE_LABELS[list[0].flower] ?? list[0].flower} · ${list[0].variety || "без сорта"}`;
+      return `${head}: ${list.map((r) => `${formatGrade(r.grade)} — ${nf(r.price)} ₸ (${roughStems(r.qty)})`).join(" · ")}`;
+    })
+    .join("\n");
+  return text.length > 6000 ? `${text.slice(0, 6000)}\n…` : text;
+}
+
 /** Прогноз срезки по-человечески: вниз до сотен, от тысячи — до тысяч. */
 function roughForecast(n: number): string {
   const r = n >= 1000 ? Math.floor(n / 1000) * 1000 : Math.floor(n / 100) * 100;

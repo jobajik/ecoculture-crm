@@ -32,10 +32,10 @@ function toMessage(r: Record<string, string>): WaMessage {
  * «тёплые» (кто нам писал). Номер Земфиры (`line: "leads"`) — отдельная линия: её
  * переписку видят карточка лида, разбор и её «Написали» (`{ lines: "all" | "leads" }`).
  */
-export async function listWaMessages(options: { lines?: "main" | "leads" | "all" } = {}): Promise<WaMessage[]> {
+export async function listWaMessages(options: { lines?: "main" | "leads" | "all"; fresh?: boolean } = {}): Promise<WaMessage[]> {
   const lines = options.lines ?? "main";
   try {
-    const table = await readTable(SHEET_TABS.WA_MESSAGES);
+    const table = await readTable(SHEET_TABS.WA_MESSAGES, options.fresh ? { fresh: true } : {});
     return table.rows
       .map((row) => toMessage(rowToRecord(SHEET_TABS.WA_MESSAGES, row)))
       .filter((m) => m.messageId && m.phone && m.at)

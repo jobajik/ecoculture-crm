@@ -8,7 +8,7 @@ import { notifyBotSale } from "./botSalesAlert";
 import { ourPhoneKeys } from "./lineNotify";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
-import { harvestForBot, lastBroadcastForBot, pricesForBot, stockForBot, stockMap } from "./botKnowledge";
+import { harvestForBot, lastBroadcastForBot, pricesForBot, sellableForBot, stockForBot, stockMap } from "./botKnowledge";
 import { listHarvestForecast } from "./repo/harvestForecast";
 import { listWaMessages } from "./repo/talks";
 import { readTable } from "./sheets";
@@ -150,6 +150,17 @@ async function stockText(): Promise<{ text: string; storeNote: string }> {
   }
 }
 
+/** Склад с ценами одним списком — для помощника (`sellableForBot`): оба склада, без просроченного. Сбой — пусто. */
+async function sellableText(): Promise<string> {
+  try {
+    const now = new Date();
+    const [batches, settings, prices] = await Promise.all([listSellableBatches(), getSettings(), getCurrentPrices(localDayKey())]);
+    return sellableForBot(Array.from(stockMap(batches, settings, now).values()), (f, v, g) => priceFor(prices, f, v, g));
+  } catch {
+    return "";
+  }
+}
+
 /** «Распродаём в первую очередь» (`salesPush.ts`) — блок подсказки по основному складу. Сбой — пусто. */
 async function pushText(): Promise<string> {
   try {
@@ -180,6 +191,8 @@ async function broadcastText(phone: string): Promise<string> {
 export async function salesKnowledge(phone: string): Promise<{
   prices: string;
   stock: string;
+  /** Склад и цена одной строкой на сорт — то, что помощник может предлагать (чего нет в списке — нет). */
+  sellable: string;
   storeNote: string;
   harvest: string;
   push: string;
@@ -198,9 +211,10 @@ export async function salesKnowledge(phone: string): Promise<{
     SHEET_TABS.HARVEST_FORECAST,
     SHEET_TABS.SETTINGS,
   ]).catch(() => undefined);
-  const [prices, stockInfo, client, harvest, push, map] = await Promise.all([
+  const [prices, stockInfo, sellable, client, harvest, push, map] = await Promise.all([
     priceText(),
     stockText(),
+    sellableText(),
     botClientContext(phone).catch(() => ""),
     listHarvestForecast()
       .then((rows) => harvestForBot(rows, localDayKey()))
@@ -211,6 +225,7 @@ export async function salesKnowledge(phone: string): Promise<{
   return {
     prices,
     stock: stockInfo.text,
+    sellable,
     storeNote: stockInfo.storeNote,
     harvest,
     push,

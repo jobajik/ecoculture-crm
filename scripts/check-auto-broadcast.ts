@@ -102,7 +102,7 @@ const messages = [
   msg("77010000009", "2026-10-05T12:00:00", "out", "leads"),
 ];
 const facts = chatFacts(messages);
-check("переписка: последнее и номер", facts.get("7010000004"), { lastAt: new Date("2026-10-02T12:00:00+05:00").toISOString(), lastDirection: "out", line: "m-ilyas", lastInAt: new Date("2026-10-01T12:00:00+05:00").toISOString() });
+check("переписка: последнее и номер", facts.get("7010000004"), { lastAt: new Date("2026-10-02T12:00:00+05:00").toISOString(), lastDirection: "out", line: "m-ilyas", lastInAt: new Date("2026-10-01T12:00:00+05:00").toISOString(), lastInText: "" });
 const iso = (s: string) => new Date(`${s}+05:00`).toISOString();
 const sent = sentFacts(
   [
@@ -160,7 +160,7 @@ const picked = pickLeadReminders({
 });
 check("лиды: кому", picked.take.map((p) => p.lead.leadId), ["L1", "L9"]);
 check("лиды: с какого номера", picked.take.map((p) => p.line), ["leads", "leads"]);
-check("лиды: черновик свежего разбора", picked.take[0].draft, "Добрый день! Как вам наша хризантема?");
+check("лиды: черновик разбора автопилот не шлёт (21.10.2026 — обещал «оформим сейчас»)", picked.take[0].draft, "");
 check("лиды: ждут живого ответа", picked.waiting.map((l) => l.leadId), ["L2"]);
 check("лиды: пропуски", Object.fromEntries(Object.entries(picked.skipped).sort()), Object.fromEntries(Object.entries({
   "клиент ждёт ответа": 1,
@@ -185,6 +185,35 @@ const picked2 = pickLeadReminders({
 });
 check("лиды: ответил после напоминаний — снова можно", picked2.take.map((p) => p.lead.leadId), ["L5"]);
 check("лиды: разбор старше переписки — без черновика", picked2.take[0]?.draft, "");
+// Замечания Земфиры (21.10.2026): переданным менеджеру, с карточкой клиента и отказавшимся — не пишем.
+const refused = { ...msg("77010000021", "2026-10-10T12:00:00", "in", "leads"), text: "Спасибо, неактуально, это для себя" };
+const picked3 = pickLeadReminders({
+  leads: [
+    lead("H1", "+77010000020", { handedOverAt: "2026-10-15T10:00:00Z", managerEmail: "ilgar@x" }),
+    lead("H2", "+77010000021"),
+    lead("H3", "+77010000022"),
+    lead("H4", "+77010000023"),
+  ],
+  analyses: new Map(),
+  ctx: {
+    ...ctx,
+    facts: chatFacts([
+      msg("77010000020", "2026-10-05T12:00:00", "out", "leads"),
+      refused,
+      msg("77010000021", "2026-10-11T12:00:00", "out", "leads"),
+      msg("77010000022", "2026-10-05T12:00:00", "out", "leads"),
+      msg("77010000023", "2026-10-05T12:00:00", "out", "leads"),
+    ]),
+  },
+  today: "2026-10-17",
+  lineOk: () => true,
+  toDay: (x) => x.slice(0, 10),
+  clientKeys: new Set(["7010000022"]),
+});
+check("лиды: переданный, с карточкой и отказавшийся — нет, остальной — да", picked3.take.map((p) => p.lead.leadId), ["H4"]);
+check("лиды: почему", picked3.skipped, { "передан менеджеру": 1, "клиент отказался": 1, "есть карточка клиента": 1 });
+check("переписка: текст последнего входящего", chatFacts([refused]).get("7010000021")?.lastInText, "Спасибо, неактуально, это для себя");
+
 const many = Array.from({ length: AUTO_CAPS.leads + 5 }, (_, i) => {
   const ph = `7702${String(i).padStart(7, "0")}`;
   return { lead: lead(`M${i}`, `+${ph}`), msg: msg(ph, "2026-10-05T12:00:00", "out", "leads") };
