@@ -8,7 +8,7 @@ dotenv.config();
  * ОДИНАКОВЫХ (человек, партия, стебли, цена, вид) оставляет самую раннюю, остальные удаляет, а их стебли возвращает
  * в партию — одним атомарным запросом на каждую. В интерфейсе удаления выдачи нет.
  *
- *   npx tsx scripts/takeout-delete.ts <ГГГГ-ММ-ДД> <слово из фамилии | @файл со словом> [--yes]
+ *   npx tsx scripts/takeout-delete.ts <ГГГГ-ММ-ДД> <слово из фамилии | @файл со словом> [--id=TK-…] [--yes]
  *
  * Без --yes только показ. С --yes — сначала копия всей таблицы, потом удаление и запись в журнал действий.
  */
@@ -41,9 +41,13 @@ async function main() {
     const k = [staffKey(x.rec.StaffName), x.rec.BatchID, sheetNumber(x.rec.Quantity), sheetNumber(x.rec.UnitPrice), (x.rec.Kind || "").trim()].join("|");
     groups.set(k, [...(groups.get(k) ?? []), x]);
   }
-  const extra = Array.from(groups.values()).flatMap((g) => g.sort((a, b) => (a.rec.CreatedAt < b.rec.CreatedAt ? -1 : 1)).slice(1));
+  // --id=TK-… — удалить именно эту выдачу (одинаковые строки бывают из разных партий: второй раз внесли позже).
+  const onlyId = process.argv.find((a) => a.startsWith("--id="))?.slice(5);
+  const extra = onlyId
+    ? rows.filter((x) => x.rec.TakeoutID === onlyId)
+    : Array.from(groups.values()).flatMap((g) => g.sort((a, b) => (a.rec.CreatedAt < b.rec.CreatedAt ? -1 : 1)).slice(1));
   if (!extra.length) return console.log("Одинаковых строк нет — удалять нечего.");
-  console.log(`Удалить (повторы, остаётся самая ранняя): ${extra.map((x) => x.rec.TakeoutID).join(", ")}`);
+  console.log(`Удалить${onlyId ? "" : " (повторы, остаётся самая ранняя)"}: ${extra.map((x) => x.rec.TakeoutID).join(", ")}`);
   if (!apply) return console.log("Только показ. Удалить: --yes");
 
   const backup = await createBackup(new Date(), (m) => console.log(`  копия: ${m}`));
