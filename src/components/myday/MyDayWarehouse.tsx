@@ -10,7 +10,7 @@ import { localDayKey } from "@/lib/timezone";
 import { isOfficeRole, stockStoreOfRole } from "@/lib/officeStore";
 import { getStockSnapshot } from "@/lib/stock";
 import { flowerTypesForFarm } from "@/lib/constants";
-import StockBoard from "../StockBoard";
+import StockAgeCard from "./StockAgeCard";
 import KpiTile from "../KpiTile";
 import Pill from "../Pill";
 import DayCard, { DayEmpty, DayGroup, DayRow } from "./DayCard";
@@ -138,6 +138,9 @@ export default async function MyDayWarehouse({ user }: { user: DayUser }) {
           href={batchesHref}
         />
       </div>
+
+      {/* «Сколько дней лежит» — сразу под плитками (21.10.2026). */}
+      <StockAgeCard buckets={stock.ageBuckets} total={stock.totalStems} href={batchesHref} shelfNote={shelfNoteOf(settings, flowerTypesForFarm(user.farm))} />
 
       <div className="grid gap-5 xl:grid-cols-5 items-start">
         <div className="xl:col-span-3 min-w-0">
@@ -299,9 +302,6 @@ export default async function MyDayWarehouse({ user }: { user: DayUser }) {
             </DayCard>
           )}
         </div>
-
-        {/* «Сколько дней лежит» и остатки по позициям — как на прежней главной (21.10.2026). */}
-        <StockBoard initial={stock} allowedTypes={flowerTypesForFarm(user.farm)} initialView="age" />
       </div>
     </div>
   );
@@ -321,4 +321,10 @@ function plural(n: number, one: string, few: string, many: string): string {
   if (m10 === 1 && m100 !== 11) return one;
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
   return many;
+}
+
+/** «роза 7 · хризантема 18 · эустома 10 дн.» — сроки хранения из настроек, для подсказки «Сколько дней лежит». */
+function shelfNoteOf(settings: { shelfLifeDays: Record<string, number> }, types: string[] = ["rose", "chrysanthemum", "eustoma"]): string {
+  const name: Record<string, string> = { rose: "роза", chrysanthemum: "хризантема", eustoma: "эустома" };
+  return types.filter((t) => settings.shelfLifeDays[t]).map((t) => `${name[t] ?? t} ${settings.shelfLifeDays[t]}`).join(" · ") + " дн.";
 }

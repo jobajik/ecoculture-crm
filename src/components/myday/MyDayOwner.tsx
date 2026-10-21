@@ -21,7 +21,7 @@ import { getCurrentPrices } from "@/lib/repo/prices";
 import { getSalesSnapshot } from "@/lib/salesAnalytics";
 import { getFinanceSnapshot } from "@/lib/finance";
 import { getStockSnapshot } from "@/lib/stock";
-import StockBoard from "../StockBoard";
+import StockAgeCard from "./StockAgeCard";
 import { homeFocus } from "@/lib/homeFocus";
 import { paceOf } from "@/lib/planOverview";
 import { computeBatchStorageInfo } from "@/lib/shelfLife";
@@ -218,6 +218,9 @@ export default async function MyDayOwner({ user }: { user: DayUser }) {
         />
       </div>
 
+      {/* «Сколько дней лежит» — сразу под плитками (21.10.2026, владелец: «двинь эти данные наверх»). */}
+      <StockAgeCard buckets={stock.ageBuckets} total={stock.totalStems} href={stockHref} shelfNote={shelfNoteOf(settings)} />
+
       <div className="grid gap-5 xl:grid-cols-5 items-start">
         <div className="xl:col-span-3 space-y-5 min-w-0">
           <DayCard tone="bad" icon="alert" title="Требует внимания" count={day.attention.length} countTone={day.attention.length ? "bad" : "muted"} hint="по важности · каждая строка ведёт в готовый список">
@@ -361,10 +364,13 @@ export default async function MyDayOwner({ user }: { user: DayUser }) {
           </DayCard>
         </div>
 
-        {/* Остатки со «Сколько дней лежит» — было на старой главной и пропало с «Моим днём» (21.10.2026, владелец:
-            «почему пропала аналитика с днями хранения? Она была крутой и нужной»). */}
-        <StockBoard initial={stock} initialView="age" />
       </div>
     </div>
   );
+}
+
+/** «роза 7 · хризантема 18 · эустома 10 дн.» — сроки хранения из настроек, для подсказки «Сколько дней лежит». */
+function shelfNoteOf(settings: { shelfLifeDays: Record<string, number> }, types: string[] = ["rose", "chrysanthemum", "eustoma"]): string {
+  const name: Record<string, string> = { rose: "роза", chrysanthemum: "хризантема", eustoma: "эустома" };
+  return types.filter((t) => settings.shelfLifeDays[t]).map((t) => `${name[t] ?? t} ${settings.shelfLifeDays[t]}`).join(" · ") + " дн.";
 }
