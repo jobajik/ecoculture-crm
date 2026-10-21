@@ -23,10 +23,14 @@ import Pager, { pageSlice } from "./Pager";
 import LeadStageBadge from "./LeadStageBadge";
 import Icon from "./Icon";
 import { ScoreChip, TemperatureChip, WaitingChip } from "./TalkChips";
+import LeadsKanban from "./LeadsKanban";
+import LeadsBulkBar, { type BulkDialog } from "./LeadsBulkBar";
 
 export type { LeadTalkMark } from "@/lib/leadsView";
 
 type Who = "mine" | "free" | "all" | "handed";
+type Layout = "board" | "list";
+const LAYOUT_KEY = "leads-layout";
 
 
 /**
@@ -63,6 +67,47 @@ export default function LeadsBoard({
   const [origin, setOrigin] = useState<LeadOrigin>("all");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
+  // Доска или список (21.10.2026, владелец: «как в канбанах, массово выделить»). На компьютере — доска,
+  // на телефоне — список; выбор помнится в браузере.
+  const [layout, setLayout] = useState<Layout>("list");
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(LAYOUT_KEY);
+      if (saved === "board" || saved === "list") setLayout(saved);
+      else if (window.innerWidth >= 1024) setLayout("board");
+    } catch {
+      // Хранилище недоступно — остаёмся на списке.
+    }
+  }, []);
+  const pickLayout = (l: Layout) => {
+    setLayout(l);
+    try {
+      window.localStorage.setItem(LAYOUT_KEY, l);
+    } catch {
+      // Не запомнилось — не страшно.
+    }
+  };
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [dialog, setDialog] = useState<BulkDialog | null>(null);
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleMany = (ids: string[], on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+  const moveFromBoard = (ids: string[], stage: string) => {
+    setSelected(new Set(ids));
+    setDialog({ kind: "stage", stage });
+  };
 
   const byWho = useMemo(
     () =>
@@ -178,13 +223,28 @@ export default function LeadsBoard({
               {o.label}
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => pickView("closed")}
-            className={clsx("ml-auto py-3 text-sm", view === "closed" ? "font-semibold text-section-leads" : "text-ink-secondary hover:text-ink-primary")}
-          >
-            {view === "closed" ? "← К лидам в работе" : `Закрытые · ${count("closed")}`}
-          </button>
+          <div className="ml-auto flex items-center gap-3">
+            <div className="hidden sm:flex rounded-lg border border-line-hairline p-0.5 text-xs" role="group" aria-label="Вид">
+              {(["board", "list"] as Layout[]).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => pickLayout(l)}
+                  aria-pressed={layout === l}
+                  className={clsx("px-2.5 py-1 rounded-md", layout === l ? "bg-section-leads-soft text-section-leads font-semibold" : "text-ink-secondary hover:text-ink-primary")}
+                >
+                  {l === "board" ? "Доска" : "Список"}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => pickView("closed")}
+              className={clsx("py-3 text-sm", view === "closed" ? "font-semibold text-section-leads" : "text-ink-secondary hover:text-ink-primary")}
+            >
+              {view === "closed" ? "← К лидам в работе" : `Закрытые · ${count("closed")}`}
+            </button>
+          </div>
         </div>
 
         {/* Отбор одной строкой: поиск, менеджер, стадия, откуда. */}
@@ -242,7 +302,23 @@ export default function LeadsBoard({
           </p>
         )}
 
-        {list.length === 0 ? (
+        {layout === "board" && view !== "closed" && list.length > 0 ? (
+          <div className="px-3 pt-3">
+            <div className="flex items-center gap-3 mb-2 text-xs text-ink-muted">
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 accent-section-leads"
+                  checked={list.length > 0 && list.every((r) => selected.has(r.leadId))}
+                  onChange={(e) => toggleMany(list.map((r) => r.leadId), e.target.checked)}
+                />
+                выделить все ({list.length})
+              </label>
+              <span>· карточку можно перетащить в другую стадию</span>
+            </div>
+            <LeadsKanban rows={list} talk={talk} today={today} selected={selected} onToggle={toggle} onToggleMany={toggleMany} onMove={moveFromBoard} />
+          </div>
+        ) : list.length === 0 ? (
           <p className="px-4 py-10 text-center text-ink-muted">
             {rows.length === 0
               ? "Лидов пока нет — добавьте первого."
@@ -272,19 +348,31 @@ export default function LeadsBoard({
                       {LEAD_GROUP_LABELS[group]} · {groupCount}
                     </div>
                   )}
-                  <LeadLine row={r} mark={talk[r.leadId]} today={today} last={i === shown.length - 1} />
+                  <LeadLine row={r} mark={talk[r.leadId]} today={today} last={i === shown.length - 1} checked={selected.has(r.leadId)} onToggle={() => toggle(r.leadId)} />
                 </li>
               );
             })}
           </ol>
         )}
-        <Pager total={list.length} page={page} onPage={setPage} what="лидов" />
+        {!(layout === "board" && view !== "closed" && list.length > 0) && <Pager total={list.length} page={page} onPage={setPage} what="лидов" />}
       </div>
+
+      <LeadsBulkBar
+        selected={Array.from(selected)}
+        names={new Map(rows.map((r) => [r.leadId, r.name]))}
+        canManage={canManage}
+        leadgen={leadgen}
+        managers={managers}
+        today={today}
+        dialog={dialog}
+        setDialog={setDialog}
+        onClear={clearSelection}
+      />
     </section>
   );
 }
 
-function LeadLine({ row: r, mark, today, last }: { row: LeadRow; mark?: LeadTalkMark; today: string; last: boolean }) {
+function LeadLine({ row: r, mark, today, last, checked, onToggle }: { row: LeadRow; mark?: LeadTalkMark; today: string; last: boolean; checked: boolean; onToggle: () => void }) {
   const closed = isClosedStage(r.stage);
   const wa = whatsappLink(r.phone);
   const tel = r.phone.replace(/[^\d+]/g, "");
@@ -302,7 +390,8 @@ function LeadLine({ row: r, mark, today, last }: { row: LeadRow; mark?: LeadTalk
   );
   const manager = r.managerName || <span className="text-[#8a5a00]">ничей</span>;
   return (
-    <div className={clsx("flex items-start gap-3 px-4 py-3", !last && "border-b border-line-hairline/70")}>
+    <div className={clsx("flex items-start gap-3 px-4 py-3", !last && "border-b border-line-hairline/70", checked && "bg-section-leads-soft/40")}>
+      {!closed && <input type="checkbox" className="mt-1 w-4 h-4 flex-none accent-section-leads" checked={checked} onChange={onToggle} aria-label={`Выделить ${r.name}`} />}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Link href={`/clients/leads/${r.leadId}`} className="font-semibold hover:underline break-words">

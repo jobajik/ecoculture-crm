@@ -28,10 +28,14 @@ import {
   type LeadImportRow,
   type TouchInput,
 } from "@/lib/leads";
-import { addTouch, createLead, createLeads, findLeadRow, getLead, listLeadTouches, listLeads, updateLead, type NewLead } from "@/lib/repo/leads";
+import { addTouch, addTouchesBatch, createLead, createLeads, findLeadRow, getLead, listLeadTouches, listLeads, reassignLeads, updateLead, type NewLead } from "@/lib/repo/leads";
+import { BULK_MAX, bulkName, planBulkStage, type BulkMode, type BulkStageInput } from "@/lib/leadsBulk";
+import { bulkMessageLeads, type BulkMessageResult } from "@/lib/leadsBulkRunner";
+import { addDaysToKey } from "@/lib/dayKey";
 import { listClients } from "@/lib/repo/clients";
 import { listUsers } from "@/lib/repo/users";
 import { ensureClientForLead } from "@/lib/leadConvert";
+import type { Lead } from "@/lib/types";
 
 /**
  * Лиды ведут продажи. Менеджер работает со своими лидами и может взять
@@ -367,6 +371,106 @@ async function importLeadsActionInner(
   return { created, skipped: parsed.rows.length - fresh.length, perManager };
 }
 
+// --- Доска лидов: массовые действия (21.10.2026) ------------------------------------
+
+export interface BulkResult {
+  done: number;
+  refused: { name: string; why: string }[];
+}
+
+const cleanIds = (ids: string[]) =>
+  Array.from(new Set((ids || []).map((x) => String(x || "").trim()).filter(Boolean))).slice(0, BULK_MAX * 2);
+
+async function pickLeads(ids: string[]): Promise<Lead[]> {
+  const wanted = new Set(cleanIds(ids));
+  if (wanted.size === 0) throw new Error("Выделите хотя бы одного лида");
+  return (await listLeads({ fresh: true })).filter((l) => wanted.has(l.leadId));
+}
+
+/** Смена стадии или отказ сразу у нескольких: касание «Другое» каждому, одной записью. */
+async function bulkStageActionInner(leadIds: string[], input: BulkStageInput): Promise<BulkResult> {
+  const { email, role } = await requireLeads();
+  const leads = await pickLeads(leadIds);
+  const today = localDayKey();
+  const touches = leads.some((l) => isAdsLead(l) && l.handedOverAt) ? await listLeadTouches({ fresh: true }) : [];
+  const adsBefore = (lead: Lead) => (isAdsLead(lead) && lead.handedOverAt ? adsManagerTouches(lead, touches).length : 0);
+  const { plan, refused } = planBulkStage(leads, input, { email, role }, today, adsBefore, addDaysToKey);
+  const now = new Date().toISOString();
+  const byId = new Map(leads.map((l) => [l.leadId, l]));
+  const done = await addTouchesBatch(
+    plan.map((p) => {
+      const lead = byId.get(p.leadId)!;
+      return {
+        leadId: p.leadId,
+        touch: { managerEmail: email, channel: p.input.channel, comment: p.input.comment, stageFrom: cleanStage(lead.stage), stageTo: p.input.stage, nextTouchAt: p.input.nextTouchAt },
+        leadChanges: leadChangesAfterTouch(lead, p.input, now),
+      };
+    }),
+    now
+  );
+  revalidatePath(LEADS_PATH);
+  return { done, refused: refused.map((r) => ({ name: bulkName(r.lead), why: r.why })) };
+}
+
+/** РОП и админ: назначить менеджера выделенным (пусто — сделать ничьими). */
+async function bulkAssignActionInner(leadIds: string[], managerEmail: string): Promise<BulkResult> {
+  const { manage } = await requireLeads();
+  if (!manage) throw new Error("Раздаёт лиды РОП");
+  const to = (managerEmail || "").trim().toLowerCase();
+  if (to && !(await assignableEmails()).has(to)) throw new Error("Такого менеджера нет среди активных");
+  const leads = await pickLeads(leadIds);
+  const refused = leads.filter((l) => (l.managerEmail || "").toLowerCase() === to).map((l) => ({ name: bulkName(l), why: to ? "уже у этого менеджера" : "уже ничей" }));
+  const done = await reassignLeads(
+    leads.filter((l) => (l.managerEmail || "").toLowerCase() !== to).map((l) => ({ leadId: l.leadId, managerEmail: to })),
+    () => true
+  );
+  revalidatePath(LEADS_PATH);
+  return { done, refused };
+}
+
+/** Земфира или РОП: передать выделенных менеджеру — по лиду те же правила, что у одиночной передачи. */
+async function bulkHandoverActionInner(leadIds: string[], input: { managerEmail: string; comment: string }): Promise<BulkResult> {
+  const { email, role } = await requireLeads();
+  const to = (input.managerEmail || "").trim().toLowerCase();
+  const comment = (input.comment || "").trim().slice(0, 2000);
+  const sellers = await assignableEmails();
+  const leads = await pickLeads(leadIds);
+  const users = await listUsers();
+  const toName = users.find((u) => u.email.toLowerCase() === to)?.name || to;
+  const refused: BulkResult["refused"] = [];
+  const now = new Date().toISOString();
+  const today = localDayKey();
+  const items = [];
+  for (const lead of leads) {
+    const why = handoverRefusal({ role, email, lead, to, comment, sellers });
+    if (why) {
+      refused.push({ name: bulkName(lead), why });
+      continue;
+    }
+    const stage = cleanStage(lead.stage);
+    items.push({
+      leadId: lead.leadId,
+      touch: { managerEmail: email, channel: "Другое", comment: `Передан менеджеру ${toName}: ${comment}`, stageFrom: stage, stageTo: stage, nextTouchAt: today },
+      leadChanges: { ManagerEmail: to, HandedOverAt: now, HandedOverBy: email, NextTouchAt: today },
+    });
+  }
+  const done = await addTouchesBatch(items, now);
+  revalidatePath(LEADS_PATH);
+  revalidatePath(`${LEADS_PATH}/ads`);
+  return { done, refused };
+}
+
+/** «Написать выделенным»: рассылка с личным текстом каждому (`leadsBulkRunner.ts`). */
+async function bulkMessageActionInner(leadIds: string[], input: { mode: BulkMode; text?: string; withPhoto?: boolean }): Promise<BulkMessageResult> {
+  const { email, role } = await requireLeads();
+  const mode: BulkMode = input.mode === "ai" || input.mode === "offer" || input.mode === "text" ? input.mode : "ai";
+  const text = (input.text || "").trim().slice(0, 1500);
+  if (mode === "text" && text.length < 10) throw new Error("Напишите текст сообщения");
+  const leads = (await pickLeads(leadIds)).filter((l) => canWorkLead(role, email, l));
+  if (leads.length === 0) throw new Error("Среди выделенных нет ваших лидов");
+  return bulkMessageLeads({ leads, mode, text, withPhoto: input.withPhoto !== false, byEmail: email, role });
+}
+
 // ---------------------------------------------------------------------------
 // Обёртки: отказ ВОЗВРАЩАЕТСЯ, а не бросается (грабли 1.13).
 // ---------------------------------------------------------------------------
@@ -394,4 +498,16 @@ export async function checkLeadImportAction(...args: Parameters<typeof checkLead
 }
 export async function importLeadsAction(...args: Parameters<typeof importLeadsActionInner>) {
   return guard(() => importLeadsActionInner(...args));
+}
+export async function bulkStageAction(...args: Parameters<typeof bulkStageActionInner>) {
+  return guard(() => bulkStageActionInner(...args));
+}
+export async function bulkAssignAction(...args: Parameters<typeof bulkAssignActionInner>) {
+  return guard(() => bulkAssignActionInner(...args));
+}
+export async function bulkHandoverAction(...args: Parameters<typeof bulkHandoverActionInner>) {
+  return guard(() => bulkHandoverActionInner(...args));
+}
+export async function bulkMessageAction(...args: Parameters<typeof bulkMessageActionInner>) {
+  return guard(() => bulkMessageActionInner(...args));
 }
