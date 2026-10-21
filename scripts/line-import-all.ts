@@ -10,7 +10,7 @@ dotenv.config();
  * становится лидом менеджера номера тем же правилом, что вебхук (`autoLeadFromMessage`), с городом из
  * `ManagerProfiles`. Контакты телефонной книги без переписки лидами не становятся.
  *
- *   npx tsx scripts/line-import-all.ts <код линии> [--from N] [--max N] [--yes]
+ *   npx tsx scripts/line-import-all.ts <код линии> [--from N] [--max N] [--days N] [--yes]
  *
  * История чата у Green API — не чаще раза в секунду, поэтому за запуск — до `--max` чатов (по умолчанию 250);
  * в конце печатается, с какого продолжить. Без --yes ничего не пишет. Ничего не удаляет и не меняет.
@@ -42,6 +42,9 @@ async function main() {
   const apply = process.argv.includes("--yes");
   const from = arg("--from", 0);
   const max = arg("--max", 250);
+  // Лидом — только если в чате было сообщение за последние N дней (в телефоне менеджера тысячи старых чатов).
+  const days = arg("--days", 90);
+  const since = new Date(Date.now() - days * 86400000).toISOString();
   const line = (await listWaLines({ fresh: true })).find((l) => l.code === code);
   if (!line) throw new Error(`номер ${code} не найден`);
   const cfg = managerLineConfig(line);
@@ -103,15 +106,15 @@ async function main() {
       console.log(`  …${c.phone.slice(-4)}: ${err instanceof Error ? err.message : err}`);
     }
     await new Promise((r) => setTimeout(r, 1100));
+    const msgs = mergeMessages([...lineMsgs.filter((m) => phoneKey(m.phone) === key), ...history.map((m) => ({ ...m, line: code }))]);
+    if (!msgs.length || msgs[msgs.length - 1].at < since) {
+      empty++;
+      continue;
+    }
     for (const m of history) {
       if (have.has(m.messageId)) continue;
       have.add(m.messageId);
       fresh.push({ ...m, line: code });
-    }
-    const msgs = mergeMessages([...lineMsgs.filter((m) => phoneKey(m.phone) === key), ...history.map((m) => ({ ...m, line: code }))]);
-    if (!msgs.length) {
-      empty++;
-      continue;
     }
     if (known.has(key)) {
       skippedKnown++;
@@ -131,7 +134,7 @@ async function main() {
     out.push({ ...base, name, contactPerson: base.contactPerson || (c.name || named?.senderName || "").slice(0, 80) });
   }
   console.log(
-    `Чаты ${from + 1}–${from + part.length} из ${chats.length}: без переписки ${empty}, сотрудники и наши ${skippedStaff}, уже в CRM ${skippedKnown}, ` +
+    `Чаты ${from + 1}–${from + part.length} из ${chats.length}: без переписки за ${days} дн. ${empty}, сотрудники и наши ${skippedStaff}, уже в CRM ${skippedKnown}, ` +
       `новых лидов ${out.length}, сообщений дописать ${fresh.length}`
   );
   for (const l of out) console.log(`  …${l.phone.replace(/\D/g, "").slice(-4)} · ${l.name}`);
