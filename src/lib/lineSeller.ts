@@ -9,7 +9,7 @@ import { settingsMap } from "./repo/broadcasts";
 import { appendAssistantLog, listAssistantLog, listWaLines, managerLineConfig, type AssistantLogRow } from "./repo/waLines";
 import { readTable, SHEET_TABS } from "./sheets";
 import { lineChannel, isChannelOrder } from "./sellerChannel";
-import { lineAlertText, lineBotChat } from "./lineSellerRules";
+import { lineAlertText, lineBotChat, managerTalkAt } from "./lineSellerRules";
 import { notifyLineManager } from "./lineNotify";
 import type { BotFile } from "./botEngine";
 import type { WaLine } from "./waLines";
@@ -29,6 +29,8 @@ import type { WaMessage } from "./types";
 export interface SellerTurnResult {
   sent: boolean;
   why: string;
+  /** Решено окончательно (ИИ промолчал, повтор, заказ — дело менеджера): на это сообщение больше не отвечать. */
+  settled?: boolean;
 }
 
 /** Мало переписки в CRM (номер подключили недавно) — дотянуть историю чата из Green API и сохранить. */
@@ -122,11 +124,11 @@ export async function sellerTurn(input: { line: WaLine; phone: string; chat: WaM
   const lastClient = messageText(input.lastIn);
   if (decision.silent) {
     if (decision.alert) await noteForLine(line, phone, `внимание: ${decision.alert}`, "", lastClient, memory.name, log);
-    return { sent: false, why: "ИИ решил промолчать" };
+    return { sent: false, why: "ИИ решил промолчать", settled: true };
   }
   if (!decision.order.confirmed && repeatsOurMessage(decision.reply, memory.context)) {
     await noteForLine(line, phone, "внимание: помощник не нашёл, что ответить, кроме повтора — ответьте клиенту сами", "", lastClient, memory.name, log);
-    return { sent: false, why: "повтор" };
+    return { sent: false, why: "повтор", settled: true };
   }
   // Пока модель думала: клиент дописал (ответит ход нового сообщения) или ответил менеджер (разговор его).
   const now = await freshChat(line, phone);
@@ -137,7 +139,9 @@ export async function sellerTurn(input: { line: WaLine; phone: string; chat: WaM
     return { sent: false, why: "уже ответили" };
   }
 
-  const { text, note, files } = await botAct(memory, decision, channel);
+  // Разговор ведёт сам менеджер (отвечал клиенту за последние часы) — заказ оформляет он, помощник только напоминает.
+  const managerAt = managerTalkAt([...chat, ...now], autoIds, new Date());
+  const { text, note, files } = await botAct(memory, decision, channel, { orderBy: managerAt ? input.managerName || "менеджер" : "" });
   const filesSent = await sendFiles(line, phone, files);
   let sent = filesSent > 0;
   if (text) {
@@ -150,6 +154,7 @@ export async function sellerTurn(input: { line: WaLine; phone: string; chat: WaM
     }
   }
   await noteForLine(line, phone, note, text, lastClient, memory.name, log);
+  if (!sent && managerAt && decision.order.confirmed) return { sent: false, why: "заказ ведёт менеджер — записка ему", settled: true };
   return { sent, why: sent ? "ответил" : "не ушло" };
 }
 

@@ -305,7 +305,13 @@ export async function sendOnLine(
 
 const CLAIM_PREFIX = "AssistantClaim:";
 const CLAIM_TTL_MS = 3 * 60000;
-type Claim = { token: string; at: string; inAt: string };
+/**
+ * Ответ на сообщение решён окончательно, но не отправлен (ИИ промолчал, повтор, заказ — дело менеджера): занятость
+ * держится до конца срока ответа, иначе через 3 минуты чат брался заново и модель спрашивали по тому же сообщению
+ * снова и снова (21.10.2026: на «Всё поняла, спасибо» Сабины одна из попыток оформила второй заказ).
+ */
+const CLAIM_DONE_TTL_MS = ASSISTANT_STALE_HOURS * 3600000;
+type Claim = { token: string; at: string; inAt: string; done?: boolean };
 
 function parseClaims(raw: string | null | undefined): Record<string, Claim> {
   try {
@@ -313,7 +319,7 @@ function parseClaims(raw: string | null | undefined): Record<string, Claim> {
     const out: Record<string, Claim> = {};
     for (const [k, v] of Object.entries(o)) {
       const c = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-      if (typeof c.token === "string" && typeof c.at === "string") out[k] = { token: c.token, at: c.at, inAt: typeof c.inAt === "string" ? c.inAt : "" };
+      if (typeof c.token === "string" && typeof c.at === "string") out[k] = { token: c.token, at: c.at, inAt: typeof c.inAt === "string" ? c.inAt : "", done: c.done === true };
     }
     return out;
   } catch {
@@ -327,7 +333,7 @@ async function claimReply(code: string, phone: string, inAt: string): Promise<bo
   const chat = phoneKey(phone);
   const my = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   const now = Date.now();
-  const alive = (c: Claim | undefined) => !!c && now - Date.parse(c.at) < CLAIM_TTL_MS;
+  const alive = (c: Claim | undefined) => !!c && now - Date.parse(c.at) < (c.done ? CLAIM_DONE_TTL_MS : CLAIM_TTL_MS);
   const read = async () => parseClaims((await settingsMap(true))[key]);
   const cur = await read();
   const mine = cur[chat];
@@ -338,6 +344,17 @@ async function claimReply(code: string, phone: string, inAt: string): Promise<bo
   await saveSettings({ [key]: JSON.stringify(next) });
   await new Promise((r) => setTimeout(r, 1200));
   return (await read())[chat]?.token === my;
+}
+
+/** Ответ на `inAt` решён без отправки — больше этот чат по этому сообщению не брать (`CLAIM_DONE_TTL_MS`). */
+async function settleClaim(code: string, phone: string, inAt: string): Promise<void> {
+  const key = `${CLAIM_PREFIX}${code}`;
+  const now = Date.now();
+  const cur = parseClaims((await settingsMap(true))[key]);
+  const next: Record<string, Claim> = {};
+  for (const [k, c] of Object.entries(cur)) if (now - Date.parse(c.at) < (c.done ? CLAIM_DONE_TTL_MS : CLAIM_TTL_MS)) next[k] = c;
+  next[phoneKey(phone)] = { token: "done", at: new Date(now).toISOString(), inAt, done: true };
+  await saveSettings({ [key]: JSON.stringify(next) });
 }
 
 /** Кому передан лид и закрыт ли он — по номеру; только для номера Земфиры. */
@@ -507,11 +524,13 @@ export async function runAssistantSweep(
         const r = await sellerTurn({ line: d.line, phone: d.phone, chat: d.chat, lastIn: d.lastIn, managerName: names.get(d.line.managerEmail) ?? "" });
         if (r.sent) result.replied++;
         else result.skipped.push(`…${d.phone.slice(-4)}: ${r.why}`);
+        if (!r.sent && r.settled) await settleClaim(d.line.code, d.phone, d.lastInAt).catch(() => undefined);
         continue;
       }
       const a = await assistantAnswer(d.chat, d.phone, names.get(d.line.managerEmail) ?? "", AUTO_TASK, d.line.code);
       if (a.silent) {
         result.skipped.push(`…${d.phone.slice(-4)}: ИИ решил промолчать`);
+        await settleClaim(d.line.code, d.phone, d.lastInAt).catch(() => undefined);
         if (a.note) {
           await appendAssistantLog([{ at: new Date().toISOString(), line: d.line.code, phone: d.phone, kind: "note", messageId: "", text: "", note: a.note, byEmail: "assistant" }]);
           result.notes++;

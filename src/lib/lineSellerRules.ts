@@ -17,6 +17,35 @@ import type { WaMessage } from "./types";
 // работа в `lineSeller.ts`, проверка — `check-wa-lines`.
 // ---------------------------------------------------------------------------
 
+/**
+ * Разговор ведёт сам менеджер — заказ оформляет он, не помощник (21.10.2026, владелец: «мне говорят, что ты дублируешь
+ * заявки после менеджеров»). Сабина: Эмиль голосом договорился на 100 шт. и в 06:20 оформил заявку, через 7 минут
+ * помощник оформил ту же самую и выставил свой счёт — клиент оплатил его, а Юлия довыставляла счёт по заявке Эмиля.
+ * Танзиля: Ильяс оформил заявку, помощник следом — ещё две по частям того же заказа.
+ * Сколько часов после ответа менеджера клиенту помощник заказы не оформляет.
+ */
+export const MANAGER_ORDER_LOCK_HOURS = 6;
+
+/**
+ * Когда менеджер последний раз писал клиенту САМ — в ответ на его сообщение (не помощник, не дожим и не утренняя
+ * рассылка с телефона: та уходит всем, и клиент до неё молчал). Пусто — такого не было за `MANAGER_ORDER_LOCK_HOURS`.
+ */
+export function managerTalkAt(chat: WaMessage[], autoIds: Set<string>, now: Date): string {
+  const since = now.getTime() - MANAGER_ORDER_LOCK_HOURS * 3600000;
+  const merged = mergeMessages(chat);
+  let lastHuman = "";
+  for (let i = 0; i < merged.length; i++) {
+    const m = merged[i];
+    if (m.direction !== "out" || autoIds.has(m.messageId) || m.source === "assistant") continue;
+    const t = Date.parse(m.at);
+    if (!Number.isFinite(t) || t < since) continue;
+    // Отвечал клиенту: перед этим сообщением клиент писал (в пределах тех же часов).
+    const answered = merged.slice(0, i).some((x) => x.direction === "in" && Date.parse(x.at) >= t - MANAGER_ORDER_LOCK_HOURS * 3600000);
+    if (answered && m.at > lastHuman) lastHuman = m.at;
+  }
+  return lastHuman;
+}
+
 /** Сколько последних сообщений переписки видит модель и сколько знаков в них всего. */
 export const LINE_CONTEXT_MESSAGES = 24;
 export const LINE_CONTEXT_CHARS = 7000;

@@ -38,7 +38,10 @@ async function main() {
   console.log(`№${orderCode(o.orderId)} · ${o.clientName} · ${money(o.totalAmount)} · статус ${o.status} · оплачено ${money(o.paidAmount)}`);
   console.log(`открытые счета Kaspi: ${open.map((i) => `№${i.invoiceId} ${money(i.amount)} (${i.status})`).join(", ") || "нет"}`);
   console.log(`причина: ${spec.reason}`);
-  if (o.status === ORDER_STATUSES.CANCELLED) return console.log("Уже отменена.");
+  // Заявку отменили на сайте, а счёт Kaspi остался живым (кнопка сайта его не трогает) — отменить только счета.
+  const already = o.status === ORDER_STATUSES.CANCELLED;
+  if (already && open.length === 0) return console.log("Уже отменена, открытых счетов нет.");
+  if (already) console.log("Заявка уже отменена — отменяю только открытые счета Kaspi.");
   if (o.paidAmount > 1) throw new Error("по заявке есть оплата — сначала снять деньги или оформить возврат");
   if (o.items.some((i) => i.shippedQuantity > 0)) throw new Error("по заявке есть отгрузка — отменять нельзя");
   if (!spec.reason?.trim()) throw new Error("нужна причина");
@@ -56,16 +59,16 @@ async function main() {
     if (found) await updateKaspiInvoiceRow(found.rowNumber, { Status: String(res?.status || "cancelling"), UpdatedAt: new Date().toISOString() });
     console.log(`счёт №${inv.invoiceId}: ${String(res?.status || "cancelling")}`);
   }
-  await updateOrderStatus(o.orderId, ORDER_STATUSES.CANCELLED);
+  if (!already) await updateOrderStatus(o.orderId, ORDER_STATUSES.CANCELLED);
   await logMoney({
     actorEmail: OWNER,
     orderId: o.orderId,
     action: MONEY_LOG_ACTIONS.ORDER_CANCELLED,
     details: `${spec.reason.trim()}${open.length ? ` · счёт Kaspi ${open.map((i) => `№${i.invoiceId}`).join(", ")} отменён` : ""}`,
-    amountBefore: o.totalAmount,
+    amountBefore: already ? 0 : o.totalAmount,
     amountAfter: 0,
   });
-  console.log("Заявка отменена.");
+  console.log(already ? "Счета отменены." : "Заявка отменена.");
 }
 
 main().catch((e) => {

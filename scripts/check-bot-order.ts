@@ -15,7 +15,7 @@ import {
   type BotOrderDraft,
 } from "../src/lib/botOrder";
 import { getLeaderboard } from "../src/lib/leaderboard";
-import { botPaidAlertText, botSaleAlertText } from "../src/lib/botOrder";
+import { botPaidAlertText, botSaleAlertText, coveredByOrder, managerOrderNote, phoneKeysClose } from "../src/lib/botOrder";
 import { staffPhoneKeys } from "../src/lib/botSalesAlert";
 import { BOT_MANAGER_EMAIL, BOT_MANAGER_NAME } from "../src/lib/botIdentity";
 import { nameIndex, personName } from "../src/lib/personName";
@@ -360,7 +360,28 @@ async function main() {
   const at = new Date("2026-10-20T06:55:00Z");
   check("та же заявка менеджера полчаса назад — дубль", duplicateOfHuman([human] as never, "+77085755681", "", want, sig, at)?.orderId ?? null, "ORD-QPXPB");
   check("по карточке клиента — тоже дубль", duplicateOfHuman([human] as never, "+77000000000", "CLI-1", want, sig, at)?.orderId ?? null, "ORD-QPXPB");
-  check("другое количество — не дубль", duplicateOfHuman([human] as never, "+77085755681", "", [{ ...want[0], quantity: 300 }], sig, at), null);
+  check("другое количество, заявка не отгружена — тоже дубль", duplicateOfHuman([human] as never, "+77085755681", "", [{ ...want[0], quantity: 300 }], sig, at)?.orderId ?? null, "ORD-QPXPB");
+  const shippedHuman = { ...human, status: "shipped", items: [{ ...human.items[0], shippedQuantity: 200 }] };
+  check("другое количество, заявка уже отгружена — новый заказ", duplicateOfHuman([shippedHuman] as never, "+77085755681", "", [{ ...want[0], quantity: 300 }], sig, at), null);
+
+  console.log("\nДубли после менеджеров (21.10.2026, Сабина и Танзиля)");
+  check("номер с одной опечаткой — тот же", [phoneKeysClose("7778228310", "7778228210"), phoneKeysClose("7778228310", "7778221210"), phoneKeysClose("7778228310", ""), phoneKeysClose("123", "124")], [true, false, false, false]);
+  const sabina = { ...human, orderId: "ORD-K0DI0", clientPhone: "87778228210", clientId: "CLI-UM2XU", createdAt: "2026-10-21T06:20:35Z", items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая", quantity: 100, unitPrice: 400, shippedQuantity: 0 }] };
+  const sabinaWant = [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая", quantity: 100 }];
+  check("Сабина: заявка Эмиля с опечаткой в номере — дубль", duplicateOfHuman([sabina] as never, "77778228310", "", sabinaWant, sig, new Date("2026-10-21T06:26:59Z"))?.orderId ?? null, "ORD-K0DI0");
+  check("другой человек (две цифры разные) — не дубль", duplicateOfHuman([sabina] as never, "77778221310", "", sabinaWant, sig, new Date("2026-10-21T06:26:59Z")), null);
+  const tanzilya = { ...human, orderId: "ORD-7SF2P", clientPhone: "+77011564086", clientId: "CLI-T", createdAt: "2026-10-20T11:37:52Z", items: [
+    { flowerType: "rose", variety: "Jumilia", grade: "60", quantity: 60, unitPrice: 235, shippedQuantity: 0 },
+    { flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая", quantity: 30, unitPrice: 400, shippedQuantity: 0 },
+  ] };
+  const t2 = new Date("2026-10-20T13:11:00Z");
+  check("Танзиля: часть заказа Ильяса (Altaj Вторая) — дубль", duplicateOfHuman([tanzilya] as never, "77011564086", "", [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая", quantity: 30 }], sig, t2)?.orderId ?? null, "ORD-7SF2P");
+  check("позиция, которой в заявке нет (Jumilia 50), — не дубль", duplicateOfHuman([tanzilya] as never, "77011564086", "", [{ flowerType: "rose", variety: "Jumilia", grade: "50", quantity: 60 }], sig, t2), null);
+  check("старше 48 ч — не дубль", duplicateOfHuman([tanzilya] as never, "77011564086", "", [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Вторая", quantity: 30 }], sig, new Date("2026-10-22T12:00:00Z")), null);
+  check("позиции покрыты: сорт без учёта регистра", [coveredByOrder([{ flowerType: "rose", variety: "jumilia", grade: "60" }], tanzilya.items), coveredByOrder([], tanzilya.items)], [true, false]);
+  check("подсказка модели видит заявку с опечаткой в номере", clientHistoryLines({ orders: [sabina] as never, phone: "77778228310", clientId: "", now: new Date("2026-10-21T06:26:00Z") }).some((l) => l.startsWith("ВАЖНО") && l.includes("№K0DI0")), true);
+  const lockNote = managerOrderNote("Эмиль", sabinaWant);
+  check("записка: разговор вёл менеджер — заказ не оформлен", [lockNote.startsWith("внимание:"), lockNote.includes("Altaj, Вторая — 100 шт."), lockNote.includes("(Эмиль)"), lockNote.includes("НЕ оформил")], [true, true, true, true]);
   check("отменённая не считается", duplicateOfHuman([{ ...human, status: "cancelled" }] as never, "+77085755681", "", want, sig, at), null);
   check("старше суток — не дубль", duplicateOfHuman([{ ...human, createdAt: "2026-10-18T06:26:00Z" }] as never, "+77085755681", "", want, sig, at), null);
   const hist = clientHistoryLines({ orders: [human] as never, phone: "+77085755681", clientId: "", now: at });

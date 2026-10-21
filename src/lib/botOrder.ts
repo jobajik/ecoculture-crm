@@ -400,3 +400,35 @@ export function botPaidAlertText(input: {
       : "Ждём оплату второго счёта — собирать после неё.",
   ].join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Не дублировать заказ, который оформил человек (21.10.2026, владелец: «мне говорят, что ты дублируешь заявки после
+// менеджеров»). Сабина: Эмиль оформил №K0DI0 с телефоном 8777 822 82 10 вместо …83 10 (одна цифра), помощник по
+// номеру из WhatsApp его не узнал, завёл вторую карточку и оформил №GU59F с тем же составом.
+// ---------------------------------------------------------------------------
+
+/** Тот же номер или с одной опечаткой в цифре (ключи — последние 10 цифр, `phoneKey`). */
+export function phoneKeysClose(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length || a.length < 10) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i] && ++diff > 1) return false;
+  return true;
+}
+
+type ItemKind = { flowerType: string; variety: string; grade: string };
+const kindOf = (i: ItemKind) => `${i.flowerType}|${i.variety.trim().toLowerCase()}|${i.grade}`;
+
+/** Все позиции нового заказа (цветок, сорт, градация — без количества) уже есть в той заявке. */
+export function coveredByOrder(plan: ItemKind[], order: ItemKind[]): boolean {
+  if (plan.length === 0) return false;
+  const have = new Set(order.map(kindOf));
+  return plan.every((i) => have.has(kindOf(i)));
+}
+
+/** Тревога менеджеру: клиент согласился на заказ в разговоре, который ведёт он сам, — помощник заказ не оформил. */
+export function managerOrderNote(manager: string, items: { flowerType: string; variety: string; grade: string; quantity: number }[]): string {
+  const what = items
+    .map((i) => `${FLOWER_TYPE_LABELS[i.flowerType] ?? i.flowerType} ${i.variety}, ${formatGrade(i.grade)} — ${i.quantity} шт.`)
+    .join("; ");
+  return `внимание: клиент согласен на заказ${what ? ` (${what})` : ""} — разговор вели вы${manager && manager !== "менеджер" ? ` (${manager})` : ""}, поэтому помощник заказ НЕ оформил и счёт не выставил: оформите сами, если ещё не оформили`;
+}

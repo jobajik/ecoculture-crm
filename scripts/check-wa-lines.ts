@@ -7,7 +7,7 @@
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "check-secret";
 import { assistantVerdict, buildChatList, genitiveName, isWorkTime, leadsAssistantLine, lineCodeFor, lineInputRefusal, parseAssistantMode, parseLeadsAssistantMode } from "../src/lib/waLines";
 import { BOT_CHANNEL, botSaleOwner, isAssistantOrder, isBotOrder, isChannelOrder, lineChannel, orderNoteHead } from "../src/lib/sellerChannel";
-import { lineAlertText, lineBotChat, lineMorningPlanText, lineNudgeStatus } from "../src/lib/lineSellerRules";
+import { lineAlertText, lineBotChat, lineMorningPlanText, lineNudgeStatus, managerTalkAt } from "../src/lib/lineSellerRules";
 import { systemPrompt } from "../src/lib/botEngine";
 import { BOT_MANAGER_EMAIL } from "../src/lib/botIdentity";
 import { lineHookKey, lineHookKeyOk, openSecret, sealSecret } from "../src/lib/secretBox";
@@ -274,6 +274,23 @@ check("подпись дожима — длинное предложение р�
 check("подпись дожима — пусто", shortCaption(""), "");
 check("кивки: норм, ладно, түсіндім — да; хорошо — нет", ["Норм", "ладно", "Түсіндім", "принято!", "Хорошо", "норм, а 4 категория есть?"].map(isAckOnly), [true, true, true, true, false, false]);
 check("подсказка бота: коротко, город сначала, одно «здравствуйте» — один вопрос", [botP.includes("КОРОТКО И ПО СУТИ"), botP.includes("сначала СПРОСИ ГОРОД"), botP.includes("Одно «здравствуйте» без вопроса"), botP.includes("2–3 ходовые позиции")], [true, true, true, true]);
+
+// --- Дубли заявок после менеджеров (21.10.2026, Сабина) ---------------------------------
+check("кивки: «Всё хорошо поняла, спасибо», «хорошо, понял», «всё понятно» — да; «хорошо, давайте» — нет",
+  ["Всё хорошо поняла, спасибо.", "Хорошо, понял", "всё понятно", "Поняла, спасибо большое", "Хорошо, давайте 100", "Понял, а когда заберу?"].map(isAckOnly),
+  [true, true, true, true, false, false]);
+const sab = [
+  M("b", "2026-10-21T05:01:00Z", "out", "Доброе утро коллеги! В наличии свежий срез"),
+  M("c1", "2026-10-21T05:56:00Z", "in", "Да в принципе можно взять"),
+  M("e1", "2026-10-21T05:58:00Z", "out", "Сабина, я сейчас сделаю заявку вашу"),
+  M("c2", "2026-10-21T06:18:00Z", "in", "Всё хорошо поняла, спасибо."),
+];
+const sabNow = new Date("2026-10-21T06:27:00Z");
+check("менеджер сам отвечал клиенту — заказ ведёт он", managerTalkAt(sab, new Set(), sabNow), "2026-10-21T05:58:00Z");
+check("ответ помощника — не менеджер", managerTalkAt(sab, new Set(["e1"]), sabNow), "");
+check("утренняя рассылка с телефона, клиент до неё молчал, — не разговор", managerTalkAt([sab[0], M("c9", "2026-10-21T06:10:00Z", "in", "А 3 сорт есть?")], new Set(), sabNow), "");
+check("разговор менеджера старше 6 ч — помощник снова оформляет", managerTalkAt(sab, new Set(), new Date("2026-10-21T12:30:00Z")), "");
+check("Сабина: помощник на «Всё хорошо поняла, спасибо» молчит", sv(sab, sabNow).reason, "клиент просто кивнул");
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

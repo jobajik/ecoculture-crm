@@ -24,7 +24,7 @@ import {
   teamAlertDue,
   withMissingIncoming,
 } from "./botTurn";
-import { BOT_ORDER_SCHEMA, toWhatsApp } from "./botOrder";
+import { BOT_ORDER_SCHEMA, managerOrderNote, toWhatsApp } from "./botOrder";
 import { SHORT_TASK, tooLong } from "./assistantText";
 import { botClientContext, cancelBotOrder, placeBotOrder, reissueBotInvoices } from "./botOrderRunner";
 import {
@@ -606,9 +606,15 @@ export async function botReply(
 export async function botAct(
   chat: BotChat,
   decision: ReturnType<typeof botDecision>,
-  channel: SellerChannel = BOT_CHANNEL
+  channel: SellerChannel = BOT_CHANNEL,
+  opts: { orderBy?: string } = {}
 ): Promise<{ text: string; note: string; files: BotFile[] }> {
   if (decision.silent) return { text: "", note: "", files: [] };
+  // Разговор ведёт менеджер (21.10.2026: помощник дублировал заявки после Эмиля и Ильяса) — заказ не оформляем,
+  // клиенту не пишем (менеджер уже обещал оформить), менеджеру — тревога с составом.
+  if (decision.order.confirmed && opts.orderBy) {
+    return { text: "", note: managerOrderNote(opts.orderBy, decision.order.items), files: [] };
+  }
   let text = decision.reply;
   const notes: string[] = decision.alert ? [`внимание: ${decision.alert}`] : [];
   // Отмена — первой: если следом новый заказ (клиент поменял количество), старый не должен висеть рядом.

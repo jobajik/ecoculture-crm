@@ -32,7 +32,9 @@ import {
   botCancelledText,
   botOrderText,
   botSaleAlertText,
+  coveredByOrder,
   newClientName,
+  phoneKeysClose,
   planBotOrder,
   type BotOrderDraft,
   type InvoiceOutcome,
@@ -152,6 +154,34 @@ export async function placeBotOrder(input: {
     if (client?.retail) {
       return { text: "Этот номер записан у нас как наш магазин — заявку оформит менеджер розницы.", orderId: "", note: "внимание: наш магазин пишет боту" };
     }
+    // До заведения карточки: повтор — не повод заводить клиенту вторую (Сабина, 21.10.2026).
+    // Повтор подтверждения (клиент написал «да» дважды, два уведомления подряд) —
+    // второй заявки не будет: та же заявка за последние 30 минут.
+    const signature = (items: { flowerType: string; variety: string; grade: string; quantity: number }[]) =>
+      items.map((i) => `${i.flowerType}|${i.variety}|${i.grade}|${i.quantity}`).sort().join(";");
+    const allOrders = await listOrdersWithItems();
+    const recent = botOrdersOf(allOrders, phone, client?.clientId ?? "", ch).find(
+      (o) => Date.now() - Date.parse(o.createdAt) < 30 * 60000 && signature(o.items) === signature(plan.items)
+    );
+    // Тот же заказ уже оформил ЧЕЛОВЕК (20.10.2026, Лена Фабричный: Эмиль оформил №QPXPB в 11:26, Юлия выставила счёт,
+    // клиент оплатил; через полчаса помощник Эмиля из той же переписки оформил №DKHCR и выставил второй счёт —
+    // «бот продублировал, нужно убрать»). Любая живая заявка клиента за сутки с теми же позициями — не повод для новой:
+    // отвечаем, что заказ уже оформлен, и оставляем менеджеру записку.
+    const human = duplicateOfHuman(allOrders, phone, client?.clientId ?? "", plan.items.map((i) => ({ ...i })), signature, new Date());
+    if (recent || human) {
+      const o = (recent ?? human) as OrderWithItems;
+      return {
+        text: `Этот заказ уже оформлен — №${orderCode(o.orderId)}. ${o.paid ? "Он оплачен и передан на сборку." : "Оплата — по счёту к этой заявке, второй выставлять не будем."}`,
+        orderId: "",
+        note:
+          human && !recent
+            ? `внимание: клиент подтвердил заказ, который уже есть — №${orderCode(human.orderId)}; новую заявку помощник не завёл${
+                phoneKey(human.clientPhone) !== phoneKey(phone) ? ` (в заявке телефон ${human.clientPhone}, клиент пишет с ${waPhoneText(phone)} — проверьте номер)` : ""
+              }`
+            : "",
+      };
+    }
+
     let clientId = client?.clientId ?? "";
     let clientName = client?.name ?? "";
     // Чей клиент (карточки или лида) — от этого зависит, чья продажа (`botSaleOwner`).
@@ -189,28 +219,6 @@ export async function placeBotOrder(input: {
           retail: "",
         });
       }
-    }
-
-    // Повтор подтверждения (клиент написал «да» дважды, два уведомления подряд) —
-    // второй заявки не будет: та же заявка за последние 30 минут.
-    const signature = (items: { flowerType: string; variety: string; grade: string; quantity: number }[]) =>
-      items.map((i) => `${i.flowerType}|${i.variety}|${i.grade}|${i.quantity}`).sort().join(";");
-    const allOrders = await listOrdersWithItems();
-    const recent = botOrdersOf(allOrders, phone, clientId, ch).find(
-      (o) => Date.now() - Date.parse(o.createdAt) < 30 * 60000 && signature(o.items) === signature(plan.items)
-    );
-    // Тот же заказ уже оформил ЧЕЛОВЕК (20.10.2026, Лена Фабричный: Эмиль оформил №QPXPB в 11:26, Юлия выставила счёт,
-    // клиент оплатил; через полчаса помощник Эмиля из той же переписки оформил №DKHCR и выставил второй счёт —
-    // «бот продублировал, нужно убрать»). Любая живая заявка клиента за сутки с теми же позициями — не повод для новой:
-    // отвечаем, что заказ уже оформлен, и оставляем менеджеру записку.
-    const human = duplicateOfHuman(allOrders, phone, clientId, plan.items.map((i) => ({ ...i })), signature, new Date());
-    if (recent || human) {
-      const o = (recent ?? human) as OrderWithItems;
-      return {
-        text: `Этот заказ уже оформлен — №${orderCode(o.orderId)}. ${o.paid ? "Он оплачен и передан на сборку." : "Счёт Kaspi ждёт оплаты в приложении Kaspi."}`,
-        orderId: "",
-        note: human && !recent ? `внимание: клиент повторно подтвердил заказ, который уже оформлен менеджером — №${orderCode(human.orderId)}; новую заявку не завёл` : "",
-      };
     }
 
     const notes = [
@@ -393,7 +401,9 @@ export function clientHistoryLines(input: { orders: OrderWithItems[]; phone: str
       (o) =>
         o.status !== ORDER_STATUSES.CANCELLED &&
         !isNotASale(o) &&
-        ((input.clientId && o.clientId === input.clientId) || (key && phoneKey(o.clientPhone) === key))
+        ((input.clientId && o.clientId === input.clientId) || (key && phoneKey(o.clientPhone) === key) ||
+          // Свежая заявка менеджера с опечаткой в номере — это тоже он (Сабина, 21.10.2026).
+          (phoneKeysClose(key, phoneKey(o.clientPhone)) && input.now.getTime() - Date.parse(o.createdAt) < 48 * 3600000))
     )
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   if (mine.length === 0) return ["Заказов у клиента в базе ещё не было."];
@@ -427,8 +437,13 @@ export function clientHistoryLines(input: { orders: OrderWithItems[]; phone: str
 }
 
 /**
- * Живая заявка клиента (любой менеджер, не только бот) за последние сутки с теми же позициями и количеством —
- * повторять её нельзя. Чистая функция; проверка — `check-bot-order`.
+ * Заявка, которую новый заказ бота или помощника повторил бы. Две проверки (21.10.2026, владелец: «ты дублируешь
+ * заявки после менеджеров»):
+ *   1. живая заявка клиента за сутки с теми же позициями и количеством (Лена Фабричный, 20.10);
+ *   2. неотгруженная живая заявка клиента за 48 ч, где уже есть ВСЕ позиции нового заказа, — количество не важно
+ *      (Танзиля: Ильяс оформил розы и Altaj, помощник следом — Altaj ещё раз).
+ * Клиента узнаём по карточке или по телефону в заявке, в том числе с опечаткой в одной цифре (Сабина: Эмиль записал
+ * …82 10 вместо …83 10, и помощник её заявку не увидел). Чистая функция; проверка — `check-bot-order`.
  */
 export function duplicateOfHuman(
   orders: OrderWithItems[],
@@ -439,16 +454,17 @@ export function duplicateOfHuman(
   now: Date
 ): OrderWithItems | null {
   const key = phoneKey(phone);
-  const since = now.getTime() - 24 * 3600000;
   const want = signature(items);
+  const age = (o: OrderWithItems) => now.getTime() - Date.parse(o.createdAt || "");
+  const open = (o: OrderWithItems) => o.status !== ORDER_STATUSES.SHIPPED && o.items.some((i) => i.shippedQuantity < i.quantity);
   return (
     orders
       .filter(
         (o) =>
           o.status !== ORDER_STATUSES.CANCELLED &&
-          Date.parse(o.createdAt || "") >= since &&
-          ((key && phoneKey(o.clientPhone) === key) || (clientId && o.clientId === clientId)) &&
-          signature(o.items) === want
+          age(o) >= 0 &&
+          ((clientId && o.clientId === clientId) || phoneKeysClose(key, phoneKey(o.clientPhone))) &&
+          ((age(o) < 24 * 3600000 && signature(o.items) === want) || (age(o) < 48 * 3600000 && open(o) && coveredByOrder(items, o.items)))
       )
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] ?? null
   );
