@@ -63,8 +63,35 @@ async function main() {
       `  ${day} · ${line.padEnd(30)} вх ${String(c.inMsg).padStart(4)} (${c.inChats.size} чат.) · исх ${String(c.out).padStart(4)} · ИИ ${c.auto} · дожим ${c.nudge} · записки ${c.note} · CRM ${c.crm}${c.bc ? ` · рассылки ${c.bc}` : ""}`
     );
   }
-  // Кто сегодня ждёт: последним писал клиент, больше 30 мин назад, днём.
+  // По часам: сегодня против вчера — ответы ИИ + дожим / входящие клиентов, по каждому номеру.
   const today = localDayKey();
+  const yesterday = localDayKey(new Date(Date.now() - 86400000));
+  const hourOf = (iso: string) => Number(new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Almaty", hour: "2-digit", hour12: false }));
+  const hours = new Map<string, number[]>();
+  const bump = (k: string, h: number, i: number) => {
+    if (!hours.has(k)) hours.set(k, Array(24 * 4).fill(0));
+    hours.get(k)![h * 4 + i]++;
+  };
+  for (const m of msgs) {
+    const d = dayOf(m.At);
+    if (m.Direction !== "in" || (d !== today && d !== yesterday)) continue;
+    bump(m.Line || "основной", hourOf(m.At), d === today ? 0 : 2);
+  }
+  for (const r of log.rows.map((x) => rowToRecord(SHEET_TABS.ASSISTANT_LOG, x))) {
+    const d = dayOf(r.At);
+    if ((r.Kind !== "auto" && r.Kind !== "nudge") || (d !== today && d !== yesterday)) continue;
+    bump(r.Line || "основной", hourOf(r.At), d === today ? 1 : 3);
+  }
+  console.log(`\nПо часам (Алматы): сегодня ИИ/вх | вчера ИИ/вх`);
+  for (const [line, a] of Array.from(hours.entries()).sort()) {
+    const parts: string[] = [];
+    for (let h = 7; h < 24; h++) {
+      const t = a.slice(h * 4, h * 4 + 4);
+      if (t.some(Boolean)) parts.push(`${h}ч ${t[1]}/${t[0]}|${t[3]}/${t[2]}`);
+    }
+    console.log(`  ${line}: ${parts.join("  ")}`);
+  }
+  // Кто сегодня ждёт: последним писал клиент, больше 30 мин назад, днём.
   const last = new Map<string, (typeof msgs)[number]>();
   for (const m of msgs) {
     const k = `${m.Line || ""}|${m.Phone}`;
