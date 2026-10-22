@@ -24,7 +24,7 @@ async function main() {
   const show = () => {
     for (const [email, p] of Object.entries(profiles)) {
       const day = p.shipWeekday ? nextShipDay(localDayKey(), p.shipWeekday, almatyHourOf(new Date())) : "";
-      console.log(`  ${email} · город ${p.city || "—"} · фура ${day ? `ближайшая ${shipDayLabel(day)}` : "—"} · ${p.female ? "женский род" : "мужской род"}`);
+      console.log(`  ${email} · город ${p.city || "—"} · фура ${day ? `ближайшая ${shipDayLabel(day)}` : "—"} · ${p.female ? "женский род" : "мужской род"}${p.closer ? " · напористый продавец" : ""}`);
     }
     if (!Object.keys(profiles).length) console.log("  (пусто)");
   };
@@ -37,7 +37,9 @@ async function main() {
   const email = (spec.email || "").trim().toLowerCase();
   if (!email.includes("@")) throw new Error("нужна почта менеджера");
   const raw = JSON.parse(map[MANAGER_PROFILES_SETTING] || "{}") as Record<string, unknown>;
-  raw[email] = { city: spec.city || "", shipWeekday: spec.shipWeekday ?? null, female: spec.female === true };
+  // Флаг «напористый продавец» ставит `manager-closer.ts` — здесь его не теряем.
+  const prev = (raw[email] && typeof raw[email] === "object" ? raw[email] : {}) as Record<string, unknown>;
+  raw[email] = { city: spec.city || "", shipWeekday: spec.shipWeekday ?? null, female: spec.female === true, closer: prev.closer === true };
   const next = parseManagerProfiles(JSON.stringify(raw));
   Object.assign(profiles, next);
   console.log("Станет:");

@@ -21,6 +21,7 @@ import { phoneKey } from "./leads";
 import { mergeMessages, messageText } from "./whatsapp";
 import { ourPhoneKeys } from "./lineNotify";
 import { LINE_NUDGE_GAPS_HOURS, lineNudgeStatus } from "./lineSellerRules";
+import { CLOSER_NUDGE_GAPS_HOURS, MANAGER_PROFILES_SETTING, parseManagerProfiles, profileOf } from "./managerProfile";
 import { sendLineNudge } from "./lineSeller";
 import type { WaMessage } from "./types";
 
@@ -61,7 +62,10 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
     if (k) orderAt.set(k, [...(orderAt.get(k) ?? []), o.createdAt]);
   }
 
-  type Due = { line: (typeof lines)[number]; phone: string; chat: WaMessage[]; attempt: number };
+  type Due = { line: (typeof lines)[number]; phone: string; chat: WaMessage[]; attempt: number; gaps: number[] };
+  const profiles = parseManagerProfiles(map[MANAGER_PROFILES_SETTING]);
+  // Напористый продавец (Ильгар, 22.10.2026) дожимает дважды, остальные номера менеджеров — один раз.
+  const gapsOf = (email: string) => (profileOf(profiles, email)?.closer ? CLOSER_NUDGE_GAPS_HOURS : LINE_NUDGE_GAPS_HOURS);
   const due: Due[] = [];
   for (const line of lines) {
     const byKey = new Map<string, WaMessage[]>();
@@ -74,8 +78,9 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
       const nudges = log
         .filter((r) => r.kind === "nudge" && r.line === line.code && phoneKey(r.phone) === k)
         .map((r) => ({ at: r.at, closed: !r.messageId && /^не писать/.test(r.note) }));
-      const st = lineNudgeStatus({ chat, nudges, now, hour, staff: staff.has(k), orderAt: orderAt.get(k) });
-      if (st.attempt > 0) due.push({ line, phone: chat[chat.length - 1].phone, chat: mergeMessages(chat), attempt: st.attempt });
+      const gaps = gapsOf(line.managerEmail);
+      const st = lineNudgeStatus({ chat, nudges, now, hour, staff: staff.has(k), orderAt: orderAt.get(k), gaps });
+      if (st.attempt > 0) due.push({ line, phone: chat[chat.length - 1].phone, chat: mergeMessages(chat), attempt: st.attempt, gaps });
     }
   }
   if (due.length === 0) return out;
@@ -117,7 +122,7 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
       // Касание — фото той позиции, о которой шла речь, с ценой и одним вопросом; нет фото — короткий текст с одной-двумя
       // позициями (21.10.2026: касание на номере менеджера одно — `LINE_NUDGE_GAPS_HOURS`).
       let file: { url: string; name: string; caption: string; memo: string } | undefined;
-      if (d.attempt <= LINE_NUDGE_GAPS_HOURS.length && offers.length) {
+      if (d.attempt <= d.gaps.length && offers.length) {
         photoCtx ??= await loadPhotoContext();
         const pic = pickItemPhoto(photoCtx.photos, offers[0], transcriptText, []);
         if (pic) {

@@ -54,7 +54,7 @@ import { phoneKey } from "./leads";
 import { parsePush, pushLines, pushPromptBlock, SALES_PUSH_SETTING } from "./salesPush";
 import { priceFor } from "./priceList";
 import { BOT_CHANNEL, type SellerChannel } from "./sellerChannel";
-import { feminize, nextShipDay, regionPromptBlock } from "./managerProfile";
+import { closerPromptBlock, feminize, nextShipDay, regionPromptBlock } from "./managerProfile";
 import { humanStylePrompt } from "./humanStyle";
 import { packingPromptBlock } from "./packing";
 
@@ -265,6 +265,8 @@ export function systemPrompt(p: {
   region?: string;
   /** Менеджер — женщина: подсказка в женском роде. */
   female?: boolean;
+  /** Напористый продавец (`ManagerProfile.closer`): блок `closerPromptBlock`. */
+  closer?: boolean;
 }): string {
   const { instructions, prices, stock, broadcast, client, today, harvest } = p;
   const weekday = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][new Date(`${today}T12:00:00`).getDay()];
@@ -313,6 +315,7 @@ export function systemPrompt(p: {
     "Не здоровайся заново, если уже здоровался в переписке.",
     "",
     ...humanStylePrompt({ who: p.managerName || "", female: p.female }),
+    ...(p.closer ? closerPromptBlock() : []),
     "Перерыв в переписке («— перерыв N дн. —») — это НОВЫЙ разговор: на «Здравствуйте» поздоровайся и коротко скажи,",
     "что есть сегодня, с ценой. Старое предложение до перерыва не продолжай так, будто оно сейчас, и не отвечай на него",
     "«нет на складе» — клиент о нём не спрашивал.",
@@ -587,6 +590,7 @@ export async function botPrompt(
       managerName: channel.line ? channel.managerName || "менеджер" : "",
       region: profile ? regionPromptBlock(profile, profile.shipWeekday ? nextShipDay(localDayKey(), profile.shipWeekday, almatyHourOf(new Date())) : "") : "",
       female: !!profile?.female,
+      closer: !!profile?.closer,
     }),
     user: `Переписка (последние сообщения):\n${transcript(chat)}\n\n${task}`,
   };

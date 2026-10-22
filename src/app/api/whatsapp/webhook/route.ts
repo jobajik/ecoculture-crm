@@ -27,7 +27,7 @@ import { cancelFromWhatsApp, kickBroadcast } from "@/lib/autoBroadcastRunner";
 import { isCancelText } from "@/lib/autoBroadcast";
 import { greenConfig, sendText } from "@/lib/greenApi";
 import { handleStaffMessage } from "@/lib/staffCommandRunner";
-import { MANAGER_PROFILES_SETTING, parseManagerProfiles, profileOf } from "@/lib/managerProfile";
+import { isRegionalProfile, MANAGER_PROFILES_SETTING, parseManagerProfiles, profileOf } from "@/lib/managerProfile";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -243,7 +243,7 @@ async function managerLine(body: unknown, code: string, request: Request) {
   try {
     if (message.direction === "in") await autoLead(message, line);
     // Региональный менеджер: и её исходящее незнакомому номеру — лид (клиентов не терять).
-    else if (profileOf(parseManagerProfiles((await settingsMap())[MANAGER_PROFILES_SETTING]), line.managerEmail)) await autoLead(message, line);
+    else if (isRegionalProfile(profileOf(parseManagerProfiles((await settingsMap())[MANAGER_PROFILES_SETTING]), line.managerEmail))) await autoLead(message, line);
   } catch (err) {
     console.error("whatsapp line auto-lead:", err instanceof Error ? err.message : err);
   }
@@ -299,7 +299,7 @@ async function autoLead(message: WaMessage, line?: WaLine) {
     lead = autoLeadFromMessage(message, known, line.managerEmail, day, {
       whose: genitiveName(name),
       origin: "",
-      incomingOnly: !profile,
+      incomingOnly: !isRegionalProfile(profile),
       city: profile?.city || "",
     });
   } else {

@@ -100,7 +100,10 @@ export function lineNudgeStatus(input: {
   staff?: boolean;
   /** Когда оформлены заказы этого номера (любым менеджером). */
   orderAt?: string[];
+  /** Касания дожима, ч (по умолчанию `LINE_NUDGE_GAPS_HOURS`; напористый продавец — `CLOSER_NUDGE_GAPS_HOURS`). */
+  gaps?: number[];
 }): { attempt: number; reason: string } {
+  const gaps = input.gaps?.length ? input.gaps : LINE_NUDGE_GAPS_HOURS;
   const no = (reason: string) => ({ attempt: 0, reason });
   if (input.staff) return no("номер сотрудника");
   if (input.hour < NUDGE_FROM_HOUR || input.hour >= NUDGE_TO_HOUR) return no("не рабочее время");
@@ -115,10 +118,10 @@ export function lineNudgeStatus(input: {
   if ((input.orderAt ?? []).some((at) => at > lastClient.at)) return no("заказ уже оформлен");
   if (input.nudges.some((n) => n.closed && n.at > lastClient.at)) return no("дожим закрыт: модель решила не писать");
   const after = input.nudges.filter((n) => !n.closed && n.at > lastClient.at).map((n) => n.at).sort();
-  if (after.length >= LINE_NUDGE_GAPS_HOURS.length) return no(LINE_NUDGE_GAPS_HOURS.length === 1 ? "касание уже было — дальше менеджер" : `все ${LINE_NUDGE_GAPS_HOURS.length} касания были`);
+  if (after.length >= gaps.length) return no(gaps.length === 1 ? "касание уже было — дальше менеджер" : `все ${gaps.length} касания были`);
   const from = after.length ? after[after.length - 1] : last.at;
   const passed = (input.now.getTime() - Date.parse(from)) / 3600000;
-  const gap = LINE_NUDGE_GAPS_HOURS[after.length];
+  const gap = gaps[after.length];
   if (passed < gap) return no(`рано: прошло ${passed.toFixed(1)} ч из ${gap}`);
   return { attempt: after.length + 1, reason: "пора" };
 }

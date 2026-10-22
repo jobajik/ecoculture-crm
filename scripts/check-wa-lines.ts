@@ -20,7 +20,7 @@ import { isAckOnly } from "../src/lib/broadcast";
 import { addressableName } from "../src/lib/talkAnalysis";
 import { autoLeadFromMessage } from "../src/lib/waAutoLead";
 import { decisionScope } from "../src/lib/leadDecisions";
-import { feminize, isoWeekday, nextShipDay, parseManagerProfiles, profileOf, regionPromptBlock } from "../src/lib/managerProfile";
+import { CLOSER_NUDGE_GAPS_HOURS, feminize, isRegionalProfile, isoWeekday, nextShipDay, parseManagerProfiles, profileOf, regionPromptBlock } from "../src/lib/managerProfile";
 import { MANAGER_PACE, MAIN_PACE, LEADS_PACE, paceFor } from "../src/lib/broadcast";
 import type { Lead, LeadAnalysis, WaMessage } from "../src/lib/types";
 
@@ -309,6 +309,17 @@ check("имя Салтанат не склоняется", [genitiveName("Сал
 const outLead = autoLeadFromMessage(M("o1", "2026-10-21T06:00:00Z", "out", "Добрый день!"), new Set(), "saltanat@x.kz", "2026-10-21", { whose: "Салтанат", origin: "", incomingOnly: false, city: "Астана" });
 check("её исходящее незнакомому — лид с городом Астана", [outLead?.city, outLead?.managerEmail, outLead?.note.startsWith("Написали первыми с WhatsApp Салтанат"), outLead?.note.includes("и город")], ["Астана", "saltanat@x.kz", true, false]);
 check("у обычного менеджера исходящее — не лид", autoLeadFromMessage(M("o2", "2026-10-21T06:00:00Z", "out"), new Set(), "ilyas@x", "2026-10-21", { whose: "Ильяса", origin: "", incomingOnly: true }), null);
+
+// --- Напористый продавец: Ильгар (22.10.2026, владелец: «агрессивнее в продажах») ------------
+const cprof = parseManagerProfiles(JSON.stringify({ "ilgar@x.kz": { closer: true }, "saltanat@x.kz": { city: "Астана", shipWeekday: 1, female: true } }));
+check("профиль: напористый читается, регионом не считается", [profileOf(cprof, "ilgar@x.kz")?.closer, isRegionalProfile(profileOf(cprof, "ilgar@x.kz")), isRegionalProfile(profileOf(cprof, "saltanat@x.kz")), profileOf(cprof, "saltanat@x.kz")?.closer], [true, false, true, false]);
+const ilP = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-22", managerName: "Ильгар", closer: true });
+const ilyasP = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-22", managerName: "Ильяс" });
+check("подсказка Ильгара: блок сделки и границы честности; у Ильяса блока нет", [
+  ilP.includes("САМЫЙ СИЛЬНЫЙ ПРОДАВЕЦ"), ilP.includes("не выдумывай дефицит"), ilP.includes("ТВОИ КЛИЕНТЫ — РЕГИОН"), ilyasP.includes("САМЫЙ СИЛЬНЫЙ ПРОДАВЕЦ"),
+], [true, true, false, false]);
+check("напористый: второе касание назавтра", ns("2026-10-17T05:00:00Z", { nudges: [{ at: "2026-10-16T08:20:00Z", closed: false }], gaps: CLOSER_NUDGE_GAPS_HOURS }).attempt, 2);
+check("напористый: после двух касаний — всё", ns("2026-10-18T05:00:00Z", { nudges: [{ at: "2026-10-16T08:20:00Z", closed: false }, { at: "2026-10-17T05:00:00Z", closed: false }], gaps: CLOSER_NUDGE_GAPS_HOURS }).reason, "все 2 касания были");
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);
