@@ -39,10 +39,12 @@ class ModelUnavailable extends Error {}
 /** Ответ OpenAI → текст ошибки по-русски, без ключа. */
 async function failure(res: Response, what: string): Promise<Error> {
   let code = "";
+  let type = "";
   let message = "";
   try {
     const body = (await res.json()) as { error?: { code?: string; message?: string; type?: string } };
     code = String(body?.error?.code || body?.error?.type || "");
+    type = String(body?.error?.type || "");
     message = String(body?.error?.message || "");
   } catch {
     /* пустое тело */
@@ -51,7 +53,9 @@ async function failure(res: Response, what: string): Promise<Error> {
     return new ModelUnavailable(message || code);
   }
   if (res.status === 401) return new Error("OpenAI не принял ключ — проверьте OPENAI_API_KEY (whatsapp-key.bat).");
-  if (res.status === 429 && code === "insufficient_quota") {
+  // 22.10.2026: OpenAI отвечает code «credit_balance_exhausted», type «insufficient_quota» — раньше по code это читалось
+  // как «много запросов, подождите», и кончившиеся деньги выглядели временным сбоем.
+  if (res.status === 429 && (code === "insufficient_quota" || type === "insufficient_quota" || /credit|quota|billing/i.test(code))) {
     return new Error("На счёте OpenAI закончились деньги — пополните баланс на platform.openai.com.");
   }
   if (res.status === 429) return new Error("OpenAI просит подождать (много запросов) — повторите через минуту.");
