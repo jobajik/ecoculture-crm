@@ -16,7 +16,9 @@ import { sendOnLine } from "./lineAssistant";
 import { loadPhotoContext, photoPrices } from "./botPhotoSend";
 import { isInfoPhoto, photoLabel, photoMessage } from "./botPhotos";
 import {
+  isSelfTarget,
   matchTargets,
+  wantsForSelf,
   parseStaffCommand,
   pickedNumber,
   pickStaffPhotos,
@@ -126,8 +128,14 @@ async function sendingLine(target: StaffTarget, messages: WaMessage[], staff: Ap
   return null;
 }
 
+/** Адресат «сам сотрудник»: фото уходят ему же, с основного номера, на который он написал. */
+function selfTarget(staffPhone: string): StaffTarget {
+  return { phone: waPhone(staffPhone) || staffPhone.replace(/\D/g, ""), name: "вам", kind: "сотрудник", managerEmail: "", lastAt: "" };
+}
+
 async function execute(command: StaffCommand, target: StaffTarget, staff: AppUser | null, staffPhone: string, main: GreenConfig, messages: WaMessage[]): Promise<void> {
-  const line = await sendingLine(target, messages, staff);
+  const self = phoneKey(target.phone) === phoneKey(staffPhone);
+  const line = self ? { code: "", cfg: main, via: "основного номера" } : await sendingLine(target, messages, staff);
   if (!line) return replyStaff(main, staffPhone, "Не получилось: ни один номер WhatsApp сейчас не подключён.");
   const ctx = await loadPhotoContext();
   const { picked, missing } = pickStaffPhotos(ctx.photos, command.items);
@@ -137,7 +145,7 @@ async function execute(command: StaffCommand, target: StaffTarget, staff: AppUse
   try {
     for (let i = 0; i < picked.length; i++) {
       const p = picked[i];
-      const last = i === picked.length - 1 && !command.text;
+      const last = i === picked.length - 1 && !command.text && !self;
       // У инфографики свои цены не нужны — на ней категории.
       const prices = isInfoPhoto(p) ? [] : photoPrices(p, ctx);
       const caption = photoMessage({ caption: p.caption, prices, question: last ? "Какие интересуют? Подскажу по наличию и соберу заказ." : "" });
@@ -152,6 +160,11 @@ async function execute(command: StaffCommand, target: StaffTarget, staff: AppUse
   }
   if (!sent.length && !command.text) {
     return replyStaff(main, staffPhone, `Фото ${missing.join(", ") || "по этому поручению"} в CRM нет — ничего не отправил. Пришлите фото владельцу, загружу.`);
+  }
+  // Себе — отчёт нужен только о том, чего нет: фото человек и так видит.
+  if (self) {
+    if (missing.length) await replyStaff(main, staffPhone, `Фото нет в CRM: ${missing.join(", ")} — загрузите в «Рассылки → Фото и каталог».`);
+    return;
   }
   await replyStaff(main, staffPhone, staffDoneText({ name: target.name, phone: target.phone, via: line.via, sent, missing, text: !!command.text }));
 }
@@ -179,7 +192,14 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
     if (pending) {
       const n = pickedNumber(text);
       const phone = waPhone(text.replace(/[^\d+]/g, ""));
-      const target = n && pending.targets[n - 1] ? pending.targets[n - 1] : phone ? { phone, name: `+${phone}`, kind: "номер", managerEmail: "", lastAt: "" } : null;
+      const target =
+        n && pending.targets[n - 1]
+          ? pending.targets[n - 1]
+          : phone
+            ? { phone, name: `+${phone}`, kind: "номер", managerEmail: "", lastAt: "" }
+            : isSelfTarget(text)
+              ? selfTarget(message.phone)
+              : null;
       if (target) {
         await saveSettings({ [settingKey]: "" });
         await execute(pending.command, target, staff, message.phone, main, messages);
@@ -199,6 +219,11 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
     }
     const direct = waPhone(command.phone);
     let targets: StaffTarget[] = direct ? [{ phone: direct, name: command.client || `+${direct}`, kind: "номер", managerEmail: "", lastAt: "" }] : [];
+    // Адресат не назван или «мне» — фото самому сотруднику, а не «не нашёл клиента «без имени»».
+    if (!targets.length && command.items.length && wantsForSelf(command, text)) {
+      await execute(command, selfTarget(message.phone), staff, message.phone, main, messages);
+      return true;
+    }
     if (!targets.length && command.client) targets = matchTargets(command.client, await targetCandidates(messages), staff?.email);
     if (targets.length === 1) {
       await execute(command, targets[0], staff, message.phone, main, messages);
@@ -227,15 +252,19 @@ export async function dryRunStaffCommand(text: string, staffPhone: string): Prom
   const command = parseStaffCommand(data);
   out.push(`Разбор: ${JSON.stringify(command)}`);
   if (command.intent !== "send") return out;
+  const picks = pickStaffPhotos(ctx.photos, command.items);
+  out.push(`Фото (${picks.picked.length}): ${picks.picked.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика)" : "")).join(", ")}`);
+  if (picks.missing.length) out.push(`Нет в CRM: ${picks.missing.join(", ")}`);
   const messages = await listWaMessages({ lines: "all" });
   const direct = waPhone(command.phone);
+  if (!direct && wantsForSelf(command, text)) {
+    out.push("Кому: самому сотруднику, с основного номера");
+    return out;
+  }
   const targets = direct ? [{ phone: direct, name: command.client, kind: "номер", managerEmail: "", lastAt: "" }] : matchTargets(command.client, await targetCandidates(messages), staff?.email);
   out.push(`Кому: ${targets.length ? targets.map((t) => `${t.name} …${t.phone.slice(-4)} (${t.kind})`).join("; ") : "не нашёл"}`);
   if (targets.length !== 1) return out;
   const line = await sendingLine(targets[0], messages, staff);
   out.push(`С номера: ${line ? line.via : "нет подключённого"}`);
-  const { picked, missing } = pickStaffPhotos(ctx.photos, command.items);
-  out.push(`Фото (${picked.length}): ${picked.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика)" : "")).join(", ")}`);
-  if (missing.length) out.push(`Нет в CRM: ${missing.join(", ")}`);
   return out;
 }

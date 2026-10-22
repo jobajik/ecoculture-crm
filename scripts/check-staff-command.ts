@@ -5,7 +5,7 @@
  *
  *   npx tsx scripts/check-staff-command.ts
  */
-import { matchTargets, parseStaffCommand, pickedNumber, pickStaffPhotos, staffAskText, staffDoneText, STAFF_MAX_PHOTOS, type StaffTarget } from "../src/lib/staffCommand";
+import { isSelfTarget, wantsForSelf, matchTargets, parseStaffCommand, pickedNumber, pickStaffPhotos, staffAskText, staffDoneText, STAFF_MAX_PHOTOS, type StaffTarget } from "../src/lib/staffCommand";
 import type { BotPhoto } from "../src/lib/botPhotos";
 
 let failed = 0;
@@ -93,6 +93,19 @@ check(
   staffDoneText({ name: "Маргарита Пожарка", phone: "77086657172", via: "номера Эмиля", sent: ["Хризантема Altaj"], missing: [], text: false }),
   "Отправил Маргарита Пожарка (…7172) с номера Эмиля:\n• Хризантема Altaj"
 );
+
+// --- Себе (22.10.2026, владелец: «Скинь фото джумилии» → «Не нашёл клиента «без имени»», «Мне скинь.» — тишина)
+check("«Мне скинь.» — себе", isSelfTarget("Мне скинь."), true);
+check("«скиньте мне» — себе", isSelfTarget("скиньте мне"), true);
+check("«мне» — себе", isSelfTarget("мне"), true);
+check("«маған» — себе", isSelfTarget("маған"), true);
+check("«Маргарите» — не себе", isSelfTarget("Маргарите"), false);
+check("«Почему не отправляешь фотки?» — не себе", isSelfTarget("Почему не отправляешь фотки?"), false);
+check("«Скинь фото джумилии» без адресата — себе", wantsForSelf({ client: "", phone: "" }, "Скинь фото джумилии"), true);
+check("модель сказала «мне» — себе", wantsForSelf({ client: "мне", phone: "" }, "Скинь мне Altaj"), true);
+check("«отправь клиенту фото» без имени — переспросить", wantsForSelf({ client: "", phone: "" }, "Отправь клиенту фото Altaj"), false);
+check("назван клиент — не себе", wantsForSelf({ client: "Маргарита Пожарка", phone: "" }, "Отправь Маргарите Пожарка"), false);
+check("назван номер — не себе", wantsForSelf({ client: "", phone: "77011234567" }, "скинь на 77011234567"), false);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);
