@@ -35,6 +35,15 @@ let chosenFast: string | null = null;
 let chosenTranscribe: string | null = null;
 
 class ModelUnavailable extends Error {}
+/**
+ * 22.10.2026: после пополнения баланса gpt-5-mini ещё отвечал 429 «credit_balance_exhausted», а gpt-4.1 и gpt-4.1-mini —
+ * 200. Кончившийся лимит бывает у ОДНОЙ модели, поэтому это повод взять следующую, а не молчать: разбор переписок,
+ * массовые тексты и разбор рассылок стояли весь день, хотя деньги на счёте были. Модель с таким ответом пропускаем
+ * 15 минут (`QUOTA_SKIP_MS`), чтобы не тратить на неё запрос каждый раз.
+ */
+class ModelQuota extends Error {}
+const QUOTA_SKIP_MS = 15 * 60_000;
+const quotaUntil = new Map<string, number>();
 
 /** Ответ OpenAI → текст ошибки по-русски, без ключа. */
 async function failure(res: Response, what: string): Promise<Error> {
@@ -56,7 +65,7 @@ async function failure(res: Response, what: string): Promise<Error> {
   // 22.10.2026: OpenAI отвечает code «credit_balance_exhausted», type «insufficient_quota» — раньше по code это читалось
   // как «много запросов, подождите», и кончившиеся деньги выглядели временным сбоем.
   if (res.status === 429 && (code === "insufficient_quota" || type === "insufficient_quota" || /credit|quota|billing/i.test(code))) {
-    return new Error("На счёте OpenAI закончились деньги — пополните баланс на platform.openai.com.");
+    return new ModelQuota("На счёте OpenAI закончились деньги — пополните баланс на platform.openai.com.");
   }
   if (res.status === 429) return new Error("OpenAI просит подождать (много запросов) — повторите через минуту.");
   const key = openAiKey();
@@ -70,14 +79,25 @@ async function withModels<T>(
   remember: (m: string) => void,
   run: (model: string) => Promise<T>
 ): Promise<T> {
-  const order = remembered ? [remembered, ...models.filter((m) => m !== remembered)] : models;
+  const all = remembered ? [remembered, ...models.filter((m) => m !== remembered)] : models;
+  const now = Date.now();
+  const fresh = all.filter((m) => (quotaUntil.get(m) ?? 0) <= now);
+  // Все модели недавно упирались в лимит — пробуем всё равно: баланс могли пополнить.
+  const order = fresh.length ? fresh : all;
   let last: Error | null = null;
+  let quota: Error | null = null;
   for (const model of order) {
     try {
       const out = await run(model);
       remember(model);
+      quotaUntil.delete(model);
       return out;
     } catch (err) {
+      if (err instanceof ModelQuota) {
+        quota = err;
+        quotaUntil.set(model, Date.now() + QUOTA_SKIP_MS);
+        continue;
+      }
       if (err instanceof ModelUnavailable) {
         last = err;
         continue;
@@ -85,6 +105,7 @@ async function withModels<T>(
       throw err;
     }
   }
+  if (quota) throw new Error(quota.message);
   throw new Error(`OpenAI: ни одна модель из списка не доступна (${last?.message ?? ""})`.slice(0, 240));
 }
 
