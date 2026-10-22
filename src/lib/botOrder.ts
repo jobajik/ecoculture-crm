@@ -1,6 +1,7 @@
 import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor } from "./constants";
 import { prettyKaspiPhone } from "./kaspiInvoice";
 import { plainTyping } from "./humanStyle";
+import { packFor, roundUpToPack } from "./packing";
 
 // ---------------------------------------------------------------------------
 // Заказ, который бот принял в WhatsApp, — полный цикл (владелец, 01.10.2026:
@@ -176,6 +177,18 @@ export function planBotOrder(input: {
     }
     const key = `${it.flowerType}|${variety}|${grade}`;
     const quantity = (merged.get(key)?.quantity ?? 0) + it.quantity;
+    // Пачки не разбиваем (владелец, 22.10.2026): не кратно пачке — вопрос с ближайшим большим числом, а не заявка.
+    const pack = packFor(it.flowerType, variety, grade);
+    if (pack && quantity % pack !== 0) {
+      const up = roundUpToPack(quantity, pack);
+      const fits = up <= row.qty ? up : Math.floor(row.qty / pack) * pack;
+      return {
+        ok: false,
+        question: fits > 0
+          ? `${itemName(it.flowerType, variety, grade)} идёт пачками по ${pack} шт. Сделать ${fits} шт. (${fits / pack} ${packWord(fits / pack)})?`
+          : `${itemName(it.flowerType, variety, grade)} идёт пачками по ${pack} шт., а сейчас столько нет. Предложить похожую позицию?`,
+      };
+    }
     if (quantity > row.qty) {
       const can = row.qty >= 1000 ? Math.floor(row.qty / 100) * 100 : Math.floor(row.qty / 10) * 10;
       return {
@@ -192,6 +205,8 @@ export function planBotOrder(input: {
   }
   return { ok: true, items: Array.from(merged.values()), deliveryDate: date };
 }
+
+const packWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "пачка" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "пачки" : "пачек");
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\s/g, " ")} ₸`;
 const dayText = (day: string) => (/^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day.slice(8, 10)}.${day.slice(5, 7)}` : day);

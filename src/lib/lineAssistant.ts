@@ -24,6 +24,7 @@ import { ensureGreeting, SHORT_TASK, tooLong } from "./assistantText";
 import { greenConfig } from "./greenApi";
 import type { Lead, WaMessage } from "./types";
 import { humanStylePrompt } from "./humanStyle";
+import { packingPromptBlock } from "./packing";
 
 // ---------------------------------------------------------------------------
 // ИИ-помощник менеджера (16.10.2026, владелец выбрал «подсказывает, отвечает при
@@ -143,6 +144,7 @@ export function assistantSystemPrompt(p: {
     p.client ? `\nО клиенте:\n${p.client}` : "",
     p.instructions ? `\nУказания владельца для продаж (условия доставки из них — только когда известен город и прямо спросили):\n${p.instructions}` : "",
     p.push ? `\n${p.push}` : "",
+    packingPromptBlock(),
     goods,
     p.harvest ? `\nПлан срезки (прогноз; продать можно только то, что в списке «Что есть сейчас», остальное — «ожидаем срезку»):\n${p.harvest}` : "",
   ]

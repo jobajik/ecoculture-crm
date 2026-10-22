@@ -18,6 +18,7 @@ import {
 } from "../src/lib/botTurn";
 import { harvestForBot } from "../src/lib/botKnowledge";
 import { humanStylePrompt, plainTyping } from "../src/lib/humanStyle";
+import { miniMixPack, packFor, packingPromptBlock } from "../src/lib/packing";
 import { emptyBotChat } from "../src/lib/repo/broadcasts";
 import type { BotChat } from "../src/lib/broadcast";
 
@@ -189,6 +190,15 @@ check("ссылка и числа не тронуты", plainTyping("https://www
   check("подсказка: дефицит и отзывы не выдумывать", /НЕ выдумывай дефицит/.test(main));
   check("на прямой вопрос «вы бот?» — не врать: основной номер", /автоответ Ecoculture/.test(main));
   check("на прямой вопрос «вы бот?» — номер Земфиры в женском роде", /пока Земфира занята, она тоже на связи/.test(zem));
+}
+
+// --- Паккинг (22.10.2026, владелец: «это паккинг наш по цветкам, запомни») ---
+{
+  const b = packingPromptBlock();
+  check("паккинг: роза 15, пионовидная 10, эустома 10, мини-микс эустомы 60", /одноголовая — 15/.test(b) && /пионовидная — 10/.test(b) && /50 см — 10/.test(b) && /Эустома мини-микс — 60/.test(b));
+  check("паккинг: мини-микс розы по сорту 90 / 80 / 80", miniMixPack("Мини-микс одноголовые") === 90 && miniMixPack("Мини-микс кустовые") === 80 && miniMixPack("Мини-микс пионовидные") === 80 && miniMixPack("Avalanche") === null);
+  check("паккинг: пачка эустомы 10 / мини-микс 60, обычная роза — пока не знаем (пионовидные не размечены)", packFor("eustoma", "Alissa White", "50") === 10 && packFor("eustoma", "Alissa White", "Мини-микс") === 60 && packFor("rose", "Avalanche", "60") === null && packFor("rose", "Мини-микс кустовые", "Мини-микс") === 80);
+  check("паккинг: пачки не разбиваем — в подсказке", /ПАЧКИ НЕ РАЗБИВАЕМ/.test(b));
 }
 
 if (failed) {

@@ -56,6 +56,7 @@ import { priceFor } from "./priceList";
 import { BOT_CHANNEL, type SellerChannel } from "./sellerChannel";
 import { feminize, nextShipDay, regionPromptBlock } from "./managerProfile";
 import { humanStylePrompt } from "./humanStyle";
+import { packingPromptBlock } from "./packing";
 
 // ---------------------------------------------------------------------------
 // Бот-автоответчик WhatsApp (Green API). Зовётся из вебхука ПОСЛЕ того, как
@@ -418,6 +419,7 @@ export function systemPrompt(p: {
     client ? `\nО клиенте:\n${client}` : "",
     instructions ? `\nУказания владельца (главнее общих правил, кроме запрета выдумывать цены и наличие):\n${instructions}` : "",
     p.push ? `\n${p.push}` : "",
+    packingPromptBlock(),
     broadcast ? `\nРассылка, которую получил этот клиент (на неё он, скорее всего, и отвечает):\n${broadcast}` : "",
     prices ? `\nДействующий прайс:\n${prices}` : "\nПрайса сейчас нет — цены не называй, предлагай по наличию и спрашивай объём.",
     stock ? `\nСклад сейчас (можно продать):\n${stock}` : "\nДанных склада сейчас нет — о наличии не обещай, спрашивай, что нужно.",

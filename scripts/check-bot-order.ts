@@ -82,6 +82,20 @@ async function main() {
     const r = planBotOrder({ draft: draft(patch), stock, priceOf, today });
     return r.ok ? "ОФОРМИЛ" : r.question;
   };
+  {
+    // Пачки не разбиваем (владелец, 22.10.2026: «нельзя написать „возьмите 50 штук“»).
+    const pstock = [
+      { flower: "rose", variety: "Мини-микс одноголовые", grade: "Мини-микс", qty: 900 },
+      { flower: "eustoma", variety: "Alissa White", grade: "Стандарт", qty: 300 },
+    ];
+    const pq = (flowerType: string, variety: string, grade: string, quantity: number) => {
+      const r = planBotOrder({ draft: draft({ items: [{ flowerType, variety, grade, quantity }] }), stock: pstock, priceOf: () => 300, today });
+      return r.ok ? `ОФОРМИЛ ${r.items[0].quantity}` : r.question;
+    };
+    check("пачки: мини-микс одноголовые 180 — оформляет", pq("rose", "Мини-микс одноголовые", "Мини-микс", 180), "ОФОРМИЛ 180");
+    check("пачки: мини-микс одноголовые 100 — предлагает 180 (2 пачки)", pq("rose", "Мини-микс одноголовые", "Мини-микс", 100), "Роза Мини-микс одноголовые, Мини-микс идёт пачками по 90 шт. Сделать 180 шт. (2 пачки)?");
+    check("пачки: эустома 50 — оформляет, 55 — 60 (6 пачек)", pq("eustoma", "Alissa White", "Стандарт", 50) === "ОФОРМИЛ 50" && /Сделать 60 шт\. \(6 пачек\)/.test(pq("eustoma", "Alissa White", "Стандарт", 55)), true);
+  }
   check("без даты — спросить день", q({ deliveryDate: "" }), "На какой день сделать доставку?");
   check("вчерашняя дата — спросить день", q({ deliveryDate: "2026-09-30" }), "На какой день сделать доставку?");
   check("через месяц — спросить день", q({ deliveryDate: "2026-11-15" }), "На какой день сделать доставку?");
