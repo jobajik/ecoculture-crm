@@ -135,7 +135,7 @@ export default async function LeadsPage({
       </div>
 
       {/* Новый вид (19.10.2026): лиды слева, справа — кто написал в WhatsApp и как работают менеджеры. */}
-      <div className={inbox.length > 0 || (manage && summary.byManager.length > 0) ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] items-start" : ""}>
+      <div className={inbox.length > 0 || (manage && summary.byManager.length > 0) ? "grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px] items-start" : ""}>
         <LeadsBoard
           rows={rows}
           myEmail={email}

@@ -7,9 +7,10 @@ import { LEAD_STAGES, isClosedStage, whatsappLink, type LeadRow } from "@/lib/le
 import { nextTouchLabel, type LeadTalkMark } from "@/lib/leadsView";
 import { BOARD_STAGES } from "@/lib/leadsBulk";
 import { formatDay } from "@/lib/formatDate";
-import { prettyWaPhone } from "@/lib/whatsapp";
+import { minutesWords, prettyWaPhone } from "@/lib/whatsapp";
 import Icon from "./Icon";
-import { TemperatureChip, WaitingChip } from "./TalkChips";
+import { TEMPERATURE_CHIP } from "./TalkChips";
+import { temperatureLabel } from "@/lib/talkAnalysis";
 
 /**
  * Доска лидов (21.10.2026, владелец: «как в канбанах, чтобы можно было массово выделить номера, и бот их
@@ -52,7 +53,7 @@ export default function LeadsKanban({
   };
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 snap-x" role="list" aria-label="Доска лидов по стадиям">
+    <div className="flex gap-2 overflow-x-auto pb-3 -mx-1 px-1 snap-x" role="list" aria-label="Доска лидов по стадиям">
       {columns.map((c) => {
         const isClosedCol = c.key === "closed";
         const shownAll = isClosedCol ? closedOpen : true;
@@ -63,9 +64,9 @@ export default function LeadsKanban({
             key={c.key}
             role="listitem"
             className={clsx(
-              "flex-none w-[272px] sm:w-[296px] snap-start rounded-xl border bg-surface-plane/60 flex flex-col max-h-[72vh]",
+              "flex-none w-[232px] sm:w-[244px] snap-start rounded-lg border bg-surface-plane/60 flex flex-col max-h-[calc(100vh-240px)] min-h-[320px]",
               dragOver === c.key && !isClosedCol ? "border-section-leads ring-2 ring-section-leads/20" : "border-line-hairline",
-              isClosedCol && !closedOpen && "w-[160px] sm:w-[180px]"
+              isClosedCol && !closedOpen && "!w-[140px]"
             )}
             onDragOver={(e) => {
               if (isClosedCol) return;
@@ -81,18 +82,18 @@ export default function LeadsKanban({
               if (moved.length) onMove(moved, c.key);
             }}
           >
-            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-line-hairline">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-line-hairline">
               {!isClosedCol && ids.length > 0 && (
                 <input
                   type="checkbox"
-                  className="w-4 h-4 accent-section-leads"
+                  className="w-3.5 h-3.5 accent-section-leads"
                   checked={allOn}
                   onChange={(e) => onToggleMany(ids, e.target.checked)}
                   aria-label={`Выделить всех: ${c.label}`}
                   title="Выделить всю колонку"
                 />
               )}
-              <span className="text-[12px] font-bold uppercase tracking-[0.06em] text-ink-muted truncate">{c.label}</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-muted truncate">{c.label}</span>
               <span className="ml-auto text-xs tabular-nums text-ink-secondary">{c.list.length}</span>
               {isClosedCol && c.list.length > 0 && (
                 <button type="button" className="text-xs text-section-leads hover:underline" onClick={() => setClosedOpen((v) => !v)}>
@@ -100,7 +101,7 @@ export default function LeadsKanban({
                 </button>
               )}
             </div>
-            <div className="overflow-y-auto p-2 space-y-2 min-h-[80px]">
+            <div className="overflow-y-auto p-1.5 space-y-1.5 min-h-[60px]">
               {c.list.length === 0 && <p className="text-xs text-ink-muted text-center py-6">пусто</p>}
               {shownAll &&
                 c.list.slice(0, isClosedCol ? COLUMN_LIMIT : undefined).map((r) => (
@@ -116,6 +117,9 @@ export default function LeadsKanban({
     </div>
   );
 }
+
+/** «Ждёт ответа» старше недели — не срочность, а давняя переписка (импорт чатов): серым, не красным. */
+const WAITING_FRESH_MINUTES = 7 * 24 * 60;
 
 function LeadCard({
   row: r,
@@ -137,6 +141,10 @@ function LeadCard({
   const tel = r.phone.replace(/[^\d+]/g, "");
   const phone = /^\+?\d{11}$/.test(tel) ? prettyWaPhone(tel) : r.phone;
   const next = nextTouchLabel(r, today, formatDay);
+  const waiting = mark?.waitingMinutes ?? null;
+  const contact = [r.city, phone].filter(Boolean).join(" · ");
+  const comment = r.touches > 0 && r.lastComment ? `${formatDay(r.lastTouchAt)}: ${r.lastComment}` : "";
+  const manager = (r.managerName || "").split(/\s+/)[0];
   return (
     <div
       draggable={!closed}
@@ -147,42 +155,50 @@ function LeadCard({
         e.dataTransfer.effectAllowed = "move";
       }}
       className={clsx(
-        "rounded-lg border bg-surface p-2.5 shadow-sm transition-colors",
+        "rounded-md border bg-surface px-2 py-1.5 transition-colors",
         checked ? "border-section-leads ring-1 ring-section-leads/30" : "border-line-hairline hover:border-ink-muted/40",
         !closed && "cursor-grab active:cursor-grabbing"
       )}
     >
-      <div className="flex items-start gap-2">
-        {!closed && <input type="checkbox" className="mt-0.5 w-4 h-4 flex-none accent-section-leads" checked={checked} onChange={onToggle} aria-label={`Выделить ${r.name}`} />}
-        <div className="min-w-0 flex-1">
-          <Link href={`/clients/leads/${r.leadId}`} className="font-semibold text-sm hover:underline break-words leading-tight">
-            {r.name}
-          </Link>
-          <div className="flex flex-wrap items-center gap-1 mt-1">
-            {mark && <WaitingChip minutes={mark.waitingMinutes} />}
-            {mark && !closed && <TemperatureChip value={mark.temperature} />}
-            {r.origin === "ads" && <span className="rounded bg-section-leads-soft px-1 py-0.5 text-[10px] text-section-leads">реклама{r.handedOverAt ? " · передан" : ""}</span>}
-          </div>
-        </div>
+      <div className="flex items-center gap-1.5 min-w-0">
+        {!closed && <input type="checkbox" className="w-3.5 h-3.5 flex-none accent-section-leads" checked={checked} onChange={onToggle} aria-label={`Выделить ${r.name}`} />}
+        <Link href={`/clients/leads/${r.leadId}`} className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-5 hover:underline" title={r.name}>
+          {r.name}
+        </Link>
         {wa && (
-          <a href={wa} target="_blank" rel="noreferrer" title="Написать в WhatsApp" className="flex-none w-7 h-7 grid place-items-center rounded-md text-status-good hover:bg-surface-plane">
+          <a href={wa} target="_blank" rel="noreferrer" title={`Написать в WhatsApp · ${phone}`} className="flex-none w-6 h-6 -my-0.5 grid place-items-center rounded text-status-good hover:bg-surface-plane">
             <Icon name="message" />
           </a>
         )}
       </div>
-      <div className="text-[11px] text-ink-muted mt-1.5 truncate">{[r.city, phone].filter(Boolean).join(" · ")}</div>
-      <div className="text-xs text-ink-secondary mt-1 line-clamp-2">
-        {r.touches > 0 ? (
-          <>
-            <span className="text-ink-muted">{formatDay(r.lastTouchAt)}:</span> {r.lastComment}
-          </>
-        ) : (
-          <span className="text-ink-muted">касаний не было</span>
-        )}
+      <div className="flex items-center gap-1 mt-0.5 min-w-0 text-[11px] leading-4">
+        {waiting !== null &&
+          (waiting <= WAITING_FRESH_MINUTES ? (
+            <span className="flex-none rounded bg-status-critical/10 px-1 text-status-critical font-medium" title="Последним написал клиент, ответа нет">
+              ждёт {minutesWords(waiting)}
+            </span>
+          ) : (
+            <span className="flex-none rounded bg-surface-sunk px-1 text-ink-muted" title="Последним написал клиент — давно">
+              без ответа {minutesWords(waiting)}
+            </span>
+          ))}
+        {mark && !closed && mark.temperature && <span className={clsx("flex-none rounded px-1", TEMPERATURE_CHIP[mark.temperature])}>{temperatureLabel(mark.temperature)}</span>}
+        {r.origin === "ads" && <span className="flex-none rounded bg-section-leads-soft px-1 text-section-leads">{r.handedOverAt ? "реклама·передан" : "реклама"}</span>}
+        <span
+          className={clsx(
+            "flex-none tabular-nums",
+            closed ? "text-ink-muted" : r.overdue ? "text-status-critical font-semibold" : r.dueToday ? "text-[#8a5a00] font-semibold" : "text-ink-secondary"
+          )}
+          title="Следующее касание"
+        >
+          {next}
+        </span>
+        <span className="ml-auto min-w-0 truncate text-ink-muted" title={r.managerName || "ничей"}>
+          {manager || <span className="text-[#8a5a00]">ничей</span>}
+        </span>
       </div>
-      <div className="flex items-center gap-2 mt-2 text-[11px]">
-        <span className={clsx("tabular-nums", closed ? "text-ink-muted" : r.overdue ? "text-status-critical font-semibold" : r.dueToday ? "text-[#8a5a00] font-semibold" : "text-ink-secondary")}>{next}</span>
-        <span className="ml-auto text-ink-muted truncate max-w-[45%]">{r.managerName || <span className="text-[#8a5a00]">ничей</span>}</span>
+      <div className="mt-0.5 truncate text-[11px] leading-4 text-ink-muted" title={comment || contact}>
+        {comment || contact || "касаний не было"}
       </div>
     </div>
   );
