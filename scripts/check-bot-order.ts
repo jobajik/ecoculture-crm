@@ -174,7 +174,7 @@ async function main() {
   const declined = botDeclinedText({ code: "CNF9X", amount: 27000 });
   check("счёт отклонён: номер, сумма и вопрос", declined.includes("№CNF9X") && declined.includes("*27 000 ₸*") && declined.includes("?"), true);
   check("счёт отклонён: выходы списком", declined.split("\n").filter((l) => l.startsWith("• ")).length, 4);
-  check("Markdown модели → WhatsApp", toWhatsApp("**Итого:** 27 000 ₸\n\n\n\n- Altaj — 270 ₸\n### Шапка"), "*Итого:* 27 000 ₸\n\n• Altaj — 270 ₸\nШапка");
+  check("Markdown модели → WhatsApp", toWhatsApp("**Итого:** 27 000 ₸\n\n\n\n- Altaj — 270 ₸\n### Шапка"), "*Итого:* 27 000 ₸\n\n• Altaj - 270 ₸\nШапка");
   check("назавтра после отказа — держать ли заказ", botDeclinedReminderText({ code: "CNF9X", amount: 27000 }).includes("Держать заказ"), true);
   check("отмена заказа", botCancelledText("CNF9X"), "Заказ №CNF9X отменил.");
 

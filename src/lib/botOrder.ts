@@ -1,5 +1,6 @@
 import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor } from "./constants";
 import { prettyKaspiPhone } from "./kaspiInvoice";
+import { plainTyping } from "./humanStyle";
 
 // ---------------------------------------------------------------------------
 // Заказ, который бот принял в WhatsApp, — полный цикл (владелец, 01.10.2026:
@@ -328,7 +329,7 @@ export function botCancelledText(code: string): string {
  * без заголовков «#», маркеры списка «-»/«*» → «•», не больше одной пустой строки.
  */
 export function toWhatsApp(text: string): string {
-  return String(text || "")
+  return plainTyping(String(text || ""))
     .replace(/\*\*(.+?)\*\*/g, "*$1*")
     .replace(/__(.+?)__/g, "_$1_")
     .replace(/^#{1,6}\s*/gm, "")

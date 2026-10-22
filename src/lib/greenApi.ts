@@ -1,6 +1,7 @@
 import { parseHistoryItem } from "./whatsapp";
 import type { WaMessage } from "./types";
 import { greenSendErrorText } from "./greenOut";
+import { plainTyping } from "./humanStyle";
 
 // ---------------------------------------------------------------------------
 // Green API — шлюз к рабочему WhatsApp (green-api.com). Номер подключается в
@@ -121,6 +122,8 @@ export async function sendText(
 ): Promise<string> {
   const chatId = chatIdForPhone(phone);
   if (!chatId) throw new GreenError("неверный номер", 400, "");
+  // Как набрано с телефона — без длинных тире (`humanStyle.ts`).
+  message = plainTyping(message);
   // linkPreview: false — без карточки сайта над текстом (она занимает пол-экрана).
   return send(cfg, "sendMessage", options.linkPreview === false ? { chatId, message, linkPreview: false } : { chatId, message });
 }
@@ -135,7 +138,7 @@ export async function sendFileByUrl(
 ): Promise<string> {
   const chatId = chatIdForPhone(phone);
   if (!chatId) throw new GreenError("неверный номер", 400, "");
-  return send(cfg, "sendFileByUrl", { chatId, urlFile, fileName, ...(caption ? { caption } : {}) });
+  return send(cfg, "sendFileByUrl", { chatId, urlFile, fileName, ...(caption ? { caption: plainTyping(caption) } : {}) });
 }
 
 /** chatId WhatsApp из номера: «8 701 …» и «+7 701 …» → «7701…@c.us». */

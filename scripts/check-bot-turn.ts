@@ -17,6 +17,7 @@ import {
   type TurnMessage,
 } from "../src/lib/botTurn";
 import { harvestForBot } from "../src/lib/botKnowledge";
+import { humanStylePrompt, plainTyping } from "../src/lib/humanStyle";
 import { emptyBotChat } from "../src/lib/repo/broadcasts";
 import type { BotChat } from "../src/lib/broadcast";
 
@@ -175,6 +176,20 @@ check(
 );
 check("приветствие без вопроса: «здравствуйте»", isGreetingOnly("здравствуйте") && isGreetingOnly("Саламатсыз ба") && isGreetingOnly("Добрый день!"));
 check("с вопросом — не просто приветствие", !isGreetingOnly("Здравствуйте, какие розы есть?") && !isGreetingOnly("3 котегор канша?"));
+
+// --- По-человечески (22.10.2026, владелец: «убери эти длинные тире, будь человечнее, под реалии Казахстана») ---
+check("тире: «Altaj — 270 ₸» → «Altaj - 270 ₸»", plainTyping("Altaj — 270 ₸") === "Altaj - 270 ₸");
+check("тире без пробелов и короткое: «9–19», «да—есть»", plainTyping("с 9–19") === "с 9-19" && plainTyping("да—есть") === "да-есть");
+check("тире в начале строки и многоточие", plainTyping("Смотрите:\n— Altaj…") === "Смотрите:\n- Altaj...");
+check("ссылка и числа не тронуты", plainTyping("https://www.crm-ecoculture.kz/a-b?x=1 27 000 ₸") === "https://www.crm-ecoculture.kz/a-b?x=1 27 000 ₸");
+{
+  const main = humanStylePrompt({ who: "" }).join("\n");
+  const zem = humanStylePrompt({ who: "Земфира", female: true, helper: true }).join("\n");
+  check("подсказка: без канцелярита, язык клиента, смайлики изредка", /Благодарим за обращение/.test(main) && /по-казахски/.test(main) && /изредка/.test(main));
+  check("подсказка: дефицит и отзывы не выдумывать", /НЕ выдумывай дефицит/.test(main));
+  check("на прямой вопрос «вы бот?» — не врать: основной номер", /автоответ Ecoculture/.test(main));
+  check("на прямой вопрос «вы бот?» — номер Земфиры в женском роде", /пока Земфира занята, она тоже на связи/.test(zem));
+}
 
 if (failed) {
   console.log(`\nПровалено: ${failed}`);
