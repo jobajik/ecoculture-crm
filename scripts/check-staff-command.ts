@@ -5,7 +5,8 @@
  *
  *   npx tsx scripts/check-staff-command.ts
  */
-import { isSelfTarget, wantsForSelf, matchTargets, parseStaffCommand, pickedNumber, pickStaffPhotos, staffAskText, staffDoneText, STAFF_MAX_PHOTOS, type StaffTarget } from "../src/lib/staffCommand";
+import { isSelfTarget, wantsForSelf, matchTargets, parseStaffCommand, pickedNumber, pickStaffPhotos, quoteLines, quotePack, staffAskText, staffDoneText, staffQuoteText, STAFF_MAX_PHOTOS, type StaffItem, type StaffTarget } from "../src/lib/staffCommand";
+import { priceKey, type PriceRow } from "../src/lib/priceList";
 import type { BotPhoto } from "../src/lib/botPhotos";
 
 let failed = 0;
@@ -21,10 +22,10 @@ const cmd = parseStaffCommand({
   client: "Маргарита Пожарка",
   phone: "",
   items: [
-    { flowerType: "chrysanthemum", variety: "", grade: "", many: true },
-    { flowerType: "eustoma", variety: "Alissa White", grade: "", many: false },
-    { flowerType: "eustoma", variety: "Alissa Pink", grade: "", many: false },
-    { flowerType: "tulip", variety: "X", grade: "", many: false },
+    { flowerType: "chrysanthemum", variety: "", grade: "", many: true, quantity: 0, kind: "" },
+    { flowerType: "eustoma", variety: "Alissa White", grade: "", many: false, quantity: 0, kind: "" },
+    { flowerType: "eustoma", variety: "Alissa Pink", grade: "", many: false, quantity: 0, kind: "" },
+    { flowerType: "tulip", variety: "X", grade: "", many: false, quantity: 0, kind: "" },
   ],
   text: "",
 });
@@ -81,12 +82,12 @@ check("белая эустома — 2 фото", ids.filter((i) => i.startsWith
 check("розовая — одно (второе выключено)", ids.filter((i) => i.startsWith("p")), ["p1"]);
 check("ничего не пропало", pick.missing, []);
 check("инфографика — только при «все категории», и последней в своём пункте",
-  pickStaffPhotos([ph("info", { variety: "Altaj", kind: "info" }), ph("altaj", { variety: "Altaj" })], [{ flowerType: "chrysanthemum", variety: "", grade: "", many: true }]).picked.map((p) => p.photoId),
+  pickStaffPhotos([ph("info", { variety: "Altaj", kind: "info" }), ph("altaj", { variety: "Altaj" })], [{ flowerType: "chrysanthemum", variety: "", grade: "", many: true, quantity: 0, kind: "" }]).picked.map((p) => p.photoId),
   ["altaj", "info"]);
-check("о сорте без «всех» — инфографика не идёт", pickStaffPhotos(photos, [{ flowerType: "chrysanthemum", variety: "Bacardy", grade: "", many: false }]).picked.map((p) => p.photoId), ["bacardy"]);
-check("нет фото — в «нет в CRM»", pickStaffPhotos(photos, [{ flowerType: "rose", variety: "", grade: "Мини-микс", many: false }]).missing, ["Роза, Мини-микс"]);
+check("о сорте без «всех» — инфографика не идёт", pickStaffPhotos(photos, [{ flowerType: "chrysanthemum", variety: "Bacardy", grade: "", many: false, quantity: 0, kind: "" }]).picked.map((p) => p.photoId), ["bacardy"]);
+check("нет фото — в «нет в CRM»", pickStaffPhotos(photos, [{ flowerType: "rose", variety: "", grade: "Мини-микс", many: false, quantity: 0, kind: "" }]).missing, ["Роза, Мини-микс"]);
 const lots = Array.from({ length: 30 }, (_, i) => ph(`r${i}`, { flowerType: "rose", variety: `V${i}` }));
-check("не больше предела за поручение", pickStaffPhotos(lots, Array.from({ length: 8 }, () => ({ flowerType: "rose", variety: "", grade: "", many: true }))).picked.length, STAFF_MAX_PHOTOS);
+check("не больше предела за поручение", pickStaffPhotos(lots, Array.from({ length: 8 }, () => ({ flowerType: "rose", variety: "", grade: "", many: true, quantity: 0, kind: "" }))).picked.length, STAFF_MAX_PHOTOS);
 
 check(
   "отчёт сотруднику",
@@ -106,6 +107,63 @@ check("модель сказала «мне» — себе", wantsForSelf({ clie
 check("«отправь клиенту фото» без имени — переспросить", wantsForSelf({ client: "", phone: "" }, "Отправь клиенту фото Altaj"), false);
 check("назван клиент — не себе", wantsForSelf({ client: "Маргарита Пожарка", phone: "" }, "Отправь Маргарите Пожарка"), false);
 check("назван номер — не себе", wantsForSelf({ client: "", phone: "77011234567" }, "скинь на 77011234567"), false);
+
+// --- Посчитать стоимость (23.10.2026, Ильгар: кустовые 60 см 40 шт (20 ярко-розовых, 20 нежных), Алтай 3 кат 15,
+// эустома классическая 30 (15 белых, 15 розовых), одноголовые 1 сорт 60 см 30 — «можешь посчитать сколько выйдет»)
+const q = parseStaffCommand({
+  intent: "quote",
+  client: "",
+  phone: "",
+  text: "",
+  items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "3 кат", many: false, quantity: 15.4, kind: "" }, { flowerType: "rose", variety: "", grade: "60", many: false, quantity: 30, kind: "boom" }],
+});
+check("quote разбирается", q.intent, "quote");
+check("количество — целое, вид — из списка", q.items.map((i) => [i.quantity, i.kind]), [[15, ""], [30, ""]]);
+
+const priceRows: PriceRow[] = [
+  { date: "2026-10-01", flowerType: "rose", variety: "", grade: "60", price: 250 },
+  { date: "2026-10-01", flowerType: "rose", variety: "Julieta Spray", grade: "60", price: 300 },
+  { date: "2026-10-01", flowerType: "rose", variety: "Red Naomi", grade: "60", price: 280 },
+  { date: "2026-10-01", flowerType: "chrysanthemum", variety: "Altaj", grade: "Третья", price: 160 },
+  { date: "2026-10-01", flowerType: "eustoma", variety: "", grade: "Стандарт", price: 500 },
+];
+const priceMap = new Map(priceRows.map((r) => [priceKey(r.flowerType, r.variety, r.grade), r]));
+const stockRows = [
+  { flower: "rose", variety: "Julieta Spray", grade: "60", qty: 300 },
+  { flower: "rose", variety: "Jumilia", grade: "60", qty: 900 },
+  { flower: "chrysanthemum", variety: "Altaj", grade: "Третья", qty: 5000 },
+  { flower: "eustoma", variety: "Alissa White", grade: "Стандарт", qty: 12 },
+  { flower: "eustoma", variety: "Alissa Pink", grade: "Стандарт", qty: 200 },
+];
+const it = (p: Partial<StaffItem>): StaffItem => ({ flowerType: "rose", variety: "", grade: "", many: false, quantity: 0, kind: "", ...p });
+const ilgar = quoteLines(
+  [
+    it({ kind: "spray", grade: "60 см", quantity: 40 }),
+    it({ flowerType: "chrysanthemum", variety: "altaj", grade: "3 категория", quantity: 15 }),
+    it({ flowerType: "eustoma", variety: "Alissa White", grade: "Стандарт", quantity: 15 }),
+    it({ flowerType: "eustoma", variety: "Alissa Pink", grade: "Стандарт", quantity: 15 }),
+    it({ kind: "single", grade: "60", quantity: 30 }),
+  ],
+  priceMap,
+  stockRows
+);
+check("кустовая без сорта — цена кустового сорта со склада", [ilgar[0].price, ilgar[0].pack, ilgar[0].stock], [300, 15, 300]);
+check("Алтай 3 кат — Третья, сорт как на складе", [ilgar[1].label, ilgar[1].price], ["Хризантема Altaj, Третья", 160]);
+check("эустома — общая цена, пачка 10", [ilgar[2].price, ilgar[2].pack, ilgar[2].stock], [500, 10, 12]);
+check("одноголовая без сорта — кустовые не в счёт, общая цена", [ilgar[4].price, ilgar[4].range], [250, null]);
+const quote = staffQuoteText(ilgar);
+check("строка позиции", quote.includes("• Роза кустовая, 60 см — 40 шт. × 300 ₸ = 12 000 ₸\n   пачками по 15: 45 шт. — 13 500 ₸"), true);
+check("итого", quote.includes("Итого: *36 900 ₸*"), true);
+check("целыми пачками", quote.includes("Целыми пачками: *43 400 ₸*"), true);
+check("склад меньше — сказано", quote.includes("• Эустома Alissa White, Стандарт — свободно ~12 шт."), true);
+check("клиенту — без склада", staffQuoteText(ilgar, true).includes("складе"), false);
+
+const naomi = quoteLines([it({ grade: "60", quantity: 30 })], priceMap, [...stockRows, { flower: "rose", variety: "Red Naomi", grade: "60", qty: 100 }]);
+check("сорт не назван, цены разные — диапазон", naomi[0].range, [250, 300]);
+check("диапазон — в «не посчитал»", staffQuoteText(naomi).includes("цена разная (250 ₸–300 ₸)"), true);
+check("нет количества — в «не посчитал»", staffQuoteText(quoteLines([it({ grade: "60" })], priceMap, stockRows)).includes("не понял, сколько штук"), true);
+check("нет цены — так и сказано", staffQuoteText(quoteLines([it({ flowerType: "chrysanthemum", variety: "Chik", grade: "Первая", quantity: 10 })], priceMap, stockRows)).includes("нет цены в прайсе"), true);
+check("пачка: известная важнее вида", [quotePack({ flowerType: "rose", kind: "spray" }, 80), quotePack({ flowerType: "rose", kind: "peony" }, null), quotePack({ flowerType: "chrysanthemum", kind: "" }, null)], [80, 10, null]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

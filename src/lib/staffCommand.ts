@@ -1,4 +1,8 @@
 import { phoneKey } from "./leads";
+import { FLOWER_TYPE_LABELS, isMiniMixVariety } from "./constants";
+import { normalizeGrade } from "./botOrder";
+import { packFor } from "./packing";
+import { priceFor, type PriceRow } from "./priceList";
 import { isInfoPhoto, photoLabel, type BotPhoto } from "./botPhotos";
 
 // ---------------------------------------------------------------------------
@@ -26,11 +30,19 @@ export interface StaffItem {
   grade: string;
   /** «Всех категорий», «все сорта» — несколько фото этого цветка, а не одно. */
   many: boolean;
+  /** Сколько штук (для расчёта стоимости); 0 — не названо. */
+  quantity: number;
+  /** Вид розы: single — одноголовая, spray — кустовая, peony — пионовидная; пусто — не сказано или не роза. */
+  kind: string;
 }
 
 export interface StaffCommand {
-  /** send — отправить клиенту; other — просьба к боту, которую он не умеет; none — не поручение. */
-  intent: "send" | "other" | "none";
+  /**
+   * send — отправить клиенту; quote — посчитать стоимость списка по прайсу (23.10.2026, Ильгар: «можешь посчитать
+   * сколько по стоимости выйдет», владелец: «надо чтобы ты теперь тоже так мог»); other — просьба, которую бот не
+   * умеет; none — не поручение.
+   */
+  intent: "send" | "quote" | "other" | "none";
   /** Кому, как написал сотрудник: имя, точка, город. */
   client: string;
   /** Номер клиента, если сотрудник его написал (цифры). */
@@ -49,9 +61,9 @@ export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
   properties: {
     intent: {
       type: "string",
-      enum: ["send", "other", "none"],
+      enum: ["send", "quote", "other", "none"],
       description:
-        "send — сотрудник просит отправить клиенту фото, каталог или сообщение; other — просит бота сделать что-то другое; none — не поручение (приветствие, ответ на сводку, «ок», новости).",
+        "send — сотрудник просит отправить клиенту фото, каталог или сообщение; quote — просит посчитать стоимость списка позиций («сколько выйдет», «посчитай», «сумма», «скинь расчёт»), список — в items с количеством; other — просит бота сделать что-то другое; none — не поручение (приветствие, ответ на сводку, «ок», новости).",
     },
     client: S(
       "Кому отправить — имя/название клиента, как написано (с точкой, районом, городом). «Мне», «себе», «скинь фото Altaj» без адресата — «мне» (сотрудник просит себе). Пусто — только если просил клиенту, но не назвал кому."
@@ -63,12 +75,14 @@ export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["flowerType", "variety", "grade", "many"],
+        required: ["flowerType", "variety", "grade", "many", "quantity", "kind"],
         properties: {
           flowerType: { type: "string", enum: ["rose", "chrysanthemum", "eustoma"] },
-          variety: S("Сорт из списка фото ниже, если назван или ясен по цвету («белая эустома» → Alissa White). Иначе пусто."),
-          grade: S("Категория или длина, если названа («Первая», «60», «Мини-микс»). Иначе пусто."),
+          variety: S("Сорт ТОЧНО как в списках ниже (фото или прайс), если назван или ясен по цвету и виду («белая эустома» → Alissa White, «кустовая роза» → сорт кустовой розы из прайса). Иначе пусто."),
+          grade: S("Категория или длина, если названа («Первая», «Третья», «60», «Стандарт», «Мини-микс»). Эустома «классическая» — Стандарт. Иначе пусто."),
           many: { type: "boolean", description: "true — «все категории», «все сорта», «разные»: несколько фото этого цветка." },
+          quantity: { type: "number", description: "Сколько штук этой позиции (для расчёта). Разбивка по цветам одной позиции («20 розовых, 20 белых») — отдельными пунктами. Не названо — 0." },
+          kind: { type: "string", enum: ["single", "spray", "peony", ""], description: "Роза: single — одноголовая, spray — кустовая, peony — пионовидная; не роза или не сказано — пусто." },
         },
       },
     },
@@ -76,7 +90,7 @@ export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export function staffCommandPrompt(photoLabels: string[]): string {
+export function staffCommandPrompt(photoLabels: string[], priceList = ""): string {
   return [
     "Ты разбираешь сообщение СОТРУДНИКА компании Ecoculture (оптовые цветы: розы, хризантемы, эустома) рабочему номеру WhatsApp.",
     "Сотрудники пишут сюда поручения вроде «отправь фото Altaj первой Маргарите Пожарка» или «скинь клиенту Асель каталог роз».",
@@ -86,9 +100,15 @@ export function staffCommandPrompt(photoLabels: string[]): string {
     "Цвет → сорт по списку фото: белая эустома — Alissa White, розовая — Alissa Pink (и Corelli Pink, если просят все розовые).",
     "«Хризантема всех категорий» — один пункт: chrysanthemum, сорт пусто, категория пусто, many=true.",
     "Каталог или «что есть» по цветку — пункт этого цветка с many=true.",
+    "Посчитать стоимость — intent quote: каждая строка списка — пункт с количеством; если строка разбита по цветам",
+    "(«40 шт: 20 ярко-розовых, 20 нежных»), — два пункта по 20 с сортами этих цветов из прайса, а не цвет не ясен — один",
+    "пункт на 40 без сорта. Сорт и категорию бери ТОЛЬКО из прайса ниже, цены не считай — посчитает программа.",
+    "«Посчитай и отправь клиенту X» — тоже quote, клиент в client. У розы «1 сорт 60 см» — длина «60», «2 сорт 60» — «60 (2 сорт)».",
+    "Кустовая роза — kind spray (сорт кустовой из прайса, например Julieta Spray), одноголовая — single.",
     "",
     "Фото в CRM сейчас:",
     ...photoLabels.map((l) => `- ${l}`),
+    ...(priceList ? ["", "Прайс на сегодня (сорта и категории):", priceList] : []),
   ].join("\n");
 }
 
@@ -96,7 +116,7 @@ const FLOWERS = ["rose", "chrysanthemum", "eustoma"];
 
 export function parseStaffCommand(raw: unknown): StaffCommand {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const intent = r.intent === "send" || r.intent === "other" ? r.intent : "none";
+  const intent = r.intent === "send" || r.intent === "quote" || r.intent === "other" ? r.intent : "none";
   const items = (Array.isArray(r.items) ? r.items : [])
     .map((x) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {}))
     .filter((x) => FLOWERS.includes(String(x.flowerType || "")))
@@ -105,8 +125,10 @@ export function parseStaffCommand(raw: unknown): StaffCommand {
       variety: String(x.variety || "").trim().slice(0, 80),
       grade: String(x.grade || "").trim().slice(0, 40),
       many: x.many === true,
+      quantity: Math.max(0, Math.round(Number(x.quantity) || 0)),
+      kind: ["single", "spray", "peony"].includes(String(x.kind)) ? String(x.kind) : "",
     }))
-    .slice(0, 8);
+    .slice(0, 12);
   return {
     intent,
     client: String(r.client || "").trim().slice(0, 120),
@@ -274,4 +296,129 @@ export function staffDoneText(input: { name: string; phone: string; via: string;
 }
 
 export const STAFF_OTHER_TEXT =
-  "Пока по поручению умею только отправить клиенту фото или сообщение. Например: «Отправь фото Altaj первой и белую эустому Маргарите Пожарка».";
+  "Пока по поручению умею: отправить клиенту фото или сообщение и посчитать стоимость по прайсу. Например: «Отправь фото Altaj первой Маргарите Пожарка» или «Посчитай: Altaj 3 кат 200 шт, роза 60 см 150 шт».";
+
+// --- Расчёт стоимости -----------------------------------------------------------
+
+const KIND_LABEL: Record<string, string> = { single: "одноголовая", spray: "кустовая", peony: "пионовидная" };
+const ROSE_PACK: Record<string, number> = { single: 15, spray: 15, peony: 10 };
+
+export interface QuoteLine {
+  label: string;
+  quantity: number;
+  /** Цена стебля; 0 — нет в прайсе. */
+  price: number;
+  /** Цены разные у разных сортов, а сорт не назван: «от – до». */
+  range: [number, number] | null;
+  /** Сколько в пачке, если знаем. */
+  pack: number | null;
+  /** Свободно на складе (все сорта позиции, если сорт не назван); null — не знаем. */
+  stock: number | null;
+}
+
+/** Строка позиции: «Роза кустовая Julieta Spray, 60 см». */
+export function quoteLabel(it: Pick<StaffItem, "flowerType" | "variety" | "grade" | "kind">, flowerLabel: string): string {
+  const kind = it.flowerType === "rose" && KIND_LABEL[it.kind] && !/мини-?микс/i.test(it.variety) ? ` ${KIND_LABEL[it.kind]}` : "";
+  const variety = it.variety ? ` ${it.variety}` : "";
+  const grade = it.grade ? `, ${/^\d+$/.test(it.grade) ? `${it.grade} см` : it.grade}` : "";
+  return `${flowerLabel}${kind}${variety}${grade}`;
+}
+
+/** Пачка для расчёта: правила паккинга, а у обычной розы — по виду, если сотрудник его назвал. */
+export function quotePack(it: Pick<StaffItem, "flowerType" | "kind">, known: number | null): number | null {
+  if (known) return known;
+  if (it.flowerType === "rose" && ROSE_PACK[it.kind]) return ROSE_PACK[it.kind];
+  return null;
+}
+
+const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\u00a0/g, " ")} ₸`;
+
+/**
+ * Текст расчёта сотруднику: строка на позицию (штуки × цена = сумма), не кратно пачке — во сколько выйдет целыми пачками,
+ * на складе меньше — сколько есть, нет цены — так и пишем. Итог — по позициям с ценой; «с пачками» — отдельной строкой,
+ * если хоть одна позиция не кратна. Цены считает код, не модель.
+ */
+export function staffQuoteText(lines: QuoteLine[], forClient = false): string {
+  const out: string[] = [forClient ? "Расчёт по вашему списку (цены на сегодня):" : "Расчёт по прайсу на сегодня:"];
+  let total = 0;
+  let totalPacks = 0;
+  let packsDiffer = false;
+  const missing: string[] = [];
+  const low: string[] = [];
+  for (const l of lines) {
+    if (!l.quantity) {
+      missing.push(`${l.label} — не понял, сколько штук`);
+      continue;
+    }
+    if (l.range) {
+      missing.push(`${l.label} — ${l.quantity} шт.: цена разная (${money(l.range[0])}–${money(l.range[1])}), уточните сорт и категорию`);
+      continue;
+    }
+    if (!l.price) {
+      missing.push(`${l.label} — нет цены в прайсе`);
+      continue;
+    }
+    const sum = l.quantity * l.price;
+    total += sum;
+    let row = `• ${l.label} — ${l.quantity} шт. × ${money(l.price)} = ${money(sum)}`;
+    const packed = l.pack && l.quantity % l.pack !== 0 ? Math.ceil(l.quantity / l.pack) * l.pack : l.quantity;
+    totalPacks += packed * l.price;
+    if (packed !== l.quantity) {
+      packsDiffer = true;
+      row += `\n   пачками по ${l.pack}: ${packed} шт. — ${money(packed * l.price)}`;
+    }
+    out.push(row);
+    if (l.stock !== null && l.stock < packed) low.push(`${l.label} — ${l.stock > 0 ? `свободно ~${l.stock} шт.` : "сейчас нет"}`);
+  }
+  if (total > 0) {
+    out.push("", `Итого: *${money(total)}*`);
+    if (packsDiffer) out.push(`Целыми пачками: *${money(totalPacks)}*`);
+  }
+  // Клиенту — только посчитанное: «не понял» и склад — дело сотрудника.
+  if (forClient) return out.join("\n");
+  if (missing.length) out.push("", "Не посчитал:", ...missing.map((m) => `• ${m}`));
+  if (low.length) out.push("", "На складе меньше:", ...low.map((m) => `• ${m}`));
+  return out.join("\n");
+}
+
+/**
+ * Строки расчёта по прайсу и складу. Сорт и категория названы — их цена (своя или общая по категории). Сорт не назван —
+ * смотрим сорта этой позиции на складе (у розы — с учётом вида: кустовая — сорта «Spray», одноголовая — остальные): цена
+ * у всех одна — она, разная — «от – до» (просим уточнить), на складе нет — общая цена категории. Цены считает код.
+ */
+export function quoteLines(items: StaffItem[], prices: Map<string, PriceRow>, stock: { flower: string; variety: string; grade: string; qty: number }[]): QuoteLine[] {
+  const n = (s: string) => norm(s).replace(/\s+/g, "");
+  return items.map((raw) => {
+    const f = raw.flowerType;
+    const grade = normalizeGrade(f, raw.grade) || raw.grade;
+    // Сорт — как он записан на складе («altaj» → «Altaj»).
+    const variety = (stock.find((s) => s.flower === f && n(s.variety) === n(raw.variety))?.variety ?? raw.variety).trim();
+    const fits = (v: string) => {
+      if (isMiniMixVariety(v)) return /мини/i.test(grade);
+      if (f !== "rose" || !raw.kind) return true;
+      return raw.kind === "spray" ? /spray|кустов/i.test(v) : !/spray|кустов/i.test(v);
+    };
+    const rows = stock.filter((s) => s.flower === f && (!grade || s.grade === grade) && (variety ? n(s.variety) === n(variety) : fits(s.variety)));
+    let price = 0;
+    let range: [number, number] | null = null;
+    if (variety && grade) price = priceFor(prices, f, variety, grade);
+    else {
+      const own = rows.map((s) => priceFor(prices, f, s.variety, s.grade)).filter((p) => p > 0);
+      const all = own.length ? own : grade ? [priceFor(prices, f, "", grade)].filter((p) => p > 0) : [];
+      if (all.length) {
+        const lo = Math.min(...all);
+        const hi = Math.max(...all);
+        if (lo === hi) price = lo;
+        else range = [lo, hi];
+      }
+    }
+    return {
+      label: quoteLabel({ flowerType: f, variety, grade, kind: raw.kind }, FLOWER_TYPE_LABELS[f] || f),
+      quantity: raw.quantity,
+      price,
+      range,
+      pack: quotePack(raw, packFor(f, variety, grade)),
+      stock: grade ? rows.reduce((sum, s) => sum + s.qty, 0) : null,
+    };
+  });
+}

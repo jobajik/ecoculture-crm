@@ -15,6 +15,7 @@ import { genitiveName, LEADS_LINE } from "./waLines";
 import { sendOnLine } from "./lineAssistant";
 import { loadPhotoContext, photoPrices } from "./botPhotoSend";
 import { isInfoPhoto, photoLabel, photoMessage } from "./botPhotos";
+import { pricesForBot } from "./botKnowledge";
 import {
   isSelfTarget,
   matchTargets,
@@ -22,6 +23,7 @@ import {
   parseStaffCommand,
   pickedNumber,
   pickStaffPhotos,
+  quoteLines,
   STAFF_ASK_PREFIX,
   STAFF_ASK_TTL_MS,
   STAFF_COMMAND_SCHEMA,
@@ -30,6 +32,7 @@ import {
   staffCommandPrompt,
   staffDoneText,
   staffNotFoundText,
+  staffQuoteText,
   type StaffCommand,
   type StaffTarget,
 } from "./staffCommand";
@@ -169,6 +172,15 @@ async function execute(command: StaffCommand, target: StaffTarget, staff: AppUse
   await replyStaff(main, staffPhone, staffDoneText({ name: target.name, phone: target.phone, via: line.via, sent, missing, text: !!command.text }));
 }
 
+/** Разбор поручения моделью: список фото и прайс на сегодня — чтобы сорта и категории были как в CRM. */
+async function understand(text: string, ctx: Awaited<ReturnType<typeof loadPhotoContext>>): Promise<StaffCommand> {
+  const photos = ctx.photos.filter((p) => p.active && p.fileId);
+  const labels = Array.from(new Set(photos.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика категорий)" : ""))));
+  const priceList = pricesForBot(Array.from(ctx.prices.values()));
+  const { data } = await chatJson(staffCommandPrompt(labels, priceList), text, "staff_command", STAFF_COMMAND_SCHEMA, { fast: true });
+  return parseStaffCommand(data);
+}
+
 /**
  * Сообщение на основной номер с номера сотрудника: поручение — выполнить, ответ цифрой на «кому из них?» — выполнить
  * отложенное, остальное — промолчать. true — сообщение сотрудника (бот его дальше не трогает).
@@ -208,11 +220,21 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
     }
     if (isAckOnly(text) || !openAiConfigured()) return true;
 
-    const photos = (await loadPhotoContext()).photos.filter((p) => p.active && p.fileId);
-    const labels = Array.from(new Set(photos.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика категорий)" : ""))));
-    const { data } = await chatJson(staffCommandPrompt(labels), text, "staff_command", STAFF_COMMAND_SCHEMA, { fast: true });
-    const command = parseStaffCommand(data);
+    const ctx = await loadPhotoContext();
+    let command = await understand(text, ctx);
     if (command.intent === "none") return true;
+    // Посчитать стоимость: расчёт — сотруднику; назван клиент — тот же расчёт (без служебного) уходит клиенту.
+    if (command.intent === "quote") {
+      if (!command.items.length) {
+        await replyStaff(main, message.phone, "Не понял список для расчёта. Напишите позициями: «Altaj 3 кат 200 шт, роза кустовая 60 см 40 шт, эустома белая 15 шт».");
+        return true;
+      }
+      const lines = quoteLines(command.items, ctx.prices, ctx.stock);
+      await replyStaff(main, message.phone, staffQuoteText(lines));
+      if (!command.phone && (!command.client || isSelfTarget(command.client))) return true;
+      if (!lines.some((l) => l.quantity && l.price)) return true;
+      command = { ...command, intent: "send", items: [], text: staffQuoteText(lines, true) };
+    }
     if (command.intent === "other" || (!command.items.length && !command.text)) {
       await replyStaff(main, message.phone, STAFF_OTHER_TEXT);
       return true;
@@ -246,11 +268,15 @@ export async function dryRunStaffCommand(text: string, staffPhone: string): Prom
   const staff = await staffUserOf(key);
   out.push(`Сотрудник: ${staff ? `${staff.name} (${staff.email})` : "по номеру не узнан — номер сводки/продаж"}; наш номер: ${(await ourPhoneKeys(await settingsMap())).has(key) ? "да" : "НЕТ — поручение не примется"}`);
   const ctx = await loadPhotoContext();
-  const photos = ctx.photos.filter((p) => p.active && p.fileId);
-  const labels = Array.from(new Set(photos.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика категорий)" : ""))));
-  const { data } = await chatJson(staffCommandPrompt(labels), text, "staff_command", STAFF_COMMAND_SCHEMA, { fast: true });
-  const command = parseStaffCommand(data);
+  let command = await understand(text, ctx);
   out.push(`Разбор: ${JSON.stringify(command)}`);
+  if (command.intent === "quote") {
+    const lines = quoteLines(command.items, ctx.prices, ctx.stock);
+    out.push("Сотруднику:", staffQuoteText(lines));
+    if (!command.phone && (!command.client || isSelfTarget(command.client))) return out;
+    command = { ...command, intent: "send", items: [], text: staffQuoteText(lines, true) };
+    out.push("Клиенту:", command.text);
+  }
   if (command.intent !== "send") return out;
   const picks = pickStaffPhotos(ctx.photos, command.items);
   out.push(`Фото (${picks.picked.length}): ${picks.picked.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика)" : "")).join(", ")}`);
