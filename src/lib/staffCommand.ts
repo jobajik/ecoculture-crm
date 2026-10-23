@@ -1,7 +1,7 @@
 import { phoneKey } from "./leads";
 import { FLOWER_TYPE_LABELS, isMiniMixVariety } from "./constants";
 import { normalizeGrade } from "./botOrder";
-import { packFor } from "./packing";
+import { packFor, roseKindOf } from "./packing";
 import { priceFor, type PriceRow } from "./priceList";
 import { isInfoPhoto, photoLabel, type BotPhoto } from "./botPhotos";
 
@@ -107,7 +107,7 @@ export function staffCommandPrompt(photoLabels: string[], priceList = ""): strin
     "(«40 шт: 20 ярко-розовых, 20 нежных»), — два пункта по 20, цвет — в color, сорт пусто, если его не назвали.",
     "Сорт и категорию бери ТОЛЬКО из прайса ниже, сорт не придумывай; цены не считай — посчитает программа.",
     "«Посчитай и отправь клиенту X» — тоже quote, клиент в client. У розы «1 сорт 60 см» — длина «60», «2 сорт 60» — «60 (2 сорт)».",
-    "Кустовая роза — kind spray (сорт кустовой из прайса, например Julieta Spray), одноголовая — single.",
+    "Роза: кустовая — kind spray, одноголовая — single, пионовидная — peony; сорт — только если назван.",
     "",
     "Фото в CRM сейчас:",
     ...photoLabels.map((l) => `- ${l}`),
@@ -312,8 +312,11 @@ export interface QuoteLine {
   quantity: number;
   /** Цена стебля; 0 — нет в прайсе. */
   price: number;
-  /** Цены разные у разных сортов, а сорт не назван: «от – до». */
-  range: [number, number] | null;
+  /**
+   * Сорт не назван, а цены у сортов разные: в `price` — цена основной массы склада, здесь — остальные цены с сортами
+   * («Jana, Love Lydia — 410 ₸»). Пусто — цена одна.
+   */
+  others: { price: number; varieties: string[] }[];
   /** Сколько в пачке, если знаем. */
   pack: number | null;
   /** Свободно на складе (все сорта позиции, если сорт не назван); null — не знаем. */
@@ -344,43 +347,36 @@ const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\
  */
 export function staffQuoteText(lines: QuoteLine[], forClient = false): string {
   const out: string[] = [forClient ? "Расчёт по вашему списку (цены на сегодня):" : "Расчёт по прайсу на сегодня:"];
-  // Суммы — «от» и «до»: сорт не назван, а цены у сортов разные — считаем по самому дешёвому и самому дорогому.
-  const total = [0, 0];
-  const totalPacks = [0, 0];
+  let total = 0;
+  let totalPacks = 0;
   let packsDiffer = false;
-  let ranged = false;
   const missing: string[] = [];
   const low: string[] = [];
-  const span = (lo: number, hi: number) => (lo === hi ? money(lo) : `${money(lo).replace(" ₸", "")}–${money(hi)}`);
   for (const l of lines) {
     if (!l.quantity) {
       missing.push(`${l.label} — не понял, сколько штук`);
       continue;
     }
-    const [lo, hi] = l.range ?? [l.price, l.price];
-    if (!lo) {
+    if (!l.price) {
       missing.push(`${l.label} — нет цены в прайсе`);
       continue;
     }
-    if (l.range) ranged = true;
     const packed = l.pack && l.quantity % l.pack !== 0 ? Math.ceil(l.quantity / l.pack) * l.pack : l.quantity;
-    total[0] += l.quantity * lo;
-    total[1] += l.quantity * hi;
-    totalPacks[0] += packed * lo;
-    totalPacks[1] += packed * hi;
-    let row = `• ${l.label} — ${l.quantity} шт. × ${span(lo, hi)} = ${span(l.quantity * lo, l.quantity * hi)}`;
-    if (l.range) row += forClient ? " (зависит от сорта)" : " (цена зависит от сорта — уточните)";
+    total += l.quantity * l.price;
+    totalPacks += packed * l.price;
+    let row = `• ${l.label} — ${l.quantity} шт. × ${money(l.price)} = ${money(l.quantity * l.price)}`;
     if (packed !== l.quantity) {
       packsDiffer = true;
-      row += `\n   пачками по ${l.pack}: ${packed} шт. — ${span(packed * lo, packed * hi)}`;
+      row += `\n   пачками по ${l.pack}: ${packed} шт. — ${money(packed * l.price)}`;
     }
+    // Сорт не назван — цена основной массы, остальные цены — с сортами: пусть сотрудник уточнит.
+    if (l.others.length) row += `\n   ${forClient ? "другие сорта" : "это основная цена; другие сорта"}: ${l.others.map((o) => `${o.varieties.join(", ")} — ${money(o.price)}`).join("; ")}`;
     out.push(row);
     if (l.stock !== null && l.stock < packed) low.push(`${l.label} — ${l.stock > 0 ? `свободно ~${l.stock} шт.` : "сейчас нет"}`);
   }
-  if (total[1] > 0) {
-    out.push("", `Итого: *${span(total[0], total[1])}*`);
-    if (packsDiffer) out.push(`Целыми пачками: *${span(totalPacks[0], totalPacks[1])}*`);
-    if (ranged) out.push(forClient ? "Точная сумма — когда выберете сорт." : "Точная сумма — когда назовёте сорт.");
+  if (total > 0) {
+    out.push("", `Итого: *${money(total)}*`);
+    if (packsDiffer) out.push(`Целыми пачками: *${money(totalPacks)}*`);
   }
   // Клиенту — только посчитанное: «не понял» и склад — дело сотрудника.
   if (forClient) return out.join("\n");
@@ -391,8 +387,8 @@ export function staffQuoteText(lines: QuoteLine[], forClient = false): string {
 
 /**
  * Строки расчёта по прайсу и складу. Сорт и категория названы — их цена (своя или общая по категории). Сорт не назван —
- * смотрим сорта этой позиции на складе (у розы — с учётом вида: кустовая — сорта «Spray», одноголовая — остальные): цена
- * у всех одна — она, разная — «от – до» (просим уточнить), на складе нет — общая цена категории. Цены считает код.
+ * смотрим сорта этой позиции на складе (у розы — с учётом вида, `roseKindOf`: кустовые — `SPRAY_ROSE_VARIETIES` и «Spray» в названии, пионовидные — `PEONY_ROSE_VARIETIES`): цена
+ * у всех одна — она, разные — цена основной массы склада, остальные — строкой с сортами; на складе нет — общая цена. Цены считает код.
  */
 export function quoteLines(items: StaffItem[], prices: Map<string, PriceRow>, stock: { flower: string; variety: string; grade: string; qty: number }[]): QuoteLine[] {
   const n = (s: string) => norm(s).replace(/\s+/g, "");
@@ -403,28 +399,37 @@ export function quoteLines(items: StaffItem[], prices: Map<string, PriceRow>, st
     const variety = (stock.find((s) => s.flower === f && n(s.variety) === n(raw.variety))?.variety ?? raw.variety).trim();
     const fits = (v: string) => {
       if (isMiniMixVariety(v)) return /мини/i.test(grade);
-      if (f !== "rose" || !raw.kind) return true;
-      return raw.kind === "spray" ? /spray|кустов/i.test(v) : !/spray|кустов/i.test(v);
+      return f !== "rose" || !raw.kind || roseKindOf(v) === raw.kind;
     };
     const rows = stock.filter((s) => s.flower === f && (!grade || s.grade === grade) && (variety ? n(s.variety) === n(variety) : fits(s.variety)));
     let price = 0;
-    let range: [number, number] | null = null;
+    let others: QuoteLine["others"] = [];
     if (variety && grade) price = priceFor(prices, f, variety, grade);
     else {
-      const own = rows.map((s) => priceFor(prices, f, s.variety, s.grade)).filter((p) => p > 0);
-      const all = own.length ? own : grade ? [priceFor(prices, f, "", grade)].filter((p) => p > 0) : [];
-      if (all.length) {
-        const lo = Math.min(...all);
-        const hi = Math.max(...all);
-        if (lo === hi) price = lo;
-        else range = [lo, hi];
+      // Цены сортов этой позиции на складе: основная — у которой больше всего стеблей.
+      const tiers = new Map<number, { qty: number; varieties: Set<string> }>();
+      for (const r of rows) {
+        const p = priceFor(prices, f, r.variety, r.grade);
+        if (p <= 0) continue;
+        const t = tiers.get(p) ?? { qty: 0, varieties: new Set<string>() };
+        t.qty += r.qty;
+        t.varieties.add(r.variety);
+        tiers.set(p, t);
       }
+      const sorted = Array.from(tiers.entries()).sort((a, b) => b[1].qty - a[1].qty || a[0] - b[0]);
+      if (sorted.length) {
+        price = sorted[0][0];
+        others = sorted
+          .slice(1)
+          .sort((a, b) => a[0] - b[0])
+          .map(([p, t]) => ({ price: p, varieties: Array.from(t.varieties).sort() }));
+      } else if (grade) price = priceFor(prices, f, "", grade);
     }
     return {
       label: quoteLabel({ flowerType: f, variety, grade, kind: raw.kind, color: raw.color }, FLOWER_TYPE_LABELS[f] || f),
       quantity: raw.quantity,
       price,
-      range,
+      others,
       pack: quotePack(raw, packFor(f, variety, grade)),
       stock: grade ? rows.reduce((sum, s) => sum + s.qty, 0) : null,
     };

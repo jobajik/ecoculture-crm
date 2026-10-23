@@ -40,6 +40,21 @@ export function miniMixPack(variety: string): number | null {
  */
 export const PEONY_ROSE_VARIETIES: string[] = [];
 
+/**
+ * Кустовые сорта розы (23.10.2026, для расчёта стоимости поручением: «кустовые 60 см» → какие сорта считать). Пока —
+ * только те, где это в названии; остальные владелец назовёт. Сорт не в списке и не пионовидный — одноголовый.
+ */
+export const SPRAY_ROSE_VARIETIES: string[] = ["Julieta Spray"];
+
+/** Вид розы по сорту: spray / peony / single (мини-микс — пусто). */
+export function roseKindOf(variety: string): "spray" | "peony" | "single" | "" {
+  const v = variety.trim().toLowerCase();
+  if (!v || /^мини-?микс/.test(v)) return "";
+  if (PEONY_ROSE_VARIETIES.some((x) => x.toLowerCase() === v)) return "peony";
+  if (/spray|кустов/.test(v) || SPRAY_ROSE_VARIETIES.some((x) => x.toLowerCase() === v)) return "spray";
+  return "single";
+}
+
 export function packFor(flowerType: string, variety: string, grade: string): number | null {
   if (flowerType === "rose") {
     const mm = miniMixPack(variety);

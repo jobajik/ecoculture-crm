@@ -150,7 +150,7 @@ const ilgar = quoteLines(
 check("кустовая без сорта — цена кустового сорта со склада", [ilgar[0].price, ilgar[0].pack, ilgar[0].stock], [300, 15, 300]);
 check("Алтай 3 кат — Третья, сорт как на складе", [ilgar[1].label, ilgar[1].price], ["Хризантема Altaj, Третья", 160]);
 check("эустома — общая цена, пачка 10", [ilgar[2].price, ilgar[2].pack, ilgar[2].stock], [500, 10, 12]);
-check("одноголовая без сорта — кустовые не в счёт, общая цена", [ilgar[4].price, ilgar[4].range], [250, null]);
+check("одноголовая без сорта — кустовые не в счёт, общая цена", [ilgar[4].price, ilgar[4].others], [250, []]);
 const quote = staffQuoteText(ilgar);
 check("строка позиции", quote.includes("• Роза кустовая, 60 см — 40 шт. × 300 ₸ = 12 000 ₸\n   пачками по 15: 45 шт. — 13 500 ₸"), true);
 check("итого", quote.includes("Итого: *36 900 ₸*"), true);
@@ -159,9 +159,9 @@ check("склад меньше — сказано", quote.includes("• Эуст
 check("клиенту — без склада", staffQuoteText(ilgar, true).includes("складе"), false);
 
 const naomi = quoteLines([it({ grade: "60", quantity: 30 })], priceMap, [...stockRows, { flower: "rose", variety: "Red Naomi", grade: "60", qty: 100 }]);
-check("сорт не назван, цены разные — диапазон", naomi[0].range, [250, 300]);
-check("диапазон — строкой «от–до»", staffQuoteText(naomi).includes("• Роза, 60 см — 30 шт. × 250–300 ₸ = 7 500–9 000 ₸ (цена зависит от сорта — уточните)"), true);
-check("диапазон — итог «от–до»", staffQuoteText(naomi).includes("Итого: *7 500–9 000 ₸*"), true);
+check("сорт не назван, цены разные — основная по складу, остальные с сортами", [naomi[0].price, naomi[0].others], [250, [{ price: 280, varieties: ["Red Naomi"] }, { price: 300, varieties: ["Julieta Spray"] }]]);
+check("другие сорта — строкой", staffQuoteText(naomi).includes("   это основная цена; другие сорта: Red Naomi — 280 ₸; Julieta Spray — 300 ₸"), true);
+check("итог — по основной", staffQuoteText(naomi).includes("Итого: *7 500 ₸*"), true);
 check("цвет без сорта — в строке", quoteLines([it({ kind: "spray", grade: "60", quantity: 15, color: "ярко-розовые" })], priceMap, stockRows)[0].label, "Роза кустовая (ярко-розовые), 60 см");
 check("нет количества — в «не посчитал»", staffQuoteText(quoteLines([it({ grade: "60" })], priceMap, stockRows)).includes("не понял, сколько штук"), true);
 check("нет цены — так и сказано", staffQuoteText(quoteLines([it({ flowerType: "chrysanthemum", variety: "Chik", grade: "Первая", quantity: 10 })], priceMap, stockRows)).includes("нет цены в прайсе"), true);
