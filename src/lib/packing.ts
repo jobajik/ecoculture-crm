@@ -34,33 +34,57 @@ export function miniMixPack(variety: string): number | null {
 }
 
 /**
- * Пачка позиции, если её знаем НАВЕРНЯКА (владелец, 22.10: «пачки не разбиваем — нельзя написать „возьмите 50 штук“»):
- * мини-микс розы — по сорту, эустома — по длине. Обычная роза — null: 15 у одноголовой и кустовой, 10 у пионовидной,
- * а какие сорта пионовидные, в справочнике не записано (`PEONY_ROSE_VARIETIES`, пока пусто) — угадывать нельзя.
+ * Вид розы по сорту — список владельца (23.10.2026, снимок «Анализ остатков», колонка «Тип розы»; «каких-то сортов уже
+ * может и не быть на теплице»). Названия в его файле и в CRM пишутся по-разному («Lovely Lydia» / «Love Lydia»,
+ * «Odilia» / «Odiliy», «Annakarina» / «Anna Karina», «Whiskey» / «Whisky») — сравнение без пробелов и регистра, оба
+ * написания в списке. «Пионовидная спрей-роза» — и кустовая, и пионовидная. Сорта нет в списке — вид неизвестен
+ * (не «одноголовая»: 23.10 так ошибочно считалось, и Misty Bubbles шла в одноголовые).
  */
-export const PEONY_ROSE_VARIETIES: string[] = [];
+export type RoseKind = "single" | "spray" | "peony_spray" | "peony";
 
-/**
- * Кустовые сорта розы (23.10.2026, для расчёта стоимости поручением: «кустовые 60 см» → какие сорта считать). Пока —
- * только те, где это в названии; остальные владелец назовёт. Сорт не в списке и не пионовидный — одноголовый.
- */
-export const SPRAY_ROSE_VARIETIES: string[] = ["Julieta Spray"];
+export const ROSE_KINDS: Record<RoseKind, string[]> = {
+  single: [
+    "All Star", "Prestige", "Red Naomi", "Avalanche", "Peach Avalanche", "Penny Lane", "Maritime", "Revival",
+    "Anna Karina", "Annakarina", "Whisky", "Whiskey", "Kamala", "Candy Avalanche", "Con Amore", "Red Eagle", "Jumilia",
+  ],
+  spray: ["Love Lydia", "Lovely Lydia", "Odiliy", "Odilia", "Jana", "Shine"],
+  peony_spray: ["Misty Bubbles", "Julieta Spray", "Blanchette"],
+  peony: ["Catalina"],
+};
 
-/** Вид розы по сорту: spray / peony / single (мини-микс — пусто). */
-export function roseKindOf(variety: string): "spray" | "peony" | "single" | "" {
-  const v = variety.trim().toLowerCase();
-  if (!v || /^мини-?микс/.test(v)) return "";
-  if (PEONY_ROSE_VARIETIES.some((x) => x.toLowerCase() === v)) return "peony";
-  if (/spray|кустов/.test(v) || SPRAY_ROSE_VARIETIES.some((x) => x.toLowerCase() === v)) return "spray";
-  return "single";
+/** Сколько в пачке по виду; null — владелец не говорил (пионовидная спрей-роза — ждём ответа). */
+export const ROSE_KIND_PACK: Record<RoseKind, number | null> = { single: 15, spray: 15, peony_spray: null, peony: 10 };
+
+const varietyKey = (v: string) => v.toLowerCase().replace(/ё/g, "е").replace(/[\s-]+/g, "");
+
+/** Вид розы по сорту; мини-микс, «Mix» и сорт не из списка — пусто (не знаем). */
+export function roseKindOf(variety: string): RoseKind | "" {
+  const k = varietyKey(variety);
+  if (!k || /^минимикс/.test(k)) return "";
+  for (const kind of Object.keys(ROSE_KINDS) as RoseKind[]) if (ROSE_KINDS[kind].some((v) => varietyKey(v) === k)) return kind;
+  return "";
 }
 
+/** Подходит ли сорт под вид, который назвал человек: «кустовые» — и спрей, и пионовидные спрей; так же «пионовидные». */
+export function roseKindMatches(variety: string, asked: string): boolean {
+  const kind = roseKindOf(variety);
+  if (asked === "single") return kind === "single";
+  if (asked === "spray") return kind === "spray" || kind === "peony_spray";
+  if (asked === "peony") return kind === "peony" || kind === "peony_spray";
+  return true;
+}
+
+/**
+ * Пачка позиции, если её знаем НАВЕРНЯКА (владелец, 22.10: «пачки не разбиваем — нельзя написать „возьмите 50 штук“»):
+ * мини-микс розы — по сорту, обычная роза — по виду сорта (`ROSE_KINDS`), эустома — по длине. Не знаем — null, и
+ * заказ бота количество не проверяет.
+ */
 export function packFor(flowerType: string, variety: string, grade: string): number | null {
   if (flowerType === "rose") {
     const mm = miniMixPack(variety);
     if (mm) return mm;
-    if (PEONY_ROSE_VARIETIES.some((v) => v.toLowerCase() === variety.trim().toLowerCase())) return 10;
-    return PEONY_ROSE_VARIETIES.length ? 15 : null;
+    const kind = roseKindOf(variety);
+    return kind ? ROSE_KIND_PACK[kind] : null;
   }
   if (flowerType === "eustoma") {
     if (grade === "Мини-микс" || miniMixPack(variety) !== null || /мини-?микс/i.test(variety)) return 60;
@@ -84,6 +108,8 @@ export function packingPromptBlock(): string {
     "целыми пачками. Сам предлагаешь — кратно пачке и называешь пачки («150 шт., 10 пачек»). На «сколько в пачке?» — по",
     "этому списку. Клиент назвал штуки не кратно пачке — не оформляй как есть: одной фразой предложи ближайшее большее",
     "целыми пачками с суммой («розы идут пачками по 15 — сделаю 105 шт., 7 пачек, это … ₸?»), оформляй на это число.",
-    "Сорт розы не знаешь, одноголовый он, кустовой или пионовидный, — пачку не называй.",
+    "Вид розы по сорту: одноголовые — " + ROSE_KINDS.single.join(", ") + "; кустовые (спрей) — " + ROSE_KINDS.spray.join(", ") +
+      "; пионовидные спрей-розы — " + ROSE_KINDS.peony_spray.join(", ") + "; пионовидные — " + ROSE_KINDS.peony.join(", ") + ".",
+    "Пионовидные спрей-розы — пачку не называй (не указана). Сорта нет в этом списке — пачку не называй.",
   ].join("\n");
 }

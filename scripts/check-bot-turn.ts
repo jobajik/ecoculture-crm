@@ -18,7 +18,7 @@ import {
 } from "../src/lib/botTurn";
 import { harvestForBot } from "../src/lib/botKnowledge";
 import { humanStylePrompt, plainTyping } from "../src/lib/humanStyle";
-import { miniMixPack, packFor, packingPromptBlock } from "../src/lib/packing";
+import { miniMixPack, packFor, packingPromptBlock, roseKindMatches, roseKindOf } from "../src/lib/packing";
 import { emptyBotChat } from "../src/lib/repo/broadcasts";
 import type { BotChat } from "../src/lib/broadcast";
 
@@ -197,7 +197,14 @@ check("ссылка и числа не тронуты", plainTyping("https://www
   const b = packingPromptBlock();
   check("паккинг: роза 15, пионовидная 10, эустома 10, мини-микс эустомы 60", /одноголовая — 15/.test(b) && /пионовидная — 10/.test(b) && /50 см — 10/.test(b) && /Эустома мини-микс — 60/.test(b));
   check("паккинг: мини-микс розы по сорту 90 / 80 / 80", miniMixPack("Мини-микс одноголовые") === 90 && miniMixPack("Мини-микс кустовые") === 80 && miniMixPack("Мини-микс пионовидные") === 80 && miniMixPack("Avalanche") === null);
-  check("паккинг: пачка эустомы 10 / мини-микс 60, обычная роза — пока не знаем (пионовидные не размечены)", packFor("eustoma", "Alissa White", "50") === 10 && packFor("eustoma", "Alissa White", "Мини-микс") === 60 && packFor("rose", "Avalanche", "60") === null && packFor("rose", "Мини-микс кустовые", "Мини-микс") === 80);
+  check("паккинг: пачка эустомы 10 / мини-микс 60, мини-микс кустовые 80", packFor("eustoma", "Alissa White", "50") === 10 && packFor("eustoma", "Alissa White", "Мини-микс") === 60 && packFor("rose", "Мини-микс кустовые", "Мини-микс") === 80);
+  // Вид розы — список владельца 23.10.2026; «Lovely Lydia» в его файле = «Love Lydia» в CRM.
+  check("паккинг розы по виду: одноголовая 15, спрей 15, пионовидная 10, пионовидная спрей и Mix — не знаем",
+    [packFor("rose", "Avalanche", "60"), packFor("rose", "Anna Karina", "60"), packFor("rose", "Love Lydia", "60"), packFor("rose", "Catalina", "60"), packFor("rose", "Misty Bubbles", "60"), packFor("rose", "Mix", "60"), packFor("rose", "Новый сорт", "60")].join(",") ===
+    "15,15,15,10,,,");
+  check("вид розы: «кустовые» — спрей и пионовидные спрей, не одноголовые",
+    [roseKindMatches("Jana", "spray"), roseKindMatches("Julieta Spray", "spray"), roseKindMatches("Prestige", "spray"), roseKindMatches("Julieta Spray", "peony"), roseKindMatches("Misty Bubbles", "single"), roseKindOf("Odilia"), roseKindOf("Whisky")].join(",") ===
+    "true,true,false,true,false,spray,single");
   check("паккинг: пачки не разбиваем — в подсказке", /ПАЧКИ НЕ РАЗБИВАЕМ/.test(b));
 }
 

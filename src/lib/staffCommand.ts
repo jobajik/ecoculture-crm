@@ -1,7 +1,7 @@
 import { phoneKey } from "./leads";
 import { FLOWER_TYPE_LABELS, isMiniMixVariety } from "./constants";
 import { normalizeGrade } from "./botOrder";
-import { packFor, roseKindOf } from "./packing";
+import { packFor, roseKindMatches } from "./packing";
 import { priceFor, type PriceRow } from "./priceList";
 import { isInfoPhoto, photoLabel, type BotPhoto } from "./botPhotos";
 
@@ -332,10 +332,19 @@ export function quoteLabel(it: Pick<StaffItem, "flowerType" | "variety" | "grade
 }
 
 /** Пачка для расчёта: правила паккинга, а у обычной розы — по виду, если сотрудник его назвал. */
-export function quotePack(it: Pick<StaffItem, "flowerType" | "kind">, known: number | null): number | null {
+export function quotePack(it: Pick<StaffItem, "flowerType" | "kind">, known: number | null | undefined): number | null {
   if (known) return known;
+  // undefined — у сортов позиции на складе пачки разные или неизвестны: не угадываем.
+  if (known === undefined) return null;
   if (it.flowerType === "rose" && ROSE_PACK[it.kind]) return ROSE_PACK[it.kind];
   return null;
+}
+
+/** Пачка, одинаковая у всех сортов позиции; разные или хоть одна неизвестна — undefined. */
+export function commonPack(packs: (number | null)[]): number | undefined {
+  const set = new Set(packs);
+  const only = set.size === 1 ? Array.from(set)[0] : null;
+  return only ?? undefined;
 }
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\u00a0/g, " ")} ₸`;
@@ -387,7 +396,7 @@ export function staffQuoteText(lines: QuoteLine[], forClient = false): string {
 
 /**
  * Строки расчёта по прайсу и складу. Сорт и категория названы — их цена (своя или общая по категории). Сорт не назван —
- * смотрим сорта этой позиции на складе (у розы — с учётом вида, `roseKindOf`: кустовые — `SPRAY_ROSE_VARIETIES` и «Spray» в названии, пионовидные — `PEONY_ROSE_VARIETIES`): цена
+ * смотрим сорта этой позиции на складе (у розы — с учётом вида сорта по списку владельца, `roseKindMatches` в `packing.ts`): цена
  * у всех одна — она, разные — цена основной массы склада, остальные — строкой с сортами; на складе нет — общая цена. Цены считает код.
  */
 export function quoteLines(items: StaffItem[], prices: Map<string, PriceRow>, stock: { flower: string; variety: string; grade: string; qty: number }[]): QuoteLine[] {
@@ -399,7 +408,7 @@ export function quoteLines(items: StaffItem[], prices: Map<string, PriceRow>, st
     const variety = (stock.find((s) => s.flower === f && n(s.variety) === n(raw.variety))?.variety ?? raw.variety).trim();
     const fits = (v: string) => {
       if (isMiniMixVariety(v)) return /мини/i.test(grade);
-      return f !== "rose" || !raw.kind || roseKindOf(v) === raw.kind;
+      return f !== "rose" || !raw.kind || roseKindMatches(v, raw.kind);
     };
     const rows = stock.filter((s) => s.flower === f && (!grade || s.grade === grade) && (variety ? n(s.variety) === n(variety) : fits(s.variety)));
     let price = 0;
@@ -430,7 +439,7 @@ export function quoteLines(items: StaffItem[], prices: Map<string, PriceRow>, st
       quantity: raw.quantity,
       price,
       others,
-      pack: quotePack(raw, packFor(f, variety, grade)),
+      pack: quotePack(raw, variety || !rows.length ? packFor(f, variety, grade) : commonPack(rows.filter((r) => !price || priceFor(prices, f, r.variety, r.grade) === price).map((r) => packFor(f, r.variety, r.grade)))),
       stock: grade ? rows.reduce((sum, s) => sum + s.qty, 0) : null,
     };
   });

@@ -122,14 +122,14 @@ check("количество — целое, вид — из списка", q.ite
 
 const priceRows: PriceRow[] = [
   { date: "2026-10-01", flowerType: "rose", variety: "", grade: "60", price: 250 },
-  { date: "2026-10-01", flowerType: "rose", variety: "Julieta Spray", grade: "60", price: 300 },
+  { date: "2026-10-01", flowerType: "rose", variety: "Jana", grade: "60", price: 300 },
   { date: "2026-10-01", flowerType: "rose", variety: "Red Naomi", grade: "60", price: 280 },
   { date: "2026-10-01", flowerType: "chrysanthemum", variety: "Altaj", grade: "Третья", price: 160 },
   { date: "2026-10-01", flowerType: "eustoma", variety: "", grade: "Стандарт", price: 500 },
 ];
 const priceMap = new Map(priceRows.map((r) => [priceKey(r.flowerType, r.variety, r.grade), r]));
 const stockRows = [
-  { flower: "rose", variety: "Julieta Spray", grade: "60", qty: 300 },
+  { flower: "rose", variety: "Jana", grade: "60", qty: 300 },
   { flower: "rose", variety: "Jumilia", grade: "60", qty: 900 },
   { flower: "chrysanthemum", variety: "Altaj", grade: "Третья", qty: 5000 },
   { flower: "eustoma", variety: "Alissa White", grade: "Стандарт", qty: 12 },
@@ -159,12 +159,16 @@ check("склад меньше — сказано", quote.includes("• Эуст
 check("клиенту — без склада", staffQuoteText(ilgar, true).includes("складе"), false);
 
 const naomi = quoteLines([it({ grade: "60", quantity: 30 })], priceMap, [...stockRows, { flower: "rose", variety: "Red Naomi", grade: "60", qty: 100 }]);
-check("сорт не назван, цены разные — основная по складу, остальные с сортами", [naomi[0].price, naomi[0].others], [250, [{ price: 280, varieties: ["Red Naomi"] }, { price: 300, varieties: ["Julieta Spray"] }]]);
-check("другие сорта — строкой", staffQuoteText(naomi).includes("   это основная цена; другие сорта: Red Naomi — 280 ₸; Julieta Spray — 300 ₸"), true);
+check("сорт не назван, цены разные — основная по складу, остальные с сортами", [naomi[0].price, naomi[0].others], [250, [{ price: 280, varieties: ["Red Naomi"] }, { price: 300, varieties: ["Jana"] }]]);
+check("другие сорта — строкой", staffQuoteText(naomi).includes("   это основная цена; другие сорта: Red Naomi — 280 ₸; Jana — 300 ₸"), true);
 check("итог — по основной", staffQuoteText(naomi).includes("Итого: *7 500 ₸*"), true);
 check("цвет без сорта — в строке", quoteLines([it({ kind: "spray", grade: "60", quantity: 15, color: "ярко-розовые" })], priceMap, stockRows)[0].label, "Роза кустовая (ярко-розовые), 60 см");
 check("нет количества — в «не посчитал»", staffQuoteText(quoteLines([it({ grade: "60" })], priceMap, stockRows)).includes("не понял, сколько штук"), true);
 check("нет цены — так и сказано", staffQuoteText(quoteLines([it({ flowerType: "chrysanthemum", variety: "Chik", grade: "Первая", quantity: 10 })], priceMap, stockRows)).includes("нет цены в прайсе"), true);
+check("кустовые: пионовидные спрей тоже в счёт, пачка — по сортам основной цены",
+  quoteLines([it({ kind: "spray", grade: "60", quantity: 20 })], priceMap, [...stockRows, { flower: "rose", variety: "Misty Bubbles", grade: "60", qty: 50 }]).map((l) => [l.price, l.pack, l.others.length]),
+  [[300, 15, 1]]);
+check("одноголовые: Love Lydia (спрей) не в счёт", quoteLines([it({ kind: "single", grade: "60", quantity: 30 })], priceMap, [...stockRows, { flower: "rose", variety: "Love Lydia", grade: "60", qty: 5000 }])[0].others, []);
 check("пачка: известная важнее вида", [quotePack({ flowerType: "rose", kind: "spray" }, 80), quotePack({ flowerType: "rose", kind: "peony" }, null), quotePack({ flowerType: "chrysanthemum", kind: "" }, null)], [80, 10, null]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
