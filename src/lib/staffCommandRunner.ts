@@ -232,7 +232,7 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
       const lines = quoteLines(command.items, ctx.prices, ctx.stock);
       await replyStaff(main, message.phone, staffQuoteText(lines));
       if (!command.phone && (!command.client || isSelfTarget(command.client))) return true;
-      if (!lines.some((l) => l.quantity && l.price)) return true;
+      if (!lines.some((l) => l.quantity && (l.price || l.range))) return true;
       command = { ...command, intent: "send", items: [], text: staffQuoteText(lines, true) };
     }
     if (command.intent === "other" || (!command.items.length && !command.text)) {

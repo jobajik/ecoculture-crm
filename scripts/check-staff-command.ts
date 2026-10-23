@@ -118,7 +118,7 @@ const q = parseStaffCommand({
   items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "3 кат", many: false, quantity: 15.4, kind: "" }, { flowerType: "rose", variety: "", grade: "60", many: false, quantity: 30, kind: "boom" }],
 });
 check("quote разбирается", q.intent, "quote");
-check("количество — целое, вид — из списка", q.items.map((i) => [i.quantity, i.kind]), [[15, ""], [30, ""]]);
+check("количество — целое, вид — из списка", q.items.map((i) => [i.quantity, i.kind, i.color]), [[15, "", ""], [30, "", ""]]);
 
 const priceRows: PriceRow[] = [
   { date: "2026-10-01", flowerType: "rose", variety: "", grade: "60", price: 250 },
@@ -160,7 +160,9 @@ check("клиенту — без склада", staffQuoteText(ilgar, true).incl
 
 const naomi = quoteLines([it({ grade: "60", quantity: 30 })], priceMap, [...stockRows, { flower: "rose", variety: "Red Naomi", grade: "60", qty: 100 }]);
 check("сорт не назван, цены разные — диапазон", naomi[0].range, [250, 300]);
-check("диапазон — в «не посчитал»", staffQuoteText(naomi).includes("цена разная (250 ₸–300 ₸)"), true);
+check("диапазон — строкой «от–до»", staffQuoteText(naomi).includes("• Роза, 60 см — 30 шт. × 250–300 ₸ = 7 500–9 000 ₸ (цена зависит от сорта — уточните)"), true);
+check("диапазон — итог «от–до»", staffQuoteText(naomi).includes("Итого: *7 500–9 000 ₸*"), true);
+check("цвет без сорта — в строке", quoteLines([it({ kind: "spray", grade: "60", quantity: 15, color: "ярко-розовые" })], priceMap, stockRows)[0].label, "Роза кустовая (ярко-розовые), 60 см");
 check("нет количества — в «не посчитал»", staffQuoteText(quoteLines([it({ grade: "60" })], priceMap, stockRows)).includes("не понял, сколько штук"), true);
 check("нет цены — так и сказано", staffQuoteText(quoteLines([it({ flowerType: "chrysanthemum", variety: "Chik", grade: "Первая", quantity: 10 })], priceMap, stockRows)).includes("нет цены в прайсе"), true);
 check("пачка: известная важнее вида", [quotePack({ flowerType: "rose", kind: "spray" }, 80), quotePack({ flowerType: "rose", kind: "peony" }, null), quotePack({ flowerType: "chrysanthemum", kind: "" }, null)], [80, 10, null]);
