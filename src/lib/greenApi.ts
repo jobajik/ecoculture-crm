@@ -201,6 +201,14 @@ export async function configureWebhook(cfg: GreenConfig, webhookUrl: string, web
   });
 }
 
+/** Ссылка на файл старого сообщения (голосовое из истории без ссылки) — Green API `downloadFile`; нет — пусто. */
+export async function messageFileUrl(cfg: GreenConfig, phone: string, idMessage: string): Promise<string> {
+  const chatId = chatIdForPhone(phone);
+  if (!chatId || !idMessage) return "";
+  const r = await call<{ downloadUrl?: string }>(cfg, "downloadFile", { chatId, idMessage }, 30000);
+  return String(r?.downloadUrl || "");
+}
+
 /** Скачать файл сообщения (голосовое) по ссылке из уведомления. */
 export async function downloadMedia(url: string, maxBytes = 20 * 1024 * 1024): Promise<{ data: ArrayBuffer; mime: string } | null> {
   if (!/^https:\/\//.test(url)) return null;
