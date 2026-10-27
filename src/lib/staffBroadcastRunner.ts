@@ -9,7 +9,7 @@ import { listWaLines, managerLineConfig } from "./repo/waLines";
 import { createBroadcast, listBroadcasts, listRecipients, optedOutKeys, settingsMap } from "./repo/broadcasts";
 import { greenConfig, greenLeadsConfig } from "./greenApi";
 import { ourPhoneKeys } from "./lineNotify";
-import { chatFacts, sentFacts, type ExclusionContext } from "./autoBroadcast";
+import { chatFacts, ORDERED_RECENTLY_DAYS, sentFacts, type ExclusionContext } from "./autoBroadcast";
 import { kickBroadcast } from "./autoBroadcastRunner";
 import { SITE } from "./broadcastSend";
 import { BROADCAST_STATUSES, greetingName, waPhone } from "./broadcast";
@@ -109,8 +109,16 @@ export async function planStaffBroadcast(
   const from = localDayKey(new Date(Date.now() - FOCUS_BUYERS_DAYS * 86400000));
   const focus = command.items.map((it) => ({ f: it.flowerType, g: it.grade ? normalizeGrade(it.flowerType, it.grade) || it.grade : "", v: n(it.variety) }));
   const bought = new Set<string>();
+  // Заказал за последние 3 дня — как у автопилота, ему рассылку не шлём.
+  const recentFrom = new Date(Date.now() - ORDERED_RECENTLY_DAYS * 86400000).toISOString();
+  const ordered = new Set<string>();
   for (const o of orders) {
-    if (o.status === ORDER_STATUSES.CANCELLED || localDayKey(new Date(o.createdAt)) < from) continue;
+    if (o.status === ORDER_STATUSES.CANCELLED) continue;
+    if (o.createdAt >= recentFrom) {
+      if (o.clientId) ordered.add(`c:${o.clientId}`);
+      if (phoneKey(o.clientPhone)) ordered.add(phoneKey(o.clientPhone));
+    }
+    if (localDayKey(new Date(o.createdAt)) < from) continue;
     if (!o.items.some((i) => focus.some((x) => i.flowerType === x.f && (!x.g || i.grade === x.g) && (!x.v || n(i.variety) === x.v)))) continue;
     if (o.clientId) bought.add(`c:${o.clientId}`);
     if (phoneKey(o.clientPhone)) bought.add(phoneKey(o.clientPhone));
@@ -150,7 +158,10 @@ export async function planStaffBroadcast(
       managerEmail: client?.managerEmail || lead?.managerEmail || staff.email,
       lastInAt: c.lastInAt,
       boughtFocus: bought.has(key) || (!!client && bought.has(`c:${client.clientId}`)),
-      closed: closed || (looksLikeRefusal(facts.get(key)?.lastInText) ? "отказался в переписке" : ""),
+      closed:
+        closed ||
+        (ordered.has(key) || (!!client && ordered.has(`c:${client.clientId}`)) ? `заказывал за ${ORDERED_RECENTLY_DAYS} дня` : "") ||
+        (looksLikeRefusal(facts.get(key)?.lastInText) ? "отказался в переписке" : ""),
     });
   }
   const autoOf = new Map(broadcasts.map((b) => [b.broadcastId, b.auto]));
