@@ -34,3 +34,6 @@ set-url.mjs
 
 # руководство пользователя (собирается отдельно, в публичный репозиторий не нужно)
 *.pdf
+
+# ochered zadaniy agent.bat - u kazhdogo kompyutera svoya
+_queue/
