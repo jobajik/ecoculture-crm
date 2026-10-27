@@ -16,6 +16,8 @@ import { sendOnLine } from "./lineAssistant";
 import { loadPhotoContext, photoPrices } from "./botPhotoSend";
 import { isInfoPhoto, photoLabel, photoMessage } from "./botPhotos";
 import { pricesForBot } from "./botKnowledge";
+import { isNoText, isYesText, parseStaffBroadcastPlan, STAFF_BROADCAST_PREFIX } from "./staffBroadcast";
+import { planStaffBroadcast, runStaffBroadcastPlan } from "./staffBroadcastRunner";
 import {
   isSelfTarget,
   matchTargets,
@@ -196,8 +198,18 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
   if (!main || !text) return true;
   try {
     const settingKey = `${STAFF_ASK_PREFIX}${key}`;
-    const pending = parsePending((await settingsMap(true))[settingKey]);
+    const fresh = await settingsMap(true);
+    const pending = parsePending(fresh[settingKey]);
     const staff = await staffUserOf(key);
+
+    // Ответ на план рассылки: «ДА» — запустить, «НЕТ» — забыть (27.10.2026, `staffBroadcast.ts`).
+    const broadcastKey = `${STAFF_BROADCAST_PREFIX}${key}`;
+    const broadcastPlan = parseStaffBroadcastPlan(fresh[broadcastKey]);
+    if (broadcastPlan && (isYesText(text) || isNoText(text))) {
+      await saveSettings({ [broadcastKey]: "" });
+      await replyStaff(main, message.phone, isNoText(text) ? "Хорошо, рассылку не запускаю." : await runStaffBroadcastPlan(broadcastPlan, staff));
+      return true;
+    }
     const messages = await listWaMessages({ lines: "all" });
 
     // Ответ на «кому из них?» — цифрой или номером телефона.
@@ -223,6 +235,13 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
     const ctx = await loadPhotoContext();
     let command = await understand(text, ctx);
     if (command.intent === "none") return true;
+    // Рассылка своим клиентам: сначала план и «ДА».
+    if (command.intent === "broadcast") {
+      const { reply, plan } = await planStaffBroadcast(command, staff, ctx);
+      if (plan) await saveSettings({ [broadcastKey]: JSON.stringify(plan) });
+      await replyStaff(main, message.phone, reply);
+      return true;
+    }
     // Посчитать стоимость: расчёт — сотруднику; назван клиент — тот же расчёт (без служебного) уходит клиенту.
     if (command.intent === "quote") {
       if (!command.items.length) {
@@ -270,6 +289,12 @@ export async function dryRunStaffCommand(text: string, staffPhone: string): Prom
   const ctx = await loadPhotoContext();
   let command = await understand(text, ctx);
   out.push(`Разбор: ${JSON.stringify(command)}`);
+  if (command.intent === "broadcast") {
+    const { reply, plan } = await planStaffBroadcast(command, staff, ctx);
+    out.push("Сотруднику:", reply);
+    if (plan) out.push(`Номер: «${plan.line || "основной"}», фото: ${plan.fileId ? "из ротации" : "нет"}, получатели: ${plan.recipients.map((r) => `${r.name || "—"} …${r.phone.slice(-4)} (${r.kind})`).join("; ")}`);
+    return out;
+  }
   if (command.intent === "quote") {
     const lines = quoteLines(command.items, ctx.prices, ctx.stock);
     out.push("Сотруднику:", staffQuoteText(lines));

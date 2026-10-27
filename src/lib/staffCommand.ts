@@ -42,9 +42,10 @@ export interface StaffCommand {
   /**
    * send — отправить клиенту; quote — посчитать стоимость списка по прайсу (23.10.2026, Ильгар: «можешь посчитать
    * сколько по стоимости выйдет», владелец: «надо чтобы ты теперь тоже так мог»); other — просьба, которую бот не
-   * умеет; none — не поручение.
+   * умеет; none — не поручение. broadcast — рассылка клиентам из контактов сотрудника (27.10.2026, владелец: «пишут с
+   * утра: сделай сегодня рассылку 20-ти клиентам из контактов с упором на хризантему 3 категории, с фото»).
    */
-  intent: "send" | "quote" | "other" | "none";
+  intent: "send" | "quote" | "broadcast" | "other" | "none";
   /** Кому, как написал сотрудник: имя, точка, город. */
   client: string;
   /** Номер клиента, если сотрудник его написал (цифры). */
@@ -52,6 +53,10 @@ export interface StaffCommand {
   items: StaffItem[];
   /** Текст клиенту от сотрудника (если просил что-то передать словами). */
   text: string;
+  /** Рассылка: сколько клиентам; 0 — не назвал. */
+  count: number;
+  /** Рассылка: false — сотрудник сказал «без фото». */
+  photo: boolean;
 }
 
 const S = (description: string) => ({ type: "string", description });
@@ -59,13 +64,13 @@ const S = (description: string) => ({ type: "string", description });
 export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["intent", "client", "phone", "items", "text"],
+  required: ["intent", "client", "phone", "items", "text", "count", "photo"],
   properties: {
     intent: {
       type: "string",
-      enum: ["send", "quote", "other", "none"],
+      enum: ["send", "quote", "broadcast", "other", "none"],
       description:
-        "send — сотрудник просит отправить клиенту фото, каталог или сообщение; quote — просит посчитать стоимость списка позиций («сколько выйдет», «посчитай», «сумма», «скинь расчёт»), список — в items с количеством; other — просит бота сделать что-то другое; none — не поручение (приветствие, ответ на сводку, «ок», новости).",
+        "send — сотрудник просит отправить клиенту фото, каталог или сообщение; quote — просит посчитать стоимость списка позиций («сколько выйдет», «посчитай», «сумма», «скинь расчёт»), список — в items с количеством; broadcast — просит сделать РАССЫЛКУ своим клиентам/контактам («сделай рассылку 20 клиентам», «разошли по контактам»), позиции, на которые упор, — в items, сколько — в count; other — просит бота сделать что-то другое; none — не поручение (приветствие, ответ на сводку, «ок», новости).",
     },
     client: S(
       "Кому отправить — имя/название клиента, как написано (с точкой, районом, городом). «Мне», «себе», «скинь фото Altaj» без адресата — «мне» (сотрудник просит себе). Пусто — только если просил клиенту, но не назвал кому."
@@ -89,7 +94,9 @@ export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
         },
       },
     },
-    text: S("Что передать клиенту словами, если сотрудник просил (без фото). Иначе пусто."),
+    text: S("Что передать клиенту словами, если сотрудник просил (без фото). Для рассылки — только если сотрудник написал готовый текст дословно. Иначе пусто."),
+    count: { type: "number", description: "Рассылка: скольким клиентам («20-ти клиентам» → 20). Не рассылка или не назвал — 0." },
+    photo: { type: "boolean", description: "Рассылка: false — только если сотрудник прямо сказал «без фото». Иначе true." },
   },
 };
 
@@ -108,6 +115,8 @@ export function staffCommandPrompt(photoLabels: string[], priceList = ""): strin
     "Сорт и категорию бери ТОЛЬКО из прайса ниже, сорт не придумывай; цены не считай — посчитает программа.",
     "«Посчитай и отправь клиенту X» — тоже quote, клиент в client. У розы «1 сорт 60 см» — длина «60», «2 сорт 60» — «60 (2 сорт)».",
     "Роза: кустовая — kind spray, одноголовая — single, пионовидная — peony; сорт — только если назван.",
+    "«Сделай рассылку 20 клиентам из контактов с упором на хризантему 3 категории, с фото» — intent broadcast, count 20,",
+    "items: chrysanthemum, сорт пусто (если не назван), категория «Третья»; client пусто. «Упор на продажи», «с фото и прочим» — не текст.",
     "",
     "Фото в CRM сейчас:",
     ...photoLabels.map((l) => `- ${l}`),
@@ -119,7 +128,7 @@ const FLOWERS = ["rose", "chrysanthemum", "eustoma"];
 
 export function parseStaffCommand(raw: unknown): StaffCommand {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const intent = r.intent === "send" || r.intent === "quote" || r.intent === "other" ? r.intent : "none";
+  const intent = r.intent === "send" || r.intent === "quote" || r.intent === "broadcast" || r.intent === "other" ? r.intent : "none";
   const items = (Array.isArray(r.items) ? r.items : [])
     .map((x) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {}))
     .filter((x) => FLOWERS.includes(String(x.flowerType || "")))
@@ -139,6 +148,8 @@ export function parseStaffCommand(raw: unknown): StaffCommand {
     phone: String(r.phone || "").replace(/\D/g, "").slice(0, 15),
     items,
     text: String(r.text || "").trim().slice(0, 1000),
+    count: Math.max(0, Math.round(Number(r.count) || 0)),
+    photo: r.photo !== false,
   };
 }
 
@@ -300,7 +311,7 @@ export function staffDoneText(input: { name: string; phone: string; via: string;
 }
 
 export const STAFF_OTHER_TEXT =
-  "Пока по поручению умею: отправить клиенту фото или сообщение и посчитать стоимость по прайсу. Например: «Отправь фото Altaj первой Маргарите Пожарка» или «Посчитай: Altaj 3 кат 200 шт, роза 60 см 150 шт».";
+  "Пока по поручению умею: отправить клиенту фото или сообщение, посчитать стоимость по прайсу и сделать рассылку вашим клиентам. Например: «Отправь фото Altaj первой Маргарите Пожарка», «Посчитай: Altaj 3 кат 200 шт, роза 60 см 150 шт» или «Сделай рассылку 20 клиентам с упором на хризантему 3 категории».";
 
 // --- Расчёт стоимости -----------------------------------------------------------
 
