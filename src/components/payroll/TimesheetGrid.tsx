@@ -420,6 +420,7 @@ export default function TimesheetGrid({
           register={(r, c, el) => (el ? buttons.current.set(`${r}:${c}`, el) : buttons.current.delete(`${r}:${c}`))}
           onCellKey={onCellKey}
           openMenu={openMenu}
+          active={menu?.target.kind === "cell" ? [menu.target.r, menu.target.c] : null}
         />
       ) : (
         <PersonView
@@ -489,6 +490,7 @@ function GridView({
   register,
   onCellKey,
   openMenu,
+  active,
 }: {
   days: DayInfo[];
   people: TimesheetPerson[];
@@ -498,6 +500,8 @@ function GridView({
   overtime: boolean;
   today: string;
   canEdit: boolean;
+  /** Клетка, для которой открыто меню, — [строка, день]. */
+  active: [number, number] | null;
   locked: (r: number, c: number) => boolean;
   register: (r: number, c: number, el: HTMLButtonElement | null) => void;
   onCellKey: (e: KeyboardEvent<HTMLButtonElement>, r: number, c: number) => void;
@@ -605,9 +609,12 @@ function GridView({
                           onClick={(e) => openMenu({ kind: "cell", r, c }, e.currentTarget)}
                           onKeyDown={(e) => onCellKey(e, r, c)}
                           className={clsx(
-                            "h-8 w-[34px] rounded-md text-center text-sm font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-section-payroll/60 disabled:cursor-default",
+                            "block mx-auto my-[2px] h-7 w-[30px] rounded-md text-center text-sm font-medium tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-section-payroll/70 disabled:cursor-default",
                             v === "" ? "text-ink-muted/30" : cellStyle(v),
-                            canEdit && v === "" && "hover:bg-section-payroll/10"
+                            canEdit && v === "" && "hover:bg-section-payroll/10",
+                            // Клетка, для которой открыто меню, помечена рамкой ВНУТРИ своих границ (раньше кольцо вылезало за край и
+                            // пряталось под прилипшей колонкой имени — 28.10.2026, владелец: «выделение заходит за край»).
+                            active && active[0] === r && active[1] === c && "ring-2 ring-inset ring-section-payroll/70"
                           )}
                         >
                           {v === "" ? (d.off ? "" : "·") : v}

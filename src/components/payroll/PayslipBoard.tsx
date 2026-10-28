@@ -204,14 +204,14 @@ export default function PayslipBoard({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 ml-auto">
-          <input className="input !w-56" placeholder="Поиск по ФИО" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+          <input className="input min-w-0 flex-1 sm:flex-none sm:!w-56" placeholder="Поиск по ФИО" value={q} onChange={(e) => setQ(e.target.value)} />
           {canEdit && (
-            <button type="button" className="btn !py-1.5 text-sm" onClick={advanceAll} disabled={saving} title="Половина ИТОГО целыми сотнями — тем, у кого аванс ещё не вписан">
+            <button type="button" className="btn !py-1.5 text-sm whitespace-nowrap" onClick={advanceAll} disabled={saving} title="Половина ИТОГО целыми сотнями — тем, у кого аванс ещё не вписан">
               Аванс 50 %
             </button>
           )}
-          <button type="button" className="btn !py-1.5 text-sm" onClick={() => window.print()}>
+          <button type="button" className="btn !py-1.5 text-sm whitespace-nowrap hidden sm:inline-flex" onClick={() => window.print()}>
             Печать
           </button>
           {message && <span className="text-sm text-emerald-700">{message}</span>}
@@ -223,14 +223,14 @@ export default function PayslipBoard({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-xs text-ink-muted bg-surface-plane/60 border-b border-line-hairline">
-              <th className="px-4 py-2 text-left font-medium w-10">№</th>
+              <th className="px-2 sm:px-4 py-2 text-left font-medium w-10">№</th>
               <th className="px-2 py-2 text-left font-medium">Сотрудник</th>
               <th className="px-2 py-2 text-left font-medium hidden md:table-cell print-col">Должность</th>
               <th className="px-2 py-2 text-right font-medium">Часы</th>
               <th className="px-2 py-2 text-right font-medium hidden sm:table-cell print-col">Оклад (1С)</th>
               <th className="px-2 py-2 text-right font-medium hidden sm:table-cell print-col">Начислено</th>
               <th className="px-2 py-2 text-right font-medium hidden sm:table-cell print-col">Удержано</th>
-              <th className="px-4 py-2 text-right font-medium">К выплате</th>
+              <th className="px-2 sm:px-4 py-2 text-right font-medium">К выплате</th>
             </tr>
           </thead>
           {shown.length === 0 && (
@@ -263,9 +263,10 @@ export default function PayslipBoard({
                       className={clsx("border-t border-line-hairline cursor-pointer", isOpen ? "bg-surface-plane/50" : "hover:bg-surface-plane/40")}
                       onClick={() => setOpenRow(isOpen ? null : rid)}
                     >
-                      <td className="px-4 py-2 text-ink-muted tabular-nums">{i + 1}</td>
+                      <td className="px-2 sm:px-4 py-2 text-ink-muted tabular-nums">{i + 1}</td>
+                      {/* Ширина ФИО ограничена долей экрана: иначе длинное имя не даёт колонке ужаться, и на телефоне таблица уезжает за край. */}
                       <td className="px-2 py-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0 max-w-[42vw] sm:max-w-[18rem] lg:max-w-none">
                           <span className="font-medium truncate">{row.fullName}</span>
                           {row.warnings.length > 0 && (
                             <span className="no-print text-[#8a5a00] text-xs shrink-0" title={row.warnings.join("; ")}>
@@ -273,7 +274,7 @@ export default function PayslipBoard({
                             </span>
                           )}
                         </div>
-                        <div className="md:hidden print-hide text-xs text-ink-muted truncate">{row.position}</div>
+                        <div className="md:hidden print-hide text-xs text-ink-muted truncate max-w-[42vw] sm:max-w-[18rem]">{row.position}</div>
                       </td>
                       <td className="px-2 py-2 text-ink-secondary hidden md:table-cell print-col truncate max-w-[14rem]">
                         {row.position}
@@ -285,7 +286,7 @@ export default function PayslipBoard({
                       <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{row.hourly ? <span className="text-ink-muted">почас.</span> : row.salary1c ? money(row.salary1c) : <span className="text-ink-muted">—</span>}</td>
                       <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{money(row.accrued)}</td>
                       <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col text-ink-secondary">{held ? money(held) : "—"}</td>
-                      <td className={clsx("px-4 py-2 text-right tabular-nums font-semibold whitespace-nowrap", row.toPay < 0 && "text-red-700")}>{money(row.toPay)}</td>
+                      <td className={clsx("px-2 sm:px-4 py-2 text-right tabular-nums font-semibold whitespace-nowrap", row.toPay < 0 && "text-red-700")}>{money(row.toPay)}</td>
                     </tr>
                     {isOpen && (
                       <tr className="no-print">
@@ -300,14 +301,14 @@ export default function PayslipBoard({
               {shown.length > 1 && (
                 <tr className="border-t border-line-hairline text-ink-secondary">
                   <td />
-                  <td className="px-2 py-1.5 text-xs" colSpan={2}>
-                    Итого · {d.department.name}
-                  </td>
+                  <td className="px-2 py-1.5 text-xs whitespace-nowrap">Итого · {d.department.name}</td>
+                  {/* Своя клетка под «Должность», а не colSpan: скрытую колонку colSpan не видит и съедал бы соседнюю «Часы». */}
+                  <td className="hidden md:table-cell print-col" />
                   <td className="px-2 py-1.5 text-right tabular-nums text-xs">{hours(d.totals.factHours)} ч</td>
                   <td className="hidden sm:table-cell print-col" />
                   <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell print-col">{money(d.totals.accrued)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell print-col">{money(d.totals.advance + d.totals.loan + d.totals.flowers)}</td>
-                  <td className="px-4 py-1.5 text-right tabular-nums text-xs font-medium text-ink-primary">{money(d.totals.toPay)}</td>
+                  <td className="px-2 sm:px-4 py-1.5 text-right tabular-nums text-xs font-medium text-ink-primary">{money(d.totals.toPay)}</td>
                 </tr>
               )}
             </tbody>
@@ -337,14 +338,15 @@ function TotalRow({ label, t, strong }: { label: string; t: PayslipTotals; stron
   return (
     <tr className={clsx(strong ? "font-bold" : "text-ink-secondary text-xs")}>
       <td />
-      <td className="px-2 py-2" colSpan={2}>
+      <td className="px-2 py-2">
         {label} <span className="font-normal text-ink-muted">· {t.people} чел.</span>
       </td>
-      <td className="px-2 py-2 text-right tabular-nums">{hours(t.factHours)} ч</td>
+      <td className="hidden md:table-cell print-col" />
+      <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">{hours(t.factHours)} ч</td>
       <td className="hidden sm:table-cell print-col" />
       <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{money(t.accrued)}</td>
       <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{money(t.advance + t.loan + t.flowers)}</td>
-      <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">{money(t.toPay)}</td>
+      <td className="px-2 sm:px-4 py-2 text-right tabular-nums whitespace-nowrap">{money(t.toPay)}</td>
     </tr>
   );
 }
@@ -355,7 +357,7 @@ function HoursCell({ r }: { r: PayslipRow }) {
   return (
     <>
       <span className={tone}>{hours(r.factHours)}</span>
-      <span className="text-ink-muted"> / {hours(r.personalNorm)} ч</span>
+      <span className="text-ink-muted hidden sm:inline"> / {hours(r.personalNorm)} ч</span>
     </>
   );
 }
@@ -383,6 +385,7 @@ function CalcPanel({
   const totalForMonth = Math.round(r.total * fraction * 100) / 100;
   const kpiBase = r.salaryPay + r.sick + r.vacation + r.holidayPay;
   const partial = fraction < 0.999;
+  const held = r.advance + r.loan + r.flowers;
   const days = [
     ["отпуск", r.vacationDays],
     ["больничный", r.sickDays],
@@ -391,110 +394,124 @@ function CalcPanel({
     ["без содержания", r.unpaidDays],
   ].filter(([, n]) => (n as number) > 0) as [string, number][];
 
-  const field = (f: NumField, opts?: { placeholder?: number; wide?: boolean }) => {
+  // Поле бухгалтера: одна ширина везде, пустое — «—» (считаем сами / по складу), вписанное — на жёлтом.
+  const field = (f: NumField, placeholder?: number) => {
+    if (!canEdit) return null;
     const raw = v[f];
-    const text = raw === null || raw === undefined || raw === 0 ? "" : String(raw).replace(".", ",");
-    if (!canEdit) {
-      const shown = f === "salaryOverride" ? r.salaryPay : f === "flowers" ? r.flowers : (r as unknown as Record<string, number>)[f] ?? 0;
-      return <span className="tabular-nums">{shown ? money2(shown) : "—"}</span>;
-    }
+    const text = raw === null || raw === undefined || raw === 0 ? "" : Number(raw).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
     return (
       <input
-        className={clsx("input !py-1 !px-2 !min-h-0 text-right text-sm", opts?.wide ? "w-[8rem]" : "w-[6.5rem]", text && "bg-amber-50")}
+        className={clsx(
+          "h-8 w-[7.5rem] rounded-md border px-2 text-right text-sm tabular-nums outline-none transition-colors",
+          text ? "border-amber-300 bg-amber-50 text-amber-900" : "border-dashed border-line-hairline bg-transparent text-ink-primary placeholder:text-ink-muted/60",
+          "focus:border-section-payroll focus:bg-surface"
+        )}
         inputMode="decimal"
         defaultValue={text}
-        placeholder={opts?.placeholder ? Math.round(opts.placeholder).toLocaleString("ru-RU") : "0"}
+        placeholder={placeholder ? Math.round(placeholder).toLocaleString("ru-RU") : "—"}
         onBlur={(e) => {
-          if (e.target.value !== text) onChange(f, e.target.value);
+          if (e.target.value.replace(/\s/g, "") !== text.replace(/\s/g, "")) onChange(f, e.target.value);
         }}
       />
     );
   };
+  const amount = (n: number, muted?: boolean) => (
+    <span className={clsx("tabular-nums", n === 0 ? "text-ink-muted/60" : muted && "text-ink-secondary")}>{n === 0 ? "—" : money2(n)}</span>
+  );
 
   return (
-    <div className="px-4 pb-4 pt-2 bg-surface-plane/30 text-sm">
-      {r.warnings.length > 0 && <div className="mb-3 rounded-lg bg-[#fdf6e7] px-3 py-2 text-[#6b4a00]">⚠ {r.warnings.join("; ")}</div>}
-      <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
-        <div>
-          <div className="text-[11px] uppercase tracking-wide text-ink-muted mb-1.5">Начисления</div>
-          <div className="text-xs text-ink-secondary mb-2 tabular-nums">
-            {r.hourly ? (
-              <>
-                тариф день {money(input.rate?.dayRate ?? 0)} · ночь {money(input.rate?.nightRate ?? 0)}
-              </>
-            ) : (
-              <>
-                оклад (1С) {money(r.salary1c)} · ИТОГО {money(r.total)}
-                {partial && ` → за ${hours(r.personalNorm)} из ${hours(r.normHours)} ч: ${money(totalForMonth)}`} · час{" "}
-                {money2(perHour)}
-              </>
+    <div className="px-2 pb-3 pt-1 sm:px-4">
+      <div className="rounded-xl border border-line-hairline bg-surface shadow-sm">
+        {/* Шапка листка: кто, ставка, табель — одной строкой, замечания чипами. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line-hairline px-4 py-2.5 text-xs text-ink-secondary">
+          <span className="font-medium text-ink-primary">{r.fullName}</span>
+          <span>{r.position || "без должности"} · {r.employment === "gph" ? "ГПХ" : "ТД"}</span>
+          {r.hourly ? (
+            <span className="tabular-nums">тариф день {money(input.rate?.dayRate ?? 0)} · ночь {money(input.rate?.nightRate ?? 0)}</span>
+          ) : (
+            <span className="tabular-nums">
+              оклад (1С) {money(r.salary1c)} · ИТОГО {money(r.total)}
+              {partial ? ` → ${money(totalForMonth)} за ${hours(r.personalNorm)} из ${hours(r.normHours)} ч` : ""} · час {money2(perHour)}
+            </span>
+          )}
+          <span className="tabular-nums">
+            табель {hours(r.factHours)} ч · {r.workDays} дн.
+            {days.length > 0 && ` · ${days.map(([l, n]) => `${l} ${n}`).join(", ")}`}
+          </span>
+          {r.warnings.map((w) => (
+            <span key={w} className="rounded-full bg-[#fdf3dc] px-2 py-0.5 text-[11px] font-medium text-[#6b4a00]">⚠ {w}</span>
+          ))}
+        </div>
+
+        <div className="grid md:grid-cols-2 md:divide-x divide-line-hairline">
+          <div className="px-4 py-3">
+            <SheetTitle>Начисления</SheetTitle>
+            <SheetLine
+              label="Оклада"
+              how={
+                r.salaryOverridden
+                  ? "вписано вручную"
+                  : r.hourly
+                    ? `${hours(r.factHours - r.nightHours)} ч день + ${hours(r.nightHours)} ч ночь`
+                    : `${hours(paidHours)} ч × ${money2(perHour)}`
+              }
+              control={field("salaryOverride", r.salaryOverridden ? undefined : r.salaryPay)}
+              value={amount(r.salaryPay)}
+            />
+            {!r.hourly && (
+              <SheetLine label="Праздничные" how={r.holidayHours > 0 ? `${hours(r.holidayHours)} ч × ${money2(perHour)} × 1,5` : "в праздники не работал"} value={amount(r.holidayPay)} />
+            )}
+            {!r.hourly && input.department.overtime && (
+              <SheetLine
+                label="Сверхурочные"
+                how={r.overtimeHours > 0 ? `${hours(r.overtimeHours)} ч × ${money2(perHour)} × ${String(input.department.overtimeRate).replace(".", ",")}` : "сверх нормы нет"}
+                value={amount(r.overtimePay)}
+              />
+            )}
+            <SheetLine label="Больничный" how={r.sickDays ? `${r.sickDays} дн. в табеле` : "вписывает бухгалтер"} control={field("sick")} value={amount(r.sick)} />
+            <SheetLine label="Отпускные" how={r.vacationDays ? `${r.vacationDays} дн. в табеле` : "вписывает бухгалтер"} control={field("vacation")} value={amount(r.vacation)} />
+            {!r.hourly && (
+              <SheetLine
+                label="KPI"
+                how={r.total > 0 ? `${money(totalForMonth)} − ${money2(kpiBase)}${r.kpiDeduction ? ` − ${money2(r.kpiDeduction)}` : ""}` : "ИТОГО не задано"}
+                controlLabel="удержать с KPI"
+                control={field("kpiDeduction")}
+                value={amount(r.kpi)}
+              />
+            )}
+            <SheetTotal label="Начислено" value={money2(r.accrued)} />
+          </div>
+
+          <div className="px-4 py-3">
+            <SheetTitle>Удержания</SheetTitle>
+            <SheetLine label="Аванс" control={field("advance")} value={amount(r.advance)} />
+            <SheetLine label="Займ" control={field("loan")} value={amount(r.loan)} />
+            <SheetLine
+              label="Цветы в счёт зп"
+              how={r.flowersOverridden ? `вписано вручную${r.flowersFromStock ? ` · со склада ${money(r.flowersFromStock)}` : ""}` : r.flowersFromStock ? "по выдачам склада" : "выдач не было"}
+              control={field("flowers", r.flowersOverridden ? undefined : r.flowersFromStock)}
+              value={amount(r.flowers)}
+            />
+            <SheetTotal label="Удержано" value={money2(held)} />
+            {r.travel > 0 && (
+              <div className="mt-2 flex items-baseline justify-between gap-3 text-xs text-ink-secondary">
+                <span>Дорожные отдельной ведомостью · {money(input.employee.travelRate)} × {r.workDays} дн.</span>
+                <span className="tabular-nums">{money(r.travel)}</span>
+              </div>
             )}
           </div>
-          <Line
-            label="Оклада"
-            how={
-              r.salaryOverridden
-                ? "вписано вручную"
-                : r.hourly
-                  ? `${hours(r.factHours - r.nightHours)} ч день + ${hours(r.nightHours)} ч ночь`
-                  : `${hours(paidHours)} ч × ${money2(perHour)}`
-            }
-            value={money2(r.salaryPay)}
-            control={field("salaryOverride", { placeholder: r.salaryOverridden ? undefined : r.salaryPay })}
-            hint={canEdit ? "пусто — считаем сами" : undefined}
-          />
-          {!r.hourly && (
-            <Line label="Праздничные" how={r.holidayHours > 0 ? `${hours(r.holidayHours)} ч × ${money2(perHour)} × 1,5` : "в праздники не работал"} value={money2(r.holidayPay)} />
-          )}
-          {!r.hourly && input.department.overtime && (
-            <Line
-              label="Сверхурочные"
-              how={r.overtimeHours > 0 ? `${hours(r.overtimeHours)} ч × ${money2(perHour)} × ${String(input.department.overtimeRate).replace(".", ",")}` : "сверх нормы нет"}
-              value={money2(r.overtimePay)}
-            />
-          )}
-          <Line label="Больничный" how={r.sickDays ? `${r.sickDays} дн. в табеле` : ""} value="" control={field("sick")} />
-          <Line label="Отпускные" how={r.vacationDays ? `${r.vacationDays} дн. в табеле` : ""} value="" control={field("vacation")} />
-          {!r.hourly && (
-            <Line
-              label="KPI"
-              how={r.total > 0 ? `${money(totalForMonth)} − ${money2(kpiBase)}${r.kpiDeduction ? ` − удерж. ${money2(r.kpiDeduction)}` : ""}` : "ИТОГО не задано"}
-              value={money2(r.kpi)}
-              control={field("kpiDeduction")}
-              hint={canEdit ? "удержание с KPI" : undefined}
-            />
-          )}
-          <Line label="Начислено" value={money2(r.accrued)} strong />
         </div>
-        <div>
-          <div className="text-[11px] uppercase tracking-wide text-ink-muted mb-1.5">Удержания</div>
-          <Line label="Аванс" value="" control={field("advance")} />
-          <Line label="Займ" value="" control={field("loan")} />
-          <Line
-            label="Цветы в счёт зп"
-            how={r.flowersOverridden ? `вписано вручную${r.flowersFromStock ? ` · со склада ${money(r.flowersFromStock)}` : ""}` : r.flowersFromStock ? "по выдачам склада" : "выдач не было"}
-            value={r.flowers ? money2(r.flowers) : ""}
-            control={field("flowers", { placeholder: r.flowersOverridden ? undefined : r.flowersFromStock })}
-            hint={canEdit ? "пусто — по складу" : undefined}
-          />
-          <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-line-hairline pt-2">
-            <span className="font-medium">К выплате</span>
-            <span className={clsx("font-display font-extrabold text-xl tabular-nums", r.toPay < 0 && "text-red-700")}>{money2(r.toPay)}</span>
+
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-b-xl border-t border-line-hairline bg-surface-plane/50 px-4 py-3">
+          <div className="flex items-baseline gap-3">
+            <span className="text-sm text-ink-secondary">К выплате</span>
+            <span className={clsx("font-display text-2xl font-extrabold tracking-tight tabular-nums", r.toPay < 0 && "text-red-700")}>{money2(r.toPay)}</span>
           </div>
-          {r.travel > 0 && (
-            <div className="mt-1 flex items-baseline justify-between gap-3 text-xs text-ink-secondary">
-              <span>Дорожные — отдельно, {money(input.employee.travelRate)} × {r.workDays} дн.</span>
-              <span className="tabular-nums">{money(r.travel)}</span>
-            </div>
-          )}
-          <div className="mt-3 text-xs text-ink-secondary">
-            Табель: {hours(r.factHours)} ч за {r.workDays} дн.
-            {days.length > 0 && ` · ${days.map(([l, n]) => `${l} ${n}`).join(", ")}`}
-          </div>
-          <div className="mt-2">
+          <div className="text-xs text-ink-muted tabular-nums">{money2(r.accrued)} − {money2(held)}</div>
+          <div className="ml-auto w-full sm:w-auto sm:min-w-[20rem]">
             {canEdit ? (
               <input
-                className="input !py-1 !px-2 !min-h-0 text-sm w-full"
+                className="h-8 w-full rounded-md border border-line-hairline bg-surface px-2 text-sm outline-none placeholder:text-ink-muted/60 focus:border-section-payroll"
                 defaultValue={v.note}
                 placeholder="Заметка бухгалтера"
                 onBlur={(e) => {
@@ -511,23 +528,36 @@ function CalcPanel({
   );
 }
 
-function Line({ label, how, value, control, strong, hint }: { label: string; how?: string; value: string; control?: React.ReactNode; strong?: boolean; hint?: string }) {
+function SheetTitle({ children }: { children: React.ReactNode }) {
+  return <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">{children}</div>;
+}
+
+/**
+ * Строка листка: название и «откуда цифра» слева, поле бухгалтера (если есть) и сумма — в двух колонках фиксированной
+ * ширины, поэтому все суммы стоят столбиком, а поля — столбиком (28.10.2026, владелец: «очень некрасивый вид и формат»).
+ */
+function SheetLine({ label, how, control, controlLabel, value }: { label: string; how?: string; control?: React.ReactNode; controlLabel?: string; value: React.ReactNode }) {
   return (
-    <div className={clsx("flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1", strong && "border-t border-line-hairline mt-1 pt-2 font-medium")}>
-      <div className="min-w-0 flex-1 basis-[9rem]">
-        <div className={clsx(!strong && "text-ink-primary")}>{label}</div>
-        {(how || hint) && (
-          <div className="text-xs text-ink-muted truncate">
-            {how}
-            {how && hint ? " · " : ""}
-            {hint}
-          </div>
-        )}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-hairline/60 py-1.5 last:border-0 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_6.5rem]">
+      {/* На телефоне строка с полем ввода складывается в две: название сверху, поле и сумма — под ним справа. */}
+      <div className={clsx("min-w-0 flex-1", control && "basis-full sm:basis-auto")}>
+        <div className="text-sm">{label}</div>
+        {how && <div className="truncate text-xs text-ink-muted">{how}</div>}
       </div>
-      <div className="flex items-center gap-2 shrink-0 ml-auto">
-        {control ?? <span className="tabular-nums">{value || "—"}</span>}
-        {control && value && <span className="tabular-nums text-ink-secondary min-w-[6rem] text-right">{value}</span>}
+      <div className="ml-auto flex items-center gap-2 sm:ml-0">
+        {control && controlLabel && <span className="hidden text-[11px] text-ink-muted lg:inline">{controlLabel}</span>}
+        {control}
       </div>
+      <div className="w-[6.5rem] text-right text-sm sm:w-auto">{value}</div>
+    </div>
+  );
+}
+
+function SheetTotal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mt-1 flex items-baseline justify-between gap-3 pt-2 text-sm font-medium">
+      <span>{label}</span>
+      <span className="tabular-nums">{value}</span>
     </div>
   );
 }
