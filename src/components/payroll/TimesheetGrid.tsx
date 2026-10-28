@@ -615,7 +615,7 @@ function GridView({
                 })}
                 <td className="px-2 text-right tabular-nums font-semibold">{s.hours ? s.hours.toLocaleString("ru-RU") : "—"}</td>
                 <td className={clsx("px-1.5 text-right tabular-nums text-xs", delta < 0 ? "text-status-critical" : delta > 0 ? "text-[#1f5fa8]" : "text-ink-muted")}>
-                  {p.hourly || delta === 0 ? "" : delta > 0 ? `+${delta}` : delta}
+                  {p.hourly || delta === 0 || s.hours === 0 ? "" : delta > 0 ? `+${delta}` : delta}
                 </td>
                 <td className="px-1.5 text-right tabular-nums text-xs">{s.holidayHours || ""}</td>
                 {overtime && <td className="px-1.5 text-right tabular-nums text-xs">{p.hourly ? "" : s.overtime || ""}</td>}

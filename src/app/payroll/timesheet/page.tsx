@@ -23,7 +23,10 @@ export default async function TimesheetListPage({ searchParams }: { searchParams
   await prefetchPayroll();
   const [departments, employees, sheet, statuses] = await Promise.all([listDepartments(), listEmployees(), listTimesheet(month), listTimesheetStatus(month)]);
   const visible = departments.filter((d) => d.active && seesDepartment(scope, d.deptId));
-  if (scope.kind === "head" && visible.length === 1) redirect(`/payroll/timesheet/${visible[0].deptId}?month=${month}`);
+  // Табель — это всегда табель КОНКРЕТНОГО подразделения, переключаются они плитками над сеткой (28.10.2026, владелец:
+  // «как вкладки с разными подразделениями»). Список остаётся только тому, у кого подразделений нет вовсе.
+  const first = visible.find((d) => d.active) ?? visible[0];
+  if (first) redirect(`/payroll/timesheet/${first.deptId}?month=${month}`);
 
   const n = monthDays(month).length;
   const rows = visible.map((d) => {

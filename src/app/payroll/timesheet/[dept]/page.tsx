@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
+import DeptTabs from "@/components/payroll/DeptTabs";
 import TimesheetGrid from "@/components/payroll/TimesheetGrid";
+import { buildDeptTabs } from "@/lib/payroll/deptTabs";
 import { FARM_LABELS } from "@/lib/constants";
 import { seesDepartment } from "@/lib/payroll/access";
 import { extraDays, normDays, normHours } from "@/lib/payroll/rules";
@@ -52,6 +54,7 @@ export default async function TimesheetPage({ params, searchParams }: { params: 
   const nh = normHours(balance, month, dept.workWeek, holidays);
   const nd = normDays(balance, month, dept.workWeek, holidays);
   const backHref = `/payroll/timesheet?month=${month}`;
+  const tabs = buildDeptTabs(departments, employees, statuses, month, (id) => seesDepartment(scope, id));
 
   return (
     <div className="space-y-4">
@@ -74,6 +77,7 @@ export default async function TimesheetPage({ params, searchParams }: { params: 
           </div>
         }
       />
+      <DeptTabs tabs={tabs} active={deptId} showFarm={scope.kind !== "head"} />
       {people.length === 0 ? (
         <div className="card text-sm text-ink-secondary">
           В подразделении за {monthLabel(month).toLowerCase()} нет сотрудников. Их добавляют в «Сотрудниках» или загрузкой штатной расстановки.

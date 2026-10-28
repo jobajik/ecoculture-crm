@@ -54,6 +54,9 @@ export default function EmployeesBoard({
   const [showFired, setShowFired] = useState(false);
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState("");
+  // Список по подразделениям — свёрнутыми группами (28.10.2026, владелец: «чтобы вкладку сотрудника можно было
+  // разворачивать по подразделениям»). Выбранное подразделение или поиск — плоский список: человек уже сузил его сам.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   const inFarm = rows.filter((r) => (farm ? farmOf.get(r.employee.deptId) === farm : true));
   const working = inFarm.filter((r) => r.working);
@@ -75,6 +78,18 @@ export default function EmployeesBoard({
     for (const r of rows) if (r.working) m.set(r.employee.deptId, (m.get(r.employee.deptId) ?? 0) + 1);
     return m;
   }, [rows]);
+
+  const grouped = !dept && !q.trim();
+  const groups = useMemo(() => {
+    if (!grouped) return [];
+    const byDept = new Map<string, EmployeeRow[]>();
+    for (const r of list) byDept.set(r.employee.deptId, [...(byDept.get(r.employee.deptId) ?? []), r]);
+    return shownDepartments
+      .filter((d) => byDept.has(d.deptId))
+      .map((d) => ({ d, rows: byDept.get(d.deptId)! }))
+      .concat([...byDept.keys()].filter((id) => !shownDepartments.some((d) => d.deptId === id)).map((id) => ({ d: { deptId: id, name: byDept.get(id)![0].departmentName, active: true, farm: "" }, rows: byDept.get(id)! })));
+  }, [grouped, list, shownDepartments]);
+  const allGroupsOpen = groups.length > 0 && groups.every((g) => openGroups[g.d.deptId]);
 
   const pill = (active: boolean) =>
     clsx(
@@ -155,12 +170,57 @@ export default function EmployeesBoard({
         />
       )}
 
-      <div className="card !p-0 table-scroll table-cards">
+      {grouped && groups.length > 1 && (
+        <div className="flex justify-end">
+          <button type="button" className="text-sm text-section-payroll hover:underline" onClick={() => setOpenGroups(Object.fromEntries(groups.map((g) => [g.d.deptId, !allGroupsOpen])))}>
+            {allGroupsOpen ? "Свернуть все" : "Развернуть все"}
+          </button>
+        </div>
+      )}
+      {grouped && groups.length > 1 ? (
+        groups.map((g) => {
+          const isOpen = !!openGroups[g.d.deptId];
+          const fund = g.rows.filter((r) => r.working).reduce((s, r) => s + (r.total ?? 0), 0);
+          const noRateHere = g.rows.filter((r) => r.working && !r.hasRate).length;
+          return (
+            <section key={g.d.deptId} className="card !p-0 overflow-hidden">
+              <button
+                type="button"
+                className="w-full flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-surface-plane/60"
+                onClick={() => setOpenGroups((o) => ({ ...o, [g.d.deptId]: !isOpen }))}
+                aria-expanded={isOpen}
+              >
+                <span className={clsx("text-ink-muted transition-transform", isOpen && "rotate-90")}>▸</span>
+                <span className="font-display font-bold">{g.d.name}</span>
+                {g.d.farm && <span className="text-xs text-ink-muted">{FARM_LABELS[g.d.farm] ?? g.d.farm}</span>}
+                {noRateHere > 0 && <span className="text-xs text-[#8a5a00]">без ставки {noRateHere}</span>}
+                <span className="ml-auto flex items-center gap-4 text-sm tabular-nums text-ink-secondary">
+                  <span>{g.rows.filter((r) => r.working).length} чел.</span>
+                  {seesMoney && fund > 0 && (
+                    <span>
+                      ИТОГО <b className="text-ink-primary">{money(fund)}</b>
+                    </span>
+                  )}
+                </span>
+              </button>
+              {isOpen && <div className="border-t border-line-hairline table-scroll table-cards">{renderTable(g.rows, seesMoney, false)}</div>}
+            </section>
+          );
+        })
+      ) : (
+        <div className="card !p-0 table-scroll table-cards">{renderTable(list, seesMoney, true, rows.length === 0)}</div>
+      )}
+    </div>
+  );
+}
+
+function renderTable(list: EmployeeRow[], seesMoney: boolean, showDept: boolean, nobody = false) {
+  return (
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
               <th className="px-4 py-2.5 font-medium">ФИО</th>
-              <th className="px-3 py-2.5 font-medium">Подразделение</th>
+              {showDept && <th className="px-3 py-2.5 font-medium">Подразделение</th>}
               <th className="px-3 py-2.5 font-medium">Должность</th>
               <th className="px-3 py-2.5 font-medium">Занятость</th>
               {seesMoney && <th className="px-3 py-2.5 font-medium text-right">Оклад (1С)</th>}
@@ -173,7 +233,7 @@ export default function EmployeesBoard({
             {list.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-ink-muted">
-                  {rows.length === 0 ? "Сотрудников пока нет — заведите первого или загрузите штатную расстановку." : "Никого не нашлось."}
+                  {nobody ? "Сотрудников пока нет — заведите первого или загрузите штатную расстановку." : "Никого не нашлось."}
                 </td>
               </tr>
             )}
@@ -185,7 +245,7 @@ export default function EmployeesBoard({
                   </Link>
                   {!r.working && <span className="text-xs text-ink-muted"> · уволен {formatDay(r.employee.firedAt)}</span>}
                 </td>
-                <td data-label="Подразделение" className="px-3 py-2.5 text-ink-secondary">{r.departmentName}</td>
+                {showDept && <td data-label="Подразделение" className="px-3 py-2.5 text-ink-secondary">{r.departmentName}</td>}
                 <td data-label="Должность" className="px-3 py-2.5">{r.employee.position}</td>
                 <td data-label="Занятость" className="px-3 py-2.5">
                   <span className={clsx("badge", r.employee.employment === "td" ? "bg-section-payroll-soft text-section-payroll" : "bg-surface-plane text-ink-secondary")}>
@@ -213,8 +273,6 @@ export default function EmployeesBoard({
             ))}
           </tbody>
         </table>
-      </div>
-    </div>
   );
 }
 
