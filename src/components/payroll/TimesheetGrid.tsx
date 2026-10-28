@@ -23,15 +23,17 @@ import {
 } from "@/lib/payroll/timesheet";
 
 /** Цвет отметки: код — свой оттенок, часы — зелёный, чем больше, тем гуще. */
+// 28.10.2026, владелец: «сделай обозначения менее массивными, но заметными» — сплошные тёмные плашки «У» и «П» на
+// весь месяц читались как чёрная полоса. Теперь у всех кодов светлый фон и ЦВЕТНАЯ рамка: заметно по цвету, не по массе.
 const CODE_STYLE: Record<string, string> = {
-  "Б": "bg-[#fde3e3] text-[#a12b2b]",
-  "БС": "bg-[#ececec] text-[#666]",
-  "О": "bg-[#dcebfd] text-[#1f5fa8]",
-  "К": "bg-[#ece2fb] text-[#6a3fb0]",
-  "П": "bg-[#b42f2f] text-white",
+  "Б": "bg-[#fff1f1] text-[#a12b2b] ring-1 ring-inset ring-[#e8b4b4]",
+  "БС": "bg-[#f4f4f4] text-[#666] ring-1 ring-inset ring-[#d4d4d4]",
+  "О": "bg-[#eef5ff] text-[#1f5fa8] ring-1 ring-inset ring-[#b7cff0]",
+  "К": "bg-[#f4eefc] text-[#6a3fb0] ring-1 ring-inset ring-[#d2c2ee]",
+  "П": "bg-[#fff1f1] text-[#b42f2f] ring-1 ring-inset ring-[#d9797a] font-bold",
   "В": "bg-transparent text-ink-muted",
-  "У": "bg-[#3f3f3f] text-white",
-  "Д": "bg-[#dff2e4] text-[#2d6b3a]",
+  "У": "bg-[#f3f3f3] text-[#555] ring-1 ring-inset ring-[#bdbdbd]",
+  "Д": "bg-[#eef8f1] text-[#2d6b3a] ring-1 ring-inset ring-[#b5dcc1]",
 };
 const CODE_HINT: Record<string, string> = {
   "Б": "Больничный",
@@ -46,8 +48,8 @@ const CODE_HINT: Record<string, string> = {
 const CODES_ORDER = ["О", "Б", "К", "П", "БС", "В", "Д", "У"];
 
 function hoursStyle(h: number): string {
-  if (h >= 20) return "bg-[#1f7a4a] text-white";
-  if (h >= 11) return "bg-[#bfe6cc] text-[#15502f]";
+  if (h >= 20) return "bg-[#cfeeda] text-[#124a2b] ring-1 ring-inset ring-[#7fc49a] font-semibold";
+  if (h >= 11) return "bg-[#d9efe1] text-[#15502f]";
   if (h >= 8) return "bg-[#e3f3e8] text-[#1e5a38]";
   return "bg-[#f1f8f3] text-[#2f6b47]";
 }
@@ -732,7 +734,7 @@ function PersonView({
                       d.date > today && "opacity-60"
                     )}
                   >
-                    <span className={clsx("text-[10px]", v && !["В", ""].includes(v) && CODE_STYLE[v]?.includes("text-white") ? "text-white/80" : "text-ink-muted")}>{d.day}</span>
+                    <span className="text-[10px] text-ink-muted">{d.day}</span>
                     <span className="text-sm font-semibold tabular-nums">{isLocked ? "·" : v || (d.off ? "" : "·")}</span>
                   </button>
                 );
