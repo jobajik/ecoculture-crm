@@ -14,15 +14,19 @@ import {
   employeeRefusal,
   holidayRefusal,
   rateRefusal,
+  extraDays,
 } from "@/lib/payroll/rules";
+import { compareWithIsDayOff } from "@/lib/payroll/calendarKz";
 import { cleanDeptId } from "@/lib/payroll/access";
 import type { BalanceDraft, DepartmentDraft, EmployeeDraft, RateDraft } from "@/lib/payroll/types";
 import {
   addHoliday,
+  deleteBalanceMonth,
   addRate,
   createEmployee,
   deleteRate,
   listDepartments,
+  listHolidays,
   listEmployees,
   listRates,
   removeHoliday,
@@ -151,21 +155,60 @@ export async function saveBalanceAction(draft: BalanceDraft) {
   return guard(() => saveBalanceActionInner(draft));
 }
 
-async function addHolidayActionInner(date: string, name: string) {
+async function addHolidayActionInner(date: string, name: string, kind: string) {
   const { scope } = await payrollSession();
-  const refusal = holidayRefusal(scope, date);
+  const refusal = holidayRefusal(scope, date, kind);
   if (refusal) throw new Error(refusal);
-  const created = await addHoliday({ date, name: name.trim() });
+  const created = await addHoliday({ date, name: name.trim(), kind: kind as "" | "off" | "work" });
   refreshAll();
   return { created };
 }
-export async function addHolidayAction(date: string, name: string) {
-  return guard(() => addHolidayActionInner(date, name));
+export async function addHolidayAction(date: string, name: string, kind: string) {
+  return guard(() => addHolidayActionInner(date, name, kind));
+}
+
+async function removeBalanceActionInner(month: string) {
+  const { scope } = await payrollSession();
+  if (!scope?.editsBalance) throw new Error("Норму меняет бухгалтер по зарплате или администратор.");
+  const removed = await deleteBalanceMonth(month);
+  refreshAll();
+  return { removed };
+}
+export async function removeBalanceAction(month: string) {
+  return guard(() => removeBalanceActionInner(month));
+}
+
+/**
+ * Сверка нашего календаря с внешним (isdayoff.ru, страна kz, пятидневка). Внешний источник может быть
+ * недоступен или отставать — тогда так и говорим, тревоги не поднимаем (грабли 1.14).
+ */
+async function checkCalendarActionInner(year: number) {
+  const { scope } = await payrollSession();
+  if (!scope) throw new Error("Нет доступа к зарплате.");
+  if (!Number.isInteger(year) || year < 2020 || year > 2040) throw new Error("Год вне диапазона.");
+  const holidays = await listHolidays();
+  let body = "";
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`https://isdayoff.ru/api/getdata?year=${year}&cc=kz`, { signal: controller.signal, cache: "no-store" });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`ответ ${res.status}`);
+    body = await res.text();
+  } catch (err) {
+    return { ok: false as const, message: `isdayoff.ru не ответил (${err instanceof Error ? err.message : "сбой"}) — сверить не с чем, наш календарь остаётся.` };
+  }
+  const diff = compareWithIsDayOff(year, body, extraDays(holidays));
+  if (!diff) return { ok: false as const, message: `isdayoff.ru вернул непонятный ответ (${body.slice(0, 20)}) — возможно, календаря на ${year} год у него ещё нет.` };
+  return { ok: true as const, diff };
+}
+export async function checkCalendarAction(year: number) {
+  return guard(() => checkCalendarActionInner(year));
 }
 
 async function removeHolidayActionInner(date: string) {
   const { scope } = await payrollSession();
-  const refusal = holidayRefusal(scope, date);
+  const refusal = holidayRefusal(scope, date, "");
   if (refusal) throw new Error(refusal);
   const removed = await removeHoliday(date);
   refreshAll();

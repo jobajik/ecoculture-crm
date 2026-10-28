@@ -17,11 +17,13 @@ import {
   employeeRefusal,
   kpiOf,
   normHours,
+  normDays,
   rateFor,
   rateRefusal,
   suggestBalance,
 } from "../src/lib/payroll/rules";
 import type { Department, Employee, Rate } from "../src/lib/payroll/types";
+import { addDays, compareWithIsDayOff, isDayOff, isHoliday, lawHolidays, monthNorm, nonWorkingDays, yearNorm, type ExtraDay } from "../src/lib/payroll/calendarKz";
 import { payrollTabsFor } from "../src/app/payroll/tabs";
 import { navLinksFor } from "../src/components/navLinks";
 import { canOpen } from "../src/lib/access";
@@ -60,8 +62,8 @@ check("начальник не видит чужое", seesDepartment(head, "sec
 check("бухгалтер видит все", seesDepartment(accountant, "security"), true);
 check("код подразделения чистится", cleanDeptId(" Теплица/Rose Farm "), "rose-farm");
 check("вкладки начальника — только сотрудники", payrollTabsFor(head).map((t) => t.label), ["Сотрудники"]);
-check("вкладки админа — с доступом", payrollTabsFor(admin).map((t) => t.label), ["Сотрудники", "Подразделения", "Баланс времени", "Доступ"]);
-check("вкладки бухгалтера — без доступа", payrollTabsFor(accountant).map((t) => t.label), ["Сотрудники", "Подразделения", "Баланс времени"]);
+check("вкладки админа — с доступом", payrollTabsFor(admin).map((t) => t.label), ["Сотрудники", "Подразделения", "Календарь и нормы", "Доступ"]);
+check("вкладки бухгалтера — без доступа", payrollTabsFor(accountant).map((t) => t.label), ["Сотрудники", "Подразделения", "Календарь и нормы"]);
 
 // --- Меню и охранник --------------------------------------------------------
 check("у админа есть «Зарплата» (в группе «Прочее»)", navLinksFor("admin").find((l) => l.label === "Зарплата")?.other, true);
@@ -76,15 +78,17 @@ check("охранник пускает менеджера в /payroll (реша�
 
 // --- Подразделения ------------------------------------------------------------
 const depts: Department[] = [
-  { deptId: "teplitsa", name: "Теплица", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true },
-  { deptId: "assembly", name: "Сборка готовой продукции", order: 2, workWeek: 6, overtime: true, overtimeRate: 0.5, note: "", active: true },
+  { deptId: "teplitsa", farm: "rose_farm", name: "Теплица", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true },
+  { deptId: "assembly", farm: "rose_farm", name: "Сборка готовой продукции", order: 2, workWeek: 6, overtime: true, overtimeRate: 0.5, note: "", active: true },
 ];
-allows("подразделение заводится", departmentRefusal(admin, depts, { deptId: "security", name: "Охрана", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
-refuses("без кода нельзя", departmentRefusal(admin, depts, { deptId: "", name: "Охрана", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
-refuses("то же название под другим кодом — двойник", departmentRefusal(admin, depts, { deptId: "tepl", name: "теплица", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
-allows("своё название под своим кодом — правка", departmentRefusal(admin, depts, { deptId: "teplitsa", name: "Теплица", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
-refuses("сверхурочные без коэффициента", departmentRefusal(admin, depts, { deptId: "x", name: "X", order: 1, workWeek: 5, overtime: true, overtimeRate: 0, note: "", active: true }));
-refuses("бухгалтер подразделения не заводит", departmentRefusal(accountant, depts, { deptId: "x", name: "X", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+allows("подразделение заводится", departmentRefusal(admin, depts, { deptId: "security", farm: "rose_farm", name: "Охрана", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("без кода нельзя", departmentRefusal(admin, depts, { deptId: "", farm: "rose_farm", name: "Охрана", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("то же название под другим кодом — двойник", departmentRefusal(admin, depts, { deptId: "tepl", farm: "rose_farm", name: "теплица", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+allows("своё название под своим кодом — правка", departmentRefusal(admin, depts, { deptId: "teplitsa", farm: "rose_farm", name: "Теплица", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("без компании (ТОО) нельзя", departmentRefusal(admin, depts, { deptId: "x", farm: "", name: "X", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("выдуманная компания — отказ", departmentRefusal(admin, depts, { deptId: "x", farm: "zao", name: "X", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("сверхурочные без коэффициента", departmentRefusal(admin, depts, { deptId: "x", farm: "rose_farm", name: "X", order: 1, workWeek: 5, overtime: true, overtimeRate: 0, note: "", active: true }));
+refuses("бухгалтер подразделения не заводит", departmentRefusal(accountant, depts, { deptId: "x", farm: "rose_farm", name: "X", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
 
 // --- Сотрудники ---------------------------------------------------------------
 const emp = (p: Partial<Employee> & { employeeId: string; fullName: string }): Employee => ({
@@ -174,14 +178,50 @@ refuses("месяц не по форме", balanceRefusal(accountant, { ...balan
 refuses("норма без часов", balanceRefusal(accountant, { ...balanceDraft, hours5: 0 }));
 refuses("норма 300 часов — опечатка", balanceRefusal(accountant, { ...balanceDraft, hours6: 300 }));
 const balance = [{ month: "2024-07", days5: 22, hours5: 176, days6: 26, hours6: 174, updatedBy: "", updatedAt: "" }];
-check("норма пятидневки", normHours(balance, "2024-07", 5), 176);
-check("норма шестидневки", normHours(balance, "2024-07", 6), 174);
-check("нет баланса — null, считать нельзя", normHours(balance, "2024-08", 5), null);
-// Июль 2024 по календарю: 23 будних дня (6 июля, День столицы, — суббота) — пятидневка 23 дня, 184 ч;
-// в таблице владельца стоит 22/176 из-за переноса выходного на 8 июля — подсказка только подсказывает.
-// Шестидневка: 23 × 7 + 3 субботы × 5 = 176 — ровно как в таблице.
-check("подсказка по календарю: июль 2024", suggestBalance("2024-07", ["2024-07-06"]), { month: "2024-07", days5: 23, hours5: 184, days6: 26, hours6: 176 });
-check("подсказка: январь 2024 с 1 и 2 января", suggestBalance("2024-01", ["2024-01-01", "2024-01-02"])?.days5, 21);
+check("норма пятидневки — перебивка бухгалтера", normHours(balance, "2024-07", 5), 176);
+check("норма шестидневки — перебивка бухгалтера", normHours(balance, "2024-07", 6), 174);
+check("нет перебивки — норма по календарю (август 2024)", normHours(balance, "2024-08", 5), 168);
+check("дни по календарю", normDays(balance, "2024-08", 6), 26);
+check("подсказка по календарю: июль 2024 (6 июля — суббота, перенос на 8-е)", suggestBalance("2024-07"), { month: "2024-07", days5: 22, hours5: 176, days6: 26, hours6: 176 });
+check("январь 2024: 7 января — воскресенье, выходной перенесён на 8-е", suggestBalance("2024-01")?.days5, 20);
+
+// --- Календарь РК ------------------------------------------------------------------
+// Официальный производственный календарь на 2026 год: пятидневка 246 дней / 1 968 часов, шестидневка — 248 дней по 7 ч
+// и 50 суббот по 5 ч (1 986 часов). Помесячно — как публикуют бухгалтерские справочники.
+const official2026 = [19, 20, 18, 22, 17, 22, 22, 20, 22, 21, 21, 22];
+const y2026 = yearNorm(2026);
+check("2026: рабочие дни пятидневки по месяцам", y2026.map((m) => m.days5), official2026);
+check("2026: часы пятидневки за год", y2026.reduce((a, m) => a + m.hours5, 0), 1968);
+check("2026: дни шестидневки за год", y2026.reduce((a, m) => a + m.days6, 0), 298);
+check("2026: часы шестидневки за год", y2026.reduce((a, m) => a + m.hours6, 0), 1986);
+check(
+  "2026: переносы пятидневки",
+  nonWorkingDays(2026, 5).filter((d) => d.kind === "transfer").map((d) => d.date),
+  ["2026-03-09", "2026-03-24", "2026-03-25", "2026-05-11", "2026-08-31", "2026-10-26"]
+);
+check(
+  "2026: переносы шестидневки (суббота рабочая — 21 марта и 9 мая не переносятся)",
+  nonWorkingDays(2026, 6).filter((d) => d.kind === "transfer").map((d) => d.date),
+  ["2026-03-09", "2026-03-24", "2026-08-31", "2026-10-26"]
+);
+check("2025: пятидневка 246 дней", yearNorm(2025).reduce((a, m) => a + m.days5, 0), 246);
+check("Курбан-айт 2026 — праздник", isHoliday("2026-05-27"), true);
+check("перенос — выходной, но не праздник (×1,5 не платится)", [isDayOff("2026-03-09", 5), isHoliday("2026-03-09")], [true, false]);
+check("обычная суббота при шестидневке — рабочая", isDayOff("2026-03-14", 6), false);
+check("суббота-праздник при шестидневке — выходной", isDayOff("2026-03-21", 6) || isHoliday("2026-03-21"), true);
+// Дополнения бухгалтера: объявленный выходной, рабочая суббота, Курбан-айт на год без даты в коде.
+const extras: ExtraDay[] = [
+  { date: "2026-01-05", name: "постановление", kind: "off" },
+  { date: "2026-01-10", name: "рабочая суббота", kind: "work" },
+];
+check("дополнительный выходной уменьшает норму", monthNorm("2026-01", [extras[0]]).days5, 18);
+check("рабочая суббота прибавляет день пятидневке", monthNorm("2026-01", extras).days5 - monthNorm("2026-01", [extras[0]]).days5, 1);
+check("Курбан-айт за год без даты в коде — из дополнений", lawHolidays(2035, [{ date: "2035-02-11", name: "Курбан-айт", kind: "" }]).some((h) => h.date === "2035-02-11"), true);
+// Сверка с isdayoff.ru: строка по дню года; расхождение находится, мусор — null.
+const ours2026 = Array.from({ length: 365 }, (_, i) => (isDayOff(addDays("2026-01-01", i), 5) ? "1" : "0")).join("");
+check("сверка: совпадающий календарь — без расхождений", compareWithIsDayOff(2026, ours2026), []);
+check("сверка: одно расхождение найдено", compareWithIsDayOff(2026, "1" + ours2026.slice(1))?.map((d) => d.date), ["2026-01-01"].filter(() => !isDayOff("2026-01-01", 5)));
+check("сверка: мусор — null", compareWithIsDayOff(2026, "100"), null);
 
 // --- Назначение ролей ------------------------------------------------------------
 const actx = { actorEmail: "owner@x", departments: depts };

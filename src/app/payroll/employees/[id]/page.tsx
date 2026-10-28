@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
+import { FARM_LABELS } from "@/lib/constants";
 import EmployeeCard from "@/components/payroll/EmployeeCard";
 import { seesDepartment } from "@/lib/payroll/access";
 import { payrollSession } from "@/lib/payroll/session";
@@ -29,7 +30,7 @@ export default async function PayrollEmployeePage({ params }: { params: { id: st
         area="payroll"
         title={employee.fullName}
         eyebrow="Сотрудники"
-        subtitle={`${employee.position} · ${department?.name ?? employee.deptId}`}
+        subtitle={`${employee.position} · ${department?.name ?? employee.deptId}${department?.farm ? ` · ${FARM_LABELS[department.farm] ?? department.farm}` : ""}`}
         icon="client"
         tabs={payrollTabsFor(scope)}
       />

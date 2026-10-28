@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { EMPLOYMENT_LABELS, type Employee, type EmployeeDraft, type RateDraft } from "@/lib/payroll/types";
 import { formatDay } from "@/lib/formatDate";
+import { FARM_LABELS, FARM_ORDER } from "@/lib/constants";
 import EmployeeForm, { EMPTY_EMPLOYEE } from "./EmployeeForm";
 
 export interface EmployeeRow {
@@ -33,7 +34,7 @@ export default function EmployeesBoard({
   save,
 }: {
   rows: EmployeeRow[];
-  departments: { deptId: string; name: string; active: boolean }[];
+  departments: { deptId: string; name: string; active: boolean; farm: string }[];
   today: string;
   actorEmail: string;
   canEdit: boolean;
@@ -41,25 +42,29 @@ export default function EmployeesBoard({
   seesMoney: boolean;
   save: (draft: EmployeeDraft, firstRate: RateDraft | null) => Promise<unknown>;
 }) {
+  const [farm, setFarm] = useState<string>("");
   const [dept, setDept] = useState<string>("");
   const [q, setQ] = useState("");
+  const farmOf = useMemo(() => new Map(departments.map((d) => [d.deptId, d.farm])), [departments]);
+  const shownDepartments = departments.filter((d) => (farm ? d.farm === farm : true));
   const [showFired, setShowFired] = useState(false);
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState("");
 
-  const working = rows.filter((r) => r.working);
+  const inFarm = rows.filter((r) => (farm ? farmOf.get(r.employee.deptId) === farm : true));
+  const working = inFarm.filter((r) => r.working);
   const td = working.filter((r) => r.employee.employment === "td").length;
   const fund = working.reduce((s, r) => s + (r.total ?? 0), 0);
   const noRate = working.filter((r) => !r.hasRate).length;
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return rows
+    return inFarm
       .filter((r) => (showFired ? true : r.working))
       .filter((r) => (dept ? r.employee.deptId === dept : true))
       .filter((r) => (needle ? `${r.employee.fullName} ${r.employee.position}`.toLowerCase().includes(needle) : true))
       .sort((a, b) => a.departmentName.localeCompare(b.departmentName, "ru") || a.employee.fullName.localeCompare(b.employee.fullName, "ru"));
-  }, [rows, dept, q, showFired]);
+  }, [inFarm, dept, q, showFired]);
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
@@ -77,21 +82,33 @@ export default function EmployeesBoard({
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile label="В штате" value={String(working.length)} sub={`ТД ${td} · ГПХ ${working.length - td}`} />
-        <Tile label="Подразделений" value={String(departments.filter((d) => d.active).length)} />
+        <Tile label="Подразделений" value={String(shownDepartments.filter((d) => d.active).length)} />
         {seesMoney ? (
           <Tile label="Фонд ИТОГО в месяц" value={money(fund)} sub="по действующим ставкам" />
         ) : (
-          <Tile label="Уволенных в списке" value={String(rows.length - working.length)} />
+          <Tile label="Уволенных в списке" value={String(inFarm.length - working.length)} />
         )}
         <Tile label="Без ставки" value={String(noRate)} sub={noRate ? "поставит бухгалтер" : "все ставки на месте"} tone={noRate ? "warn" : "default"} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 rounded-full border border-line-hairline p-0.5 bg-surface">
+          {["", ...FARM_ORDER].map((f) => (
+            <button
+              key={f || "all"}
+              type="button"
+              className={clsx("h-8 px-3 rounded-full text-sm whitespace-nowrap", farm === f ? "bg-section-payroll text-white" : "text-ink-secondary hover:bg-surface-plane")}
+              onClick={() => { setFarm(f); setDept(""); }}
+            >
+              {f ? FARM_LABELS[f] : "Обе компании"}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-2 overflow-x-auto scroll-x-hidden -mx-1 px-1 py-0.5">
           <button type="button" className={pill(dept === "")} onClick={() => setDept("")}>
             Все · {working.length}
           </button>
-          {departments.map((d) => (
+          {shownDepartments.map((d) => (
             <button key={d.deptId} type="button" className={pill(dept === d.deptId)} onClick={() => setDept(dept === d.deptId ? "" : d.deptId)}>
               {d.name} · {counts.get(d.deptId) ?? 0}
             </button>
@@ -115,7 +132,7 @@ export default function EmployeesBoard({
       {open && (
         <EmployeeForm
           initial={{ ...EMPTY_EMPLOYEE, deptId: dept, hiredAt: today }}
-          departments={departments}
+          departments={shownDepartments}
           today={today}
           canRate={canRate}
           save={save}
