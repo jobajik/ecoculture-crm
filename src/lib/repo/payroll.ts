@@ -1,10 +1,12 @@
-import { commitAtomic, deleteWhere, prefetchTables, readTable, rowToRecord, updateWhere, SHEET_TABS } from "../sheets";
+import { commitAtomic, deleteWhere, forgetReads, payrollSpreadsheetId, PAYROLL_SHEET_MESSAGE, prefetchTables, readTable, rowToRecord, updateWhere, SHEET_TABS } from "../sheets";
+import { ensurePayrollSheet } from "../payrollSheet";
 import { sheetNumber } from "../sheetCell";
 import { toIsoDate } from "../sheetDate";
 import { generateId } from "../id";
 import { EMPLOYMENTS, PAY_TYPES, type BalanceMonth, type Department, type Employee, type Holiday, type Rate } from "../payroll/types";
 import { kpiOf } from "../payroll/rules";
 import type { TimesheetStatus } from "../payroll/timesheet";
+import type { Adjustment } from "../payroll/payslip";
 
 /**
  * Справочники модуля «Зарплата» во вкладках Payroll* (чтение — через `rowToRecord` по позиции колонок, числа —
@@ -111,6 +113,7 @@ export const PAYROLL_TABS = [
   SHEET_TABS.PAYROLL_HOLIDAYS,
   SHEET_TABS.PAYROLL_TIMESHEET,
   SHEET_TABS.PAYROLL_TIMESHEET_STATUS,
+  SHEET_TABS.PAYROLL_ADJUST,
 ];
 
 /** Все справочники одним batchGet (грабли 1.17): страница зовёт это первым. */
@@ -460,13 +463,26 @@ export async function listTimesheetStatus(month?: string): Promise<TimesheetStat
   return (await rows(SHEET_TABS.PAYROLL_TIMESHEET_STATUS, toTimesheetStatus)).filter((s) => s.deptId && (!month || s.month === month));
 }
 
-const TAB_MISSING = "Вкладок табеля ещё нет в таблице зарплаты — администратор открывает /api/payroll/setup один раз, и они появятся.";
+const TAB_MISSING = "Не удалось завести вкладку в таблице зарплаты. Попробуйте ещё раз через минуту; не помогло — администратор открывает /api/payroll/setup.";
 
+/**
+ * Свежее чтение вкладки, которой может ещё не быть (табель, ведомость заведены позже справочников). Нет вкладки —
+ * заводим её сами (`ensurePayrollSheet`: дописывает недостающие листы и заголовки, ничего не стирая) и читаем снова.
+ * Раньше это был ручной шаг «администратор открывает /api/payroll/setup», и 28.10.2026 владелец упёрся в него при
+ * первом же сохранении табеля. Без `PAYROLL_SPREADSHEET_ID` заводить негде — отказ с объяснением.
+ */
 async function freshOrMissing(tab: string) {
   try {
     return await readTable(tab, { fresh: true });
   } catch {
-    throw new Error(TAB_MISSING);
+    if (!payrollSpreadsheetId()) throw new Error(PAYROLL_SHEET_MESSAGE);
+    try {
+      await ensurePayrollSheet();
+      forgetReads();
+      return await readTable(tab, { fresh: true });
+    } catch {
+      throw new Error(TAB_MISSING);
+    }
   }
 }
 
@@ -522,4 +538,66 @@ export async function saveTimesheetStatus(next: Omit<TimesheetStatusRow, "submit
     return;
   }
   await commitAtomic([{ kind: "append", tab, records: [{ Month: next.month, DeptID: next.deptId, ...changes }] }]);
+}
+
+// --- Ведомость: ручные поля бухгалтера -------------------------------------------------
+
+function optNum(v: string): number | null {
+  return (v ?? "").trim() === "" ? null : sheetNumber(v);
+}
+
+function toAdjustment(r: Record<string, string>): Adjustment {
+  return {
+    month: monthOf(r.Month),
+    employeeId: (r.EmployeeID || "").trim(),
+    salaryOverride: optNum(r.SalaryOverride),
+    sick: sheetNumber(r.Sick),
+    vacation: sheetNumber(r.Vacation),
+    kpiDeduction: sheetNumber(r.KpiDeduction),
+    advance: sheetNumber(r.Advance),
+    loan: sheetNumber(r.Loan),
+    flowers: optNum(r.Flowers),
+    note: r.Note || "",
+  };
+}
+
+export async function listAdjustments(month: string): Promise<Adjustment[]> {
+  return (await rows(SHEET_TABS.PAYROLL_ADJUST, toAdjustment)).filter((a) => a.month === month && a.employeeId);
+}
+
+/** Записать ручные поля ведомости: изменившиеся строки — правкой ячеек, новые — дописыванием; одним `commitAtomic`. */
+export async function saveAdjustments(month: string, input: Adjustment[], by: string): Promise<{ changed: number; added: number }> {
+  const tab = SHEET_TABS.PAYROLL_ADJUST;
+  const table = await freshOrMissing(tab);
+  const now = new Date().toISOString();
+  const ops: Parameters<typeof commitAtomic>[0] = [];
+  const append: Record<string, unknown>[] = [];
+  let changed = 0;
+  const record = (a: Adjustment) => ({
+    SalaryOverride: a.salaryOverride === null ? "" : a.salaryOverride,
+    Sick: a.sick || "",
+    Vacation: a.vacation || "",
+    KpiDeduction: a.kpiDeduction || "",
+    Advance: a.advance || "",
+    Loan: a.loan || "",
+    Flowers: a.flowers === null ? "" : a.flowers,
+    Note: a.note,
+  });
+  for (const a of input) {
+    const idx = table.rows.findIndex((r) => {
+      const t = toAdjustment(rowToRecord(tab, r));
+      return t.month === month && t.employeeId === a.employeeId;
+    });
+    if (idx >= 0) {
+      const was = toAdjustment(rowToRecord(tab, table.rows[idx]));
+      if (JSON.stringify({ ...was, month: "", employeeId: "" }) === JSON.stringify({ ...a, month: "", employeeId: "" })) continue;
+      ops.push({ kind: "update", tab, rowNumber: table.rowNumbers[idx], changes: { ...record(a), UpdatedBy: by, UpdatedAt: now } });
+      changed += 1;
+    } else {
+      append.push({ Month: month, EmployeeID: a.employeeId, ...record(a), UpdatedBy: by, UpdatedAt: now });
+    }
+  }
+  if (append.length) ops.push({ kind: "append", tab, records: append });
+  if (ops.length) await commitAtomic(ops);
+  return { changed, added: append.length };
 }

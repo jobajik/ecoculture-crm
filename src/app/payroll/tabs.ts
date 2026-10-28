@@ -11,6 +11,7 @@ export function payrollTabsFor(scope: PayrollScope | null): { href: string; labe
     { href: "/payroll/timesheet", label: "Табель" },
     { href: "/payroll/employees", label: "Сотрудники" },
   ];
+  if (scope.seesMoney) tabs.push({ href: "/payroll/payslip", label: "Ведомость" });
   if (scope.kind !== "head") {
     tabs.push({ href: "/payroll/departments", label: "Подразделения" });
     tabs.push({ href: "/payroll/balance", label: "Календарь и нормы" });

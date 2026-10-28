@@ -44,6 +44,7 @@ import {
   timesheetPeople,
 } from "../src/lib/payroll/timesheet";
 import { navLinksFor } from "../src/components/navLinks";
+import { EMPTY_ADJUSTMENT, adjustmentIsEmpty, adjustmentRefusal, advanceHalf, cleanAdjustment, computePayslip, employmentFraction, sumRows, type PayslipInput } from "../src/lib/payroll/payslip";
 import { canOpen } from "../src/lib/access";
 
 let fails = 0;
@@ -80,8 +81,8 @@ check("начальник не видит чужое", seesDepartment(head, "sec
 check("бухгалтер видит все", seesDepartment(accountant, "security"), true);
 check("код подразделения чистится", cleanDeptId(" Теплица/Rose Farm "), "rose-farm");
 check("вкладки начальника — табель и сотрудники", payrollTabsFor(head).map((t) => t.label), ["Табель", "Сотрудники"]);
-check("вкладки админа — с доступом", payrollTabsFor(admin).map((t) => t.label), ["Табель", "Сотрудники", "Подразделения", "Календарь и нормы", "Доступ"]);
-check("вкладки бухгалтера — без доступа", payrollTabsFor(accountant).map((t) => t.label), ["Табель", "Сотрудники", "Подразделения", "Календарь и нормы"]);
+check("вкладки админа — с доступом", payrollTabsFor(admin).map((t) => t.label), ["Табель", "Сотрудники", "Ведомость", "Подразделения", "Календарь и нормы", "Доступ"]);
+check("вкладки бухгалтера — без доступа", payrollTabsFor(accountant).map((t) => t.label), ["Табель", "Сотрудники", "Ведомость", "Подразделения", "Календарь и нормы"]);
 
 // --- Меню и охранник --------------------------------------------------------
 check("у админа есть «Зарплата» (в группе «Прочее»)", navLinksFor("admin").find((l) => l.label === "Зарплата")?.other, true);
@@ -314,6 +315,74 @@ check("штатка: у Есентая коды с приставкой", planSt
   ];
   check("табель: кто в строках — работавшие в месяце, почасовым две смены, заполненное остаётся", timesheetPeople(pe, "teplitsa", "2026-10", [{ employeeId: "d", deptId: "teplitsa" }]).map((p) => p.key), ["a|", "c|", "c|night", "d|"]);
   check("табель: месяцы", [shiftMonth("2026-01", -1), shiftMonth("2026-12", 1), monthLabel("2026-10")], ["2025-12", "2027-01", "Октябрь 2026"]);
+}
+
+// --- Ведомость ---------------------------------------------------------------------
+{
+  // Июль 2024, лист «Расчётная ведомость» книги бухгалтера — две живые строки копейка в копейку.
+  const r = (p: Partial<Rate>): Rate => ({ rateId: "r", employeeId: "x", from: "2024-07-01", salary1c: 0, kpi: 0, total: 0, dayRate: 0, nightRate: 0, note: "", setBy: "", setAt: "", ...p });
+  const cells = (arr: (number | string | null)[]) => arr.map((v) => (v === null ? "" : String(v)));
+  const july5 = dayInfos("2024-07", 5);
+  const july6 = dayInfos("2024-07", 6);
+  const teplitsa = depts[0];
+  const assembly = depts[1];
+  const base = (over: Partial<PayslipInput>): PayslipInput => ({
+    employee: emp({ employeeId: "m", fullName: "Мусрепова Айгуль Тобылбаевна", position: "Бригадир теплицы" }),
+    department: teplitsa,
+    rate: r({ salary1c: 150000, total: 195000 }),
+    normHours: 176,
+    dayShiftHours: 8,
+    days: july5,
+    cells: cells([8, 8, null, null, 8, 8, 8, 8, 8, null, null, 8, 8, 8, 8, 8, null, null, 8, 8, 8, 8, 8, 8, 8, 8, 8, null, 8, 8, null]),
+    adjustment: { ...EMPTY_ADJUSTMENT },
+    flowersFromStock: 6000,
+    ...over,
+  });
+  const m = computePayslip(base({}));
+  check(
+    "ведомость: Мусрепова, июль 2024 — факт, праздничные, оклада, KPI, цветы со склада, к выплате как в книге",
+    [m.factHours, m.holidayHours, m.salaryPay, m.holidayPay, m.overtimePay, m.kpi, m.flowers, m.toPay],
+    [184, 8, 143181.82, 10227.27, 0, 41590.91, 6000, 189000],
+  );
+  const d = computePayslip(
+    base({
+      employee: emp({ employeeId: "d", fullName: "Орынбаева Диана Кайратовна", deptId: "assembly", position: "Завсклад ГП Алматы" }),
+      department: assembly,
+      rate: r({ salary1c: 225000, total: 225000 }),
+      days: july6,
+      cells: cells([8, 11, 10, 12, 16, 11, null, 13, 12, 9, 8, 8, 12, null, 13, 12, 10, 12, 8, 8, null, 13, 11, 9, 8, null, 7, null, 10, 10, null]),
+      adjustment: { ...EMPTY_ADJUSTMENT, flowers: 65400 },
+      flowersFromStock: 0,
+    }),
+  );
+  check(
+    "ведомость: Орынбаева, июль 2024 — сверхурочные ×0,5, KPI не ниже нуля, цветы перебиты бухгалтером",
+    [d.factHours, d.holidayHours, d.overtimeHours, d.salaryPay, d.holidayPay, d.overtimePay, d.kpi, d.flowersOverridden, d.toPay],
+    [261, 11, 74, 210937.5, 21093.75, 47301.14, 0, true, 213932.39],
+  );
+  check("ведомость: сверхурочные НЕ уменьшают KPI (бригадир со сверхурочными получил бы столько же KPI)", computePayslip(base({ department: { ...teplitsa, overtime: true, overtimeRate: 1 } })).kpi, 41590.91);
+  const sick = computePayslip(base({ adjustment: { ...EMPTY_ADJUSTMENT, sick: 20000, advance: 50000, loan: 10000 }, cells: cells(july5.map((x, i) => (i < 5 ? "Б" : x.off ? null : 8))) }));
+  check("ведомость: больничный входит в KPI-базу и в начисление, аванс и займ — удержания", [sick.sickDays, sick.sick, sick.accrued - sick.toPay], [5, 20000, 50000 + 10000 + 6000]);
+  const over = computePayslip(base({ adjustment: { ...EMPTY_ADJUSTMENT, salaryOverride: 100000 } }));
+  check("ведомость: перебивка «Оклада» берётся как есть и KPI считается от неё", [over.salaryOverridden, over.salaryPay, over.kpi], [true, 100000, 195000 - 100000 - 10227.27]);
+  const half = computePayslip(base({ employee: emp({ employeeId: "n", fullName: "Новая", hiredAt: "2024-07-16" }), cells: cells(july5.map((x, i) => (i < 15 || x.off ? null : 8))) }));
+  check("ведомость: принят 16-го — норма пропорционально дням графика, без «табель пустой»", [half.personalNorm, half.salaryPay, half.kpi, half.warnings], [96, 81818.18, Math.round((195000 * 96 / 176 - 81818.18) * 100) / 100, []]);
+  check("ведомость: доля месяца — весь месяц 1, уволен 15-го — половина рабочих часов", [employmentFraction(july5, 5, "2024-01-01", ""), Math.round(employmentFraction(july5, 5, "", "2024-07-15") * 1000) / 1000], [1, 0.455]);
+  const hourlyRow = computePayslip(base({ employee: emp({ employeeId: "h", fullName: "Оператор", payType: "hourly" }), rate: r({ dayRate: 1000, nightRate: 1500 }), cells: cells([12, null, 12]), nightCells: cells([null, 12, null]), days: july5.slice(0, 3), normHours: 24, dayShiftHours: 8, flowersFromStock: 0 }));
+  check("ведомость: почасовой — день и ночь по тарифам, KPI нет", [hourlyRow.factHours, hourlyRow.nightHours, hourlyRow.salaryPay, hourlyRow.kpi, hourlyRow.toPay], [36, 12, 42000, 0, 42000]);
+  check("ведомость: почасовой без тарифов — предупреждение, не ноль молча", computePayslip(base({ employee: emp({ employeeId: "h", fullName: "Оператор", payType: "hourly" }), rate: null })).warnings.some((w) => w.includes("тариф")), true);
+  check("ведомость: без ставки — предупреждение", computePayslip(base({ rate: null })).warnings, ["нет ставки"]);
+  check("ведомость: дорожные = ставка × отработанные дни, отдельно от «к выплате»", (() => { const t = computePayslip(base({ employee: emp({ employeeId: "t", fullName: "Т", travelRate: 400 }) })); return [t.travel, t.toPay]; })(), [400 * 23, 189000]);
+  const tot = sumRows([m, d]);
+  check("ведомость: итоги складываются", [tot.people, tot.toPay, tot.flowers], [2, 189000 + 213932.39, 71400]);
+  check("ведомость: аванс 50 % — от ИТОГО, целыми сотнями", [advanceHalf(r({ salary1c: 150000, total: 195000 })), advanceHalf(r({ salary1c: 74569 })), advanceHalf(null)], [97500, 37200, 0]);
+  check("ведомость: поля из браузера — числа с запятой, пустая перебивка — «считаем сами», минус не пускаем", cleanAdjustment({ sick: "1 200,5", advance: "-5", salaryOverride: "", flowers: "0", note: "  x " }), { salaryOverride: null, sick: 1200.5, vacation: 0, kpiDeduction: 0, advance: 0, loan: 0, flowers: 0, note: "x" });
+  check("ведомость: пустая правка узнаётся", [adjustmentIsEmpty({ ...EMPTY_ADJUSTMENT }), adjustmentIsEmpty({ ...EMPTY_ADJUSTMENT, flowers: 0 })], [true, false]);
+  allows("ведомость: бухгалтер правит", adjustmentRefusal(accountant));
+  allows("ведомость: админ правит", adjustmentRefusal(admin));
+  refuses("ведомость: кадровик только смотрит", adjustmentRefusal(hr));
+  refuses("ведомость: начальник не видит денег", adjustmentRefusal(head));
+  check("ведомость: вкладка — у тех, кто видит деньги, у начальника нет", [payrollTabsFor(hr).some((t) => t.label === "Ведомость"), payrollTabsFor(head).some((t) => t.label === "Ведомость")], [true, false]);
 }
 
 // --- Назначение ролей ------------------------------------------------------------
