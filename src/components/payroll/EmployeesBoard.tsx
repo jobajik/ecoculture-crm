@@ -7,6 +7,7 @@ import { EMPLOYMENT_LABELS, type Employee, type EmployeeDraft, type RateDraft } 
 import { formatDay } from "@/lib/formatDate";
 import { FARM_LABELS, FARM_ORDER } from "@/lib/constants";
 import EmployeeForm, { EMPTY_EMPLOYEE } from "./EmployeeForm";
+import StaffingImportForm from "./StaffingImportForm";
 
 export interface EmployeeRow {
   employee: Employee;
@@ -32,6 +33,7 @@ export default function EmployeesBoard({
   canRate,
   seesMoney,
   save,
+  importStaffing,
 }: {
   rows: EmployeeRow[];
   departments: { deptId: string; name: string; active: boolean; farm: string }[];
@@ -41,7 +43,9 @@ export default function EmployeesBoard({
   canRate: boolean;
   seesMoney: boolean;
   save: (draft: EmployeeDraft, firstRate: RateDraft | null) => Promise<unknown>;
+  importStaffing: (matrix: string[][], from: string, farm: string, dry: boolean) => Promise<unknown>;
 }) {
+  const [importing, setImporting] = useState(false);
   const [farm, setFarm] = useState<string>("");
   const [dept, setDept] = useState<string>("");
   const [q, setQ] = useState("");
@@ -120,6 +124,11 @@ export default function EmployeesBoard({
             <input type="checkbox" checked={showFired} onChange={(e) => setShowFired(e.target.checked)} /> уволенные
           </label>
           {canEdit && (
+            <button type="button" className="btn-secondary" onClick={() => { setImporting((v) => !v); setDone(""); }}>
+              Загрузить файлом
+            </button>
+          )}
+          {canEdit && (
             <button type="button" className="btn-primary" onClick={() => { setOpen(true); setDone(""); }}>
               + Сотрудник
             </button>
@@ -128,6 +137,8 @@ export default function EmployeesBoard({
       </div>
 
       {done && <p className="text-sm bg-status-good/10 text-status-good rounded-lg px-3 py-2">{done}</p>}
+
+      {importing && <StaffingImportForm today={today} defaultFarm={farm || "rose_farm"} importStaffing={importStaffing} onClose={() => setImporting(false)} />}
 
       {open && (
         <EmployeeForm

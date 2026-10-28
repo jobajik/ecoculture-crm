@@ -295,3 +295,100 @@ export async function deleteBalanceMonth(month: string): Promise<number> {
 export async function removeHoliday(date: string): Promise<number> {
   return deleteWhere(SHEET_TABS.PAYROLL_HOLIDAYS, (r) => toIsoDate(r.Date) === date);
 }
+
+/**
+ * Запись плана загрузки штатной расстановки: новые подразделения, новые сотрудники с первой ставкой, правки
+ * существующих (только изменившиеся ячейки) и новые строки ставок — одним `commitAtomic` после ОДНОГО свежего
+ * чтения вкладки сотрудников (грабли 1.15, 1.16). Ставка в тот же день `from`, что уже есть у человека,
+ * переписывается, а не дублируется.
+ */
+export async function importStaffing(
+  plan: import("../payroll/staffingImport").StaffingPlan,
+  from: string,
+  by: string
+): Promise<{ departments: number; employees: number; changed: number; rates: number }> {
+  const now = new Date().toISOString();
+  const ops: Parameters<typeof commitAtomic>[0] = [];
+  if (plan.newDepartments.length) {
+    ops.push({
+      kind: "append",
+      tab: SHEET_TABS.PAYROLL_DEPARTMENTS,
+      records: plan.newDepartments.map((d) => ({
+        DeptID: d.deptId,
+        Name: d.name,
+        Order: d.order,
+        WorkWeek: d.workWeek,
+        Overtime: d.overtime ? "TRUE" : "FALSE",
+        OvertimeRate: d.overtime ? d.overtimeRate : "",
+        Note: "из штатной расстановки",
+        Active: "TRUE",
+        Farm: d.farm,
+      })),
+    });
+  }
+  const empRecords: Record<string, unknown>[] = [];
+  const rateRecords: Record<string, unknown>[] = [];
+  let firstRates = 0;
+  for (const n of plan.newEmployees) {
+    const employeeId = generateId("EMP");
+    empRecords.push({
+      EmployeeID: employeeId,
+      FullName: n.row.fullName,
+      DeptID: n.deptId,
+      Position: n.row.position,
+      Employment: n.row.employment,
+      PayType: n.payType,
+      HiredAt: "",
+      FiredAt: "",
+      TravelAddress: n.row.travelAddress,
+      TravelRate: n.row.travelRate || "",
+      Note: n.row.note,
+      CreatedAt: now,
+      CreatedBy: by,
+      UpdatedAt: now,
+      UpdatedBy: by,
+      Iin: "",
+    });
+    if (n.payType === "month" && (n.row.salary1c > 0 || n.row.total > 0)) {
+      rateRecords.push(rateRecord(employeeId, { from, salary1c: n.row.salary1c, total: n.row.total, dayRate: 0, nightRate: 0, note: "из штатной расстановки" }, by, now));
+      firstRates += 1;
+    }
+  }
+  if (plan.changedEmployees.length) {
+    const table = await readTable(SHEET_TABS.PAYROLL_EMPLOYEES, { fresh: true });
+    for (const c of plan.changedEmployees) {
+      const idx = table.rows.findIndex((row) => (rowToRecord(SHEET_TABS.PAYROLL_EMPLOYEES, row).EmployeeID || "").trim() === c.employee.employeeId);
+      if (idx < 0) continue;
+      const changes: Record<string, unknown> = { UpdatedAt: now, UpdatedBy: by };
+      if (c.patch.deptId !== undefined) changes.DeptID = c.patch.deptId;
+      if (c.patch.position !== undefined) changes.Position = c.patch.position;
+      if (c.patch.employment !== undefined) changes.Employment = c.patch.employment;
+      if (c.patch.travelAddress !== undefined) changes.TravelAddress = c.patch.travelAddress;
+      if (c.patch.travelRate !== undefined) changes.TravelRate = c.patch.travelRate || "";
+      ops.push({ kind: "update", tab: SHEET_TABS.PAYROLL_EMPLOYEES, rowNumber: table.rowNumbers[idx], changes });
+    }
+  }
+  if (plan.newRates.length) {
+    const table = await readTable(SHEET_TABS.PAYROLL_RATES, { fresh: true });
+    for (const r of plan.newRates) {
+      const idx = table.rows.findIndex((row) => {
+        const rec = rowToRecord(SHEET_TABS.PAYROLL_RATES, row);
+        return (rec.EmployeeID || "").trim() === r.employee.employeeId && toIsoDate(rec.From) === from;
+      });
+      if (idx >= 0) {
+        ops.push({
+          kind: "update",
+          tab: SHEET_TABS.PAYROLL_RATES,
+          rowNumber: table.rowNumbers[idx],
+          changes: { Salary1C: r.salary1c, Kpi: kpiOf({ salary1c: r.salary1c, total: r.total }), Total: r.total, Note: "из штатной расстановки", SetBy: by, SetAt: now },
+        });
+      } else {
+        rateRecords.push(rateRecord(r.employee.employeeId, { from, salary1c: r.salary1c, total: r.total, dayRate: 0, nightRate: 0, note: "из штатной расстановки" }, by, now));
+      }
+    }
+  }
+  if (empRecords.length) ops.push({ kind: "append", tab: SHEET_TABS.PAYROLL_EMPLOYEES, records: empRecords });
+  if (rateRecords.length) ops.push({ kind: "append", tab: SHEET_TABS.PAYROLL_RATES, records: rateRecords });
+  if (ops.length) await commitAtomic(ops);
+  return { departments: plan.newDepartments.length, employees: empRecords.length, changed: plan.changedEmployees.length, rates: plan.newRates.length + firstRates };
+}
