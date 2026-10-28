@@ -59,6 +59,7 @@ export default function EmployeeCard({
     firedAt: employee.firedAt,
     travelAddress: employee.travelAddress,
     travelRate: employee.travelRate,
+    iin: employee.iin,
     note: employee.note,
   };
 
@@ -89,6 +90,7 @@ export default function EmployeeCard({
               <Row k="Тип расчёта" v={PAY_TYPE_LABELS[employee.payType]} />
               <Row k="Принят" v={formatDay(employee.hiredAt, "не записано")} />
               <Row k="Уволен" v={employee.firedAt ? formatDay(employee.firedAt) : "— работает"} />
+              <Row k="ИИН" v={employee.iin || "не записан"} />
               <Row k="Дорожные" v={employee.travelRate ? `${employee.travelAddress} · ${money(employee.travelRate)} в день` : "нет"} />
               {employee.note && <Row k="Заметка" v={employee.note} />}
             </dl>

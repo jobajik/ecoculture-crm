@@ -47,6 +47,8 @@ export interface Employee {
   /** Дорожные: адрес (как в ведомости — «Шабыт», «междуреченск») и ставка в день. */
   travelAddress: string;
   travelRate: number;
+  /** ИИН — 12 цифр; пусто — не записан. Ключ для 1С. */
+  iin: string;
   note: string;
   createdAt: string;
   createdBy: string;
@@ -113,6 +115,7 @@ export interface EmployeeDraft {
   firedAt: string;
   travelAddress: string;
   travelRate: number;
+  iin: string;
   note: string;
 }
 

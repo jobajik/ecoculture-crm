@@ -335,7 +335,8 @@ export const SHEET_HEADERS: Record<string, string[]> = {
    * Сотрудник в штате — строка на человека, а не на месяц: приём и увольнение — датами, и по ним месяц знает,
    * кто в нём работал. Суммы здесь НЕ лежат — они в PayrollRates с датой начала действия. PayType: month — оклад за
    * норму часов, hourly — почасовой тариф день/ночь (операторы PRIVA). Employment: td — трудовой договор, gph — ГПХ.
-   * TravelAddress и TravelRate — дорожные (ставка в день по адресу), считаются от дней табеля.
+   * TravelAddress и TravelRate — дорожные (ставка в день по адресу), считаются от дней табеля. Iin — ИИН (12 цифр),
+   * по нему будущая привязка к 1С (решение владельца 28.10.2026); колонка последняя — грабли 1.1.
    */
   [SHEET_TABS.PAYROLL_EMPLOYEES]: [
     "EmployeeID",
@@ -353,6 +354,7 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "CreatedBy",
     "UpdatedAt",
     "UpdatedBy",
+    "Iin",
   ],
   /**
    * Ставка сотрудника с даты From: Salary1C — официальный оклад (идёт в 1С), Total — оговорённая сумма за полный

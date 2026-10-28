@@ -93,6 +93,7 @@ export function cleanEmployee(draft: EmployeeDraft): EmployeeDraft {
     firedAt: String(draft.firedAt ?? "").trim(),
     travelAddress: String(draft.travelAddress ?? "").trim(),
     travelRate: Math.max(0, Number(draft.travelRate) || 0),
+    iin: String(draft.iin ?? "").replace(/\D/g, ""),
     note: String(draft.note ?? "").trim(),
   };
 }
@@ -119,6 +120,9 @@ export function employeeRefusal(
   if (clean.firedAt && !isDay(clean.firedAt)) return "Дата увольнения — в виде ГГГГ-ММ-ДД.";
   if (clean.hiredAt && clean.firedAt && clean.firedAt < clean.hiredAt) return "Дата увольнения раньше даты приёма.";
   if (clean.travelRate > 0 && !clean.travelAddress) return "Указана ставка дорожных — укажите и адрес.";
+  if (clean.iin && !/^\d{12}$/.test(clean.iin)) return "ИИН — 12 цифр.";
+  const sameIin = clean.iin && ctx.employees.find((e) => e.employeeId !== clean.employeeId && e.iin === clean.iin);
+  if (sameIin) return `ИИН уже записан у сотрудника «${sameIin.fullName}».`;
   // Двойник — предупреждаем запретом только при полном совпадении ФИО у работающего: однофамильцы с разными
   // отчествами бывают, а второй «Иванов Иван Иванович» в штате — почти наверняка ошибка.
   const twin = ctx.employees.find(

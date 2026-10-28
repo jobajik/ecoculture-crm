@@ -44,6 +44,7 @@ function toEmployee(r: Record<string, string>): Employee {
     firedAt: toIsoDate(r.FiredAt),
     travelAddress: (r.TravelAddress || "").trim(),
     travelRate: sheetNumber(r.TravelRate),
+    iin: (r.Iin || "").replace(/\D/g, ""),
     note: r.Note || "",
     createdAt: r.CreatedAt || "",
     createdBy: (r.CreatedBy || "").trim().toLowerCase(),
@@ -182,6 +183,7 @@ export async function createEmployee(
           CreatedBy: by,
           UpdatedAt: now,
           UpdatedBy: by,
+          Iin: input.iin,
         },
       ],
     },
@@ -212,6 +214,7 @@ export async function updateEmployee(
       Note: input.note,
       UpdatedAt: new Date().toISOString(),
       UpdatedBy: by,
+      Iin: input.iin,
     })
   );
 }

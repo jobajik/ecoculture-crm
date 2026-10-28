@@ -21,6 +21,7 @@ export const EMPTY_EMPLOYEE: EmployeeDraft = {
   firedAt: "",
   travelAddress: "",
   travelRate: 0,
+  iin: "",
   note: "",
 };
 
@@ -128,6 +129,11 @@ export default function EmployeeForm({
           <label className="label">Дата увольнения</label>
           <input className="input" type="date" value={draft.firedAt} onChange={(e) => set({ firedAt: e.target.value })} />
           <p className="text-xs text-ink-muted mt-1">Пусто — работает. С этой даты человек выпадает из табеля, но остаётся в прошлых месяцах.</p>
+        </div>
+        <div>
+          <label className="label">ИИН</label>
+          <input className="input" inputMode="numeric" maxLength={12} value={draft.iin} onChange={(e) => set({ iin: e.target.value.replace(/\D/g, "").slice(0, 12) })} />
+          <p className="text-xs text-ink-muted mt-1">12 цифр; по нему будет связь с 1С.</p>
         </div>
         <div>
           <label className="label">Дорожные: адрес</label>

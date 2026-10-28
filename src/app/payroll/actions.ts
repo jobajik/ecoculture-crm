@@ -76,6 +76,7 @@ async function saveEmployeeActionInner(draft: EmployeeDraft, firstRate: RateDraf
     firedAt: clean.firedAt,
     travelAddress: clean.travelAddress,
     travelRate: clean.travelRate,
+    iin: clean.iin,
     note: clean.note,
   };
   if (clean.employeeId) {

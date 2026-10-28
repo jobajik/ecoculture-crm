@@ -96,6 +96,7 @@ const emp = (p: Partial<Employee> & { employeeId: string; fullName: string }): E
   firedAt: "",
   travelAddress: "",
   travelRate: 0,
+  iin: "",
   note: "",
   createdAt: "",
   createdBy: "",
@@ -116,6 +117,7 @@ const draft = {
   firedAt: "",
   travelAddress: "",
   travelRate: 0,
+  iin: "",
   note: "",
 };
 allows("кадровик заводит сотрудника", employeeRefusal(hr, ctx, draft));
@@ -129,6 +131,8 @@ refuses("вид занятости не из списка", employeeRefusal(hr, 
 refuses("увольнение раньше приёма", employeeRefusal(hr, ctx, { ...draft, firedAt: "2026-10-01" }));
 refuses("дата не по форме", employeeRefusal(hr, ctx, { ...draft, hiredAt: "01.11.2026" }));
 refuses("дорожные без адреса", employeeRefusal(hr, ctx, { ...draft, travelRate: 500 }));
+refuses("ИИН не из 12 цифр", employeeRefusal(hr, ctx, { ...draft, iin: "12345" }));
+check("ИИН с пробелами чистится", cleanEmployee({ ...draft, iin: "123 456 789 012" }).iin, "123456789012");
 refuses("двойник работающего — по ФИО без учёта регистра и ё", employeeRefusal(hr, ctx, { ...draft, fullName: "шамуратова гуласал янгибаевна" }));
 allows("уволенный двойником не считается", employeeRefusal(hr, ctx, { ...draft, fullName: "Иванов Иван" }));
 allows("правка своей же карточки — не двойник", employeeRefusal(hr, ctx, { ...draft, employeeId: "E1", fullName: "Шамуратова Гуласал Янгибаевна" }));

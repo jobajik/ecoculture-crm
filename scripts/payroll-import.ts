@@ -168,6 +168,7 @@ async function main() {
       CreatedBy: "import",
       UpdatedAt: now,
       UpdatedBy: "import",
+      Iin: "",
     });
     if (!hourly(p) && p.salary1c > 0) {
       rateRecords.push({
