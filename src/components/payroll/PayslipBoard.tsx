@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { unwrapValue } from "@/lib/actionResult";
@@ -8,17 +8,19 @@ import SaveBar from "@/components/SaveBar";
 import { FARM_LABELS } from "@/lib/constants";
 import { EMPLOYMENTS } from "@/lib/payroll/types";
 import { advanceHalf, computePayslip, sumRows, type Adjustment, type PayslipInput, type PayslipRow, type PayslipTotals } from "@/lib/payroll/payslip";
-import { TIMESHEET_STATUS_LABELS } from "@/lib/payroll/timesheet";
+import { TIMESHEET_STATUS_LABELS, monthLabel } from "@/lib/payroll/timesheet";
 import type { PayslipMonth } from "@/lib/payroll/payslipData";
 
 /**
- * Расчётная ведомость за месяц (28.10.2026, владелец о первой версии — таблице в двадцать колонок: «тихий ужас, такого
- * информативного шума не должно быть; должно быть удобно, понятно и с расчётом»).
+ * Расчётная ведомость за месяц — один лист, как в книге бухгалтера (28.10.2026, владелец о первых версиях: «тихий ужас,
+ * информативный шум»; «аккуратное что-то»; «удобно распечатать лист со всеми подразделениями пофамильно»).
  *
- * Устройство: подразделение — раскрывающаяся карточка с итогом; внутри строка на человека с четырьмя числами (часы,
- * начислено, удержано, к выплате); нажатие на строку раскрывает РАСЧЁТ — откуда каждая цифра: «168 ч × 852,27 ₸ =
- * 143 181,82». Ручные поля бухгалтера (больничный, отпускные, удержание с KPI, аванс, займ, цветы, перебивка оклада)
- * живут там же, рядом с цифрой, на которую влияют. Строка пересчитывается на месте тем же `computePayslip`, что и сервер.
+ * Устройство: одна таблица на все подразделения — заголовок группы, строки пофамильно (№, сотрудник, должность, часы,
+ * оклад, начислено, удержано, к выплате), итог группы, внизу «Всего» и ТД/ГПХ. Нажатие на строку раскрывает под ней
+ * РАСЧЁТ: у каждой цифры формула, поля бухгалтера рядом с тем, на что влияют (`CalcPanel`); пересчёт на месте тем же
+ * `computePayslip`, что и сервер. Плитки сверху и плитки-фильтр по подразделениям — только на экране; «Печать» —
+ * `window.print()`: шапка страницы и меню `no-print`, лист печатается с заголовком, всеми подразделениями и подписями.
+ * Замечания (табель не принят, не посчитано, цветы без сотрудника) — одной серой строкой с «подробнее», не жёлтой плашкой.
  */
 
 type Values = Omit<Adjustment, "month" | "employeeId">;
@@ -28,7 +30,7 @@ const EMPTY: Values = { salaryOverride: null, sick: 0, vacation: 0, kpiDeduction
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₸`;
 const money2 = (n: number) => `${(Math.round(n * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₸`;
-const hours = (n: number) => String(Math.round(n * 100) / 100).replace(".", ",");
+const hours = (n: number) => (Math.round(n * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 const num = (raw: string) => {
   const n = Number(raw.replace(/\s/g, "").replace(",", "."));
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
@@ -61,9 +63,10 @@ export default function PayslipBoard({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [openDepts, setOpenDepts] = useState<Record<string, boolean>>(() => (data.depts.length === 1 ? { [data.depts[0].department.deptId]: true } : {}));
-  const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const [dept, setDept] = useState("");
   const [q, setQ] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
 
   const depts = useMemo(
     () =>
@@ -83,6 +86,7 @@ export default function PayslipBoard({
   const warnings = all.filter((r) => r.warnings.length);
   const notApproved = depts.filter((d) => d.timesheetStatus !== "approved" && d.inputs.length);
   const needle = q.trim().toLowerCase();
+  const noteCount = (notApproved.length ? 1 : 0) + (warnings.length ? 1 : 0) + (data.unmatchedFlowers.length ? 1 : 0);
 
   const setField = (id: string, field: keyof Values, raw: string) => {
     setValues((v) => {
@@ -129,185 +133,219 @@ export default function PayslipBoard({
     }
   };
 
-  const allOpen = depts.every((d) => openDepts[d.department.deptId]);
-  const toggleAll = () => setOpenDepts(Object.fromEntries(depts.map((d) => [d.department.deptId, !allOpen])));
+  const shown = depts
+    .filter((d) => !dept || d.department.deptId === dept)
+    .map((d) => ({ ...d, rows: needle ? d.rows.filter((r) => `${r.row.fullName} ${r.row.position}`.toLowerCase().includes(needle)) : d.rows }))
+    .filter((d) => d.rows.length > 0);
+  const farmLabel = data.farm ? FARM_LABELS[data.farm] ?? data.farm : "обе компании";
+  const pill = (active: boolean) =>
+    clsx("h-8 px-3 rounded-full text-sm whitespace-nowrap transition-colors", active ? "bg-ink-primary text-white" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane");
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="space-y-4 payslip">
+      {/* Шапка только для печати: на экране её заменяет шапка страницы (она no-print). */}
+      <div className="hidden print:block">
+        <div className="font-display font-bold text-lg">Расчётная ведомость — {farmLabel}</div>
+        <div className="text-sm text-ink-secondary">{monthLabel(data.month)}</div>
+      </div>
+
+      <div className="no-print grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="К выплате" value={money(totals.toPay)} strong sub={`${totals.people} чел.`} />
         <Tile label="Начислено" value={money(totals.accrued)} sub={`в т.ч. KPI ${money(totals.kpi)}`} />
         <Tile label="Удержано" value={money(totals.advance + totals.loan + totals.flowers)} sub="аванс, займ, цветы" />
         <Tile label="Дорожные" value={money(totals.travel)} sub="отдельной ведомостью" />
       </div>
 
-      {(notApproved.length > 0 || warnings.length > 0 || data.unmatchedFlowers.length > 0) && (
-        <div className="rounded-xl border border-[#e8d5a8] bg-[#fdf6e7] px-4 py-2.5 text-sm text-[#6b4a00] space-y-1">
-          {notApproved.length > 0 && (
-            <div>
-              Табель ещё не принят: <b>{notApproved.map((d) => d.department.name).join(", ")}</b> — цифры по ним предварительные.
-            </div>
-          )}
-          {warnings.length > 0 && (
-            <div>
-              Не посчитано до конца у <b>{warnings.length} чел.</b> — у них стоит ⚠, причина в строке.
-            </div>
-          )}
-          {data.unmatchedFlowers.length > 0 && (
-            <div>
-              Цветы со склада без сотрудника: {data.unmatchedFlowers.map((f) => `${f.name} — ${money(f.amount)} (${f.why})`).join("; ")}.
+      {noteCount > 0 && (
+        <div className="no-print text-sm">
+          <button type="button" className="text-ink-secondary hover:text-ink-primary" onClick={() => setShowNotes((v) => !v)}>
+            <span className="text-[#8a5a00]">⚠</span>{" "}
+            {[
+              notApproved.length ? `табель не принят: ${notApproved.length} из ${depts.length}` : "",
+              warnings.length ? `не посчитано до конца: ${warnings.length} чел.` : "",
+              data.unmatchedFlowers.length ? `цветы без сотрудника: ${data.unmatchedFlowers.length}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            <span className="text-section-payroll ml-2">{showNotes ? "скрыть" : "подробнее"}</span>
+          </button>
+          {showNotes && (
+            <div className="mt-2 card !p-3 text-xs text-ink-secondary space-y-1.5">
+              {notApproved.length > 0 && <div>Табель ещё не принят: {notApproved.map((d) => d.department.name).join(", ")} — цифры по ним предварительные.</div>}
+              {warnings.length > 0 && <div>Не посчитано до конца у {warnings.length} чел. — у них стоит ⚠, причина видна при раскрытии строки.</div>}
+              {data.unmatchedFlowers.length > 0 && (
+                <div>
+                  <div className="mb-1">Цветы со склада, которые не нашли сотрудника (впишите в строке руками):</div>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
+                    {data.unmatchedFlowers.map((f) => (
+                      <div key={f.name} className="flex justify-between gap-2 tabular-nums">
+                        <span className="truncate">{f.name}</span>
+                        <span className="shrink-0">
+                          {money(f.amount)} <span className="text-ink-muted">· {f.why}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input className="input !w-64" placeholder="Поиск по ФИО, должности" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button type="button" className="btn !py-1.5 text-sm" onClick={toggleAll}>
-          {allOpen ? "Свернуть все" : "Развернуть все"}
-        </button>
-        {canEdit && (
-          <button type="button" className="btn !py-1.5 text-sm" onClick={advanceAll} disabled={saving} title="Половина ИТОГО целыми сотнями — тем, у кого аванс ещё не вписан">
-            Аванс 50 % всем
+      <div className="no-print flex flex-wrap items-center gap-2">
+        <div className="flex gap-2 overflow-x-auto scroll-x-hidden -mx-1 px-1 py-0.5">
+          <button type="button" className={pill(dept === "")} onClick={() => setDept("")}>
+            Все · {totals.people}
           </button>
-        )}
-        <span className="ml-auto text-sm">
-          {message && <span className="text-emerald-700">{message}</span>}
-          {error && <span className="text-red-700">{error}</span>}
-        </span>
+          {depts.map((d) => (
+            <button key={d.department.deptId} type="button" className={pill(dept === d.department.deptId)} onClick={() => setDept(dept === d.department.deptId ? "" : d.department.deptId)}>
+              {d.department.name} · {d.rows.length}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <input className="input !w-56" placeholder="Поиск по ФИО" value={q} onChange={(e) => setQ(e.target.value)} />
+          {canEdit && (
+            <button type="button" className="btn !py-1.5 text-sm" onClick={advanceAll} disabled={saving} title="Половина ИТОГО целыми сотнями — тем, у кого аванс ещё не вписан">
+              Аванс 50 %
+            </button>
+          )}
+          <button type="button" className="btn !py-1.5 text-sm" onClick={() => window.print()}>
+            Печать
+          </button>
+          {message && <span className="text-sm text-emerald-700">{message}</span>}
+          {error && <span className="text-sm text-red-700">{error}</span>}
+        </div>
       </div>
 
-      {depts.map((d) => {
-        const id = d.department.deptId;
-        const rows = needle ? d.rows.filter((r) => `${r.row.fullName} ${r.row.position}`.toLowerCase().includes(needle)) : d.rows;
-        if (needle && rows.length === 0) return null;
-        const open = needle ? true : !!openDepts[id];
-        const warnCount = d.rows.filter((r) => r.row.warnings.length).length;
-        return (
-          <section key={id} className="card !p-0 overflow-hidden">
-            <button
-              type="button"
-              className="w-full flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-surface-plane/60"
-              onClick={() => setOpenDepts((o) => ({ ...o, [id]: !open }))}
-              aria-expanded={open}
-            >
-              <span className={clsx("text-ink-muted transition-transform", open && "rotate-90")}>▸</span>
-              <span className="font-display font-bold text-base">{d.department.name}</span>
-              <span className="text-xs text-ink-muted">{FARM_LABELS[d.department.farm] ?? ""}</span>
-              <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_TONE[d.timesheetStatus])}>табель: {TIMESHEET_STATUS_LABELS[d.timesheetStatus]}</span>
-              {warnCount > 0 && <span className="text-xs text-[#8a5a00]">⚠ {warnCount}</span>}
-              <span className="ml-auto flex items-center gap-4 text-sm tabular-nums">
-                <span className="text-ink-muted hidden sm:inline">{d.rows.length} чел.</span>
-                <span className="text-ink-secondary hidden md:inline">начислено {money(d.totals.accrued)}</span>
-                <span>
-                  к выплате <b className="font-display text-base">{money(d.totals.toPay)}</b>
-                </span>
-              </span>
-            </button>
-            {open && (
-              <div className="border-t border-line-hairline">
-                <div className="hidden sm:grid grid-cols-[1fr_7rem_8rem_7rem_8rem_1.5rem] gap-2 px-4 py-1.5 text-[11px] text-ink-muted bg-surface-plane/50">
-                  <span>Сотрудник</span>
-                  <span className="text-right">Часы</span>
-                  <span className="text-right">Начислено</span>
-                  <span className="text-right">Удержано</span>
-                  <span className="text-right">К выплате</span>
-                  <span />
-                </div>
-                {rows.map(({ input, row }) => {
-                  const rid = row.employeeId;
-                  const rowOpen = !!openRows[rid];
-                  return (
-                    <div key={rid} className="border-t border-line-hairline first:border-0">
-                      <button
-                        type="button"
-                        className={clsx("w-full grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_7rem_8rem_7rem_8rem_1.5rem] gap-x-2 gap-y-0.5 items-center px-4 py-2.5 text-left text-sm", rowOpen ? "bg-surface-plane/50" : "hover:bg-surface-plane/40")}
-                        onClick={() => setOpenRows((o) => ({ ...o, [rid]: !rowOpen }))}
-                        aria-expanded={rowOpen}
-                      >
-                        <span className="min-w-0 flex items-center gap-2">
+      <div className="card !p-0 overflow-hidden print:shadow-none print:border-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-ink-muted bg-surface-plane/60 border-b border-line-hairline">
+              <th className="px-4 py-2 text-left font-medium w-10">№</th>
+              <th className="px-2 py-2 text-left font-medium">Сотрудник</th>
+              <th className="px-2 py-2 text-left font-medium hidden md:table-cell">Должность</th>
+              <th className="px-2 py-2 text-right font-medium">Часы</th>
+              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell">Оклад (1С)</th>
+              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell">Начислено</th>
+              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell">Удержано</th>
+              <th className="px-4 py-2 text-right font-medium">К выплате</th>
+            </tr>
+          </thead>
+          {shown.length === 0 && (
+            <tbody>
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-ink-muted">
+                  Никого не нашлось.
+                </td>
+              </tr>
+            </tbody>
+          )}
+          {shown.map((d) => (
+            <tbody key={d.department.deptId} className="print:break-inside-avoid">
+              <tr className="bg-surface-plane/40 border-t border-line-hairline">
+                <td colSpan={8} className="px-4 py-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <span className="font-display font-bold">{d.department.name}</span>
+                    <span className="text-xs text-ink-muted">{d.rows.length} чел.</span>
+                    <span className={clsx("no-print rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_TONE[d.timesheetStatus])}>табель: {TIMESHEET_STATUS_LABELS[d.timesheetStatus]}</span>
+                  </div>
+                </td>
+              </tr>
+              {d.rows.map(({ input, row }, i) => {
+                const rid = row.employeeId;
+                const isOpen = openRow === rid;
+                const held = row.advance + row.loan + row.flowers;
+                return (
+                  <Fragment key={rid}>
+                    <tr
+                      className={clsx("border-t border-line-hairline cursor-pointer", isOpen ? "bg-surface-plane/50" : "hover:bg-surface-plane/40")}
+                      onClick={() => setOpenRow(isOpen ? null : rid)}
+                    >
+                      <td className="px-4 py-2 text-ink-muted tabular-nums">{i + 1}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-medium truncate">{row.fullName}</span>
                           {row.warnings.length > 0 && (
-                            <span className="text-[#8a5a00]" title={row.warnings.join("; ")}>
+                            <span className="no-print text-[#8a5a00] text-xs shrink-0" title={row.warnings.join("; ")}>
                               ⚠
                             </span>
                           )}
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium">{row.fullName}</span>
-                            <span className="block truncate text-xs text-ink-muted">
-                              {row.position} · {row.employment === EMPLOYMENTS.GPH ? "ГПХ" : "ТД"}
-                              {row.hourly && " · почасовой"}
-                            </span>
-                          </span>
-                        </span>
-                        <span className="text-right tabular-nums sm:order-none order-last col-span-2 sm:col-span-1 text-xs sm:text-sm text-ink-secondary">
-                          <HoursCell r={row} />
-                        </span>
-                        <span className="hidden sm:block text-right tabular-nums">{money(row.accrued)}</span>
-                        <span className="hidden sm:block text-right tabular-nums text-ink-secondary">{row.advance + row.loan + row.flowers ? `− ${money(row.advance + row.loan + row.flowers)}` : "—"}</span>
-                        <span className={clsx("text-right tabular-nums font-semibold", row.toPay < 0 && "text-red-700")}>{money(row.toPay)}</span>
-                        <span className={clsx("hidden sm:block text-ink-muted text-center transition-transform", rowOpen && "rotate-180")}>⌄</span>
-                      </button>
-                      {rowOpen && (
-                        <CalcPanel
-                          key={`${rid}-${resetKey}`}
-                          input={input}
-                          r={row}
-                          v={values[rid] ?? EMPTY}
-                          canEdit={canEdit}
-                          onChange={(f, raw) => setField(rid, f, raw)}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-                <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_7rem_8rem_7rem_8rem_1.5rem] gap-2 px-4 py-2.5 text-sm border-t border-line-hairline bg-surface-plane/50 font-medium tabular-nums">
-                  <span>Итого · {d.rows.length} чел.</span>
-                  <span className="hidden sm:block text-right text-ink-secondary">{hours(d.totals.factHours)} ч</span>
-                  <span className="hidden sm:block text-right">{money(d.totals.accrued)}</span>
-                  <span className="hidden sm:block text-right text-ink-secondary">− {money(d.totals.advance + d.totals.loan + d.totals.flowers)}</span>
-                  <span className="text-right">{money(d.totals.toPay)}</span>
-                  <span />
-                </div>
-              </div>
-            )}
-          </section>
-        );
-      })}
-
-      {depts.length > 1 && !needle && (
-        <section className="card !p-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-line-hairline font-display font-bold">Итого · {data.farm ? FARM_LABELS[data.farm] ?? "компания" : "обе компании"}</div>
-          <div className="table-scroll table-cards">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-ink-muted bg-surface-plane/50">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium">Подразделение</th>
-                  <th className="px-3 py-2 text-right font-medium">Чел.</th>
-                  <th className="px-3 py-2 text-right font-medium">Оклад и часы</th>
-                  <th className="px-3 py-2 text-right font-medium">KPI</th>
-                  <th className="px-3 py-2 text-right font-medium">Начислено</th>
-                  <th className="px-3 py-2 text-right font-medium">Удержано</th>
-                  <th className="px-3 py-2 text-right font-medium">К выплате</th>
-                  <th className="px-3 py-2 text-right font-medium">Дорожные</th>
+                        </div>
+                        <div className="md:hidden text-xs text-ink-muted truncate">{row.position}</div>
+                      </td>
+                      <td className="px-2 py-2 text-ink-secondary hidden md:table-cell truncate max-w-[14rem]">
+                        {row.position}
+                        <span className="text-ink-muted"> · {row.employment === EMPLOYMENTS.GPH ? "ГПХ" : "ТД"}</span>
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap">
+                        <HoursCell r={row} />
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{row.hourly ? <span className="text-ink-muted">почас.</span> : row.salary1c ? money(row.salary1c) : <span className="text-ink-muted">—</span>}</td>
+                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{money(row.accrued)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell text-ink-secondary">{held ? money(held) : "—"}</td>
+                      <td className={clsx("px-4 py-2 text-right tabular-nums font-semibold whitespace-nowrap", row.toPay < 0 && "text-red-700")}>{money(row.toPay)}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="no-print">
+                        <td colSpan={8} className="p-0">
+                          <CalcPanel key={`${rid}-${resetKey}`} input={input} r={row} v={values[rid] ?? EMPTY} canEdit={canEdit} onChange={(f, raw) => setField(rid, f, raw)} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {shown.length > 1 && (
+                <tr className="border-t border-line-hairline text-ink-secondary">
+                  <td />
+                  <td className="px-2 py-1.5 text-xs" colSpan={2}>
+                    Итого · {d.department.name}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-xs">{hours(d.totals.factHours)} ч</td>
+                  <td className="hidden sm:table-cell" />
+                  <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell">{money(d.totals.accrued)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell">{money(d.totals.advance + d.totals.loan + d.totals.flowers)}</td>
+                  <td className="px-4 py-1.5 text-right tabular-nums text-xs font-medium text-ink-primary">{money(d.totals.toPay)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {depts.map((d) => (
-                  <SummaryRow key={d.department.deptId} label={d.department.name} t={d.totals} />
-                ))}
-                <SummaryRow label="в том числе по ТД" t={td} muted />
-                <SummaryRow label="в том числе по ГПХ" t={gph} muted />
-              </tbody>
-              <tfoot className="font-bold bg-surface-plane/50">
-                <SummaryRow label="Всего" t={totals} />
-              </tfoot>
-            </table>
-          </div>
-        </section>
-      )}
+              )}
+            </tbody>
+          ))}
+          {!needle && !dept && (
+            <tfoot className="bg-surface-plane/60 border-t-2 border-line-hairline">
+              <TotalRow label={`Всего · ${farmLabel}`} t={totals} strong />
+              {td.people > 0 && gph.people > 0 && <TotalRow label="в том числе по ТД" t={td} />}
+              {td.people > 0 && gph.people > 0 && <TotalRow label="в том числе по ГПХ" t={gph} />}
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      <div className="hidden print:flex justify-between text-xs text-ink-secondary pt-6">
+        <span>Бухгалтер по заработной плате ______________________</span>
+        <span>Руководитель ______________________</span>
+        <span>«____» ____________ 20___ г.</span>
+      </div>
 
       {canEdit && <SaveBar count={dirty.length} what="человек" saving={saving} onSave={onSave} onReset={onReset} />}
     </div>
+  );
+}
+
+function TotalRow({ label, t, strong }: { label: string; t: PayslipTotals; strong?: boolean }) {
+  return (
+    <tr className={clsx(strong ? "font-bold" : "text-ink-secondary text-xs")}>
+      <td />
+      <td className="px-2 py-2" colSpan={2}>
+        {label} <span className="font-normal text-ink-muted">· {t.people} чел.</span>
+      </td>
+      <td className="px-2 py-2 text-right tabular-nums">{hours(t.factHours)} ч</td>
+      <td className="hidden sm:table-cell" />
+      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{money(t.accrued)}</td>
+      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{money(t.advance + t.loan + t.flowers)}</td>
+      <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">{money(t.toPay)}</td>
+    </tr>
   );
 }
 
@@ -491,21 +529,6 @@ function Line({ label, how, value, control, strong, hint }: { label: string; how
         {control && value && <span className="tabular-nums text-ink-secondary min-w-[6rem] text-right">{value}</span>}
       </div>
     </div>
-  );
-}
-
-function SummaryRow({ label, t, muted }: { label: string; t: PayslipTotals; muted?: boolean }) {
-  return (
-    <tr className={clsx("border-t border-line-hairline", muted && "text-ink-secondary")}>
-      <td data-label="Подразделение" className="px-4 py-2 text-left">{label}</td>
-      <td data-label="Чел." className="px-3 py-2 text-right tabular-nums">{t.people}</td>
-      <td data-label="Оклад и часы" className="px-3 py-2 text-right tabular-nums">{money(t.salaryPay + t.holidayPay + t.overtimePay + t.sick + t.vacation)}</td>
-      <td data-label="KPI" className="px-3 py-2 text-right tabular-nums">{money(t.kpi)}</td>
-      <td data-label="Начислено" className="px-3 py-2 text-right tabular-nums">{money(t.accrued)}</td>
-      <td data-label="Удержано" className="px-3 py-2 text-right tabular-nums">{money(t.advance + t.loan + t.flowers)}</td>
-      <td data-label="К выплате" className="px-3 py-2 text-right tabular-nums font-semibold">{money(t.toPay)}</td>
-      <td data-label="Дорожные" className="px-3 py-2 text-right tabular-nums text-ink-secondary">{money(t.travel)}</td>
-    </tr>
   );
 }
 
