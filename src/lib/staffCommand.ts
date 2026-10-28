@@ -45,7 +45,7 @@ export interface StaffCommand {
    * умеет; none — не поручение. broadcast — рассылка клиентам из контактов сотрудника (27.10.2026, владелец: «пишут с
    * утра: сделай сегодня рассылку 20-ти клиентам из контактов с упором на хризантему 3 категории, с фото»).
    */
-  intent: "send" | "quote" | "broadcast" | "other" | "none";
+  intent: "send" | "quote" | "broadcast" | "send_order" | "remind" | "mute" | "unmute" | "other" | "none";
   /** Кому, как написал сотрудник: имя, точка, город. */
   client: string;
   /** Номер клиента, если сотрудник его написал (цифры). */
@@ -57,6 +57,10 @@ export interface StaffCommand {
   count: number;
   /** Рассылка: false — сотрудник сказал «без фото». */
   photo: boolean;
+  /** Напоминание: когда, «ГГГГ-ММ-ДДTЧЧ:ММ» по Алматы (модель считает от «сейчас» в подсказке); пусто — не поняла. */
+  remindAt: string;
+  /** Напоминание: о чём, словами сотрудника. */
+  remindText: string;
 }
 
 const S = (description: string) => ({ type: "string", description });
@@ -64,13 +68,13 @@ const S = (description: string) => ({ type: "string", description });
 export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["intent", "client", "phone", "items", "text", "count", "photo"],
+  required: ["intent", "client", "phone", "items", "text", "count", "photo", "remindAt", "remindText"],
   properties: {
     intent: {
       type: "string",
-      enum: ["send", "quote", "broadcast", "other", "none"],
+      enum: ["send", "quote", "broadcast", "send_order", "remind", "mute", "unmute", "other", "none"],
       description:
-        "send — сотрудник просит отправить клиенту фото, каталог или сообщение; quote — просит посчитать стоимость списка позиций («сколько выйдет», «посчитай», «сумма», «скинь расчёт»), список — в items с количеством; broadcast — просит сделать РАССЫЛКУ своим клиентам/контактам («сделай рассылку 20 клиентам», «разошли по контактам»), позиции, на которые упор, — в items, сколько — в count; other — просит бота сделать что-то другое; none — не поручение (приветствие, ответ на сводку, «ок», новости).",
+        "send — сотрудник просит отправить клиенту фото, каталог или сообщение; quote — просит посчитать стоимость списка позиций («сколько выйдет», «посчитай», «сумма», «скинь расчёт»), список — в items с количеством; broadcast — просит сделать РАССЫЛКУ своим клиентам/контактам («сделай рассылку 20 клиентам», «разошли по контактам»), позиции, на которые упор, — в items, сколько — в count; send_order — просит написать/отправить клиенту ЕГО ЗАКАЗ, состав заявки, что он заказал («напиши клиенту Сабина заказ, который она заказала», «скинь Асель её заявку», «отправь состав заказа»), клиент — в client; remind — просит НАПОМНИТЬ ему самому о чём-то позже («напомни мне утром внести заявку Баглана», «напомни в 15:00 позвонить…»), о чём — в remindText, когда — в remindAt; mute — просит НЕ ПИСАТЬ клиенту, не отвечать ему, не слать рассылки («не пиши сообщения клиенту Лешка Оранж», «не отвечай Айгуль», «не трогай Марину»), клиент — в client; unmute — просит снова писать клиенту, снять запрет («можно снова писать Лешке», «пиши Марине как обычно»); other — просит бота сделать что-то другое; none — не поручение (приветствие, ответ на сводку, «ок», новости).",
     },
     client: S(
       "Кому отправить — имя/название клиента, как написано (с точкой, районом, городом). «Мне», «себе», «скинь фото Altaj» без адресата — «мне» (сотрудник просит себе). Пусто — только если просил клиенту, но не назвал кому."
@@ -97,10 +101,14 @@ export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
     text: S("Что передать клиенту словами, если сотрудник просил (без фото). Для рассылки — только если сотрудник написал готовый текст дословно. Иначе пусто."),
     count: { type: "number", description: "Рассылка: скольким клиентам («20-ти клиентам» → 20). Не рассылка или не назвал — 0." },
     photo: { type: "boolean", description: "Рассылка: false — только если сотрудник прямо сказал «без фото». Иначе true." },
+    remindAt: S(
+      "Напоминание: когда напомнить, «ГГГГ-ММ-ДДTЧЧ:ММ» по Алматы, считая от «сейчас» в подсказке. «Утром» — завтра 09:00 (сегодня, если сейчас раньше 8:00); «днём» — 13:00; «вечером» — 18:00; «через час» — сейчас + 1 ч; «завтра» без времени — 09:00; «в понедельник» — ближайший понедельник 09:00. Не напоминание или время не понятно — пусто."
+    ),
+    remindText: S("Напоминание: о чём напомнить, коротко, словами сотрудника («внести заявку Баглана»). Не напоминание — пусто."),
   },
 };
 
-export function staffCommandPrompt(photoLabels: string[], priceList = ""): string {
+export function staffCommandPrompt(photoLabels: string[], priceList = "", now = ""): string {
   return [
     "Ты разбираешь сообщение СОТРУДНИКА компании Ecoculture (оптовые цветы: розы, хризантемы, эустома) рабочему номеру WhatsApp.",
     "Сотрудники пишут сюда поручения вроде «отправь фото Altaj первой Маргарите Пожарка» или «скинь клиенту Асель каталог роз».",
@@ -117,6 +125,10 @@ export function staffCommandPrompt(photoLabels: string[], priceList = ""): strin
     "Роза: кустовая — kind spray, одноголовая — single, пионовидная — peony; сорт — только если назван.",
     "«Сделай рассылку 20 клиентам из контактов с упором на хризантему 3 категории, с фото» — intent broadcast, count 20,",
     "items: chrysanthemum, сорт пусто (если не назван), категория «Третья»; client пусто. «Упор на продажи», «с фото и прочим» — не текст.",
+    "«Напиши клиенту Сабина Междуреченск заказ, который она заказала» — intent send_order, client «Сабина Междуреченск», items пусто.",
+    "«Напомни мне утром внести заявку Баглана» — intent remind, remindText «внести заявку Баглана», remindAt — завтра 09:00.",
+    "«Не пиши сообщения клиенту Лешка Оранж» — intent mute, client «Лешка Оранж». «Можно снова писать Лешке Оранж» — unmute.",
+    ...(now ? [`Сейчас по Алматы: ${now}.`] : []),
     "",
     "Фото в CRM сейчас:",
     ...photoLabels.map((l) => `- ${l}`),
@@ -125,10 +137,11 @@ export function staffCommandPrompt(photoLabels: string[], priceList = ""): strin
 }
 
 const FLOWERS = ["rose", "chrysanthemum", "eustoma"];
+const INTENTS = ["send", "quote", "broadcast", "send_order", "remind", "mute", "unmute", "other"];
 
 export function parseStaffCommand(raw: unknown): StaffCommand {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const intent = r.intent === "send" || r.intent === "quote" || r.intent === "broadcast" || r.intent === "other" ? r.intent : "none";
+  const intent = INTENTS.includes(String(r.intent)) ? (String(r.intent) as StaffCommand["intent"]) : "none";
   const items = (Array.isArray(r.items) ? r.items : [])
     .map((x) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {}))
     .filter((x) => FLOWERS.includes(String(x.flowerType || "")))
@@ -150,6 +163,8 @@ export function parseStaffCommand(raw: unknown): StaffCommand {
     text: String(r.text || "").trim().slice(0, 1000),
     count: Math.max(0, Math.round(Number(r.count) || 0)),
     photo: r.photo !== false,
+    remindAt: String(r.remindAt || "").trim().slice(0, 16),
+    remindText: String(r.remindText || "").trim().slice(0, 300),
   };
 }
 
@@ -175,6 +190,8 @@ export interface StaffTarget {
   managerEmail: string;
   /** Когда последний раз переписывались (ISO) — свежие выше. */
   lastAt: string;
+  /** Карточка клиента — чтобы найти его заявки и по номеру карточки, не только по телефону. */
+  clientId?: string;
 }
 
 const norm = (s: string) =>
@@ -311,7 +328,242 @@ export function staffDoneText(input: { name: string; phone: string; via: string;
 }
 
 export const STAFF_OTHER_TEXT =
-  "Пока по поручению умею: отправить клиенту фото или сообщение, посчитать стоимость по прайсу и сделать рассылку вашим клиентам. Например: «Отправь фото Altaj первой Маргарите Пожарка», «Посчитай: Altaj 3 кат 200 шт, роза 60 см 150 шт» или «Сделай рассылку 20 клиентам с упором на хризантему 3 категории».";
+  "Пока по поручению умею: отправить клиенту фото, сообщение или его заказ, посчитать стоимость по прайсу, сделать рассылку вашим клиентам, напомнить вам о деле и не писать клиенту, если просите. Например: «Отправь фото Altaj первой Маргарите Пожарка», «Напиши Сабине её заказ», «Посчитай: Altaj 3 кат 200 шт, роза 60 см 150 шт», «Сделай рассылку 20 клиентам с упором на хризантему 3 категории», «Напомни мне утром внести заявку Баглана», «Не пиши клиенту Лешка Оранж».";
+
+// --- Заказ клиента ------------------------------------------------------------------
+//
+// 28.10.2026, владелец со снимком чата: сотрудник написал «Напиши клиенту Сабина Междуречинск заказ который она
+// заказала», бот ответил «пока умею…». Теперь: клиента находит код (как для фото), берёт его ПОСЛЕДНЮЮ живую заявку
+// (не отменена, за `ORDER_LOOKBACK_DAYS`) и пишет клиенту её состав, сумму, день доставки и что с оплатой. Цифры — код.
+
+export const ORDER_LOOKBACK_DAYS = 60;
+
+export interface StaffOrderView {
+  orderId: string;
+  createdAt: string;
+  clientId: string;
+  clientPhone: string;
+  deliveryDate: string;
+  status: string;
+  totalAmount: number;
+  paidAmount: number;
+  items: { flowerType: string; variety: string; grade: string; quantity: number; unitPrice: number }[];
+}
+
+/**
+ * Последняя живая заявка клиента: по карточке или по номеру телефона, не отменённая, оформленная не раньше чем
+ * `ORDER_LOOKBACK_DAYS` назад; свежая — первой.
+ */
+export function latestClientOrder<T extends StaffOrderView>(orders: T[], target: Pick<StaffTarget, "phone" | "clientId">, now = new Date()): T | null {
+  const key = phoneKey(target.phone);
+  const from = new Date(now.getTime() - ORDER_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+  const mine = orders
+    .filter((o) => o.status !== "cancelled" && (o.createdAt || "").slice(0, 10) >= from)
+    .filter((o) => (target.clientId && o.clientId === target.clientId) || (key && phoneKey(o.clientPhone) === key));
+  mine.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return mine[0] ?? null;
+}
+
+const dayRu = (iso: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? `${m[3]}.${m[2]}` : "";
+};
+
+/** Текст клиенту: его заказ — позиции, сумма, доставка, оплата. */
+export function staffOrderText(input: {
+  code: string;
+  order: StaffOrderView;
+  itemName: (i: StaffOrderView["items"][number]) => string;
+  /** Заявка отгружена целиком. */
+  shipped?: boolean;
+}): string {
+  const o = input.order;
+  const lines = o.items.map((i) => `• ${input.itemName(i)} — ${i.quantity} шт. × ${money(i.unitPrice)}` + (o.items.length > 1 ? ` = ${money(i.quantity * i.unitPrice)}` : ""));
+  const total = o.totalAmount || o.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const left = Math.max(0, total - (o.paidAmount || 0));
+  const pay = total <= 0 ? "" : left < 1 ? "Оплата получена, спасибо." : o.paidAmount > 0 ? `Получено ${money(o.paidAmount)}, остаток ${money(left)}.` : "Оплата пока не поступила.";
+  return [
+    `Ваш заказ *№${input.code}* от ${dayRu(o.createdAt)}:`,
+    "",
+    ...lines,
+    "",
+    `Итого: *${money(total)}*`,
+    ...(o.deliveryDate ? [`Доставка: ${dayRu(o.deliveryDate)}${input.shipped ? " — отгружен" : ""}`] : []),
+    ...(pay ? [pay] : []),
+    "",
+    "Если что-то не так — напишите, поправим.",
+  ].join("\n");
+}
+
+// --- Напоминания сотруднику -----------------------------------------------------------
+//
+// «Напомни мне утром внести заявку Баглана» (тот же снимок 28.10.2026). Напоминания лежат в настройке
+// `StaffReminders` (JSON-список, вкладка Settings — без новой вкладки и `setup-sheet`), шлёт их тот же час-в-час
+// проход (`/api/bot/followup`, 10–20) и утренняя сводка в 9:00 (`sendDueStaffReminders` в `staffCommandRunner.ts`).
+
+export const STAFF_REMINDERS_SETTING = "StaffReminders";
+export const STAFF_REMINDERS_MAX = 200;
+
+export interface StaffReminder {
+  id: string;
+  /** Номер сотрудника (цифры). */
+  phone: string;
+  email: string;
+  name: string;
+  /** «ГГГГ-ММ-ДДTЧЧ:ММ» по Алматы. */
+  at: string;
+  text: string;
+  createdAt: string;
+}
+
+export function parseReminders(raw: string | undefined): StaffReminder[] {
+  try {
+    const list = JSON.parse(raw || "[]");
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((r) => r && typeof r === "object" && typeof r.at === "string" && typeof r.text === "string" && r.phone)
+      .map((r) => ({ id: String(r.id || ""), phone: String(r.phone), email: String(r.email || ""), name: String(r.name || ""), at: String(r.at).slice(0, 16), text: String(r.text), createdAt: String(r.createdAt || "") }))
+      .slice(0, STAFF_REMINDERS_MAX);
+  } catch {
+    return [];
+  }
+}
+
+const KEY_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+/** «ГГГГ-ММ-ДДTЧЧ:ММ» → минуты от эпохи (без часового пояса — ключи сравниваются между собой). */
+function keyMinutes(key: string): number | null {
+  const m = KEY_RE.exec(key || "");
+  if (!m) return null;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  return Number.isFinite(t) ? t / 60000 : null;
+}
+
+function minutesKey(min: number): string {
+  return new Date(min * 60000).toISOString().slice(0, 16);
+}
+
+/**
+ * Когда напомнить. Модель отдала время — берём его, если оно в будущем; названное время уже прошло сегодня —
+ * то же время завтра; ничего не отдала или мусор — завтра в 09:00 («утром»). Всё в ключах по Алматы.
+ */
+export function reminderTime(remindAt: string, nowKey: string): string {
+  const now = keyMinutes(nowKey) ?? 0;
+  const asked = keyMinutes(remindAt);
+  if (asked !== null && asked > now + 1) return minutesKey(asked);
+  if (asked !== null && asked <= now + 1 && now - asked < 24 * 60) return minutesKey(asked + 24 * 60);
+  const m = KEY_RE.exec(nowKey);
+  const base = m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 9, 0) / 60000 : now;
+  return minutesKey(base > now + 1 ? base : base + 24 * 60);
+}
+
+/** Напоминания, чей час настал (не старше суток — старее отдаём тоже, но помечаем «просрочено» не нужно: шлём как есть). */
+export function dueReminders(list: StaffReminder[], nowKey: string): StaffReminder[] {
+  return list.filter((r) => r.at <= nowKey);
+}
+
+/** «завтра в 09:00», «сегодня в 15:00», «31.10 в 09:00». */
+export function reminderWhen(at: string, nowKey: string): string {
+  const day = at.slice(0, 10);
+  const today = nowKey.slice(0, 10);
+  const tomorrow = minutesKey((keyMinutes(`${today}T00:00`) ?? 0) + 24 * 60).slice(0, 10);
+  const when = day === today ? "сегодня" : day === tomorrow ? "завтра" : dayRu(day);
+  return `${when} в ${at.slice(11, 16)}`;
+}
+
+export function reminderConfirmText(r: StaffReminder, nowKey: string): string {
+  return `Напомню ${reminderWhen(r.at, nowKey)}: ${r.text}.`;
+}
+
+export function reminderText(r: StaffReminder): string {
+  return `⏰ Напоминание: ${r.text}`;
+}
+
+// --- «Не пиши клиенту» ------------------------------------------------------------------
+//
+// «Не пиши сообщения клиенту Лешка Оранж» (28.10.2026). Запрет — то же, что «СТОП» от самого клиента: память бота
+// (`BotChats.Mode` = optout) — её чтут бот основного номера, дожим, рассылки и автопилот, а помощник номеров
+// менеджеров и их дожим — через `optedOutKeys()`. Сотрудник, который попросил, может и снять: «пиши снова».
+
+export function muteNote(staffName: string, when = new Date()): string {
+  return `${staffName || "Сотрудник"} просил не писать (${dayRu(when.toISOString())})`;
+}
+
+export function muteDoneText(name: string, phone: string, on: boolean): string {
+  const who = `${name} (…${phone.replace(/\D/g, "").slice(-4)})`;
+  return on
+    ? `Хорошо, ${who} больше не пишу: ни ответов, ни дожима, ни рассылок — ни с основного номера, ни с номеров менеджеров. Снять: «можно снова писать ${name}».`
+    : `Хорошо, ${who} снова пишу как обычно.`;
+}
+
+// --- Ответ на план рассылки с исключениями ---------------------------------------------------
+//
+// 28.10.2026, владелец со снимком: на план рассылки менеджер ответил «Нет, Наталья, Жамал, Акмарал, … и ещё 1. Этим
+// клиентам нет» — и бот промолчал (ответ не «ДА» и не «НЕТ»). Это не отказ, а правка списка: названных убираем,
+// остальным — после «ДА».
+
+/**
+ * Имена из ответа «нет, X, Y, Z — этим не надо» / «да, кроме X и Y» / «без X». `more` — «и ещё 3»: менеджер
+ * скопировал строку «Кому: … и ещё 3» из плана, то есть не хочет и тех, кого план не назвал поимённо. Пусто — это не
+ * правка списка.
+ */
+export function exclusionNames(text: string): { names: string[]; more: number } {
+  const t = String(text || "")
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t || !/^(нет|не надо|кроме|без|да|ок|только не|этим (клиентам )?(не|нет))/i.test(t)) return { names: [], more: 0 };
+  // `\b` в JS не знает кириллицы — границы слов через пробелы.
+  const moreMatch = /(?:^|\s)и еще (\d+)(?=\s|$|[.,;!])/i.exec(t);
+  const more = moreMatch ? Number(moreMatch[1]) : 0;
+  // Вводные и хвост: «нет,», «да, кроме», «этим клиентам нет», «и ещё 1».
+  const body = t
+    .replace(/^(да|ок|окей|нет|не надо)[,.!\s]*/i, "")
+    .replace(/^(кроме|без|только не|этим (клиентам )?(не|нет)[,:\s]*)/i, "")
+    .replace(/[.!]?\s*(этим|им|таким)\s+(клиентам\s+|людям\s+)?(не|нет|не надо|не нужно|не пиши)[^.]*$/i, "")
+    .replace(/(?:^|\s)и еще \d+(?=\s|$|[.,;!])/gi, "")
+    .trim();
+  const names = body
+    .split(/\s*,\s*|\s+и\s+|\s*;\s*|\n/)
+    .map((n) => n.replace(/[.!]+$/, "").trim())
+    .filter((n) => n && /[a-zа-я]/i.test(n) && !/^(да|нет|не надо|кроме|без|всем|остальным|запускай|этим|нет этим)$/i.test(n));
+  return { names: names.slice(0, 40), more: names.length ? more : 0 };
+}
+
+/**
+ * Получатели плана без названных: все слова имени из ответа находятся в имени получателя (по основе) — или первое
+ * слово совпало, а имя получателя из одного слова («Светлана на Правде» в ответе, «Светлана» в плане: обращение —
+ * одно имя). `more` — ещё столько первых из оставшихся (так идёт «и ещё N» в плане).
+ */
+export function dropRecipients<T extends { name: string; phone: string }>(recipients: T[], names: string[], more = 0): { kept: T[]; removed: T[] } {
+  // Падеж меняет последнюю букву короткого имени («Боты» → Бота, «Фарида» → Фарид): у слова до 5 букв основа — без последней.
+  const nameStem = (w: string) => (w.length <= 5 ? w.slice(0, Math.max(3, w.length - 1)) : stem(w));
+  const stems = names.map((n) =>
+    norm(n)
+      .split(" ")
+      .filter((w) => w.length >= 2)
+      .map(nameStem)
+  );
+  const removed: T[] = [];
+  const kept: T[] = [];
+  for (const r of recipients) {
+    const tokens = norm(r.name).split(" ").filter(Boolean);
+    const hit = stems.some((ws) => ws.length && (ws.every((w) => tokens.some((t) => t.startsWith(w))) || (tokens.length === 1 && tokens[0].startsWith(ws[0]))));
+    (hit ? removed : kept).push(r);
+  }
+  const extra = Math.max(0, Math.min(more, kept.length));
+  return { kept: kept.slice(extra), removed: [...removed, ...kept.slice(0, extra)] };
+}
+
+/** Ответ после правки списка: кого убрал, кого не нашёл, сколько осталось. */
+export function exclusionReplyText(input: { removed: string[]; notFound: string[]; left: number; run: boolean }): string {
+  const out: string[] = [];
+  if (input.removed.length) out.push(`Убрал ${input.removed.length}: ${input.removed.join(", ")}.`);
+  if (input.notFound.length) out.push(`Не нашёл в списке: ${input.notFound.join(", ")}.`);
+  if (!input.left) out.push("Никого не осталось — рассылку не запускаю.");
+  else if (!input.run) out.push(`Осталось *${input.left}*. Ответьте *ДА* — запущу, *НЕТ* — не запускаю.`);
+  return out.join("\n");
+}
 
 // --- Расчёт стоимости -----------------------------------------------------------
 

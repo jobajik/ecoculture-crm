@@ -5,7 +5,35 @@
  *
  *   npx tsx scripts/check-staff-command.ts
  */
-import { isSelfTarget, wantsForSelf, matchTargets, parseStaffCommand, pickedNumber, pickStaffPhotos, quoteLines, quotePack, staffAskText, staffDoneText, staffQuoteText, STAFF_MAX_PHOTOS, type StaffItem, type StaffTarget } from "../src/lib/staffCommand";
+import {
+  dropRecipients,
+  dueReminders,
+  exclusionNames,
+  exclusionReplyText,
+  isSelfTarget,
+  latestClientOrder,
+  matchTargets,
+  muteDoneText,
+  parseReminders,
+  parseStaffCommand,
+  pickedNumber,
+  pickStaffPhotos,
+  quoteLines,
+  quotePack,
+  reminderConfirmText,
+  reminderTime,
+  reminderWhen,
+  staffAskText,
+  staffDoneText,
+  staffOrderText,
+  staffQuoteText,
+  STAFF_MAX_PHOTOS,
+  STAFF_OTHER_TEXT,
+  wantsForSelf,
+  type StaffItem,
+  type StaffOrderView,
+  type StaffTarget,
+} from "../src/lib/staffCommand";
 import { priceKey, type PriceRow } from "../src/lib/priceList";
 import { broadcastCount, isNoText, isYesText, parseStaffBroadcastPlan, pickBroadcastContacts, staffBroadcastText, STAFF_BROADCAST_MAX, type ContactCandidate } from "../src/lib/staffBroadcast";
 import { focusOffers } from "../src/lib/staffBroadcastRunner";
@@ -223,6 +251,70 @@ check("упор на 3 категорию — два самых больших �
 const btext = staffBroadcastText({ manager: "Ильяс", offers: offersB, label: (o) => `Хризантема ${o.variety}, ${o.grade}` });
 check("текст: от менеджера, цены, один вопрос", [btext.startsWith("Здравствуйте, {имя}! Это Ильяс, Ecoculture."), btext.includes("• Хризантема Altaj, Третья — *270 ₸*"), (btext.match(/\?/g) || []).length], [true, true, 1]);
 check("регион — фура, не «завтра»", staffBroadcastText({ manager: "Салтанат", offers: offersB, label: (o) => o.variety, shipDay: "понедельник, 02.11" }).includes("ближайшей фурой — понедельник, 02.11"), true);
+
+// --- Новые поручения (28.10.2026, владелец со снимками чата: «Напиши клиенту Сабина Междуречинск заказ который она
+// заказала», «Напомни мне утром внести заявку Баглана», «Не пиши сообщения клиенту Лешка Оранж» — бот отвечал
+// «пока умею…»; «Вот эти просьбы помощника ты должен научиться выполнять»)
+console.log("\n— Заказ клиента");
+check("intent send_order", parseStaffCommand({ intent: "send_order", client: "Сабина Междуреченск" }).intent, "send_order");
+check("intent remind с временем и текстом", parseStaffCommand({ intent: "remind", remindAt: "2026-10-29T09:00", remindText: "внести заявку Баглана" }), {
+  intent: "remind", client: "", phone: "", items: [], text: "", count: 0, photo: true, remindAt: "2026-10-29T09:00", remindText: "внести заявку Баглана",
+});
+check("intent mute / unmute", [parseStaffCommand({ intent: "mute", client: "Лешка Оранж" }).intent, parseStaffCommand({ intent: "unmute" }).intent], ["mute", "unmute"]);
+check("подсказка «пока умею» называет новые поручения", [STAFF_OTHER_TEXT.includes("его заказ"), STAFF_OTHER_TEXT.includes("напомнить"), STAFF_OTHER_TEXT.includes("не писать")], [true, true, true]);
+
+const ord = (id: string, createdAt: string, extra: Partial<StaffOrderView> = {}): StaffOrderView => ({
+  orderId: id, createdAt, clientId: "c1", clientPhone: "+77015550001", deliveryDate: "2026-10-29", status: "new", totalAmount: 29000, paidAmount: 0,
+  items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantity: 50, unitPrice: 580 }], ...extra,
+});
+const now = new Date("2026-10-28T12:00:00Z");
+const orders = [
+  ord("ORD-1", "2026-10-20T08:00:00Z"),
+  ord("ORD-2", "2026-10-27T08:00:00Z"),
+  ord("ORD-3", "2026-10-28T08:00:00Z", { status: "cancelled" }),
+  ord("ORD-old", "2026-08-01T08:00:00Z"),
+  ord("ORD-other", "2026-10-28T09:00:00Z", { clientId: "c2", clientPhone: "+77015550002" }),
+  ord("ORD-phone", "2026-10-26T08:00:00Z", { clientId: "", clientPhone: "+77015550001" }),
+];
+check("последняя живая заявка клиента по карточке (отменённая и чужая — нет)", latestClientOrder(orders, { phone: "77015550001", clientId: "c1" }, now)?.orderId, "ORD-2");
+check("по телефону — заявка без карточки тоже находится", latestClientOrder(orders, { phone: "87015550001" }, now)?.orderId, "ORD-2");
+check("старше 60 дней — нет", latestClientOrder([ord("ORD-old", "2026-08-01T08:00:00Z")], { phone: "77015550001", clientId: "c1" }, now), null);
+const otext = staffOrderText({ code: "800XU", order: ord("ORD-2", "2026-10-27T08:00:00Z", { paidAmount: 10000 }), itemName: (i) => `Хризантема ${i.variety}, ${i.grade}` });
+check("текст заказа: номер, позиция, итог, доставка, остаток", [otext.includes("*№800XU* от 27.10"), otext.includes("• Хризантема Altaj, Первая — 50 шт. × 580 ₸"), otext.includes("Итого: *29 000 ₸*"), otext.includes("Доставка: 29.10"), otext.includes("Получено 10 000 ₸, остаток 19 000 ₸")], [true, true, true, true, true]);
+check("оплачено целиком — так и пишем", staffOrderText({ code: "X", order: ord("ORD-2", "2026-10-27T08:00:00Z", { paidAmount: 29000 }), itemName: () => "x" }).includes("Оплата получена"), true);
+
+console.log("\n— Напоминания");
+check("время модели в будущем — как есть", reminderTime("2026-10-29T09:00", "2026-10-28T22:56"), "2026-10-29T09:00");
+check("названное время сегодня уже прошло — завтра в то же время", reminderTime("2026-10-28T15:00", "2026-10-28T22:56"), "2026-10-29T15:00");
+check("время не понято (пусто) вечером — завтра 09:00", reminderTime("", "2026-10-28T22:56"), "2026-10-29T09:00");
+check("время не понято ночью до 9 — сегодня 09:00", reminderTime("мусор", "2026-10-29T06:10"), "2026-10-29T09:00");
+check("«завтра / сегодня в …» словами", [reminderWhen("2026-10-29T09:00", "2026-10-28T22:56"), reminderWhen("2026-10-28T23:30", "2026-10-28T22:56"), reminderWhen("2026-11-02T09:00", "2026-10-28T22:56")], ["завтра в 09:00", "сегодня в 23:30", "02.11 в 09:00"]);
+const rem = { id: "r1", phone: "77015550009", email: "e@x", name: "Эмиль", at: "2026-10-29T09:00", text: "внести заявку Баглана", createdAt: "" };
+check("подтверждение сотруднику", reminderConfirmText(rem, "2026-10-28T22:56"), "Напомню завтра в 09:00: внести заявку Баглана.");
+check("список: мусор не ломает, без телефона — вон", parseReminders(JSON.stringify([rem, { at: "x" }, 5])).length, 1);
+check("список: не JSON — пусто", parseReminders("{"), []);
+check("чей час настал — до минуты включительно", dueReminders([rem, { ...rem, id: "r2", at: "2026-10-29T09:30" }], "2026-10-29T09:05").map((r) => r.id), ["r1"]);
+
+console.log("\n— Не пиши клиенту");
+check("ответ сотруднику: что именно выключено и как снять", muteDoneText("Лешка Оранж", "77015550003", true).includes("Снять: «можно снова писать Лешка Оранж»"), true);
+check("снять запрет", muteDoneText("Лешка Оранж", "77015550003", false), "Хорошо, Лешка Оранж (…0003) снова пишу как обычно.");
+
+console.log("\n— Ответ на план рассылки списком имён");
+const exLive = exclusionNames("Нет, Наталья, Жамал, Акмарал, Бота, Нурдос, Дана Романтик, Фарид, Светлана на Правде и ещё 1. Этим клиентам нет");
+check("живой ответ: имена из строки плана и «ещё 1»", exLive, { names: ["Наталья", "Жамал", "Акмарал", "Бота", "Нурдос", "Дана Романтик", "Фарид", "Светлана на Правде"], more: 1 });
+check("«да, кроме Фарида и Боты»", exclusionNames("Да, кроме Фарида и Боты"), { names: ["Фарида", "Боты"], more: 0 });
+check("«без Натальи.»", exclusionNames("без Натальи."), { names: ["Натальи"], more: 0 });
+check("просто «нет» — не правка списка", exclusionNames("Нет"), { names: [], more: 0 });
+check("не ответ на план вовсе", exclusionNames("Скинь фото Altaj Маргарите"), { names: [], more: 0 });
+const recs = ["Наталья", "Жамал", "Акмарал", "Бота", "Нурдос", "Дана", "Фарид", "Светлана", "Айгерим"].map((name, i) => ({ name, phone: `7701555000${i}` }));
+const live = dropRecipients(recs, exLive.names, exLive.more);
+check("живой ответ: убраны все девять — и «ещё 1» тоже", [live.kept.length, live.removed.length], [0, 9]);
+check("«Дана Романтик» нашла «Дана», «Светлана на Правде» — «Светлана»", live.removed.some((r) => r.name === "Дана") && live.removed.some((r) => r.name === "Светлана"), true);
+const part = dropRecipients(recs, ["Фарида", "Боты"]);
+check("падеж: «Фарида», «Боты» → Фарид и Бота, остальные остались", [part.removed.map((r) => r.name), part.kept.length], [["Бота", "Фарид"], 7]);
+check("никого не нашёл — ничего не убрал", dropRecipients(recs, ["Зульфия"]).removed.length, 0);
+check("ответ: убрал, не нашёл, осталось, ждёт ДА", exclusionReplyText({ removed: ["Фарид"], notFound: ["Зульфия"], left: 8, run: false }), "Убрал 1: Фарид.\nНе нашёл в списке: Зульфия.\nОсталось *8*. Ответьте *ДА* — запущу, *НЕТ* — не запускаю.");
+check("ответ: никого не осталось", exclusionReplyText({ removed: ["Фарид"], notFound: [], left: 0, run: false }), "Убрал 1: Фарид.\nНикого не осталось — рассылку не запускаю.");
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

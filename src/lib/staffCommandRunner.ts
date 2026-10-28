@@ -9,33 +9,53 @@ import { saveSettings } from "./repo/settings";
 import { listUsers } from "./repo/users";
 import { listClients } from "./repo/clients";
 import { listLeads } from "./repo/leads";
+import { listOrdersWithItems } from "./repo/orders";
+import { botChatWrite, emptyBotChat, listBotChats } from "./repo/broadcasts";
 import { listWaMessages } from "./repo/talks";
 import { listWaLines, lineConfig } from "./repo/waLines";
+import { commitAtomic } from "./sheets";
+import { BOT_MODES } from "./broadcast";
+import { FLOWER_TYPE_LABELS, formatGrade, ORDER_STATUSES } from "./constants";
 import { genitiveName, LEADS_LINE } from "./waLines";
+import { orderCode } from "./paymentStage";
 import { sendOnLine } from "./lineAssistant";
 import { loadPhotoContext, photoPrices } from "./botPhotoSend";
 import { isInfoPhoto, photoLabel, photoMessage } from "./botPhotos";
 import { pricesForBot } from "./botKnowledge";
-import { isNoText, isYesText, parseStaffBroadcastPlan, STAFF_BROADCAST_PREFIX } from "./staffBroadcast";
+import { isNoText, isYesText, parseStaffBroadcastPlan, STAFF_BROADCAST_PREFIX, type StaffBroadcastPlan } from "./staffBroadcast";
 import { planStaffBroadcast, runStaffBroadcastPlan } from "./staffBroadcastRunner";
 import {
+  dropRecipients,
+  dueReminders,
+  exclusionNames,
+  exclusionReplyText,
   isSelfTarget,
+  latestClientOrder,
   matchTargets,
+  muteDoneText,
+  muteNote,
   wantsForSelf,
+  parseReminders,
   parseStaffCommand,
   pickedNumber,
   pickStaffPhotos,
   quoteLines,
+  reminderConfirmText,
+  reminderText,
+  reminderTime,
   STAFF_ASK_PREFIX,
   STAFF_ASK_TTL_MS,
   STAFF_COMMAND_SCHEMA,
   STAFF_OTHER_TEXT,
+  STAFF_REMINDERS_SETTING,
   staffAskText,
   staffCommandPrompt,
   staffDoneText,
   staffNotFoundText,
+  staffOrderText,
   staffQuoteText,
   type StaffCommand,
+  type StaffReminder,
   type StaffTarget,
 } from "./staffCommand";
 import type { AppUser, WaMessage } from "./types";
@@ -59,6 +79,13 @@ function parsePending(raw: string | undefined): Pending | null {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** «ГГГГ-ММ-ДДTЧЧ:ММ» по Алматы — ключ времени для напоминаний (сервер живёт по Алматы, но считаем явно). */
+export function almatyNowKey(d = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Almaty", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour") === "24" ? "00" : get("hour")}:${get("minute")}`;
+}
 
 /** Ответ сотруднику с основного номера — и в переписку CRM. */
 async function replyStaff(cfg: GreenConfig, phone: string, text: string): Promise<void> {
@@ -88,7 +115,7 @@ async function targetCandidates(messages: WaMessage[]): Promise<{ text: string; 
     if (!c.active || (c.retail || "").trim()) continue;
     for (const p of [c.phone, c.messenger]) {
       if (!waPhone(p)) continue;
-      out.push({ text: `${c.name} ${c.contactPerson} ${c.city} ${c.address}`, target: { phone: waPhone(p), name: c.name, kind: "клиент", managerEmail: c.managerEmail, lastAt: at(p) } });
+      out.push({ text: `${c.name} ${c.contactPerson} ${c.city} ${c.address}`, target: { phone: waPhone(p), name: c.name, kind: "клиент", managerEmail: c.managerEmail, lastAt: at(p), clientId: c.clientId } });
     }
   }
   for (const l of leads) {
@@ -138,10 +165,25 @@ function selfTarget(staffPhone: string): StaffTarget {
   return { phone: waPhone(staffPhone) || staffPhone.replace(/\D/g, ""), name: "вам", kind: "сотрудник", managerEmail: "", lastAt: "" };
 }
 
-async function execute(command: StaffCommand, target: StaffTarget, staff: AppUser | null, staffPhone: string, main: GreenConfig, messages: WaMessage[]): Promise<void> {
+async function execute(command0: StaffCommand, target: StaffTarget, staff: AppUser | null, staffPhone: string, main: GreenConfig, messages: WaMessage[]): Promise<void> {
+  let command = command0;
   const self = phoneKey(target.phone) === phoneKey(staffPhone);
+  if (command.intent === "mute" || command.intent === "unmute") return setMuted(target, command.intent === "mute", staff, staffPhone, main);
   const line = self ? { code: "", cfg: main, via: "основного номера" } : await sendingLine(target, messages, staff);
   if (!line) return replyStaff(main, staffPhone, "Не получилось: ни один номер WhatsApp сейчас не подключён.");
+  if (command.intent === "send_order") {
+    // Заказ клиента: последняя живая заявка — её состав, сумма, доставка и оплата; текст собирает код.
+    const orders = await listOrdersWithItems();
+    const order = latestClientOrder(orders, target);
+    if (!order) return replyStaff(main, staffPhone, `У ${target.name} (…${target.phone.slice(-4)}) нет заявок за последние 60 дней — отправлять нечего.`);
+    const itemName = (i: { flowerType: string; variety: string; grade: string }) => `${FLOWER_TYPE_LABELS[i.flowerType] ?? i.flowerType}${i.variety ? ` ${i.variety}` : ""}${i.grade ? `, ${formatGrade(i.grade)}` : ""}`;
+    const text = staffOrderText({ code: orderCode(order.orderId), order, itemName, shipped: order.status === ORDER_STATUSES.SHIPPED });
+    command = { ...command, items: [], text };
+    if (self) {
+      await sendOnLine("", main, target.phone, text, "crm", staff?.email || "staff", `поручение ${staff?.name || "сотрудника"}`);
+      return;
+    }
+  }
   const ctx = await loadPhotoContext();
   const { picked, missing } = pickStaffPhotos(ctx.photos, command.items);
   const byEmail = staff?.email || "staff";
@@ -171,7 +213,76 @@ async function execute(command: StaffCommand, target: StaffTarget, staff: AppUse
     if (missing.length) await replyStaff(main, staffPhone, `Фото нет в CRM: ${missing.join(", ")} — загрузите в «Рассылки → Фото и каталог».`);
     return;
   }
+  if (command.intent === "send_order") return replyStaff(main, staffPhone, `Отправил ${target.name} (…${target.phone.slice(-4)}) её заказ с ${line.via}:\n\n${command.text}`);
   await replyStaff(main, staffPhone, staffDoneText({ name: target.name, phone: target.phone, via: line.via, sent, missing, text: !!command.text }));
+}
+
+/**
+ * «Не пиши клиенту X» / «можно снова писать X»: память бота основного номера — режим optout (как «СТОП» от самого
+ * клиента): её чтут бот, дожим, рассылки и автопилот; помощник номеров менеджеров и их дожим — через `optedOutKeys()`.
+ */
+async function setMuted(target: StaffTarget, on: boolean, staff: AppUser | null, staffPhone: string, main: GreenConfig): Promise<void> {
+  const chats = await listBotChats(true);
+  const key = phoneKey(target.phone);
+  const existing = chats.find((c) => phoneKey(c.phone) === key) ?? null;
+  const chat = existing ? { ...existing } : emptyBotChat(target.phone);
+  if (on) {
+    chat.mode = BOT_MODES.OPT_OUT;
+    chat.handoffReason = muteNote(staff?.name?.split(/\s+/)[0] || "");
+  } else {
+    if (chat.mode === BOT_MODES.OPT_OUT) chat.mode = BOT_MODES.BOT;
+    chat.handoffReason = "";
+  }
+  if (!existing) chat.name = target.name;
+  await commitAtomic([botChatWrite(chat, existing?.rowNumber ?? null)]);
+  await replyStaff(main, staffPhone, muteDoneText(target.name, target.phone, on));
+}
+
+/** Поручение, которому нужен клиент: отправить фото/сообщение/заказ, не писать, снова писать. */
+function needsTarget(intent: StaffCommand["intent"]): boolean {
+  return intent === "send" || intent === "send_order" || intent === "mute" || intent === "unmute";
+}
+
+/** Напоминания, чей час настал: сотруднику с основного номера; отправленные — из списка долой. */
+export async function sendDueStaffReminders(): Promise<{ sent: number; left: number }> {
+  const main = greenConfig();
+  const nowKey = almatyNowKey();
+  const map = await settingsMap(true);
+  const list = parseReminders(map[STAFF_REMINDERS_SETTING]);
+  const due = dueReminders(list, nowKey);
+  if (!main || !due.length) return { sent: 0, left: list.length };
+  const sentIds = new Set<string>();
+  for (const r of due) {
+    try {
+      await sendOnLine("", main, r.phone, reminderText(r), "crm", "bot");
+      sentIds.add(r.id);
+    } catch (err) {
+      console.error("staff reminder:", err instanceof Error ? err.message : err);
+    }
+  }
+  const left = list.filter((r) => !sentIds.has(r.id));
+  if (sentIds.size) await saveSettings({ [STAFF_REMINDERS_SETTING]: JSON.stringify(left) });
+  return { sent: sentIds.size, left: left.length };
+}
+
+/** Ответ на план рассылки списком имён: убрать названных; «да, кроме …» — сразу запустить остаток. */
+async function applyPlanExclusions(plan: StaffBroadcastPlan, text: string, ex: { names: string[]; more: number }, staff: AppUser | null, broadcastKey: string): Promise<string> {
+  const { names } = ex;
+  const { kept, removed } = dropRecipients(plan.recipients, names, ex.more);
+  const notFound = names.filter((n) => !dropRecipients(plan.recipients, [n]).removed.length);
+  const run = /^(да|ок|окей)\b/i.test(text.trim());
+  const next = { ...plan, recipients: kept };
+  if (!kept.length || (run && !removed.length && notFound.length)) {
+    await saveSettings({ [broadcastKey]: kept.length ? JSON.stringify(next) : "" });
+    return exclusionReplyText({ removed: removed.map((r) => r.name || `…${r.phone.slice(-4)}`), notFound, left: kept.length, run: false });
+  }
+  if (run) {
+    await saveSettings({ [broadcastKey]: "" });
+    const head = exclusionReplyText({ removed: removed.map((r) => r.name || `…${r.phone.slice(-4)}`), notFound, left: kept.length, run: true });
+    return `${head ? `${head}\n` : ""}${await runStaffBroadcastPlan(next, staff)}`;
+  }
+  await saveSettings({ [broadcastKey]: JSON.stringify(next) });
+  return exclusionReplyText({ removed: removed.map((r) => r.name || `…${r.phone.slice(-4)}`), notFound, left: kept.length, run: false });
 }
 
 /** Разбор поручения моделью: список фото и прайс на сегодня — чтобы сорта и категории были как в CRM. */
@@ -179,7 +290,7 @@ async function understand(text: string, ctx: Awaited<ReturnType<typeof loadPhoto
   const photos = ctx.photos.filter((p) => p.active && p.fileId);
   const labels = Array.from(new Set(photos.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика категорий)" : ""))));
   const priceList = pricesForBot(Array.from(ctx.prices.values()));
-  const { data } = await chatJson(staffCommandPrompt(labels, priceList), text, "staff_command", STAFF_COMMAND_SCHEMA, { fast: true });
+  const { data } = await chatJson(staffCommandPrompt(labels, priceList, almatyNowKey().replace("T", " ")), text, "staff_command", STAFF_COMMAND_SCHEMA, { fast: true });
   return parseStaffCommand(data);
 }
 
@@ -209,6 +320,14 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
       await saveSettings({ [broadcastKey]: "" });
       await replyStaff(main, message.phone, isNoText(text) ? "Хорошо, рассылку не запускаю." : await runStaffBroadcastPlan(broadcastPlan, staff));
       return true;
+    }
+    // «Нет, Наталья, Жамал, … — этим клиентам нет» / «да, кроме Фарида»: правка списка плана (28.10.2026).
+    if (broadcastPlan) {
+      const ex = exclusionNames(text);
+      if (ex.names.length) {
+        await replyStaff(main, message.phone, await applyPlanExclusions(broadcastPlan, text, ex, staff, broadcastKey));
+        return true;
+      }
     }
     const messages = await listWaMessages({ lines: "all" });
 
@@ -242,6 +361,27 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
       await replyStaff(main, message.phone, reply);
       return true;
     }
+    // Напомнить сотруднику позже: в список напоминаний, шлёт час-в-час проход и утренняя сводка.
+    if (command.intent === "remind") {
+      if (!command.remindText) {
+        await replyStaff(main, message.phone, "О чём напомнить? Напишите, например: «Напомни мне утром внести заявку Баглана».");
+        return true;
+      }
+      const nowKey = almatyNowKey();
+      const r: StaffReminder = {
+        id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        phone: waPhone(message.phone) || message.phone.replace(/\D/g, ""),
+        email: staff?.email || "",
+        name: staff?.name || "",
+        at: reminderTime(command.remindAt, nowKey),
+        text: command.remindText,
+        createdAt: new Date().toISOString(),
+      };
+      const list = parseReminders((await settingsMap(true))[STAFF_REMINDERS_SETTING]);
+      await saveSettings({ [STAFF_REMINDERS_SETTING]: JSON.stringify([...list, r]) });
+      await replyStaff(main, message.phone, reminderConfirmText(r, nowKey));
+      return true;
+    }
     // Посчитать стоимость: расчёт — сотруднику; назван клиент — тот же расчёт (без служебного) уходит клиенту.
     if (command.intent === "quote") {
       if (!command.items.length) {
@@ -254,14 +394,14 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
       if (!lines.some((l) => l.quantity && l.price)) return true;
       command = { ...command, intent: "send", items: [], text: staffQuoteText(lines, true) };
     }
-    if (command.intent === "other" || (!command.items.length && !command.text)) {
-      await replyStaff(main, message.phone, STAFF_OTHER_TEXT);
+    if (command.intent === "other" || (command.intent === "send" && !command.items.length && !command.text) || (needsTarget(command.intent) && command.intent !== "send" && !command.client && !command.phone)) {
+      await replyStaff(main, message.phone, command.intent === "other" || command.intent === "send" ? STAFF_OTHER_TEXT : "Кому? Назовите клиента — имя, точку или номер.");
       return true;
     }
     const direct = waPhone(command.phone);
     let targets: StaffTarget[] = direct ? [{ phone: direct, name: command.client || `+${direct}`, kind: "номер", managerEmail: "", lastAt: "" }] : [];
     // Адресат не назван или «мне» — фото самому сотруднику, а не «не нашёл клиента «без имени»».
-    if (!targets.length && command.items.length && wantsForSelf(command, text)) {
+    if (!targets.length && command.intent === "send" && command.items.length && wantsForSelf(command, text)) {
       await execute(command, selfTarget(message.phone), staff, message.phone, main, messages);
       return true;
     }
@@ -302,19 +442,32 @@ export async function dryRunStaffCommand(text: string, staffPhone: string): Prom
     command = { ...command, intent: "send", items: [], text: staffQuoteText(lines, true) };
     out.push("Клиенту:", command.text);
   }
-  if (command.intent !== "send") return out;
+  if (command.intent === "remind") {
+    const nowKey = almatyNowKey();
+    out.push(`Напоминание: «${command.remindText}» — ${reminderTime(command.remindAt, nowKey)} (модель: «${command.remindAt || "—"}», сейчас ${nowKey})`);
+    return out;
+  }
+  if (!needsTarget(command.intent)) return out;
   const picks = pickStaffPhotos(ctx.photos, command.items);
   out.push(`Фото (${picks.picked.length}): ${picks.picked.map((p) => photoLabel(p) + (isInfoPhoto(p) ? " (инфографика)" : "")).join(", ")}`);
   if (picks.missing.length) out.push(`Нет в CRM: ${picks.missing.join(", ")}`);
   const messages = await listWaMessages({ lines: "all" });
   const direct = waPhone(command.phone);
-  if (!direct && wantsForSelf(command, text)) {
+  if (!direct && command.intent === "send" && wantsForSelf(command, text)) {
     out.push("Кому: самому сотруднику, с основного номера");
     return out;
   }
   const targets = direct ? [{ phone: direct, name: command.client, kind: "номер", managerEmail: "", lastAt: "" }] : matchTargets(command.client, await targetCandidates(messages), staff?.email);
   out.push(`Кому: ${targets.length ? targets.map((t) => `${t.name} …${t.phone.slice(-4)} (${t.kind})`).join("; ") : "не нашёл"}`);
   if (targets.length !== 1) return out;
+  if (command.intent === "mute" || command.intent === "unmute") {
+    out.push(command.intent === "mute" ? "Запрет писать: память бота → optout" : "Снять запрет: память бота → bot");
+    return out;
+  }
+  if (command.intent === "send_order") {
+    const order = latestClientOrder(await listOrdersWithItems(), targets[0]);
+    out.push(order ? `Заявка: №${orderCode(order.orderId)} от ${order.createdAt.slice(0, 10)}, ${order.items.length} поз., ${order.totalAmount} ₸` : "Заявок за 60 дней нет");
+  }
   const line = await sendingLine(targets[0], messages, staff);
   out.push(`С номера: ${line ? line.via : "нет подключённого"}`);
   return out;

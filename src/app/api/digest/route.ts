@@ -2,6 +2,7 @@ import { digestResultText, recordDigestRun, sendMorningDigest } from "@/lib/morn
 import { remindBotInvoices } from "@/lib/botFollowUp";
 import { kickBroadcast } from "@/lib/autoBroadcastRunner";
 import { lineMorningPlans } from "@/lib/lineMorningPlan";
+import { sendDueStaffReminders } from "@/lib/staffCommandRunner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,6 +21,8 @@ export async function GET(request: Request) {
   const source = /vercel-cron/i.test(request.headers.get("user-agent") || "") ? "расписание" : "вручную";
   // Утром бот напоминает об оплате по своим заявкам (не мешает сводке: ошибок не бросает).
   const reminders = await remindBotInvoices();
+  // «Напомни мне утром …» — напоминания сотрудникам на 9:00 (`staffCommand.ts`).
+  const staffReminders = await sendDueStaffReminders().catch(() => ({ sent: 0, left: 0 }));
   try {
     const result = await sendMorningDigest();
     await recordDigestRun(source, digestResultText(result));
@@ -27,7 +30,7 @@ export async function GET(request: Request) {
     await kickBroadcast((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
     // И утренний план менеджерам с продающим помощником (19.10.2026, «утренний план Ильясу»).
     const plans = await lineMorningPlans({ send: true }).catch((e) => [{ line: "", text: String(e), sent: false }]);
-    return Response.json({ ok: true, sent: result.sent.length, failed: result.failed.length, note: result.note, reminders, plans: plans.map((p) => ({ line: p.line, sent: p.sent })) });
+    return Response.json({ ok: true, sent: result.sent.length, failed: result.failed.length, note: result.note, reminders, staffReminders, plans: plans.map((p) => ({ line: p.line, sent: p.sent })) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await recordDigestRun(source, `ошибка: ${message}`);

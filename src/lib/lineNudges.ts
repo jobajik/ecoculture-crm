@@ -2,7 +2,7 @@ import { listSellableBatches } from "./repo/sellable";
 import { commitAtomic, prefetchTables, SHEET_TABS } from "./sheets";
 import { listWaMessages } from "./repo/talks";
 import { listAssistantLog, listWaLines, appendAssistantLog } from "./repo/waLines";
-import { settingsMap } from "./repo/broadcasts";
+import { optedOutKeys, settingsMap } from "./repo/broadcasts";
 import { getSettings, saveSettings } from "./repo/settings";
 import { getCurrentPrices } from "./repo/prices";
 import { listOrdersWithItems } from "./repo/orders";
@@ -54,7 +54,13 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
   await saveSettings({ [LAST_RUN]: now.toISOString() }).catch(() => undefined);
 
   await prefetchTables([SHEET_TABS.WA_MESSAGES, SHEET_TABS.ASSISTANT_LOG, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS]).catch(() => undefined);
-  const [messages, log, orders, staff] = await Promise.all([listWaMessages({ lines: "all" }), listAssistantLog({ fresh: true }), listOrdersWithItems(), ourPhoneKeys(map)]);
+  const [messages, log, orders, staff, muted] = await Promise.all([
+    listWaMessages({ lines: "all" }),
+    listAssistantLog({ fresh: true }),
+    listOrdersWithItems(),
+    ourPhoneKeys(map),
+    optedOutKeys().catch(() => new Set<string>()),
+  ]);
   const orderAt = new Map<string, string[]>();
   for (const o of orders) {
     if (o.status === ORDER_STATUSES.CANCELLED) continue;
@@ -79,7 +85,7 @@ export async function runLineNudges(options: { budgetMs?: number } = {}): Promis
         .filter((r) => r.kind === "nudge" && r.line === line.code && phoneKey(r.phone) === k)
         .map((r) => ({ at: r.at, closed: !r.messageId && /^не писать/.test(r.note) }));
       const gaps = gapsOf(line.managerEmail);
-      const st = lineNudgeStatus({ chat, nudges, now, hour, staff: staff.has(k), orderAt: orderAt.get(k), gaps });
+      const st = lineNudgeStatus({ chat, nudges, now, hour, staff: staff.has(k), muted: muted.has(k), orderAt: orderAt.get(k), gaps });
       if (st.attempt > 0) due.push({ line, phone: chat[chat.length - 1].phone, chat: mergeMessages(chat), attempt: st.attempt, gaps });
     }
   }

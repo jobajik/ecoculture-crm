@@ -190,6 +190,8 @@ export function assistantVerdict(input: {
   autoIds: Set<string>;
   now: Date;
   staff?: boolean;
+  /** Сотрудник просил не писать этому клиенту или клиент сам отписался («СТОП») — молчим (28.10.2026). */
+  muted?: boolean;
   mode: AssistantMode;
   /** Вебхук после сообщения вне рабочего времени: ждать не 2 минуты, а только конец серии (~20 с). */
   quick?: boolean;
@@ -208,6 +210,7 @@ export function assistantVerdict(input: {
   if (input.mode === "off") return no("помощник только подсказывает");
   const sell = input.mode === "sell";
   if (input.staff) return no("номер сотрудника");
+  if (input.muted) return no("просили не писать");
   const chat = mergeMessages(input.chat);
   const last = chat[chat.length - 1];
   if (!last) return no("переписки нет");

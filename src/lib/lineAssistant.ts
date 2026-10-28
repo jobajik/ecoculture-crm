@@ -10,7 +10,7 @@ import { ourPhoneKeys } from "./lineNotify";
 import { phoneKey } from "./leads";
 import { mergeMessages, messageText } from "./whatsapp";
 import { appendWaMessages, listWaMessages } from "./repo/talks";
-import { settingsMap } from "./repo/broadcasts";
+import { optedOutKeys, settingsMap } from "./repo/broadcasts";
 import { saveSettings } from "./repo/settings";
 import { chainBusy, parseChainLock } from "./autoBroadcast";
 import { listUsers } from "./repo/users";
@@ -452,6 +452,8 @@ export async function runAssistantSweep(
   const [messages, log, map] = await Promise.all([listWaMessages({ lines: "all" }), listAssistantLog(), settingsMap()]);
   const autoIds = new Set(log.filter((r) => r.kind === "auto" || r.kind === "nudge").map((r) => r.messageId));
   const staff = await ourPhoneKeys(map);
+  // «Не пиши клиенту X» от сотрудника и «СТОП» от клиента — память бота, режим optout (`staffCommand.ts`).
+  const muted = await optedOutKeys().catch(() => new Set<string>());
   const now = new Date();
   // Номер Земфиры: лид передан менеджеру или закрыт, у номера есть карточка клиента — помощник не отвечает
   // (21.10.2026, Земфира: «бот повторно пишет клиентам, которых я уже передала Ильгару, у которых уже есть заказы»).
@@ -476,6 +478,7 @@ export async function runAssistantSweep(
         autoIds,
         now,
         staff: staff.has(key),
+        muted: muted.has(key),
         mode: line.assistant,
         quick: options.quick,
         lead: facts ? { handedTo: facts.handedTo, closed: facts.closed, client: facts.client } : undefined,

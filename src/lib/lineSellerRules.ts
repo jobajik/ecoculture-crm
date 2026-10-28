@@ -98,6 +98,8 @@ export function lineNudgeStatus(input: {
   now: Date;
   hour: number;
   staff?: boolean;
+  /** Сотрудник просил не писать этому клиенту или клиент отписался. */
+  muted?: boolean;
   /** Когда оформлены заказы этого номера (любым менеджером). */
   orderAt?: string[];
   /** Касания дожима, ч (по умолчанию `LINE_NUDGE_GAPS_HOURS`; напористый продавец — `CLOSER_NUDGE_GAPS_HOURS`). */
@@ -106,6 +108,7 @@ export function lineNudgeStatus(input: {
   const gaps = input.gaps?.length ? input.gaps : LINE_NUDGE_GAPS_HOURS;
   const no = (reason: string) => ({ attempt: 0, reason });
   if (input.staff) return no("номер сотрудника");
+  if (input.muted) return no("просили не писать");
   if (input.hour < NUDGE_FROM_HOUR || input.hour >= NUDGE_TO_HOUR) return no("не рабочее время");
   const chat = mergeMessages(input.chat);
   const last = chat[chat.length - 1];

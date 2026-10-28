@@ -4,6 +4,7 @@ import { remindBotInvoices, runBotNudges } from "@/lib/botFollowUp";
 import { settingsMap } from "@/lib/repo/broadcasts";
 import { saveSettings } from "@/lib/repo/settings";
 import { FOLLOWUP_LAST_RUN, followupRunDue, followupRunText } from "@/lib/botFollowUpRun";
+import { sendDueStaffReminders } from "@/lib/staffCommandRunner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -45,9 +46,11 @@ export async function GET(request: Request) {
   if (!fromWebhook) await kickBroadcast((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
   // Отметка ДО работы: второй вебхук через секунду увидит её и не задвоит касания.
   await saveSettings({ [FOLLOWUP_LAST_RUN]: followupRunText(now, source, "идёт") }).catch(() => undefined);
+  // Напоминания сотрудникам («напомни мне в 15:00 …», `staffCommand.ts`) — чей час настал.
+  const staffReminders = await sendDueStaffReminders().catch(() => ({ sent: 0, left: 0 }));
   const reminders = await remindBotInvoices();
   const nudges = await runBotNudges({ limit: 8, budgetMs: 40000 });
-  const result = `напоминаний ${reminders.sent}, дожато ${nudges.sent}, закрыто ${nudges.closed}, ошибок ${reminders.errors + nudges.errors}`;
+  const result = `напоминаний ${reminders.sent}${staffReminders.sent ? ` (+${staffReminders.sent} сотрудникам)` : ""}, дожато ${nudges.sent}, закрыто ${nudges.closed}, ошибок ${reminders.errors + nudges.errors}`;
   await saveSettings({ [FOLLOWUP_LAST_RUN]: followupRunText(now, source, result) }).catch(() => undefined);
   return Response.json({ ok: true, reminders, nudges });
 }
