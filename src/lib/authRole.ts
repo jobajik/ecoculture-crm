@@ -32,13 +32,26 @@
 
 /** Что вернул поход в таблицу. Главное здесь — что «не смогли» отличимо от «нет». */
 export type RoleLookup =
-  | { ok: true; user: { role: string; farm: string | null; name: string; active: boolean } | null }
+  | {
+      ok: true;
+      user: {
+        role: string;
+        farm: string | null;
+        name: string;
+        active: boolean;
+        payrollRole?: string;
+        payrollDepartments?: string[];
+      } | null;
+    }
   | { ok: false };
 
 export interface TokenRole {
   role: string | undefined;
   farm: string | null;
   name: string | undefined;
+  /** Роль в модуле «Зарплата» и подразделения начальника — тем же пропуском, что и роль CRM. */
+  payrollRole?: string;
+  payrollDepartments?: string[];
 }
 
 export function roleForToken(current: TokenRole, lookup: RoleLookup): TokenRole {
@@ -49,11 +62,13 @@ export function roleForToken(current: TokenRole, lookup: RoleLookup): TokenRole 
   const user = lookup.user;
   // Строки нет или сотрудник отключён — права снимаем. Ровно ради этого роль и
   // перечитывается: список сотрудников в таблице должен означать то, что обещает.
-  if (!user || !user.active) return { role: undefined, farm: null, name: current.name };
+  if (!user || !user.active) return { role: undefined, farm: null, name: current.name, payrollRole: "", payrollDepartments: [] };
 
   return {
     role: user.role,
     farm: user.farm ?? null,
+    payrollRole: user.payrollRole ?? "",
+    payrollDepartments: user.payrollDepartments ?? [],
     // Имя из таблицы лучше имени из Google: владелец пишет там «Юлия», а Google
     // отдаёт то, что человек когда-то ввёл себе в профиль.
     name: user.name || current.name,

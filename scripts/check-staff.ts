@@ -38,6 +38,8 @@ const user = (p: Partial<AppUser> & { email: string }): AppUser => ({
   farm: null,
   active: true,
   phone: "",
+  payrollRole: "",
+  payrollDepartments: [],
   ...p,
 });
 

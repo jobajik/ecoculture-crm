@@ -62,5 +62,6 @@ export const config = {
     "/analytics/:path*",
     "/prices/:path*",
     "/admin/:path*",
+    "/payroll/:path*",
   ],
 };

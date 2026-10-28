@@ -57,6 +57,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
   }
   // «Лиды с рекламы»: склад, заявки и деньги ей не нужны — главная у неё это лиды.
   if (role === ROLES.LEADGEN) redirect("/clients/leads");
+  // «Только зарплата»: главной нет — сразу в раздел (без роли в модуле он сам объяснит, что доступа ещё нет).
+  if (role === ROLES.PAYROLL) redirect("/payroll");
   if (missingFarm(role, session.user?.farm)) {
     return <div className="card max-w-xl">{MISSING_FARM_MESSAGE}</div>;
   }

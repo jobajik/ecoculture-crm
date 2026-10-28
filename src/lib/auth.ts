@@ -63,12 +63,16 @@ export const authOptions: AuthOptions = {
           role: token.role as string | undefined,
           farm: (token.farm as string | null) ?? null,
           name: token.name ?? undefined,
+          payrollRole: (token.payrollRole as string | undefined) ?? "",
+          payrollDepartments: (token.payrollDepartments as string[] | undefined) ?? [],
         },
         lookup
       );
       token.role = next.role;
       token.farm = next.farm;
       token.name = next.name;
+      token.payrollRole = next.payrollRole ?? "";
+      token.payrollDepartments = next.payrollDepartments ?? [];
       return token;
     },
     async session({ session, token }) {
@@ -79,6 +83,8 @@ export const authOptions: AuthOptions = {
         // закрывать доступ, а не открывать.
         session.user.role = (token.role as string) ?? "";
         session.user.farm = (token.farm as string | null) ?? null;
+        session.user.payrollRole = (token.payrollRole as string) ?? "";
+        session.user.payrollDepartments = (token.payrollDepartments as string[]) ?? [];
       }
       return session;
     },

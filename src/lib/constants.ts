@@ -69,13 +69,25 @@ export const SHEET_TABS = {
   WA_LINES: "WaLines",
   // Что сделал ИИ-помощник и что ушло из CRM на номерах менеджеров; записки «нужен менеджер».
   ASSISTANT_LOG: "AssistantLog",
+  // Модуль «Зарплата» (28.10.2026, владелец: «программа, которая ведёт табель учёта зп и считает её»; вместо
+  // гугл-книги расчётной ведомости Rose Farm). Справочники постоянные, помесячное — отдельными вкладками;
+  // все вкладки с приставкой Payroll, чтобы в таблице их было видно одним блоком. Ставки хранятся с датой начала:
+  // пересчёт прошлого месяца обязан дать прежние цифры.
+  PAYROLL_DEPARTMENTS: "PayrollDepartments",
+  PAYROLL_EMPLOYEES: "PayrollEmployees",
+  PAYROLL_RATES: "PayrollRates",
+  PAYROLL_BALANCE: "PayrollBalance",
+  PAYROLL_HOLIDAYS: "PayrollHolidays",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
   // Farm стоит последней колонкой намеренно: так в уже работающей таблице
   // существующие строки не «съезжают» при добавлении производств.
   // Phone — последней (20.10.2026): номер WhatsApp сотрудника, чтобы бот, помощник и авто-лиды узнавали своих (грабли 1.1).
-  [SHEET_TABS.USERS]: ["Email", "Name", "Role", "Active", "Farm", "Phone"],
+  // PayrollRole и PayrollDepartments — последними (28.10.2026): роль в модуле «Зарплата» (бухгалтер по ЗП, кадровик,
+  // агроном, начальник подразделения) и коды подразделений начальника через запятую. Это ВТОРАЯ роль человека рядом
+  // с ролью CRM: бригадир теплицы в CRM не нужен, а табель своих людей ведёт он.
+  [SHEET_TABS.USERS]: ["Email", "Name", "Role", "Active", "Farm", "Phone", "PayrollRole", "PayrollDepartments"],
   // Колонки оплаты стоят в конце — как и Farm, чтобы уже заполненные строки
   // не «съезжали» при добавлении (см. CLAUDE.md, раздел «Грабли»).
   [SHEET_TABS.ORDERS]: [
@@ -312,6 +324,49 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "AmountAfter",
   ],
   [SHEET_TABS.SETTINGS]: ["Key", "Value"],
+  /**
+   * Подразделение для расчёта зарплаты: у каждого свой начальник (он в Users, колонка PayrollDepartments), своя
+   * норма (5- или 6-дневка — Сборка ГП считается по 6-дневке) и своё правило сверхурочных (в таблице они считались
+   * только Сборке ГП и Защите растений, Сборке — с коэффициентом 0,5). DeptID — короткий код латиницей, он ложится в
+   * сотрудников и в Users и не меняется; название — для людей.
+   */
+  [SHEET_TABS.PAYROLL_DEPARTMENTS]: ["DeptID", "Name", "Order", "WorkWeek", "Overtime", "OvertimeRate", "Note", "Active"],
+  /**
+   * Сотрудник в штате — строка на человека, а не на месяц: приём и увольнение — датами, и по ним месяц знает,
+   * кто в нём работал. Суммы здесь НЕ лежат — они в PayrollRates с датой начала действия. PayType: month — оклад за
+   * норму часов, hourly — почасовой тариф день/ночь (операторы PRIVA). Employment: td — трудовой договор, gph — ГПХ.
+   * TravelAddress и TravelRate — дорожные (ставка в день по адресу), считаются от дней табеля. Iin — ИИН (12 цифр),
+   * по нему будущая привязка к 1С (решение владельца 28.10.2026); колонка последняя — грабли 1.1.
+   */
+  [SHEET_TABS.PAYROLL_EMPLOYEES]: [
+    "EmployeeID",
+    "FullName",
+    "DeptID",
+    "Position",
+    "Employment",
+    "PayType",
+    "HiredAt",
+    "FiredAt",
+    "TravelAddress",
+    "TravelRate",
+    "Note",
+    "CreatedAt",
+    "CreatedBy",
+    "UpdatedAt",
+    "UpdatedBy",
+    "Iin",
+  ],
+  /**
+   * Ставка сотрудника с даты From: Salary1C — официальный оклад (идёт в 1С), Total — оговорённая сумма за полный
+   * месяц, KPI = Total − Salary1C (неофициальная часть, так её называют в компании). Новая ставка — новая строка,
+   * старые не правятся: расчёт за прошлый месяц берёт ставку, действовавшую в тот месяц. DayRate/NightRate — тариф
+   * в час для почасовых (PRIVA), у остальных пусто.
+   */
+  [SHEET_TABS.PAYROLL_RATES]: ["RateID", "EmployeeID", "From", "Salary1C", "Kpi", "Total", "DayRate", "NightRate", "Note", "SetBy", "SetAt"],
+  /** Баланс рабочего времени: норма дней и часов месяца по 5- и 6-дневке (как во вкладке «Баланс» таблицы). */
+  [SHEET_TABS.PAYROLL_BALANCE]: ["Month", "Days5", "Hours5", "Days6", "Hours6", "UpdatedBy", "UpdatedAt"],
+  /** Праздничные дни (ГГГГ-ММ-ДД): отработанные в них часы оплачиваются в полуторном размере. */
+  [SHEET_TABS.PAYROLL_HOLIDAYS]: ["Date", "Name"],
   /**
    * Цветы, которые сотрудник взял в счёт зарплаты.
    *
@@ -685,6 +740,9 @@ export const ROLES = {
   // Лиды с рекламы (Земфира, 13.10.2026): заводит лиды из Instagram и рекламы, доводит до
   // «готов говорить о заказе» и передаёт менеджеру. Видит только свои лиды и итог по ним.
   LEADGEN: "leadgen",
+  // Только зарплата (28.10.2026): начальник подразделения, кадровик или бухгалтер по ЗП, которым остальная CRM не
+  // нужна. Что именно он может в модуле, решает вторая роль — PayrollRole в Users (`src/lib/payroll/access.ts`).
+  PAYROLL: "payroll",
 } as const;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
@@ -700,6 +758,7 @@ export const ROLE_LABELS: Record<string, string> = {
   office: "Склад офиса",
   office_retail: "Склад офиса + розница Алматы",
   leadgen: "Лиды с рекламы",
+  payroll: "Только зарплата",
 };
 
 // ---------------------------------------------------------------------------

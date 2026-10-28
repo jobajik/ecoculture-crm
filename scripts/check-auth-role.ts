@@ -35,27 +35,37 @@ function check(label: string, actual: unknown, expected: unknown) {
 }
 
 const accountant = { role: "accountant", farm: null, name: "Юлия" };
-const found = (over: Partial<{ role: string; farm: string | null; name: string; active: boolean }>): RoleLookup => ({
+const found = (
+  over: Partial<{ role: string; farm: string | null; name: string; active: boolean; payrollRole: string; payrollDepartments: string[] }>
+): RoleLookup => ({
   ok: true,
   user: { role: "accountant", farm: null, name: "Юлия", active: true, ...over },
 });
 
 // --- Таблица ответила: делаем, что она сказала ------------------------------
 
+// Роль в «Зарплате» едет тем же пропуском (28.10.2026): без неё в токене — пусто, не undefined.
+const noPayroll = { payrollRole: "", payrollDepartments: [] as string[] };
 check("роль из таблицы попадает в пропуск", roleForToken(accountant, found({})), {
   role: "accountant",
   farm: null,
+  ...noPayroll,
   name: "Юлия",
 });
 check(
   "повышение срабатывает",
   roleForToken(accountant, found({ role: "admin" })),
-  { role: "admin", farm: null, name: "Юлия" }
+  { role: "admin", farm: null, ...noPayroll, name: "Юлия" }
 );
 check(
   "производство подхватывается",
   roleForToken({ role: "warehouse", farm: null, name: "Разия" }, found({ role: "warehouse", farm: "rose_farm", name: "Разия" })),
-  { role: "warehouse", farm: "rose_farm", name: "Разия" }
+  { role: "warehouse", farm: "rose_farm", ...noPayroll, name: "Разия" }
+);
+check(
+  "роль в зарплате и подразделения начальника подхватываются",
+  roleForToken(accountant, found({ payrollRole: "head", payrollDepartments: ["teplitsa"] })),
+  { role: "accountant", farm: null, payrollRole: "head", payrollDepartments: ["teplitsa"], name: "Юлия" }
 );
 check(
   "имя из таблицы важнее имени из Google",
@@ -73,12 +83,12 @@ check(
 check(
   "строку удалили — прав нет",
   roleForToken(accountant, { ok: true, user: null }),
-  { role: undefined, farm: null, name: "Юлия" }
+  { role: undefined, farm: null, name: "Юлия", ...noPayroll }
 );
 check(
-  "Active=FALSE — прав нет",
-  roleForToken(accountant, found({ active: false })),
-  { role: undefined, farm: null, name: "Юлия" }
+  "Active=FALSE — прав нет (и в зарплате тоже)",
+  roleForToken({ ...accountant, payrollRole: "head", payrollDepartments: ["teplitsa"] }, found({ active: false })),
+  { role: undefined, farm: null, name: "Юлия", ...noPayroll }
 );
 check(
   "пустая роль в таблице — прав нет (грабли 1.10)",

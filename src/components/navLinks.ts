@@ -6,6 +6,8 @@ import { salesTabsFor } from "@/app/sales/tabs";
 import { officeTabsFor } from "@/app/office/tabs";
 import { retailTabsFor } from "@/app/retail/tabs";
 import { analyticsTabsFor } from "@/app/analytics/tabs";
+import { payrollTabsFor } from "@/app/payroll/tabs";
+import { payrollScope } from "@/lib/payroll/access";
 
 /**
  * Разделы бокового меню — ПЯТЬ-ШЕСТЬ на роль, под активным разделом его вкладки.
@@ -56,8 +58,29 @@ const ANALYTICS = (role: string): NavSub[] => {
   return tabs.length > 0 ? tabs : [{ href: "/analytics", label: "Аналитика хозяйства" }];
 };
 
+/**
+ * Раздел «Зарплата» — у администратора и у всех, кому дана роль в модуле (PayrollRole в Users). Роль CRM `payroll`
+ * («только зарплата») видит один этот раздел: главной у неё нет, та и уводит в табель.
+ */
+function payrollSection(role: string, payrollRole: string | undefined, departments: string[] | undefined, crowded: boolean): NavLink | null {
+  const scope = payrollScope({ role, payrollRole: payrollRole ?? "", payrollDepartments: departments ?? [] });
+  if (!scope) return null;
+  // У владельца и РОПа рабочих разделов и так шесть-семь («разделов пять, остальное — вкладки»), поэтому у них
+  // «Зарплата» живёт в группе «Прочее» рядом с «Настройками»; у остальных — обычный рабочий раздел.
+  return section("/payroll", "Зарплата", payrollTabsFor(scope), ["/payroll"], crowded);
+}
+
 /** Разделы роли — в порядке, в котором их открывают каждый день. */
-export function navLinksFor(role: string): NavLink[] {
+export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[]): NavLink[] {
+  const links = baseLinksFor(role);
+  const work = links.filter((l) => !l.other);
+  const other = links.filter((l) => l.other);
+  const payroll = payrollSection(role, payrollRole, payrollDepartments, work.length >= 6);
+  if (!payroll) return links;
+  return payroll.other ? [...work, ...other, payroll] : [...work, payroll, ...other];
+}
+
+function baseLinksFor(role: string): NavLink[] {
   switch (role) {
     case "manager":
       return [
@@ -114,6 +137,9 @@ export function navLinksFor(role: string): NavLink[] {
     case "leadgen":
       // Земфира: её работа целиком в лидах, главной у неё нет — та и уводит в лиды.
       return [section("/clients/leads", "Лиды", clientsTabsFor(undefined, role), ["/clients"])];
+    case "payroll":
+      // Только зарплата: сам раздел добавит `navLinksFor` по роли модуля; без неё — пусто, и главная это объяснит.
+      return [];
     case "admin":
       return [
         DAY,

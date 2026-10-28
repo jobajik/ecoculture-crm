@@ -69,7 +69,7 @@ function columnLetter(index: number): string {
 
 async function main() {
   const apply = process.argv.includes("--yes");
-  const tabs = Object.values(SHEET_TABS);
+  const tabs = Object.values(SHEET_TABS).filter((t) => !t.startsWith("Payroll")); // зарплата — в своей таблице, её тут не чиним
 
   const broken: Broken[] = [];
   const lost: Broken[] = [];

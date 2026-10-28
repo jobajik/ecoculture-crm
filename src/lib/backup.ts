@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { SHEET_TABS } from "./constants";
-import { readTable } from "./sheets";
+import { isPayrollTab, readTable } from "./sheets";
 
 /**
  * Резервная копия таблицы.
@@ -51,7 +51,9 @@ export async function createBackup(
   onProgress: BackupProgress = () => {}
 ): Promise<BackupResult> {
   const sheets = client();
-  const tabs = Object.values(SHEET_TABS);
+  // Зарплата лежит в отдельной таблице и в общую копию не идёт: владелец вынес её, чтобы оклады не было видно
+  // рядом с данными CRM, — копия с ними этого смысла лишила бы. У Google есть своя история версий файла.
+  const tabs = Object.values(SHEET_TABS).filter((t) => !isPayrollTab(t));
 
   // Сначала читаем всё, и только потом создаём файл: если чтение упадёт, лучше
   // не оставлять в диске пустую копию, которая выглядит как удачная.

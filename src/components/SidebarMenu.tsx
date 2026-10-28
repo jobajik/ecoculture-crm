@@ -33,7 +33,7 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
   if (!session) return null;
 
   const role = session.user?.role ?? "manager";
-  const links = navLinksFor(role);
+  const links = navLinksFor(role, session.user?.payrollRole, session.user?.payrollDepartments);
   const work = links.filter((l) => !l.other);
   const other = links.filter((l) => l.other);
   const initials = (session.user?.name ?? "?")

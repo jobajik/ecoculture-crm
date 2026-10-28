@@ -93,6 +93,25 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
       "retail_regions",
     ],
   },
+  // Зарплата (28.10.2026): охранник пускает любую роль CRM, а что человеку можно внутри, решает его вторая роль —
+  // PayrollRole в Users (`src/lib/payroll/access.ts`): без неё страницы раздела отказывают сами. Так один список
+  // ролей не приходится держать в двух местах, а бригадир без роли в CRM заводится с ролью `payroll`.
+  {
+    prefix: "/payroll",
+    roles: [
+      "payroll",
+      "manager",
+      "warehouse",
+      "accountant",
+      "sales_head",
+      "agronomist",
+      "retail_almaty",
+      "retail_regions",
+      "office",
+      "office_retail",
+      "leadgen",
+    ],
+  },
   { prefix: "/admin", roles: ["admin"] },
 ];
 

@@ -85,7 +85,9 @@ async function main() {
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
   const existingTitles = new Set((meta.data.sheets ?? []).map((s) => s.properties?.title));
 
-  const tabNames = Object.values(SHEET_TABS);
+  // Вкладки зарплаты (Payroll*) живут в отдельной таблице — их здесь не заводим. Их создаёт администратор
+  // со страницы /api/payroll/setup (src/lib/payrollSheet.ts).
+  const tabNames = Object.values(SHEET_TABS).filter((name) => !name.startsWith("Payroll"));
   const toCreate = tabNames.filter((name) => !existingTitles.has(name));
 
   if (toCreate.length > 0) {

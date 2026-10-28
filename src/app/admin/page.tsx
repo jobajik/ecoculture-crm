@@ -85,6 +85,16 @@ const ROLE_GUIDE: { code: string; does: string; farm: string }[] = [
     does: "Склад офиса и заявки на наши магазины Алматы",
     farm: "не нужна",
   },
+  {
+    code: "leadgen",
+    does: "Лиды с рекламы: заводит, доводит и передаёт менеджерам",
+    farm: "не нужна",
+  },
+  {
+    code: "payroll",
+    does: "Только раздел «Зарплата»; что именно можно — роль в самом разделе (Зарплата → Доступ)",
+    farm: "не нужна",
+  },
 ];
 
 export default async function AdminPage({ searchParams }: { searchParams?: { tab?: string } }) {
