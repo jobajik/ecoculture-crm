@@ -81,6 +81,8 @@ export const SHEET_TABS = {
   // Табель по дням и его состояние по подразделению (этап 2, 28.10.2026).
   PAYROLL_TIMESHEET: "PayrollTimesheet",
   PAYROLL_TIMESHEET_STATUS: "PayrollTimesheetStatus",
+  // Ведомость: что бухгалтер вписывает руками на сотрудника за месяц (этап 3).
+  PAYROLL_ADJUST: "PayrollAdjust",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -392,6 +394,12 @@ export const SHEET_HEADERS: Record<string, string[]> = {
    * принят бухгалтером, returned — возвращён начальнику с комментарием.
    */
   [SHEET_TABS.PAYROLL_TIMESHEET_STATUS]: ["Month", "DeptID", "Status", "SubmittedBy", "SubmittedAt", "ReviewedBy", "ReviewedAt", "Comment"],
+  /**
+   * Ручные поля ведомости на сотрудника и месяц (`payroll/payslip.ts`): SalaryOverride — «Оклада» вручную (пусто —
+   * считается), Sick и Vacation — больничный и отпускные суммой, KpiDeduction — удержание с KPI, Advance, Loan, Flowers
+   * (пусто — из выдач склада). Всё остальное считается и не хранится.
+   */
+  [SHEET_TABS.PAYROLL_ADJUST]: ["Month", "EmployeeID", "SalaryOverride", "Sick", "Vacation", "KpiDeduction", "Advance", "Loan", "Flowers", "Note", "UpdatedBy", "UpdatedAt"],
   /**
    * Цветы, которые сотрудник взял в счёт зарплаты.
    *

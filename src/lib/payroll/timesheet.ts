@@ -123,14 +123,27 @@ export function dayInfos(month: string, workWeek: 5 | 6, extra: ExtraDay[] = [])
 
 /**
  * «Заполнить по графику»: пустые рабочие дни — часами режима, выходные и праздники остаются пустыми. Заполненное
- * руками не трогается, дни до приёма и после увольнения — тоже.
+ * руками не трогается, дни до приёма и после увольнения — тоже. `until` — не дальше этого дня (сегодня): будущее
+ * не заполняется заранее, табель ведут по факту.
  */
-export function fillBySchedule(cells: string[], days: DayInfo[], workWeek: 5 | 6, hiredAt = "", firedAt = ""): string[] {
+export function fillBySchedule(cells: string[], days: DayInfo[], workWeek: 5 | 6, hiredAt = "", firedAt = "", until = ""): string[] {
   return cells.map((c, i) => {
     const d = days[i];
     if (!d || c !== "" || d.off || !employedOn(d.date, hiredAt, firedAt)) return c;
+    if (until && d.date > until) return c;
     return String(scheduleHours(d.date, workWeek));
   });
+}
+
+/** Пустые рабочие дни до `until` включительно — то, что начальник, скорее всего, забыл отметить. */
+export function missingWorkDays(cells: string[], days: DayInfo[], hiredAt = "", firedAt = "", until = ""): number {
+  let n = 0;
+  days.forEach((d, i) => {
+    if (until && d.date > until) return;
+    if (d.off || !employedOn(d.date, hiredAt, firedAt)) return;
+    if ((cells[i] ?? "") === "") n += 1;
+  });
+  return n;
 }
 
 export interface RowSummary {

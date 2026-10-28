@@ -28,7 +28,8 @@ export default async function TimesheetPage({ params, searchParams }: { params: 
   if (!scope) redirect("/payroll");
   const deptId = decodeURIComponent(params.dept).toLowerCase();
   if (!seesDepartment(scope, deptId)) notFound();
-  const month = /^\d{4}-\d{2}$/.test(searchParams?.month ?? "") ? searchParams!.month! : localDayKey().slice(0, 7);
+  const today = localDayKey();
+  const month = /^\d{4}-\d{2}$/.test(searchParams?.month ?? "") ? searchParams!.month! : today.slice(0, 7);
 
   await prefetchPayroll();
   const [departments, employees, sheet, statuses, balance, holidays] = await Promise.all([
@@ -94,6 +95,7 @@ export default async function TimesheetPage({ params, searchParams }: { params: 
           editRefusal={editRefusal}
           canSubmit={scope.kind === "head"}
           canReview={scope.kind === "admin" || scope.kind === "accountant"}
+          today={today}
           save={saveTimesheetAction}
           move={moveTimesheetAction}
         />

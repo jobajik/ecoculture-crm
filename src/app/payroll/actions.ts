@@ -33,6 +33,7 @@ import {
   type TimesheetMove,
 } from "@/lib/payroll/timesheet";
 import { cleanDeptId } from "@/lib/payroll/access";
+import { adjustmentRefusal, cleanAdjustment, type Adjustment } from "@/lib/payroll/payslip";
 import type { BalanceDraft, DepartmentDraft, EmployeeDraft, RateDraft } from "@/lib/payroll/types";
 import {
   addHoliday,
@@ -44,6 +45,7 @@ import {
   listDepartments,
   listTimesheet,
   listTimesheetStatus,
+  saveAdjustments,
   saveTimesheet,
   saveTimesheetStatus,
   listHolidays,
@@ -361,4 +363,24 @@ async function moveTimesheetActionInner(month: string, deptId: string, move: Tim
 }
 export async function moveTimesheetAction(month: string, deptId: string, move: TimesheetMove, comment: string) {
   return guard(() => moveTimesheetActionInner(month, deptId, move, comment));
+}
+
+async function saveAdjustmentsActionInner(month: string, input: { employeeId: string; values: Partial<Record<keyof Adjustment, unknown>> }[]) {
+  const { scope, email } = await payrollSession();
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Непонятный месяц.");
+  const refusal = adjustmentRefusal(scope);
+  if (refusal) throw new Error(refusal);
+  const employees = new Set((await listEmployees()).map((e) => e.employeeId));
+  const rows: Adjustment[] = [];
+  for (const row of input) {
+    // Чужой или выдуманный номер сотрудника сервер не пишет (грабли 1.11).
+    if (!employees.has(row.employeeId)) throw new Error("В ведомости строка сотрудника, которого нет в базе — обновите страницу.");
+    rows.push({ month, employeeId: row.employeeId, ...cleanAdjustment(row.values) });
+  }
+  const result = await saveAdjustments(month, rows, email);
+  revalidatePath("/payroll/payslip");
+  return result;
+}
+export async function saveAdjustmentsAction(month: string, input: { employeeId: string; values: Partial<Record<keyof Adjustment, unknown>> }[]) {
+  return guard(() => saveAdjustmentsActionInner(month, input));
 }
