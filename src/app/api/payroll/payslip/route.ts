@@ -1,4 +1,4 @@
-import { FARM_ORDER } from "@/lib/constants";
+import { pickPayrollFarm } from "@/lib/payroll/farmScope";
 import { seesDepartment } from "@/lib/payroll/access";
 import { loadPayslipMonth } from "@/lib/payroll/payslipData";
 import { buildPayslipWorkbook } from "@/lib/payroll/payslipExcel";
@@ -14,14 +14,14 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const month = /^\d{4}-\d{2}$/.test(params.get("month") ?? "") ? params.get("month")! : "";
   if (!month) return new Response("Непонятный месяц", { status: 400 });
-  const farmParam = params.get("farm") ?? "";
-  const farm = FARM_ORDER.includes(farmParam) ? farmParam : "";
+  // Ведомость — всегда одной компании (владелец: «обеих» не бывает).
+  const farm = pickPayrollFarm(params.get("farm") ?? "", undefined);
   const data = await loadPayslipMonth(month, farm, (d) => seesDepartment(scope, d.deptId));
   const buffer = await buildPayslipWorkbook(data);
   return new Response(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="vedomost-${farm || "all"}-${month}.xlsx"`,
+      "Content-Disposition": `attachment; filename="vedomost-${farm}-${month}.xlsx"`,
       "Cache-Control": "no-store",
     },
   });

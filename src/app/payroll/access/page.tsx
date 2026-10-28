@@ -5,11 +5,12 @@ import { payrollSession } from "@/lib/payroll/session";
 import { listDepartments, prefetchPayroll } from "@/lib/repo/payroll";
 import { listUsers } from "@/lib/repo/users";
 import { payrollTabsFor } from "../tabs";
+import { payrollFarm } from "@/lib/payroll/farmServer";
 import { setPayrollAccessAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function PayrollAccessPage() {
+export default async function PayrollAccessPage({ searchParams }: { searchParams?: { farm?: string } }) {
   const { scope } = await payrollSession();
   if (!scope) redirect("/payroll");
   if (!scope.editsAccess) redirect("/payroll/employees");
@@ -27,7 +28,7 @@ export default async function PayrollAccessPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader area="payroll" title="Доступ к зарплате" icon="gear" tabs={payrollTabsFor(scope)} />
+      <PageHeader area="payroll" title="Доступ к зарплате" icon="gear" tabs={payrollTabsFor(scope, payrollFarm(searchParams))} />
       <AccessBoard rows={rows} departments={departments.filter((d) => d.active).map((d) => ({ deptId: d.deptId, name: d.name }))} save={setPayrollAccessAction} />
     </div>
   );

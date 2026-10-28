@@ -1,7 +1,10 @@
 import Link from "next/link";
 import clsx from "clsx";
 import PageHeader from "@/components/PageHeader";
-import { FARM_LABELS, FARM_ORDER } from "@/lib/constants";
+import { FARM_LABELS } from "@/lib/constants";
+import FarmSwitch from "@/components/payroll/FarmSwitch";
+import { payrollFarm } from "@/lib/payroll/farmServer";
+import { payrollHref } from "@/lib/payroll/farmScope";
 import { PAYROLL_NO_ACCESS, seesDepartment } from "@/lib/payroll/access";
 import { computeMonth, loadPayslipMonth } from "@/lib/payroll/payslipData";
 import { payrollSession } from "@/lib/payroll/session";
@@ -38,8 +41,8 @@ export default async function PayrollPage({ searchParams }: { searchParams?: { m
   }
   if (!scope.seesMoney) redirect("/payroll/timesheet");
   const month = /^\d{4}-\d{2}$/.test(searchParams?.month ?? "") ? searchParams!.month! : localDayKey().slice(0, 7);
-  const farm = FARM_ORDER.includes(searchParams?.farm ?? "") ? searchParams!.farm! : searchParams?.farm === "all" ? "" : FARM_ORDER[0];
-  const href = (m: string, f: string) => `/payroll?month=${m}&farm=${f || "all"}`;
+  const farm = payrollFarm(searchParams);
+  const href = (m: string, f: string) => payrollHref("/payroll", f, { month: m });
 
   const data = await loadPayslipMonth(month, farm, (d) => seesDepartment(scope, d.deptId));
   const { depts, totals } = computeMonth(data);
@@ -55,18 +58,12 @@ export default async function PayrollPage({ searchParams }: { searchParams?: { m
       <PageHeader
         area="payroll"
         title="Зарплата"
-        subtitle={`${monthLabel(month)} · ${farm ? FARM_LABELS[farm] ?? farm : "обе компании"}`}
+        subtitle={`${monthLabel(month)} · ${FARM_LABELS[farm] ?? farm}`}
         icon="wallet"
-        tabs={payrollTabsFor(scope)}
+        tabs={payrollTabsFor(scope, farm)}
         actions={
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <div className="flex rounded-lg border border-line-hairline overflow-hidden">
-              {[...FARM_ORDER, ""].map((f) => (
-                <Link key={f || "all"} href={href(month, f)} className={`px-3 py-1.5 ${f === farm ? "bg-ink-primary text-white" : "hover:bg-surface-sunk"}`}>
-                  {f ? FARM_LABELS[f] ?? f : "Обе"}
-                </Link>
-              ))}
-            </div>
+            <FarmSwitch farm={farm} href={(f) => href(month, f)} />
             <Link className="btn !py-1.5" href={href(shiftMonth(month, -1), farm)}>
               ‹
             </Link>
@@ -100,7 +97,7 @@ export default async function PayrollPage({ searchParams }: { searchParams?: { m
         <Step
           n={3}
           title="Расчётная ведомость"
-          href={`/payroll/payslip?month=${month}&farm=${farm || "all"}`}
+          href={payrollHref("/payroll/payslip", farm, { month })}
           value={money(totals.toPay)}
           lines={[`начислено ${money(totals.accrued)} · удержано ${money(totals.advance + totals.loan + totals.flowers)}`, warnings ? `не посчитано до конца: ${warnings} чел.` : "посчитано у всех"]}
           tone={warnings ? "warn" : "ok"}
@@ -132,7 +129,7 @@ export default async function PayrollPage({ searchParams }: { searchParams?: { m
                     <Link className="text-section-payroll hover:underline" href={`/payroll/timesheet/${d.department.deptId}?month=${month}`}>
                       табель
                     </Link>
-                    <Link className="text-section-payroll hover:underline" href={`/payroll/payslip?month=${month}&farm=${farm || "all"}`}>
+                    <Link className="text-section-payroll hover:underline" href={payrollHref("/payroll/payslip", farm, { month })}>
                       ведомость
                     </Link>
                   </span>

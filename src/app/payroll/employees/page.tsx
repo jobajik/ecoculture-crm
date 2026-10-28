@@ -8,6 +8,10 @@ import { listDepartments, listEmployees, listRates, prefetchPayroll } from "@/li
 import { localDayKey } from "@/lib/timezone";
 import { payrollSpreadsheetId } from "@/lib/sheets";
 import { payrollTabsFor } from "../tabs";
+import FarmSwitch from "@/components/payroll/FarmSwitch";
+import { FARM_LABELS } from "@/lib/constants";
+import { payrollFarm } from "@/lib/payroll/farmServer";
+import { payrollHref } from "@/lib/payroll/farmScope";
 import { importStaffingAction, saveEmployeeAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -18,17 +22,20 @@ export const dynamic = "force-dynamic";
  * Начальник подразделения видит только своих людей и без сумм (так решил владелец); кадровик заводит и правит
  * карточки, бухгалтер ставит оклады — поэтому ставка и карточка живут отдельно и в форме, и в таблице.
  */
-export default async function PayrollEmployeesPage() {
+export default async function PayrollEmployeesPage({ searchParams }: { searchParams?: { farm?: string } }) {
   const { scope, email } = await payrollSession();
   if (!scope) redirect("/payroll");
+  const farm = payrollFarm(searchParams);
 
   await prefetchPayroll();
   const [departments, employees, rates] = await Promise.all([listDepartments(), listEmployees(), listRates()]);
   const today = localDayKey();
 
-  const visibleDepartments = departments.filter((d) => seesDepartment(scope, d.deptId));
+  // Штат одной компании (владелец: «обеих» не бывает); сотрудник относится к компании своего подразделения.
+  const visibleDepartments = departments.filter((d) => (d.farm === farm || !d.farm) && seesDepartment(scope, d.deptId));
+  const deptIds = new Set(visibleDepartments.map((d) => d.deptId));
   const rows: EmployeeRow[] = employees
-    .filter((e) => seesDepartment(scope, e.deptId))
+    .filter((e) => deptIds.has(e.deptId) && seesDepartment(scope, e.deptId))
     .map((e) => {
       const rate = currentRate(rates, e.employeeId, today);
       return {
@@ -43,7 +50,14 @@ export default async function PayrollEmployeesPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader area="payroll" title="Сотрудники" icon="client" tabs={payrollTabsFor(scope)} />
+      <PageHeader
+        area="payroll"
+        title="Сотрудники"
+        subtitle={FARM_LABELS[farm] ?? farm}
+        icon="client"
+        tabs={payrollTabsFor(scope, farm)}
+        actions={<FarmSwitch farm={farm} href={(f) => payrollHref("/payroll/employees", f)} />}
+      />
       {!payrollSpreadsheetId() && (
         <div className="card border-[#8a5a00]/30 bg-[#fdf6e7] text-sm">
           Таблица зарплаты ещё не подключена — раздел ничего не сохраняет.{" "}
@@ -57,6 +71,8 @@ export default async function PayrollEmployeesPage() {
         </div>
       )}
       <EmployeesBoard
+        key={farm}
+        farm={farm}
         rows={rows}
         departments={visibleDepartments.map((d) => ({ deptId: d.deptId, name: d.name, active: d.active, farm: d.farm }))}
         today={today}

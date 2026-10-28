@@ -27,6 +27,7 @@ import type { Department, Employee, Rate } from "../src/lib/payroll/types";
 import { firedAtFromNote, monthFromTitle, parseStaffingMatrix, planStaffingImport } from "../src/lib/payroll/staffingImport";
 import { addDays, compareWithIsDayOff, isDayOff, isHoliday, lawHolidays, monthNorm, nonWorkingDays, yearNorm, type ExtraDay } from "../src/lib/payroll/calendarKz";
 import { payrollTabsFor } from "../src/app/payroll/tabs";
+import { pickPayrollFarm, payrollHref } from "../src/lib/payroll/farmScope";
 import {
   applyFired,
   cleanRowCells,
@@ -427,6 +428,21 @@ check("отчество — инициалом", shortName("Айкынбаева
 check("два слова — как есть", shortName("Головина Юля"), "Головина Юля");
 check("двойное отчество", shortName("Головко-Храмова Наталья Ивановна Вторая"), "Головко-Храмова Наталья И. В.");
 check("лишние пробелы", shortName("  Косим   Балнұр "), "Косим Балнұр");
+
+// --- Компания раздела: «обеих» не бывает (28.10.2026, владелец: «Везде в зп должно быть чёткое разделение по
+// компаниям. Не должно быть такой опции как обе компании»)
+console.log("\n— Компания раздела");
+check("из адреса", pickPayrollFarm("esentai", "rose_farm"), "esentai");
+check("адрес пустой — запомненная", pickPayrollFarm("", "esentai"), "esentai");
+check("«all» — не компания, берём запомненную", pickPayrollFarm("all", "esentai"), "esentai");
+check("ничего нет — первая", pickPayrollFarm(undefined, undefined), "rose_farm");
+check("мусор в cookie — первая", pickPayrollFarm("", "x"), "rose_farm");
+check("адрес с компанией и месяцем", payrollHref("/payroll/payslip", "esentai", { month: "2026-10" }), "/payroll/payslip?month=2026-10&farm=esentai");
+check("пустые параметры не пишутся", payrollHref("/payroll/employees", "rose_farm", { month: undefined }), "/payroll/employees?farm=rose_farm");
+check("вкладки несут компанию и горят по адресу без неё", payrollTabsFor(payrollScope({ role: "admin", payrollRole: "", payrollDepartments: [] }), "esentai").slice(0, 2), [
+  { href: "/payroll?farm=esentai", label: "Обзор", match: ["/payroll"] },
+  { href: "/payroll/timesheet?farm=esentai", label: "Табель", match: ["/payroll/timesheet"] },
+]);
 
 console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

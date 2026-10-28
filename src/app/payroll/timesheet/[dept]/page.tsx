@@ -21,6 +21,8 @@ import {
 import { listBalance, listDepartments, listEmployees, listHolidays, listTimesheet, listTimesheetStatus, prefetchPayroll } from "@/lib/repo/payroll";
 import { localDayKey } from "@/lib/timezone";
 import { payrollTabsFor } from "../../tabs";
+import FarmSwitch from "@/components/payroll/FarmSwitch";
+import { payrollHref } from "@/lib/payroll/farmScope";
 import { moveTimesheetAction, saveTimesheetAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -53,8 +55,10 @@ export default async function TimesheetPage({ params, searchParams }: { params: 
   const editRefusal = timesheetEditRefusal(scope, deptId, status);
   const nh = normHours(balance, month, dept.workWeek, holidays);
   const nd = normDays(balance, month, dept.workWeek, holidays);
-  const backHref = `/payroll/timesheet?month=${month}`;
-  const tabs = buildDeptTabs(departments, employees, statuses, month, (id) => seesDepartment(scope, id));
+  // Компания — та, чьё это подразделение; плитки — только её подразделения (владелец: раздельно по ТОО).
+  const farm = dept.farm;
+  const backHref = payrollHref("/payroll/timesheet", farm, { month });
+  const tabs = buildDeptTabs(departments, employees, statuses, month, (id) => seesDepartment(scope, id)).filter((t) => t.farm === farm);
 
   return (
     <div className="space-y-4">
@@ -64,9 +68,10 @@ export default async function TimesheetPage({ params, searchParams }: { params: 
         title={dept.name}
         subtitle={`${FARM_LABELS[dept.farm] ?? ""} · ${dept.workWeek === 6 ? "шестидневка" : "пятидневка"} · норма ${nh} ч, ${nd} дн.${dept.overtime ? ` · сверхурочные ×${String(dept.overtimeRate).replace(".", ",")}` : ""}`}
         icon="calendar"
-        tabs={payrollTabsFor(scope)}
+        tabs={payrollTabsFor(scope, farm)}
         actions={
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            {scope.kind !== "head" && <FarmSwitch farm={farm} href={(f) => payrollHref("/payroll/timesheet", f, { month })} />}
             <Link className="btn !py-1.5" href={`/payroll/timesheet/${deptId}?month=${shiftMonth(month, -1)}`}>
               ‹
             </Link>
@@ -77,7 +82,7 @@ export default async function TimesheetPage({ params, searchParams }: { params: 
           </div>
         }
       />
-      <DeptTabs tabs={tabs} active={deptId} showFarm={scope.kind !== "head"} />
+      <DeptTabs tabs={tabs} active={deptId} />
       {people.length === 0 ? (
         <div className="card text-sm text-ink-secondary">
           В подразделении за {monthLabel(month).toLowerCase()} нет сотрудников. Их добавляют в «Сотрудниках» или загрузкой штатной расстановки.

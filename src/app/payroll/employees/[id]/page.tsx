@@ -7,6 +7,7 @@ import { payrollSession } from "@/lib/payroll/session";
 import { listDepartments, listEmployees, listRates, prefetchPayroll } from "@/lib/repo/payroll";
 import { localDayKey } from "@/lib/timezone";
 import { payrollTabsFor } from "../../tabs";
+import { payrollFarm } from "@/lib/payroll/farmServer";
 import { addRateAction, deleteRateAction, saveEmployeeAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export default async function PayrollEmployeePage({ params }: { params: { id: st
         eyebrow="Сотрудники"
         subtitle={`${employee.position} · ${department?.name ?? employee.deptId}${department?.farm ? ` · ${FARM_LABELS[department.farm] ?? department.farm}` : ""}`}
         icon="client"
-        tabs={payrollTabsFor(scope)}
+        tabs={payrollTabsFor(scope, department?.farm || payrollFarm())}
       />
       <EmployeeCard
         employee={employee}

@@ -5,11 +5,12 @@ import { payrollSession } from "@/lib/payroll/session";
 import { listBalance, listHolidays, prefetchPayroll } from "@/lib/repo/payroll";
 import { localDayKey } from "@/lib/timezone";
 import { payrollTabsFor } from "../tabs";
+import { payrollFarm } from "@/lib/payroll/farmServer";
 import { addHolidayAction, checkCalendarAction, removeBalanceAction, removeHolidayAction, saveBalanceAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function PayrollBalancePage({ searchParams }: { searchParams?: { year?: string } }) {
+export default async function PayrollBalancePage({ searchParams }: { searchParams?: { year?: string; farm?: string } }) {
   const { scope } = await payrollSession();
   if (!scope) redirect("/payroll");
   if (scope.kind === "head") redirect("/payroll/employees");
@@ -23,7 +24,7 @@ export default async function PayrollBalancePage({ searchParams }: { searchParam
 
   return (
     <div className="space-y-5">
-      <PageHeader area="payroll" title="Календарь и нормы" icon="calendar" tabs={payrollTabsFor(scope)} />
+      <PageHeader area="payroll" title="Календарь и нормы" icon="calendar" tabs={payrollTabsFor(scope, payrollFarm(searchParams))} />
       <BalanceBoard
         key={year}
         year={year}

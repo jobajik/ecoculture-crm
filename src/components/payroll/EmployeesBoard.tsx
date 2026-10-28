@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { EMPLOYMENT_LABELS, type Employee, type EmployeeDraft, type RateDraft } from "@/lib/payroll/types";
 import { formatDay } from "@/lib/formatDate";
-import { FARM_LABELS, FARM_ORDER } from "@/lib/constants";
+import { FARM_LABELS } from "@/lib/constants";
 import EmployeeForm, { EMPTY_EMPLOYEE } from "./EmployeeForm";
 import StaffingImportForm from "./StaffingImportForm";
 
@@ -26,6 +26,7 @@ const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₸`;
  * Уволенные спрятаны по умолчанию: их больше, чем кажется, а нужны они раз в год.
  */
 export default function EmployeesBoard({
+  farm,
   rows,
   departments,
   today,
@@ -35,6 +36,8 @@ export default function EmployeesBoard({
   save,
   importStaffing,
 }: {
+  /** Компания страницы — штат только её (владелец: по компаниям раздельно); сюда приходят уже её строки. */
+  farm: string;
   rows: EmployeeRow[];
   departments: { deptId: string; name: string; active: boolean; farm: string }[];
   today: string;
@@ -46,11 +49,9 @@ export default function EmployeesBoard({
   importStaffing: (matrix: string[][], from: string, farm: string, dry: boolean) => Promise<unknown>;
 }) {
   const [importing, setImporting] = useState(false);
-  const [farm, setFarm] = useState<string>("");
   const [dept, setDept] = useState<string>("");
   const [q, setQ] = useState("");
-  const farmOf = useMemo(() => new Map(departments.map((d) => [d.deptId, d.farm])), [departments]);
-  const shownDepartments = departments.filter((d) => (farm ? d.farm === farm : true));
+  const shownDepartments = departments;
   const [showFired, setShowFired] = useState(false);
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState("");
@@ -58,7 +59,7 @@ export default function EmployeesBoard({
   // разворачивать по подразделениям»). Выбранное подразделение или поиск — плоский список: человек уже сузил его сам.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
-  const inFarm = rows.filter((r) => (farm ? farmOf.get(r.employee.deptId) === farm : true));
+  const inFarm = rows;
   const working = inFarm.filter((r) => r.working);
   const td = working.filter((r) => r.employee.employment === "td").length;
   const fund = working.reduce((s, r) => s + (r.total ?? 0), 0);
@@ -111,18 +112,6 @@ export default function EmployeesBoard({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-1 rounded-full border border-line-hairline p-0.5 bg-surface">
-          {["", ...FARM_ORDER].map((f) => (
-            <button
-              key={f || "all"}
-              type="button"
-              className={clsx("h-8 px-3 rounded-full text-sm whitespace-nowrap", farm === f ? "bg-section-payroll text-white" : "text-ink-secondary hover:bg-surface-plane")}
-              onClick={() => { setFarm(f); setDept(""); }}
-            >
-              {f ? FARM_LABELS[f] : "Обе компании"}
-            </button>
-          ))}
-        </div>
         <div className="flex gap-2 overflow-x-auto scroll-x-hidden -mx-1 px-1 py-0.5">
           <button type="button" className={pill(dept === "")} onClick={() => setDept("")}>
             Все · {working.length}
@@ -153,7 +142,7 @@ export default function EmployeesBoard({
 
       {done && <p className="text-sm bg-status-good/10 text-status-good rounded-lg px-3 py-2">{done}</p>}
 
-      {importing && <StaffingImportForm today={today} defaultFarm={farm || "rose_farm"} importStaffing={importStaffing} onClose={() => setImporting(false)} />}
+      {importing && <StaffingImportForm today={today} defaultFarm={farm} importStaffing={importStaffing} onClose={() => setImporting(false)} />}
 
       {open && (
         <EmployeeForm

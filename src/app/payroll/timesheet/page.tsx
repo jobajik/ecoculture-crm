@@ -8,6 +8,9 @@ import { TIMESHEET_STATUS_LABELS, decodeDays, monthDays, monthLabel, shiftMonth,
 import { listDepartments, listEmployees, listTimesheet, listTimesheetStatus, prefetchPayroll } from "@/lib/repo/payroll";
 import { localDayKey } from "@/lib/timezone";
 import { payrollTabsFor } from "../tabs";
+import FarmSwitch from "@/components/payroll/FarmSwitch";
+import { payrollFarm } from "@/lib/payroll/farmServer";
+import { payrollHref } from "@/lib/payroll/farmScope";
 
 export const dynamic = "force-dynamic";
 
@@ -15,18 +18,23 @@ export const dynamic = "force-dynamic";
  * Табели за месяц: строка на подразделение — сколько людей, у скольких заполнено и в каком состоянии табель.
  * Бухгалтер отсюда видит, кто ещё не сдал; начальник с одним подразделением попадает сразу в свой табель.
  */
-export default async function TimesheetListPage({ searchParams }: { searchParams?: { month?: string } }) {
+export default async function TimesheetListPage({ searchParams }: { searchParams?: { month?: string; farm?: string } }) {
   const { scope } = await payrollSession();
   if (!scope) redirect("/payroll");
   const month = /^\d{4}-\d{2}$/.test(searchParams?.month ?? "") ? searchParams!.month! : localDayKey().slice(0, 7);
+  const farm = payrollFarm(searchParams);
 
   await prefetchPayroll();
   const [departments, employees, sheet, statuses] = await Promise.all([listDepartments(), listEmployees(), listTimesheet(month), listTimesheetStatus(month)]);
-  const visible = departments.filter((d) => d.active && seesDepartment(scope, d.deptId));
+  // Только подразделения ЭТОЙ компании (владелец: зарплата по компаниям раздельно, «обеих» не бывает).
+  const visible = departments.filter((d) => d.active && d.farm === farm && seesDepartment(scope, d.deptId));
   // Табель — это всегда табель КОНКРЕТНОГО подразделения, переключаются они плитками над сеткой (28.10.2026, владелец:
   // «как вкладки с разными подразделениями»). Список остаётся только тому, у кого подразделений нет вовсе.
   const first = visible.find((d) => d.active) ?? visible[0];
   if (first) redirect(`/payroll/timesheet/${first.deptId}?month=${month}`);
+  // У начальника подразделения другой компании — уводим туда, где его табель.
+  const elsewhere = departments.find((d) => d.active && d.farm !== farm && seesDepartment(scope, d.deptId));
+  if (elsewhere && scope.kind === "head") redirect(`/payroll/timesheet/${elsewhere.deptId}?month=${month}`);
 
   const n = monthDays(month).length;
   const rows = visible.map((d) => {
@@ -45,14 +53,16 @@ export default async function TimesheetListPage({ searchParams }: { searchParams
         area="payroll"
         title="Табель"
         icon="calendar"
-        tabs={payrollTabsFor(scope)}
+        subtitle={FARM_LABELS[farm] ?? farm}
+        tabs={payrollTabsFor(scope, farm)}
         actions={
-          <div className="flex items-center gap-2 text-sm">
-            <Link className="btn !py-1.5" href={`/payroll/timesheet?month=${shiftMonth(month, -1)}`}>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <FarmSwitch farm={farm} href={(f) => payrollHref("/payroll/timesheet", f, { month })} />
+            <Link className="btn !py-1.5" href={payrollHref("/payroll/timesheet", farm, { month: shiftMonth(month, -1) })}>
               ‹
             </Link>
             <span className="font-medium min-w-[8.5rem] text-center">{monthLabel(month)}</span>
-            <Link className="btn !py-1.5" href={`/payroll/timesheet?month=${shiftMonth(month, 1)}`}>
+            <Link className="btn !py-1.5" href={payrollHref("/payroll/timesheet", farm, { month: shiftMonth(month, 1) })}>
               ›
             </Link>
           </div>
@@ -60,7 +70,8 @@ export default async function TimesheetListPage({ searchParams }: { searchParams
       />
       {visible.length === 0 ? (
         <div className="card text-sm text-ink-secondary">
-          Подразделений пока нет. Их заводят в «Подразделениях» или вместе со штатной расстановкой («Сотрудники → Загрузить файлом»).
+          У компании {FARM_LABELS[farm] ?? farm} подразделений пока нет. Их заводят в «Подразделениях» или вместе со штатной
+          расстановкой («Сотрудники → Загрузить файлом»).
         </div>
       ) : (
         <div className="card !p-0">

@@ -15,12 +15,15 @@ const EMPTY: DepartmentDraft = { deptId: "", farm: "", name: "", order: 0, workW
  * спрятаны в формулах по названию вкладки — и однажды сторожам посчитались сверхурочные из-за чужого заголовка.
  */
 export default function DepartmentsBoard({
+  farm,
   departments,
   headcount,
   heads,
   canEdit,
   save,
 }: {
+  /** Компания страницы: новое подразделение заводится в неё (владелец: по компаниям раздельно). */
+  farm: string;
   departments: Department[];
   headcount: Record<string, number>;
   /** Имена начальников по коду подразделения (из Users). */
@@ -44,7 +47,7 @@ export default function DepartmentsBoard({
     setDone("");
   }
   function startNew() {
-    setDraft({ ...EMPTY, order: departments.length + 1 });
+    setDraft({ ...EMPTY, farm, order: departments.length + 1 });
     setEditing(null);
     setOpen(true);
     setError("");
