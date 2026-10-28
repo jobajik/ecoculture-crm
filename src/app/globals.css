@@ -220,6 +220,48 @@ h3 {
    * скриптом, а overflow:hidden гарантирует, что из-за пары лишних пикселей
    * не вылезет пустая вторая страница.
    */
+  /*
+   * Расчётная ведомость на печати: компактно, чтобы 90 человек с подразделениями уместились на 2–3 листах
+   * (28.10.2026, владелец: «на листе печати слишком большие символы, сделай, чтобы вмещалось»). Колонки, скрытые
+   * на узком экране (`hidden sm:table-cell`), на бумаге обязаны быть — браузер считает страницу узким экраном.
+   */
+  .payslip {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+  .payslip table {
+    font-size: 10px;
+  }
+  .payslip th,
+  .payslip td {
+    padding: 2px 6px !important;
+  }
+  .payslip .print-col {
+    display: table-cell !important;
+  }
+  .payslip .print-hide {
+    display: none !important;
+  }
+  .payslip .text-xs {
+    font-size: 9px;
+  }
+  .payslip .font-display {
+    font-size: 11px;
+  }
+  .payslip thead {
+    display: table-header-group;
+  }
+  /* Итог «Всего» — один раз в конце, а не внизу каждого листа; заголовок подразделения не отрывается от первой строки. */
+  .payslip tfoot {
+    display: table-row-group;
+  }
+  .payslip tr {
+    break-inside: avoid;
+  }
+  .payslip tr.group-row {
+    break-after: avoid;
+  }
+
   .doc-frame {
     height: 194mm;
     overflow: hidden !important;

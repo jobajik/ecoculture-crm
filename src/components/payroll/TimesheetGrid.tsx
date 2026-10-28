@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
+import { shortName } from "@/lib/payroll/rules";
 import { unwrap, unwrapValue } from "@/lib/actionResult";
 import SaveBar from "@/components/SaveBar";
 import {
@@ -547,7 +548,7 @@ function GridView({
             const delta = p.hourly ? 0 : Math.round((s.hours - s.holidayHours - s.normHours) * 100) / 100;
             return (
               <tr key={p.key} className={clsx("border-b border-line-hairline/60", p.shift === "night" && "bg-surface-sunk/40")}>
-                <td className="sticky left-0 z-10 bg-surface p-0 min-w-[11rem] max-w-[13rem]">
+                <td className="sticky left-0 z-10 bg-surface p-0 min-w-[8.5rem] max-w-[9rem] sm:min-w-[11rem] sm:max-w-[13rem]">
                   <button
                     type="button"
                     disabled={!canEdit}
@@ -561,10 +562,10 @@ function GridView({
                           <div className="text-xs text-ink-muted pl-3">ночь</div>
                         ) : (
                           <>
-                            <div className="truncate font-medium" title={p.fullName}>
-                              {p.fullName}
+                            <div className="truncate text-xs font-medium leading-tight" title={`${p.fullName}${p.position ? ` — ${p.position}` : ""}`}>
+                              {shortName(p.fullName)}
                             </div>
-                            <div className="truncate text-xs text-ink-muted">
+                            <div className="truncate text-[10px] leading-tight text-ink-muted">
                               {p.position}
                               {p.hourly ? " · день" : ""}
                             </div>

@@ -286,3 +286,14 @@ export function accessRefusal(
   }
   return "";
 }
+
+/**
+ * ФИО в одну короткую строку для сетки табеля: «Айкынбаева Бакытгуль Ерланкызы» → «Айкынбаева Бакытгуль Е.»
+ * (28.10.2026, владелец: «уменьши шрифт ФИО по сотрудникам» — отчество в узкой колонке ломало строку на две).
+ * Полное ФИО остаётся в подсказке. Два слова и меньше — как есть.
+ */
+export function shortName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return parts.join(" ");
+  return `${parts[0]} ${parts[1]} ${parts.slice(2).map((p) => `${p[0]}.`).join(" ")}`;
+}

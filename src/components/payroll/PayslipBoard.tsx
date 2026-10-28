@@ -225,11 +225,11 @@ export default function PayslipBoard({
             <tr className="text-xs text-ink-muted bg-surface-plane/60 border-b border-line-hairline">
               <th className="px-4 py-2 text-left font-medium w-10">№</th>
               <th className="px-2 py-2 text-left font-medium">Сотрудник</th>
-              <th className="px-2 py-2 text-left font-medium hidden md:table-cell">Должность</th>
+              <th className="px-2 py-2 text-left font-medium hidden md:table-cell print-col">Должность</th>
               <th className="px-2 py-2 text-right font-medium">Часы</th>
-              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell">Оклад (1С)</th>
-              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell">Начислено</th>
-              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell">Удержано</th>
+              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell print-col">Оклад (1С)</th>
+              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell print-col">Начислено</th>
+              <th className="px-2 py-2 text-right font-medium hidden sm:table-cell print-col">Удержано</th>
               <th className="px-4 py-2 text-right font-medium">К выплате</th>
             </tr>
           </thead>
@@ -243,8 +243,8 @@ export default function PayslipBoard({
             </tbody>
           )}
           {shown.map((d) => (
-            <tbody key={d.department.deptId} className="print:break-inside-avoid">
-              <tr className="bg-surface-plane/40 border-t border-line-hairline">
+            <tbody key={d.department.deptId}>
+              <tr className="group-row bg-surface-plane/40 border-t border-line-hairline">
                 <td colSpan={8} className="px-4 py-2">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                     <span className="font-display font-bold">{d.department.name}</span>
@@ -273,18 +273,18 @@ export default function PayslipBoard({
                             </span>
                           )}
                         </div>
-                        <div className="md:hidden text-xs text-ink-muted truncate">{row.position}</div>
+                        <div className="md:hidden print-hide text-xs text-ink-muted truncate">{row.position}</div>
                       </td>
-                      <td className="px-2 py-2 text-ink-secondary hidden md:table-cell truncate max-w-[14rem]">
+                      <td className="px-2 py-2 text-ink-secondary hidden md:table-cell print-col truncate max-w-[14rem]">
                         {row.position}
                         <span className="text-ink-muted"> · {row.employment === EMPLOYMENTS.GPH ? "ГПХ" : "ТД"}</span>
                       </td>
                       <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap">
                         <HoursCell r={row} />
                       </td>
-                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{row.hourly ? <span className="text-ink-muted">почас.</span> : row.salary1c ? money(row.salary1c) : <span className="text-ink-muted">—</span>}</td>
-                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{money(row.accrued)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell text-ink-secondary">{held ? money(held) : "—"}</td>
+                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{row.hourly ? <span className="text-ink-muted">почас.</span> : row.salary1c ? money(row.salary1c) : <span className="text-ink-muted">—</span>}</td>
+                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{money(row.accrued)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col text-ink-secondary">{held ? money(held) : "—"}</td>
                       <td className={clsx("px-4 py-2 text-right tabular-nums font-semibold whitespace-nowrap", row.toPay < 0 && "text-red-700")}>{money(row.toPay)}</td>
                     </tr>
                     {isOpen && (
@@ -304,9 +304,9 @@ export default function PayslipBoard({
                     Итого · {d.department.name}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-xs">{hours(d.totals.factHours)} ч</td>
-                  <td className="hidden sm:table-cell" />
-                  <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell">{money(d.totals.accrued)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell">{money(d.totals.advance + d.totals.loan + d.totals.flowers)}</td>
+                  <td className="hidden sm:table-cell print-col" />
+                  <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell print-col">{money(d.totals.accrued)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-xs hidden sm:table-cell print-col">{money(d.totals.advance + d.totals.loan + d.totals.flowers)}</td>
                   <td className="px-4 py-1.5 text-right tabular-nums text-xs font-medium text-ink-primary">{money(d.totals.toPay)}</td>
                 </tr>
               )}
@@ -341,9 +341,9 @@ function TotalRow({ label, t, strong }: { label: string; t: PayslipTotals; stron
         {label} <span className="font-normal text-ink-muted">· {t.people} чел.</span>
       </td>
       <td className="px-2 py-2 text-right tabular-nums">{hours(t.factHours)} ч</td>
-      <td className="hidden sm:table-cell" />
-      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{money(t.accrued)}</td>
-      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell">{money(t.advance + t.loan + t.flowers)}</td>
+      <td className="hidden sm:table-cell print-col" />
+      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{money(t.accrued)}</td>
+      <td className="px-2 py-2 text-right tabular-nums hidden sm:table-cell print-col">{money(t.advance + t.loan + t.flowers)}</td>
       <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">{money(t.toPay)}</td>
     </tr>
   );

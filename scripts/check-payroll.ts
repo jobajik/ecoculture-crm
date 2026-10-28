@@ -21,6 +21,7 @@ import {
   rateFor,
   rateRefusal,
   suggestBalance,
+  shortName,
 } from "../src/lib/payroll/rules";
 import type { Department, Employee, Rate } from "../src/lib/payroll/types";
 import { monthFromTitle, parseStaffingMatrix, planStaffingImport } from "../src/lib/payroll/staffingImport";
@@ -394,6 +395,12 @@ refuses("начальник с несуществующим подразделе
 refuses("роли нет", accessRefusal(admin, actx, { email: "a@x", payrollRole: "boss", departments: [] }));
 allows("снять доступ — пустая роль", accessRefusal(admin, actx, { email: "a@x", payrollRole: "", departments: [] }));
 refuses("бухгалтер роли не раздаёт", accessRefusal(accountant, actx, { email: "a@x", payrollRole: "hr", departments: [] }));
+
+console.log("\n— Короткое ФИО в сетке табеля —");
+check("отчество — инициалом", shortName("Айкынбаева Бакытгуль Ерланкызы"), "Айкынбаева Бакытгуль Е.");
+check("два слова — как есть", shortName("Головина Юля"), "Головина Юля");
+check("двойное отчество", shortName("Головко-Храмова Наталья Ивановна Вторая"), "Головко-Храмова Наталья И. В.");
+check("лишние пробелы", shortName("  Косим   Балнұр "), "Косим Балнұр");
 
 console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);
