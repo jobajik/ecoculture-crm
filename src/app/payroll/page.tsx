@@ -6,12 +6,12 @@ import { payrollSession } from "@/lib/payroll/session";
 export const dynamic = "force-dynamic";
 
 /**
- * Вход в раздел «Зарплата»: кому можно — сразу к сотрудникам; кому нет — объяснение, а не пустой экран.
+ * Вход в раздел «Зарплата»: кому можно — сразу к табелю; кому нет — объяснение, а не пустой экран.
  * Роль CRM `payroll` («только зарплата») попадает сюда с главной, поэтому отказ здесь обязан быть внятным.
  */
 export default async function PayrollPage() {
   const { scope } = await payrollSession();
-  if (scope) redirect("/payroll/employees");
+  if (scope) redirect("/payroll/timesheet");
   return (
     <div className="space-y-5">
       <PageHeader area="payroll" title="Зарплата" />

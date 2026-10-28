@@ -78,6 +78,9 @@ export const SHEET_TABS = {
   PAYROLL_RATES: "PayrollRates",
   PAYROLL_BALANCE: "PayrollBalance",
   PAYROLL_HOLIDAYS: "PayrollHolidays",
+  // Табель по дням и его состояние по подразделению (этап 2, 28.10.2026).
+  PAYROLL_TIMESHEET: "PayrollTimesheet",
+  PAYROLL_TIMESHEET_STATUS: "PayrollTimesheetStatus",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -377,6 +380,18 @@ export const SHEET_HEADERS: Record<string, string[]> = {
    * work — день объявлен рабочим. Колонка Kind — последняя (грабли 1.1).
    */
   [SHEET_TABS.PAYROLL_HOLIDAYS]: ["Date", "Name", "Kind"],
+  /**
+   * Табель: строка на сотрудника, месяц и смену (Shift пусто — обычная или дневная, night — ночная у почасовых
+   * операторов PRIVA). Days — дни месяца одной ячейкой через «|» («8|8||Б|…»): 31 колонка не влезла бы в стандартную
+   * сетку листа, а запись строки целиком остаётся одной ячейкой. Коды — `payroll/timesheet.ts`. DeptID — снимок
+   * подразделения, в котором табель заполнен.
+   */
+  [SHEET_TABS.PAYROLL_TIMESHEET]: ["Month", "EmployeeID", "Shift", "DeptID", "Days", "UpdatedBy", "UpdatedAt"],
+  /**
+   * Состояние табеля подразделения за месяц: пусто — черновик, submitted — отправлен на проверку, approved —
+   * принят бухгалтером, returned — возвращён начальнику с комментарием.
+   */
+  [SHEET_TABS.PAYROLL_TIMESHEET_STATUS]: ["Month", "DeptID", "Status", "SubmittedBy", "SubmittedAt", "ReviewedBy", "ReviewedAt", "Comment"],
   /**
    * Цветы, которые сотрудник взял в счёт зарплаты.
    *

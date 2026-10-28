@@ -26,6 +26,23 @@ import type { Department, Employee, Rate } from "../src/lib/payroll/types";
 import { monthFromTitle, parseStaffingMatrix, planStaffingImport } from "../src/lib/payroll/staffingImport";
 import { addDays, compareWithIsDayOff, isDayOff, isHoliday, lawHolidays, monthNorm, nonWorkingDays, yearNorm, type ExtraDay } from "../src/lib/payroll/calendarKz";
 import { payrollTabsFor } from "../src/app/payroll/tabs";
+import {
+  applyFired,
+  cleanRowCells,
+  dayInfos,
+  dayShiftHours,
+  decodeDays,
+  encodeDays,
+  fillBySchedule,
+  monthLabel,
+  nextStatus,
+  normalizeCell,
+  shiftMonth,
+  summarizeRow,
+  timesheetEditRefusal,
+  timesheetMoveRefusal,
+  timesheetPeople,
+} from "../src/lib/payroll/timesheet";
 import { navLinksFor } from "../src/components/navLinks";
 import { canOpen } from "../src/lib/access";
 
@@ -62,9 +79,9 @@ check("начальник видит своё", seesDepartment(head, "teplitsa")
 check("начальник не видит чужое", seesDepartment(head, "security"), false);
 check("бухгалтер видит все", seesDepartment(accountant, "security"), true);
 check("код подразделения чистится", cleanDeptId(" Теплица/Rose Farm "), "rose-farm");
-check("вкладки начальника — только сотрудники", payrollTabsFor(head).map((t) => t.label), ["Сотрудники"]);
-check("вкладки админа — с доступом", payrollTabsFor(admin).map((t) => t.label), ["Сотрудники", "Подразделения", "Календарь и нормы", "Доступ"]);
-check("вкладки бухгалтера — без доступа", payrollTabsFor(accountant).map((t) => t.label), ["Сотрудники", "Подразделения", "Календарь и нормы"]);
+check("вкладки начальника — табель и сотрудники", payrollTabsFor(head).map((t) => t.label), ["Табель", "Сотрудники"]);
+check("вкладки админа — с доступом", payrollTabsFor(admin).map((t) => t.label), ["Табель", "Сотрудники", "Подразделения", "Календарь и нормы", "Доступ"]);
+check("вкладки бухгалтера — без доступа", payrollTabsFor(accountant).map((t) => t.label), ["Табель", "Сотрудники", "Подразделения", "Календарь и нормы"]);
 
 // --- Меню и охранник --------------------------------------------------------
 check("у админа есть «Зарплата» (в группе «Прочее»)", navLinksFor("admin").find((l) => l.label === "Зарплата")?.other, true);
@@ -250,6 +267,54 @@ check("штатка: операторы PRIVA — почасовые", splan.new
 check("штатка: без оклада — в список noRate", splan.noRate, ["Чибиряк Олеся"]);
 check("штатка: без ФИО/подразделения — не разобралось", parseStaffingMatrix([["a", "b"]]).rows.length, 0);
 check("штатка: у Есентая коды с приставкой", planStaffingImport(parsed, { ...sctx, employees: [], farm: "esentai" }).newDepartments.map((d) => d.deptId).slice(0, 2), ["es-teplitsa", "es-admin"]);
+
+// --- Табель ------------------------------------------------------------------------
+{
+  check("табель: коды в одном написании", ["бс", "б-с", "Б/С", "п", "B", "o", "8,5", "8", "24", "0", "25", "абв", ""].map((v) => normalizeCell(v)), ["БС", "БС", "БС", "П", "В", "О", "8.5", "8", "24", "", null, null, ""]);
+  check("табель: дни одной ячейкой и обратно", decodeDays(encodeDays(["8", "", "Б", "", ""]), 5), ["8", "", "Б", "", ""]);
+  check("табель: хвост пустых не пишется", encodeDays(["8", "", "Б", "", ""]), "8||Б");
+  // Июль 2024, Сборка ГП (шестидневка), Орынбаева Д. — из старого табеля: 261 ч, праздничных 11, сверхурочных 74.
+  const july = dayInfos("2024-07", 6);
+  const diana = [8, 11, 10, 12, 16, 11, null, 13, 12, 9, 8, 8, 12, null, 13, 12, 10, 12, 8, 8, null, 13, 11, 9, 8, null, 7, null, 10, 10, null].map((v) => (v === null ? "" : String(v)));
+  const ds = summarizeRow(diana, july, { workWeek: 6, overtime: true, dayShiftHours: 7 });
+  check("табель: июль 2024 Сборка ГП — часы, праздничные, сверхурочные как в старом табеле", [ds.hours, ds.holidayHours, ds.normHours, ds.overtime], [261, 11, 176, 74]);
+  check("табель: 6 июля 2024 — праздник, у шестидневки выходной", [july[5].holiday, july[5].off], [true, true]);
+  const fired = applyFired([...diana], 22);
+  const fs = summarizeRow(fired, july, { workWeek: 6, overtime: true, dayShiftHours: 7 });
+  check("табель: «У» — до конца месяца, норма личная (только дни работы)", [fired.slice(22).every((c) => c === "У"), fs.normHours], [true, 122]);
+  const oct = dayInfos("2026-10", 5);
+  const filled = fillBySchedule(oct.map(() => ""), oct, 5);
+  check("табель: по графику — рабочие дни по 8, выходные пусто; 26.10 (перенос Дня Республики) пусто", [filled.filter(Boolean).length, filled[0], filled[2], filled[25]], [21, "8", "", ""]);
+  check("табель: по графику до приёма не ставит", fillBySchedule(oct.map(() => ""), oct, 5, "2026-10-15").filter(Boolean).length, 11);
+  const prot = summarizeRow(["Д", "Д", "О", "Б", "К", "П", "БС"], oct.slice(0, 7), { workWeek: 5, overtime: false, dayShiftHours: dayShiftHours(168, 21) });
+  check("табель: «Д» = норма дня, коды считаются днями", [prot.hours, prot.workDays, prot.vacation, prot.sick, prot.trip, prot.absent, prot.unpaid, prot.overtime], [16, 2, 1, 1, 1, 1, 1, 0]);
+  check("табель: сменщикам (Охрана) сверхурочные не считаются", summarizeRow(oct.map((_, i) => (i % 3 === 0 ? "24" : "")), oct, { workWeek: 5, overtime: false, dayShiftHours: 8 }).overtime, 0);
+  check("табель: непонятная отметка — отказ со строкой и днём", cleanRowCells(["8", "x"], 2, "Иванов").error.includes("Иванов, 2 число"), true);
+
+  const headT = payrollScope({ role: "payroll", payrollRole: "head", payrollDepartments: ["teplitsa"] });
+  allows("табель: начальник правит черновик своего", timesheetEditRefusal(headT, "teplitsa", ""));
+  allows("табель: начальник правит возвращённый", timesheetEditRefusal(headT, "teplitsa", "returned"));
+  refuses("табель: начальник не правит отправленный", timesheetEditRefusal(headT, "teplitsa", "submitted"));
+  refuses("табель: начальник не правит принятый", timesheetEditRefusal(headT, "teplitsa", "approved"));
+  refuses("табель: начальник не правит чужой", timesheetEditRefusal(headT, "assembly", ""));
+  allows("табель: бухгалтер правит на проверке", timesheetEditRefusal(accountant, "teplitsa", "submitted"));
+  refuses("табель: кадровик только смотрит", timesheetEditRefusal(payrollScope({ role: "payroll", payrollRole: "hr", payrollDepartments: [] }), "teplitsa", ""));
+  allows("табель: начальник отправляет", timesheetMoveRefusal(headT, "teplitsa", "", "submit", ""));
+  refuses("табель: начальник не принимает", timesheetMoveRefusal(headT, "teplitsa", "submitted", "approve", ""));
+  refuses("табель: вернуть без комментария нельзя", timesheetMoveRefusal(accountant, "teplitsa", "submitted", "return", " "));
+  allows("табель: бухгалтер возвращает с комментарием", timesheetMoveRefusal(accountant, "teplitsa", "submitted", "return", "у Иванова 7-го отпуск"));
+  check("табель: состояния переходов", (["submit", "approve", "return", "reopen"] as const).map(nextStatus), ["submitted", "approved", "returned", ""]);
+
+  const pe = [
+    emp({ employeeId: "a", fullName: "Борисова", deptId: "teplitsa" }),
+    emp({ employeeId: "b", fullName: "Андреев", deptId: "teplitsa", firedAt: "2026-09-30" }),
+    emp({ employeeId: "c", fullName: "Оператор", deptId: "teplitsa", payType: "hourly" }),
+    emp({ employeeId: "d", fullName: "Переведён", deptId: "assembly" }),
+    emp({ employeeId: "e", fullName: "Новый", deptId: "teplitsa", hiredAt: "2026-11-02" }),
+  ];
+  check("табель: кто в строках — работавшие в месяце, почасовым две смены, заполненное остаётся", timesheetPeople(pe, "teplitsa", "2026-10", [{ employeeId: "d", deptId: "teplitsa" }]).map((p) => p.key), ["a|", "c|", "c|night", "d|"]);
+  check("табель: месяцы", [shiftMonth("2026-01", -1), shiftMonth("2026-12", 1), monthLabel("2026-10")], ["2025-12", "2027-01", "Октябрь 2026"]);
+}
 
 // --- Назначение ролей ------------------------------------------------------------
 const actx = { actorEmail: "owner@x", departments: depts };
