@@ -76,6 +76,46 @@ function getSpreadsheetId(): string {
   return getEnv("GOOGLE_SHEETS_SPREADSHEET_ID");
 }
 
+/**
+ * Зарплата живёт в ОТДЕЛЬНОЙ таблице (28.10.2026, владелец: «сделай новую таблицу для зп»): кто видит таблицу
+ * CRM — не видит окладов. Вкладки с приставкой `Payroll` читаются и пишутся в таблицу `PAYROLL_SPREADSHEET_ID`;
+ * без этой переменной они никуда не попадают — ни молча в общую таблицу, ни в пустоту: чтение отдаёт пустой
+ * список (репо глотает ошибку), запись отказывает понятным текстом.
+ */
+export const PAYROLL_TAB_PREFIX = "Payroll";
+
+export function isPayrollTab(tabName: string): boolean {
+  return tabName.startsWith(PAYROLL_TAB_PREFIX);
+}
+
+export const PAYROLL_SHEET_MESSAGE =
+  "Таблица зарплаты не подключена: администратор создаёт её на странице /api/payroll/setup и вписывает " +
+  "PAYROLL_SPREADSHEET_ID в настройки хостинга.";
+
+export function payrollSpreadsheetId(): string | null {
+  return process.env.PAYROLL_SPREADSHEET_ID?.trim() || null;
+}
+
+/** Какая таблица хранит вкладку: зарплатная — своя, остальное — общая. */
+export function spreadsheetIdFor(tabName: string): string {
+  if (!isPayrollTab(tabName)) return getSpreadsheetId();
+  const id = payrollSpreadsheetId();
+  if (!id) throw new Error(PAYROLL_SHEET_MESSAGE);
+  return id;
+}
+
+/** Вкладки по таблицам — для пакетных чтений и записей, которые Google принимает только в одну таблицу за раз. */
+function groupBySpreadsheet(tabNames: string[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const tab of tabNames) {
+    const id = spreadsheetIdFor(tab);
+    const list = out.get(id) ?? [];
+    list.push(tab);
+    out.set(id, list);
+  }
+  return out;
+}
+
 /** Экранирует значение для безопасной записи в CSV-подобную ячейку (не требуется для values.update, оставлено для ясности). */
 /**
  * Значение для ячейки.
@@ -190,7 +230,7 @@ export async function readTable(tabName: string, options: ReadOptions = {}): Pro
 async function fetchTable(tabName: string): Promise<SheetTable> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: getSpreadsheetId(),
+    spreadsheetId: spreadsheetIdFor(tabName),
     range: `${tabName}!A:ZZ`,
   });
   return toSheetTable(tabName, (res.data.values ?? []) as string[][]);
@@ -228,28 +268,27 @@ export async function readTablesWithFormulas(
   if (tabNames.length === 0) return out;
 
   const sheets = getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
-  const ranges = tabNames.map((tab) => `${tab}!A:ZZ`);
-
-  // Все вкладки — ОДНИМ запросом на каждую картину, а не по два запроса на
+  // Все вкладки — ОДНИМ запросом на каждую картину (на таблицу), а не по два запроса на
   // вкладку. Вкладок семнадцать, и построчный обход стоил бы 34 обращения;
   // вместе с резервной копией это упирается в лимит Google (60 чтений в минуту
   // на пользователя), и работа обрывается на середине. Так уже случилось.
-  const [shownRes, formulaRes] = await Promise.all([
-    sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges }),
-    sheets.spreadsheets.values.batchGet({
-      spreadsheetId,
-      ranges,
-      valueRenderOption: "FORMULA",
-    }),
-  ]);
-
-  tabNames.forEach((tab, i) => {
-    out.set(tab, {
-      shown: (shownRes.data.valueRanges?.[i]?.values ?? []) as string[][],
-      formulas: (formulaRes.data.valueRanges?.[i]?.values ?? []) as string[][],
+  for (const [spreadsheetId, tabs] of groupBySpreadsheet(tabNames)) {
+    const ranges = tabs.map((tab) => `${tab}!A:ZZ`);
+    const [shownRes, formulaRes] = await Promise.all([
+      sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges }),
+      sheets.spreadsheets.values.batchGet({
+        spreadsheetId,
+        ranges,
+        valueRenderOption: "FORMULA",
+      }),
+    ]);
+    tabs.forEach((tab, i) => {
+      out.set(tab, {
+        shown: (shownRes.data.valueRanges?.[i]?.values ?? []) as string[][],
+        formulas: (formulaRes.data.valueRanges?.[i]?.values ?? []) as string[][],
+      });
     });
-  });
+  }
   return out;
 }
 
@@ -263,13 +302,21 @@ export async function readTablesWithFormulas(
 export async function writeCells(cells: { address: string; value: string }[]): Promise<void> {
   if (cells.length === 0) return;
   const sheets = getSheetsClient();
-  await writeThrough(() => sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: getSpreadsheetId(),
-    requestBody: {
-      valueInputOption: "USER_ENTERED",
-      data: cells.map((c) => ({ range: c.address, values: [[toCell(c.value)]] })),
-    },
-  }));
+  // Адрес «Clients!E14» → вкладка до «!»; ячейки разных таблиц уходят каждая в свою.
+  const byId = new Map<string, { address: string; value: string }[]>();
+  for (const c of cells) {
+    const id = spreadsheetIdFor(c.address.split("!")[0].replace(/^'|'$/g, ""));
+    byId.set(id, [...(byId.get(id) ?? []), c]);
+  }
+  for (const [spreadsheetId, part] of byId) {
+    await writeThrough(() => sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: part.map((c) => ({ range: c.address, values: [[toCell(c.value)]] })),
+      },
+    }));
+  }
 }
 
 /** Преобразует строку значений в объект по заголовкам конкретной вкладки (используются заголовки из констант, а не из самой таблицы, чтобы не зависеть от ручных правок порядка). */
@@ -292,7 +339,7 @@ export async function appendRow(tabName: string, record: Record<string, unknown>
   const sheets = getSheetsClient();
   const row = recordToRow(tabName, record);
   await writeThrough(() => sheets.spreadsheets.values.append({
-    spreadsheetId: getSpreadsheetId(),
+    spreadsheetId: spreadsheetIdFor(tabName),
     range: `${tabName}!A1`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
@@ -305,7 +352,7 @@ export async function appendRows(tabName: string, records: Record<string, unknow
   const sheets = getSheetsClient();
   const rows = records.map((r) => recordToRow(tabName, r));
   await writeThrough(() => sheets.spreadsheets.values.append({
-    spreadsheetId: getSpreadsheetId(),
+    spreadsheetId: spreadsheetIdFor(tabName),
     range: `${tabName}!A1`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
@@ -322,7 +369,7 @@ export async function updateRow(
   const sheets = getSheetsClient();
   const row = recordToRow(tabName, record);
   await writeThrough(() => sheets.spreadsheets.values.update({
-    spreadsheetId: getSpreadsheetId(),
+    spreadsheetId: spreadsheetIdFor(tabName),
     range: `${tabName}!A${rowNumber}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [row] },
@@ -344,7 +391,7 @@ export async function updateRows(
   if (updates.length === 0) return;
   const sheets = getSheetsClient();
   await writeThrough(() => sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: getSpreadsheetId(),
+    spreadsheetId: spreadsheetIdFor(tabName),
     requestBody: {
       valueInputOption: "USER_ENTERED",
       data: updates.map((u) => ({
@@ -444,29 +491,35 @@ export function toCellData(value: unknown): sheets_v4.Schema$CellData {
   return { userEnteredValue: { stringValue: text } };
 }
 
-let sheetIdCache: { at: number; ids: Map<string, number> } | null = null;
+// Номера листов — по таблицам: у зарплатной таблицы свои.
+const sheetIdCache = new Map<string, { at: number; ids: Map<string, number> }>();
 const SHEET_ID_TTL_MS = 10 * 60 * 1000;
 
 async function sheetIdOf(tabName: string): Promise<number> {
   const now = Date.now();
-  if (!sheetIdCache || now - sheetIdCache.at > SHEET_ID_TTL_MS || !sheetIdCache.ids.has(tabName)) {
+  const spreadsheetId = spreadsheetIdFor(tabName);
+  let cached = sheetIdCache.get(spreadsheetId);
+  if (!cached || now - cached.at > SHEET_ID_TTL_MS || !cached.ids.has(tabName)) {
     const sheets = getSheetsClient();
-    const meta = await callGoogle(() =>
-      sheets.spreadsheets.get({ spreadsheetId: getSpreadsheetId(), fields: "sheets.properties" })
-    );
+    const meta = await callGoogle(() => sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" }));
     const ids = new Map<string, number>();
     for (const s of meta.data.sheets ?? []) {
       if (s.properties?.title && typeof s.properties.sheetId === "number") ids.set(s.properties.title, s.properties.sheetId);
     }
-    sheetIdCache = { at: now, ids };
+    cached = { at: now, ids };
+    sheetIdCache.set(spreadsheetId, cached);
   }
-  const id = sheetIdCache.ids.get(tabName);
+  const id = cached.ids.get(tabName);
   if (id === undefined) throw new Error(`Лист «${tabName}» не найден`);
   return id;
 }
 
 /** Все записи — одним запросом, который Google применяет целиком или никак. */
 export async function commitAtomic(ops: WriteOp[]): Promise<void> {
+  // Один запрос — одна таблица: Google применяет пакет целиком только внутри неё. Зарплата и CRM в одном
+  // действии не смешиваются, и если такое всё же напишут, лучше отказ, чем две половины записи.
+  const spreadsheets = new Set(ops.map((op) => spreadsheetIdFor(op.tab)));
+  if (spreadsheets.size > 1) throw new Error("Одно действие пишет сразу в две таблицы — так атомарно не получится.");
   const requests: sheets_v4.Schema$Request[] = [];
   const deletes: { sheetId: number; rowNumber: number }[] = [];
   for (const op of ops) {
@@ -518,9 +571,8 @@ export async function commitAtomic(ops: WriteOp[]): Promise<void> {
     });
   if (requests.length === 0) return;
   const sheets = getSheetsClient();
-  await writeThrough(() =>
-    sheets.spreadsheets.batchUpdate({ spreadsheetId: getSpreadsheetId(), requestBody: { requests } })
-  );
+  const spreadsheetId = spreadsheetIdFor(ops[0].tab);
+  await writeThrough(() => sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } }));
 }
 
 /**
@@ -540,20 +592,29 @@ export async function prefetchTables(tabNames: string[]): Promise<void> {
   });
   if (need.length === 0) return;
   const sheets = getSheetsClient();
+  let groups: Map<string, string[]>;
   try {
-    const res = await callGoogle(() =>
-      sheets.spreadsheets.values.batchGet({
-        spreadsheetId: getSpreadsheetId(),
-        ranges: need.map((t) => `${t}!A:ZZ`),
-      })
-    );
-    need.forEach((tab, i) => {
-      const table = toSheetTable(tab, (res.data.valueRanges?.[i]?.values ?? []) as string[][]);
-      readMemo.set(tab, { at: now, promise: Promise.resolve(table) });
-    });
+    groups = groupBySpreadsheet(need);
   } catch {
-    // Пакет не прочитался (например, одной из вкладок ещё нет) — не беда:
-    // каждый `readTable` дальше прочитает свою вкладку сам, как раньше.
+    // Таблица зарплаты не подключена — вкладки Payroll прочитаются (пустыми) по одной.
+    return;
+  }
+  for (const [spreadsheetId, tabs] of groups) {
+    try {
+      const res = await callGoogle(() =>
+        sheets.spreadsheets.values.batchGet({
+          spreadsheetId,
+          ranges: tabs.map((t) => `${t}!A:ZZ`),
+        })
+      );
+      tabs.forEach((tab, i) => {
+        const table = toSheetTable(tab, (res.data.valueRanges?.[i]?.values ?? []) as string[][]);
+        readMemo.set(tab, { at: now, promise: Promise.resolve(table) });
+      });
+    } catch {
+      // Пакет не прочитался (например, одной из вкладок ещё нет) — не беда:
+      // каждый `readTable` дальше прочитает свою вкладку сам, как раньше.
+    }
   }
 }
 
@@ -581,7 +642,7 @@ export async function deleteWhere(
   if (rowNumbers.length === 0) return 0;
 
   const sheets = getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
+  const spreadsheetId = spreadsheetIdFor(tabName);
   const meta = await callGoogle(() => sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" }));
   const sheetId = meta.data.sheets?.find((s) => s.properties?.title === tabName)?.properties
     ?.sheetId;
@@ -621,7 +682,7 @@ export async function deleteWhere(
  */
 export async function clearDataRows(tabName: string): Promise<number> {
   const sheets = getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
+  const spreadsheetId = spreadsheetIdFor(tabName);
   const before = await readTable(tabName, { fresh: true });
   if (before.rows.length === 0) return 0;
 
@@ -669,20 +730,23 @@ export { SHEET_TABS };
  */
 export async function ensureGridColumns(): Promise<{ tab: string; before: number; after: number }[]> {
   const sheets = getSheetsClient();
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: getSpreadsheetId(), fields: "sheets.properties" });
-  const requests: sheets_v4.Schema$Request[] = [];
   const changed: { tab: string; before: number; after: number }[] = [];
-  for (const s of meta.data.sheets ?? []) {
-    const title = s.properties?.title ?? "";
-    const need = (SHEET_HEADERS[title] ?? []).length;
-    const have = s.properties?.gridProperties?.columnCount ?? 0;
-    if (need > have && s.properties?.sheetId !== undefined && s.properties?.sheetId !== null) {
-      requests.push({ appendDimension: { sheetId: s.properties.sheetId, dimension: "COLUMNS", length: need - have } });
-      changed.push({ tab: title, before: have, after: need });
+  const ids = [getSpreadsheetId(), ...(payrollSpreadsheetId() ? [payrollSpreadsheetId()!] : [])];
+  for (const spreadsheetId of ids) {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+    const requests: sheets_v4.Schema$Request[] = [];
+    for (const s of meta.data.sheets ?? []) {
+      const title = s.properties?.title ?? "";
+      const need = (SHEET_HEADERS[title] ?? []).length;
+      const have = s.properties?.gridProperties?.columnCount ?? 0;
+      if (need > have && s.properties?.sheetId !== undefined && s.properties?.sheetId !== null) {
+        requests.push({ appendDimension: { sheetId: s.properties.sheetId, dimension: "COLUMNS", length: need - have } });
+        changed.push({ tab: title, before: have, after: need });
+      }
     }
-  }
-  if (requests.length) {
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: getSpreadsheetId(), requestBody: { requests } });
+    if (requests.length) {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+    }
   }
   return changed;
 }

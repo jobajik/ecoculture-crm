@@ -3547,7 +3547,8 @@ src/
 
 **Переменные окружения** — в `.env.local` локально и в Vercel для боевого:
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`,
-`GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_OAUTH_REFRESH_TOKEN`; для Kaspi Pay — `APIPAY_ESENTAI_KEY`,
+`GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `PAYROLL_SPREADSHEET_ID` (таблица зарплаты, создаётся
+со страницы `/api/payroll/setup`); для Kaspi Pay — `APIPAY_ESENTAI_KEY`,
 `APIPAY_ESENTAI_WEBHOOK_SECRET` (и то же с `ROSE_FARM`, когда подключат розу); для WhatsApp и ИИ —
 `GREENAPI_URL`, `GREENAPI_INSTANCE`, `GREENAPI_TOKEN`, `WHATSAPP_WEBHOOK_TOKEN`, `OPENAI_API_KEY`
 (необязательные `OPENAI_MODEL`, `OPENAI_TRANSCRIBE_MODEL`, `OPENAI_BOT_MODEL`); рассылки и бот
@@ -4159,9 +4160,16 @@ Sheets. Зав. складом видит одну колонку, и фильт
   сторожам считались сверхурочные), `PayrollEmployees` (строка на человека, приём и увольнение датами, ТД/ГПХ, тип
   расчёта month/hourly — почасовые это операторы PRIVA), `PayrollRates` (ставка с датой начала: Оклад (1С), KPI,
   ИТОГО, тариф день/ночь; старые не правятся — расчёт месяца берёт ставку на его первое число, `rateFor`),
-  `PayrollBalance` (норма дней и часов по 5- и 6-дневке), `PayrollHolidays`. После первого деплоя — `npm run
-  setup-sheet`. Суммы лежат в общей таблице CRM: кто видит таблицу — видит и зарплаты, резервная копия их тоже
-  копирует;
+  `PayrollBalance` (норма дней и часов по 5- и 6-дневке), `PayrollHolidays`. **Лежат они в ОТДЕЛЬНОЙ таблице**
+  (владелец: «сделай новую таблицу для зп» — чтобы оклады не было видно тем, кто видит таблицу CRM):
+  `spreadsheetIdFor(tab)` в `sheets.ts` отправляет вкладки с приставкой `Payroll` в `PAYROLL_SPREADSHEET_ID`,
+  остальные — в общую; без переменной зарплатные вкладки читаются пустыми, а запись отказывает текстом
+  (`PAYROLL_SHEET_MESSAGE`) — в общую таблицу зарплата не попадает никогда. Пакетные чтения и `commitAtomic`
+  группируются по таблице (одно действие в две таблицы — отказ: атомарности между ними нет). Подключение без
+  компьютера: администратор открывает `/api/payroll/setup` (`src/lib/payrollSheet.ts`) — первый раз создаётся файл
+  «Зарплата Rose Farm» с вкладками и заголовками и страница говорит, какой ID вписать на Vercel; после пересборки
+  второй заход дописывает недостающее и обновляет заголовки `Users`. `setup-sheet`, резервная копия и
+  `fix-error-cells` вкладки `Payroll*` обходят;
 - **меню**: раздел «Зарплата» (цвет медный, `areas.ts`) у всех, кому открыт модуль; у владельца и РОПа — в группе
   «Прочее» (рабочих разделов и так семь), у остальных — рабочий раздел; `navLinksFor(role, payrollRole,
   departments)`. У «только зарплаты» главная уводит в `/payroll`;

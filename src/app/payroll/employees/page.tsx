@@ -6,6 +6,7 @@ import { currentRate, isWorking } from "@/lib/payroll/rules";
 import { payrollSession } from "@/lib/payroll/session";
 import { listDepartments, listEmployees, listRates, prefetchPayroll } from "@/lib/repo/payroll";
 import { localDayKey } from "@/lib/timezone";
+import { payrollSpreadsheetId } from "@/lib/sheets";
 import { payrollTabsFor } from "../tabs";
 import { saveEmployeeAction } from "../actions";
 
@@ -43,6 +44,18 @@ export default async function PayrollEmployeesPage() {
   return (
     <div className="space-y-5">
       <PageHeader area="payroll" title="Сотрудники" icon="client" tabs={payrollTabsFor(scope)} />
+      {!payrollSpreadsheetId() && (
+        <div className="card border-[#8a5a00]/30 bg-[#fdf6e7] text-sm">
+          Таблица зарплаты ещё не подключена — раздел ничего не сохраняет.{" "}
+          {scope.kind === "admin" ? (
+            <a href="/api/payroll/setup" className="underline font-medium">
+              Создать и подключить
+            </a>
+          ) : (
+            "Попросите администратора её подключить."
+          )}
+        </div>
+      )}
       <EmployeesBoard
         rows={rows}
         departments={visibleDepartments.map((d) => ({ deptId: d.deptId, name: d.name, active: d.active }))}
