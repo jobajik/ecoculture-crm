@@ -1,20 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { unwrap } from "@/lib/actionResult";
+import { unwrap, unwrapValue } from "@/lib/actionResult";
 import { formatDay } from "@/lib/formatDate";
-import { suggestBalance } from "@/lib/payroll/rules";
-import type { BalanceDraft, BalanceMonth, Holiday } from "@/lib/payroll/types";
+import { lawHolidays, nonWorkingDays, yearNorm, KURBAN_AIT } from "@/lib/payroll/calendarKz";
+import { extraDays } from "@/lib/payroll/rules";
+import { HOLIDAY_KIND_LABELS, type BalanceDraft, type BalanceMonth, type Holiday } from "@/lib/payroll/types";
 
 const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
+type Diff = { date: string; ours: boolean; theirs: boolean };
+
 /**
- * Баланс рабочего времени на год: норма дней и часов по 5- и 6-дневке, как во вкладке «Баланс» таблицы, плюс
- * праздники. «По календарю» подставляет подсказку (рабочие дни минус праздники); в Казахстане бывают переносы, поэтому
- * цифру подтверждает бухгалтер, а не программа.
+ * Баланс рабочего времени считает программа по календарю РК (`calendarKz.ts`): праздники по закону, Курбан-айт,
+ * переносы «праздник на выходном → следующий рабочий день», 8 часов в день пятидневки и 7+5 у шестидневки.
+ * Бухгалтер может перебить месяц руками (строка в PayrollBalance) — такая строка помечена и снимается одной кнопкой;
+ * дополнить календарь внеплановым переносом правительства — строкой справа; и сверить с внешним календарём.
  */
 export default function BalanceBoard({
   year,
@@ -23,8 +27,10 @@ export default function BalanceBoard({
   holidays,
   canEdit,
   saveMonth,
+  removeMonth,
   addHoliday,
   removeHoliday,
+  checkCalendar,
 }: {
   year: number;
   years: number[];
@@ -32,60 +38,74 @@ export default function BalanceBoard({
   holidays: Holiday[];
   canEdit: boolean;
   saveMonth: (draft: BalanceDraft) => Promise<unknown>;
-  addHoliday: (date: string, name: string) => Promise<unknown>;
+  removeMonth: (month: string) => Promise<unknown>;
+  addHoliday: (date: string, name: string, kind: string) => Promise<unknown>;
   removeHoliday: (date: string) => Promise<unknown>;
+  checkCalendar: (year: number) => Promise<unknown>;
 }) {
   const router = useRouter();
-  const [rows, setRows] = useState<Record<string, BalanceDraft>>(() => {
-    const out: Record<string, BalanceDraft> = {};
-    for (let m = 1; m <= 12; m++) {
-      const month = `${year}-${String(m).padStart(2, "0")}`;
-      const b = balance.find((x) => x.month === month);
-      out[month] = { month, days5: b?.days5 ?? 0, hours5: b?.hours5 ?? 0, days6: b?.days6 ?? 0, hours6: b?.hours6 ?? 0 };
-    }
-    return out;
-  });
+  const extra = useMemo(() => extraDays(holidays), [holidays]);
+  const computed = useMemo(() => yearNorm(year, extra), [year, extra]);
+  const law = useMemo(() => lawHolidays(year, extra), [year, extra]);
+  const off5 = useMemo(() => nonWorkingDays(year, 5, extra), [year, extra]);
+  const off6 = useMemo(() => nonWorkingDays(year, 6, extra), [year, extra]);
+  const yearExtras = holidays.filter((h) => h.date.startsWith(`${year}-`));
+
+  const [editing, setEditing] = useState<string>("");
+  const [draft, setDraft] = useState<BalanceDraft | null>(null);
   const [busy, setBusy] = useState<string>("");
-  const [error, setError] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string>("");
   const [newDate, setNewDate] = useState("");
   const [newName, setNewName] = useState("");
+  const [newKind, setNewKind] = useState<string>("off");
   const [holidayError, setHolidayError] = useState("");
+  const [diff, setDiff] = useState<Diff[] | null>(null);
+  const [checkNote, setCheckNote] = useState("");
 
-  const yearHolidays = holidays.filter((h) => h.date.startsWith(`${year}-`));
-  const saved = (month: string) => balance.find((b) => b.month === month);
-  const dirty = (month: string) => {
-    const b = saved(month);
-    const r = rows[month];
-    return !b || b.days5 !== r.days5 || b.hours5 !== r.hours5 || b.days6 !== r.days6 || b.hours6 !== r.hours6;
-  };
+  const override = (month: string) => balance.find((b) => b.month === month);
 
-  function set(month: string, patch: Partial<BalanceDraft>) {
-    setRows({ ...rows, [month]: { ...rows[month], ...patch } });
+  function startEdit(month: string) {
+    const o = override(month);
+    const c = computed.find((m) => m.month === month)!;
+    setDraft({ month, days5: o?.days5 ?? c.days5, hours5: o?.hours5 ?? c.hours5, days6: o?.days6 ?? c.days6, hours6: o?.hours6 ?? c.hours6 });
+    setEditing(month);
+    setError("");
   }
 
-  async function save(month: string) {
-    setBusy(month);
-    setError({ ...error, [month]: "" });
+  async function save() {
+    if (!draft) return;
+    setBusy(draft.month);
+    setError("");
     try {
-      unwrap(await saveMonth(rows[month]));
+      unwrap(await saveMonth(draft));
+      setEditing("");
+      setDraft(null);
       router.refresh();
     } catch (err) {
-      setError({ ...error, [month]: err instanceof Error ? err.message : "Не удалось сохранить" });
+      setError(err instanceof Error ? err.message : "Не удалось сохранить");
     } finally {
       setBusy("");
     }
   }
 
-  function suggest(month: string) {
-    const s = suggestBalance(month, yearHolidays.map((h) => h.date));
-    if (s) set(month, s);
+  async function drop(month: string) {
+    setBusy(month);
+    setError("");
+    try {
+      unwrap(await removeMonth(month));
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось снять");
+    } finally {
+      setBusy("");
+    }
   }
 
   async function addDay() {
     setHolidayError("");
     setBusy("holiday");
     try {
-      unwrap(await addHoliday(newDate, newName));
+      unwrap(await addHoliday(newDate, newName, newKind));
       setNewDate("");
       setNewName("");
       router.refresh();
@@ -108,13 +128,35 @@ export default function BalanceBoard({
     }
   }
 
+  async function runCheck() {
+    setBusy("check");
+    setCheckNote("");
+    setDiff(null);
+    try {
+      const r = unwrapValue(await checkCalendar(year)) as { ok: boolean; message?: string; diff?: Diff[] };
+      if (!r.ok) setCheckNote(r.message ?? "Сверка не удалась.");
+      else setDiff(r.diff ?? []);
+    } catch (err) {
+      setCheckNote(err instanceof Error ? err.message : "Сверка не удалась.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   const num = (v: string) => (v === "" ? 0 : Number(v.replace(",", ".")) || 0);
   const cell = "input !w-20 text-right tabular-nums";
+  const total = computed.reduce(
+    (a, m) => ({ days5: a.days5 + m.days5, hours5: a.hours5 + m.hours5, days6: a.days6 + m.days6, hours6: a.hours6 + m.hours6 }),
+    { days5: 0, hours5: 0, days6: 0, hours6: 0 }
+  );
+  const kurban = KURBAN_AIT[year];
+  const transfers5 = off5.filter((d) => d.kind === "transfer");
+  const transfers6 = off6.filter((d) => d.kind === "transfer");
 
   return (
-    <div className="grid lg:grid-cols-[1fr_320px] gap-5 items-start">
+    <div className="grid lg:grid-cols-[1fr_340px] gap-5 items-start">
       <div className="space-y-3">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {years.map((y) => (
             <Link
               key={y}
@@ -127,7 +169,25 @@ export default function BalanceBoard({
               {y}
             </Link>
           ))}
+          <button type="button" className="btn-secondary ml-auto" disabled={busy === "check"} onClick={runCheck}>
+            {busy === "check" ? "Сверяю…" : "Сверить с isdayoff.ru"}
+          </button>
         </div>
+        {checkNote && <p className="text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">{checkNote}</p>}
+        {diff && diff.length === 0 && <p className="text-sm bg-status-good/10 text-status-good rounded-lg px-3 py-2">Сверено с isdayoff.ru: расхождений за {year} год нет.</p>}
+        {diff && diff.length > 0 && (
+          <div className="text-sm bg-[#fdf6e7] rounded-lg px-3 py-2 space-y-1">
+            <div className="font-medium">Расхождения с isdayoff.ru (пятидневка) — {diff.length}:</div>
+            {diff.map((d) => (
+              <div key={d.date}>
+                {formatDay(d.date)}: у нас {d.ours ? "выходной" : "рабочий"}, у них {d.theirs ? "выходной" : "рабочий"}
+              </div>
+            ))}
+            <div className="text-xs text-ink-muted">Внешний календарь бывает неточным; если правы они — добавьте день справа как «дополнительный выходной» или «рабочий день».</div>
+          </div>
+        )}
+        {error && <p className="text-sm text-status-critical">{error}</p>}
+
         <div className="card !p-0 table-scroll">
           <table className="w-full text-sm">
             <thead>
@@ -143,90 +203,155 @@ export default function BalanceBoard({
               </tr>
             </thead>
             <tbody>
-              {MONTHS.map((name, i) => {
-                const month = `${year}-${String(i + 1).padStart(2, "0")}`;
-                const r = rows[month];
-                const isDirty = dirty(month);
-                const has = !!saved(month);
+              {computed.map((c, i) => {
+                const o = override(c.month);
+                const isEditing = editing === c.month && draft;
+                const shown = o ?? c;
                 return (
-                  <tr key={month} className={clsx("border-b border-line-hairline last:border-0", !has && !isDirty && "text-ink-muted")}>
+                  <tr key={c.month} className="border-b border-line-hairline last:border-0">
                     <td className="px-4 py-2 font-medium whitespace-nowrap">
-                      {name}
-                      {!has && <span className="text-xs text-[#8a5a00] font-normal"> · нет нормы</span>}
+                      {MONTHS[i]}
+                      {o && <span className="text-xs text-[#8a5a00] font-normal"> · задано вручную</span>}
                     </td>
-                    {canEdit ? (
+                    {isEditing ? (
                       <>
                         <td className="px-1 py-1.5 text-right">
-                          <input className={cell} inputMode="numeric" value={r.days5 || ""} onChange={(e) => set(month, { days5: num(e.target.value) })} />
+                          <input className={cell} inputMode="numeric" value={draft!.days5 || ""} onChange={(e) => setDraft({ ...draft!, days5: num(e.target.value) })} />
                         </td>
                         <td className="px-1 py-1.5 text-right">
-                          <input className={cell} inputMode="decimal" value={r.hours5 || ""} onChange={(e) => set(month, { hours5: num(e.target.value) })} />
+                          <input className={cell} inputMode="decimal" value={draft!.hours5 || ""} onChange={(e) => setDraft({ ...draft!, hours5: num(e.target.value) })} />
                         </td>
                         <td className="px-1 py-1.5 text-right">
-                          <input className={cell} inputMode="numeric" value={r.days6 || ""} onChange={(e) => set(month, { days6: num(e.target.value) })} />
+                          <input className={cell} inputMode="numeric" value={draft!.days6 || ""} onChange={(e) => setDraft({ ...draft!, days6: num(e.target.value) })} />
                         </td>
                         <td className="px-1 py-1.5 text-right">
-                          <input className={cell} inputMode="decimal" value={r.hours6 || ""} onChange={(e) => set(month, { hours6: num(e.target.value) })} />
+                          <input className={cell} inputMode="decimal" value={draft!.hours6 || ""} onChange={(e) => setDraft({ ...draft!, hours6: num(e.target.value) })} />
                         </td>
                         <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                          <button type="button" className="text-xs text-ink-muted hover:text-ink-primary mr-3" onClick={() => suggest(month)}>
-                            по календарю
+                          <button type="button" className="text-xs text-section-payroll font-medium hover:underline mr-3" disabled={busy === c.month} onClick={save}>
+                            сохранить
                           </button>
-                          <button
-                            type="button"
-                            className={clsx("text-xs", isDirty ? "text-section-payroll font-medium hover:underline" : "text-ink-muted")}
-                            disabled={!isDirty || busy === month}
-                            onClick={() => save(month)}
-                          >
-                            {busy === month ? "…" : isDirty ? "сохранить" : "сохранено"}
+                          <button type="button" className="text-xs text-ink-muted hover:text-ink-primary" onClick={() => { setEditing(""); setDraft(null); }}>
+                            отмена
                           </button>
-                          {error[month] && <div className="text-xs text-status-critical">{error[month]}</div>}
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.days5 || "—"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.hours5 || "—"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.days6 || "—"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.hours6 || "—"}</td>
-                        <td />
+                        <td className={clsx("px-3 py-2 text-right tabular-nums", o && o.days5 !== c.days5 && "text-[#8a5a00]")} title={o && o.days5 !== c.days5 ? `по календарю ${c.days5}` : undefined}>
+                          {shown.days5}
+                        </td>
+                        <td className={clsx("px-3 py-2 text-right tabular-nums", o && o.hours5 !== c.hours5 && "text-[#8a5a00]")} title={o && o.hours5 !== c.hours5 ? `по календарю ${c.hours5}` : undefined}>
+                          {shown.hours5}
+                        </td>
+                        <td className={clsx("px-3 py-2 text-right tabular-nums", o && o.days6 !== c.days6 && "text-[#8a5a00]")} title={o && o.days6 !== c.days6 ? `по календарю ${c.days6}` : undefined}>
+                          {shown.days6}
+                        </td>
+                        <td className={clsx("px-3 py-2 text-right tabular-nums", o && o.hours6 !== c.hours6 && "text-[#8a5a00]")} title={o && o.hours6 !== c.hours6 ? `по календарю ${c.hours6}` : undefined}>
+                          {shown.hours6}
+                        </td>
+                        <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                          {canEdit && o && (
+                            <button type="button" className="text-xs text-ink-muted hover:text-ink-primary mr-3" disabled={busy === c.month} onClick={() => drop(c.month)}>
+                              по календарю
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button type="button" className="text-xs text-ink-muted hover:text-ink-primary" onClick={() => startEdit(c.month)}>
+                              исправить
+                            </button>
+                          )}
+                        </td>
                       </>
                     )}
                   </tr>
                 );
               })}
+              <tr className="bg-surface-plane/60 font-medium">
+                <td className="px-4 py-2">За год по календарю</td>
+                <td className="px-3 py-2 text-right tabular-nums">{total.days5}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{total.hours5}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{total.days6}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{total.hours6}</td>
+                <td />
+              </tr>
             </tbody>
           </table>
         </div>
+        <p className="text-xs text-ink-muted">
+          Считается по закону «О праздниках в РК» и Трудовому кодексу: праздник на выходном переносится на следующий рабочий день; пятидневка — 8 часов в день, шестидневка — 7 часов пн–пт и 5 в субботу. Жёлтым — месяцы, где бухгалтер задала норму руками и она отличается от календаря.
+        </p>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-medium">Праздники {year}</h3>
-        <p className="text-xs text-ink-muted">Часы, отработанные в эти дни, оплачиваются в полуторном размере; из нормы они вычтены.</p>
-        <ul className="divide-y divide-line-hairline text-sm">
-          {yearHolidays.length === 0 && <li className="py-2 text-ink-muted">Пока ни одного.</li>}
-          {yearHolidays.map((h) => (
-            <li key={h.date} className="py-2 flex items-center gap-2">
-              <span className="tabular-nums w-24">{formatDay(h.date)}</span>
-              <span className="flex-1 text-ink-secondary">{h.name || "праздник"}</span>
-              {canEdit && (
-                <button type="button" className="text-xs text-ink-muted hover:text-status-critical" disabled={busy === h.date} onClick={() => dropDay(h.date)}>
-                  убрать
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-        {canEdit && (
-          <div className="space-y-2 pt-2 border-t border-line-hairline">
-            <input className="input" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
-            <input className="input" placeholder="Название (Наурыз, День Конституции…)" value={newName} onChange={(e) => setNewName(e.target.value)} />
-            {holidayError && <p className="text-xs text-status-critical">{holidayError}</p>}
-            <button type="button" className="btn-secondary w-full" disabled={!newDate || busy === "holiday"} onClick={addDay}>
-              + Добавить праздник
-            </button>
-          </div>
-        )}
+      <div className="space-y-4">
+        <div className="card space-y-3">
+          <h3 className="font-medium">Праздники {year}</h3>
+          <ul className="divide-y divide-line-hairline text-sm">
+            {law.map((h) => (
+              <li key={h.date} className="py-1.5 flex items-center gap-2">
+                <span className="tabular-nums w-20 shrink-0">{formatDay(h.date)}</span>
+                <span className="flex-1 text-ink-secondary">{h.name}</span>
+              </li>
+            ))}
+          </ul>
+          {!kurban && !law.some((h) => /курбан/i.test(h.name)) && (
+            <p className="text-xs text-[#8a5a00]">Дата Курбан-айта на {year} год программе не известна — добавьте её ниже как праздник, когда объявят.</p>
+          )}
+          {kurban && !kurban.confirmed && <p className="text-xs text-[#8a5a00]">Курбан-айт на {year} год — дата предварительная; когда правительство объявит, проверьте.</p>}
+          <details className="text-sm">
+            <summary className="cursor-pointer text-ink-secondary">Переносы выходных: пятидневка {transfers5.length}, шестидневка {transfers6.length}</summary>
+            <div className="mt-2 space-y-1 text-xs text-ink-secondary">
+              {transfers5.map((d) => (
+                <div key={`5${d.date}`}>
+                  {formatDay(d.date)} — {d.name}
+                  {!transfers6.some((x) => x.date === d.date) && " · только пятидневка"}
+                </div>
+              ))}
+              {transfers6.filter((d) => !transfers5.some((x) => x.date === d.date)).map((d) => (
+                <div key={`6${d.date}`}>
+                  {formatDay(d.date)} — {d.name} · только шестидневка
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+
+        <div className="card space-y-3">
+          <h3 className="font-medium">Дополнения {year}</h3>
+          <p className="text-xs text-ink-muted">Внеплановые решения правительства: дополнительный выходной, перенос, рабочая суббота. Праздники по закону добавлять не нужно — они уже учтены.</p>
+          <ul className="divide-y divide-line-hairline text-sm">
+            {yearExtras.length === 0 && <li className="py-2 text-ink-muted">Нет.</li>}
+            {yearExtras.map((h) => (
+              <li key={h.date} className="py-2 flex items-center gap-2">
+                <span className="tabular-nums w-20 shrink-0">{formatDay(h.date)}</span>
+                <span className="flex-1 text-ink-secondary">
+                  {h.name || HOLIDAY_KIND_LABELS[h.kind]}
+                  <span className="text-xs text-ink-muted"> · {HOLIDAY_KIND_LABELS[h.kind]}</span>
+                </span>
+                {canEdit && (
+                  <button type="button" className="text-xs text-ink-muted hover:text-status-critical" disabled={busy === h.date} onClick={() => dropDay(h.date)}>
+                    убрать
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {canEdit && (
+            <div className="space-y-2 pt-2 border-t border-line-hairline">
+              <input className="input" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+              <select className="input" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
+                <option value="off">Дополнительный выходной (перенос)</option>
+                <option value="work">Рабочий день (отменён выходной)</option>
+                <option value="">Праздник (например, Курбан-айт)</option>
+              </select>
+              <input className="input" placeholder="Основание: постановление, Курбан-айт…" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              {holidayError && <p className="text-xs text-status-critical">{holidayError}</p>}
+              <button type="button" className="btn-secondary w-full" disabled={!newDate || busy === "holiday"} onClick={addDay}>
+                + Добавить
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

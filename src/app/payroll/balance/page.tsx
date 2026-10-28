@@ -5,7 +5,7 @@ import { payrollSession } from "@/lib/payroll/session";
 import { listBalance, listHolidays, prefetchPayroll } from "@/lib/repo/payroll";
 import { localDayKey } from "@/lib/timezone";
 import { payrollTabsFor } from "../tabs";
-import { addHolidayAction, removeHolidayAction, saveBalanceAction } from "../actions";
+import { addHolidayAction, checkCalendarAction, removeBalanceAction, removeHolidayAction, saveBalanceAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +18,12 @@ export default async function PayrollBalancePage({ searchParams }: { searchParam
   const [balance, holidays] = await Promise.all([listBalance(), listHolidays()]);
   const thisYear = Number(localDayKey().slice(0, 4));
   const year = /^\d{4}$/.test(searchParams?.year ?? "") ? Number(searchParams!.year) : thisYear;
-  // Годы, по которым что-то есть, плюс текущий и следующий — за следующий баланс заполняют в декабре.
-  const years = Array.from(new Set([...balance.map((b) => Number(b.month.slice(0, 4))), thisYear, thisYear + 1, year])).sort((a, b) => a - b);
+  // Прошлый, текущий и следующий год плюс годы с перебивками: календарь известен на любой год, перебирать не нужно.
+  const years = Array.from(new Set([...balance.map((b) => Number(b.month.slice(0, 4))), thisYear - 1, thisYear, thisYear + 1, year])).sort((a, b) => a - b);
 
   return (
     <div className="space-y-5">
-      <PageHeader area="payroll" title="Баланс рабочего времени" icon="calendar" tabs={payrollTabsFor(scope)} />
+      <PageHeader area="payroll" title="Календарь и нормы" icon="calendar" tabs={payrollTabsFor(scope)} />
       <BalanceBoard
         key={year}
         year={year}
@@ -32,8 +32,10 @@ export default async function PayrollBalancePage({ searchParams }: { searchParam
         holidays={holidays}
         canEdit={scope.editsBalance}
         saveMonth={saveBalanceAction}
+        removeMonth={removeBalanceAction}
         addHoliday={addHolidayAction}
         removeHoliday={removeHolidayAction}
+        checkCalendar={checkCalendarAction}
       />
     </div>
   );

@@ -27,6 +27,7 @@ function toDepartment(r: Record<string, string>): Department {
     overtimeRate: sheetNumber(r.OvertimeRate),
     note: r.Note || "",
     active: flag(r.Active),
+    farm: (r.Farm || "").trim().toLowerCase(),
   };
 }
 
@@ -88,7 +89,8 @@ function toBalance(r: Record<string, string>): BalanceMonth {
 }
 
 function toHoliday(r: Record<string, string>): Holiday {
-  return { date: toIsoDate(r.Date), name: (r.Name || "").trim() };
+  const kind = (r.Kind || "").trim().toLowerCase();
+  return { date: toIsoDate(r.Date), name: (r.Name || "").trim(), kind: kind === "off" || kind === "work" ? kind : "" };
 }
 
 async function rows<T>(tab: string, convert: (r: Record<string, string>) => T, fresh = false): Promise<T[]> {
@@ -147,6 +149,7 @@ export async function saveDepartment(dept: Department): Promise<{ created: boole
     OvertimeRate: dept.overtime ? dept.overtimeRate : "",
     Note: dept.note,
     Active: dept.active ? "TRUE" : "FALSE",
+    Farm: dept.farm,
   };
   // `updateWhere` возвращает true, если строка нашлась (пишет только изменившиеся ячейки); нет — дописываем.
   const found = await updateWhere(SHEET_TABS.PAYROLL_DEPARTMENTS, (r) => (r.DeptID || "").trim().toLowerCase() === dept.deptId, () => record);
@@ -278,10 +281,15 @@ export async function saveBalanceMonth(b: Omit<BalanceMonth, "updatedAt">): Prom
 }
 
 export async function addHoliday(h: Holiday): Promise<boolean> {
-  const found = await updateWhere(SHEET_TABS.PAYROLL_HOLIDAYS, (r) => toIsoDate(r.Date) === h.date, () => ({ Name: h.name }));
+  const found = await updateWhere(SHEET_TABS.PAYROLL_HOLIDAYS, (r) => toIsoDate(r.Date) === h.date, () => ({ Name: h.name, Kind: h.kind }));
   if (found) return false;
-  await commitAtomic([{ kind: "append", tab: SHEET_TABS.PAYROLL_HOLIDAYS, records: [{ Date: h.date, Name: h.name }] }]);
+  await commitAtomic([{ kind: "append", tab: SHEET_TABS.PAYROLL_HOLIDAYS, records: [{ Date: h.date, Name: h.name, Kind: h.kind }] }]);
   return true;
+}
+
+/** Снять перебивку нормы месяца — дальше месяц считается по календарю. */
+export async function deleteBalanceMonth(month: string): Promise<number> {
+  return deleteWhere(SHEET_TABS.PAYROLL_BALANCE, (r) => toBalance(r).month === month);
 }
 
 export async function removeHoliday(date: string): Promise<number> {

@@ -21,6 +21,8 @@ export const PAY_TYPE_LABELS: Record<string, string> = { month: "Оклад за
 export interface Department {
   /** Код латиницей: ложится в сотрудников и в Users, не меняется. */
   deptId: string;
+  /** Компания (ТОО): rose_farm или esentai. Сотрудник наследует её от подразделения. */
+  farm: string;
   name: string;
   order: number;
   /** 5 — пятидневка, 6 — шестидневка (Сборка ГП). Решает, какую норму часов брать из баланса. */
@@ -90,11 +92,20 @@ export interface Holiday {
   /** ГГГГ-ММ-ДД */
   date: string;
   name: string;
+  /** "" — праздник (участвует в переносе), off — дополнительный выходной, work — день объявлен рабочим. */
+  kind: "" | "off" | "work";
 }
+
+export const HOLIDAY_KIND_LABELS: Record<string, string> = {
+  "": "праздник",
+  off: "дополнительный выходной",
+  work: "рабочий день (отменён выходной)",
+};
 
 /** Черновики форм — то, что присылает браузер; проверяет сервер (`rules.ts`). */
 export interface DepartmentDraft {
   deptId: string;
+  farm: string;
   name: string;
   order: number;
   workWeek: number;

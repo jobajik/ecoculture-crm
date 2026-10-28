@@ -58,7 +58,7 @@ export default async function PayrollEmployeesPage() {
       )}
       <EmployeesBoard
         rows={rows}
-        departments={visibleDepartments.map((d) => ({ deptId: d.deptId, name: d.name, active: d.active }))}
+        departments={visibleDepartments.map((d) => ({ deptId: d.deptId, name: d.name, active: d.active, farm: d.farm }))}
         today={today}
         actorEmail={email}
         canEdit={scope.editsEmployees}

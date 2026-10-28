@@ -9,7 +9,10 @@
  * Идемпотентно: сотрудник с тем же ФИО (без учёта регистра и «ё») второй раз не заводится, баланс и праздники
  * переписываются; ставки добавляются только тем, кого завёл этот запуск. Без --yes только показывает, что сделает.
  *
- * Запуск: npx tsx scripts/payroll-import.ts <файл.xlsx> --from 2024-07-01 [--yes]
+ * Компания: --farm rose_farm (по умолчанию) или --farm esentai — книга у каждого ТОО своя, подразделения заводятся с
+ * этой компанией; у Есентая коды подразделений получают приставку es- (чтобы не слиться с Rose Farm).
+ *
+ * Запуск: npx tsx scripts/payroll-import.ts <файл.xlsx> --from 2024-07-01 [--farm rose_farm|esentai] [--yes]
  */
 import * as dotenv from "dotenv";
 import ExcelJS from "exceljs";
@@ -17,7 +20,7 @@ import { commitAtomic, readTable } from "../src/lib/sheets";
 import { generateId } from "../src/lib/id";
 import { listBalance, listDepartments, listEmployees, listHolidays, saveBalanceMonth, saveDepartment } from "../src/lib/repo/payroll";
 import { kpiOf, nameKey } from "../src/lib/payroll/rules";
-import { SHEET_TABS } from "../src/lib/constants";
+import { FARM_ORDER, SHEET_TABS } from "../src/lib/constants";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -57,10 +60,13 @@ async function main() {
   const yes = rest.includes("--yes");
   const fromIdx = rest.indexOf("--from");
   const from = fromIdx >= 0 ? rest[fromIdx + 1] : "";
-  if (!file || !/^\d{4}-\d{2}-\d{2}$/.test(from || "")) {
-    console.log("Запуск: npx tsx scripts/payroll-import.ts <файл.xlsx> --from ГГГГ-ММ-ДД [--yes]");
+  const farmIdx = rest.indexOf("--farm");
+  const farm = farmIdx >= 0 ? rest[farmIdx + 1] : "rose_farm";
+  if (!file || !/^\d{4}-\d{2}-\d{2}$/.test(from || "") || !FARM_ORDER.includes(farm)) {
+    console.log("Запуск: npx tsx scripts/payroll-import.ts <файл.xlsx> --from ГГГГ-ММ-ДД [--farm rose_farm|esentai] [--yes]");
     process.exit(1);
   }
+  const deptPrefix = farm === "rose_farm" ? "" : "es-";
 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(file);
@@ -88,10 +94,11 @@ async function main() {
       unknownDepts.add(deptName || "(пусто)");
       continue;
     }
+    const deptId = deptPrefix + dept.deptId;
     const employment = /гпх/i.test(text(row.getCell(4).value)) ? "gph" : "td";
     people.push({
       fullName,
-      dept: dept.deptId,
+      dept: deptId,
       position: text(row.getCell(3).value).replace(/\s+/g, " ").trim(),
       employment,
       salary1c: Math.round(num(row.getCell(5).value)),
@@ -118,7 +125,7 @@ async function main() {
     });
   }
 
-  console.log(`Сотрудников в файле: ${people.length} (ТД ${people.filter((p) => p.employment === "td").length}, ГПХ ${people.filter((p) => p.employment === "gph").length})`);
+  console.log(`Компания: ${farm}. Сотрудников в файле: ${people.length} (ТД ${people.filter((p) => p.employment === "td").length}, ГПХ ${people.filter((p) => p.employment === "gph").length})`);
   if (unknownDepts.size) console.log(`Пропущены строки с подразделениями не из списка: ${Array.from(unknownDepts).join(", ")}`);
   console.log(`Месяцев баланса: ${months.length}, праздников: ${holidays.length}`);
 
@@ -140,10 +147,11 @@ async function main() {
 
   // 1. Подразделения — только отсутствующие (правила существующих не трогаем).
   for (const [name, d] of Object.entries(DEPARTMENTS)) {
-    if (departments.some((x) => x.deptId === d.deptId)) continue;
+    const deptId = deptPrefix + d.deptId;
+    if (departments.some((x) => x.deptId === deptId)) continue;
     const label = name.replace(/(^|\s)\S/g, (c) => c.toUpperCase());
-    await saveDepartment({ ...d, name: label, note: "из штатной расстановки", active: true });
-    console.log(`Подразделение заведено: ${label} (${d.deptId})`);
+    await saveDepartment({ ...d, deptId, farm, name: label, note: "из штатной расстановки", active: true });
+    console.log(`Подразделение заведено: ${label} (${deptId}, ${farm})`);
   }
 
   // 2. Сотрудники и ставки — одним пакетом.

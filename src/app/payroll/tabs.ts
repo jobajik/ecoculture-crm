@@ -10,7 +10,7 @@ export function payrollTabsFor(scope: PayrollScope | null): { href: string; labe
   const tabs = [{ href: "/payroll/employees", label: "Сотрудники" }];
   if (scope.kind !== "head") {
     tabs.push({ href: "/payroll/departments", label: "Подразделения" });
-    tabs.push({ href: "/payroll/balance", label: "Баланс времени" });
+    tabs.push({ href: "/payroll/balance", label: "Календарь и нормы" });
   }
   if (scope.editsAccess) tabs.push({ href: "/payroll/access", label: "Доступ" });
   return tabs;

@@ -5,7 +5,9 @@
  * (ради скорости) и возвращает сервер (он и запрещает — грабли 1.11, 1.13). Отказ — за попытку изменить, а не за
  * наличие поля.
  */
+import { FARM_ORDER } from "../constants";
 import { cleanDeptId, type PayrollScope } from "./access";
+import { monthNorm, type ExtraDay } from "./calendarKz";
 import {
   EMPLOYMENTS,
   PAY_TYPES,
@@ -15,6 +17,7 @@ import {
   type DepartmentDraft,
   type Employee,
   type EmployeeDraft,
+  type Holiday,
   type Rate,
   type RateDraft,
 } from "./types";
@@ -46,8 +49,10 @@ export function nameKey(name: string): string {
 export function cleanDepartment(draft: DepartmentDraft): DepartmentDraft {
   const workWeek = Number(draft.workWeek) === 6 ? 6 : 5;
   const overtime = Boolean(draft.overtime);
+  const farm = String(draft.farm ?? "").trim().toLowerCase();
   return {
     deptId: cleanDeptId(draft.deptId),
+    farm: FARM_ORDER.includes(farm) ? farm : "",
     name: String(draft.name ?? "")
       .replace(/\s+/g, " ")
       .trim(),
@@ -65,6 +70,7 @@ export function departmentRefusal(scope: PayrollScope | null, existing: Departme
   const clean = cleanDepartment(draft);
   if (!clean.deptId) return "Нужен код подразделения латиницей (например, teplitsa): он ложится в карточки сотрудников.";
   if (!clean.name) return "Не указано название подразделения.";
+  if (!clean.farm) return "Не выбрана компания (ТОО): зарплата считается по каждой отдельно.";
   const sameName = existing.find((d) => d.deptId !== clean.deptId && nameKey(d.name) === nameKey(clean.name));
   if (sameName) return `Подразделение «${sameName.name}» уже есть (код ${sameName.deptId}).`;
   if (clean.overtime && !(clean.overtimeRate > 0)) {
@@ -221,48 +227,43 @@ export function balanceRefusal(scope: PayrollScope | null, draft: BalanceDraft):
   return "";
 }
 
-export function holidayRefusal(scope: PayrollScope | null, date: string): string {
-  if (!scope?.editsBalance) return "Праздники ведёт бухгалтер по зарплате или администратор.";
-  if (!isDay(date)) return "Дата праздника — в виде ГГГГ-ММ-ДД.";
+export function holidayRefusal(scope: PayrollScope | null, date: string, kind: string): string {
+  if (!scope?.editsBalance) return "Календарь дополняет бухгалтер по зарплате или администратор.";
+  if (!isDay(date)) return "Дата — в виде ГГГГ-ММ-ДД.";
+  if (!["", "off", "work"].includes(kind)) return "Вид записи — праздник, дополнительный выходной или рабочий день.";
   return "";
 }
 
-/** Норма часов месяца для подразделения: 5- или 6-дневка; нет баланса — null (считать нельзя). */
-export function normHours(balance: BalanceMonth[], month: string, workWeek: 5 | 6): number | null {
-  const row = balance.find((b) => b.month === month);
-  if (!row) return null;
-  return workWeek === 6 ? row.hours6 : row.hours5;
+/** Строки PayrollHolidays в виде, который понимает календарь. */
+export function extraDays(holidays: Holiday[]): ExtraDay[] {
+  return holidays.map((h) => ({ date: h.date, name: h.name, kind: h.kind }));
 }
 
 /**
- * Подсказка для баланса: рабочие дни месяца по календарю минус праздники (пятидневка — пн–пт, шестидневка — пн–сб),
- * часы — 8 в день для пятидневки, по 40-часовой неделе для шестидневки (пн–пт по 7, сб 5). В Казахстане бывают
- * переносы выходных, поэтому это ПОДСКАЗКА, а норму подтверждает бухгалтер.
+ * Норма часов месяца для подразделения: строка баланса, если бухгалтер её задала руками (или она пришла из старой
+ * таблицы), иначе — по календарю РК. Норма есть всегда: без неё расчёт месяца был бы невозможен, а календарь
+ * известен на любой год.
  */
-export function suggestBalance(month: string, holidays: string[]): BalanceDraft | null {
+export function normHours(balance: BalanceMonth[], month: string, workWeek: 5 | 6, holidays: Holiday[] = []): number {
+  const row = balance.find((b) => b.month === month);
+  if (row) return workWeek === 6 ? row.hours6 : row.hours5;
+  const n = monthNorm(month, extraDays(holidays));
+  return workWeek === 6 ? n.hours6 : n.hours5;
+}
+
+/** Норма дней — так же: перебивка бухгалтера, иначе календарь. */
+export function normDays(balance: BalanceMonth[], month: string, workWeek: 5 | 6, holidays: Holiday[] = []): number {
+  const row = balance.find((b) => b.month === month);
+  if (row) return workWeek === 6 ? row.days6 : row.days5;
+  const n = monthNorm(month, extraDays(holidays));
+  return workWeek === 6 ? n.days6 : n.days5;
+}
+
+/** Норма месяца по календарю РК (праздники, переносы, 8 часов в день пятидневки, 7+5 у шестидневки). */
+export function suggestBalance(month: string, holidays: Holiday[] = []): BalanceDraft | null {
   if (!isMonth(month)) return null;
-  const year = Number(month.slice(0, 4));
-  const mon = Number(month.slice(5, 7));
-  const set = new Set(holidays);
-  let days5 = 0;
-  let days6 = 0;
-  let hours6 = 0;
-  const daysIn = new Date(Date.UTC(year, mon, 0)).getUTCDate();
-  for (let d = 1; d <= daysIn; d++) {
-    const date = new Date(Date.UTC(year, mon - 1, d));
-    const iso = date.toISOString().slice(0, 10);
-    const dow = date.getUTCDay(); // 0 вс … 6 сб
-    if (set.has(iso)) continue;
-    if (dow >= 1 && dow <= 5) {
-      days5 += 1;
-      days6 += 1;
-      hours6 += 7;
-    } else if (dow === 6) {
-      days6 += 1;
-      hours6 += 5;
-    }
-  }
-  return { month, days5, hours5: days5 * 8, days6, hours6 };
+  const n = monthNorm(month, extraDays(holidays));
+  return { month: n.month, days5: n.days5, hours5: n.hours5, days6: n.days6, hours6: n.hours6 };
 }
 
 // --- Доступ ------------------------------------------------------------------

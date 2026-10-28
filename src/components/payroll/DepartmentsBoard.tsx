@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { unwrapValue } from "@/lib/actionResult";
 import { cleanDeptId } from "@/lib/payroll/access";
+import { FARM_LABELS, FARM_ORDER } from "@/lib/constants";
 import type { Department, DepartmentDraft } from "@/lib/payroll/types";
 
-const EMPTY: DepartmentDraft = { deptId: "", name: "", order: 0, workWeek: 5, overtime: false, overtimeRate: 1, note: "", active: true };
+const EMPTY: DepartmentDraft = { deptId: "", farm: "", name: "", order: 0, workWeek: 5, overtime: false, overtimeRate: 1, note: "", active: true };
 
 /**
  * Подразделения и их правила расчёта: норма (5/6-дневка) и сверхурочные с коэффициентом. В таблице эти правила были
@@ -108,6 +109,18 @@ export default function DepartmentsBoard({
               <p className="text-xs text-ink-muted mt-1">{editing ? "Код менять нельзя: он записан в карточках сотрудников." : "Короткий, без пробелов: teplitsa, security."}</p>
             </div>
             <div>
+              <label className="label">Компания (ТОО) *</label>
+              <select className="input" value={draft.farm} onChange={(e) => set({ farm: e.target.value })}>
+                <option value="">— выберите —</option>
+                {FARM_ORDER.map((f) => (
+                  <option key={f} value={f}>
+                    {FARM_LABELS[f]}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-ink-muted mt-1">Зарплата считается по каждой компании отдельно.</p>
+            </div>
+            <div>
               <label className="label">Рабочая неделя</label>
               <select className="input" value={draft.workWeek} onChange={(e) => set({ workWeek: Number(e.target.value) })}>
                 <option value={5}>Пятидневка</option>
@@ -162,6 +175,7 @@ export default function DepartmentsBoard({
           <thead>
             <tr className="text-left text-xs text-ink-muted border-b border-line-hairline bg-surface-plane/60">
               <th className="px-4 py-2.5 font-medium">Подразделение</th>
+              <th className="px-3 py-2.5 font-medium">Компания</th>
               <th className="px-3 py-2.5 font-medium">Код</th>
               <th className="px-3 py-2.5 font-medium text-right">В штате</th>
               <th className="px-3 py-2.5 font-medium">Неделя</th>
@@ -173,7 +187,7 @@ export default function DepartmentsBoard({
           <tbody>
             {departments.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
+                <td colSpan={8} className="px-4 py-8 text-center text-ink-muted">
                   Подразделений пока нет.
                 </td>
               </tr>
@@ -183,6 +197,9 @@ export default function DepartmentsBoard({
                 <td data-label="Подразделение" className="px-4 py-2.5 font-medium">
                   {d.name}
                   {!d.active && <span className="text-xs"> · снято</span>}
+                </td>
+                <td data-label="Компания" className="px-3 py-2.5 text-ink-secondary">
+                  {FARM_LABELS[d.farm] ?? <span className="text-[#8a5a00]">не указана</span>}
                 </td>
                 <td data-label="Код" className="px-3 py-2.5 font-mono text-xs text-ink-secondary">{d.deptId}</td>
                 <td data-label="В штате" className="px-3 py-2.5 text-right tabular-nums">{headcount[d.deptId] ?? 0}</td>
