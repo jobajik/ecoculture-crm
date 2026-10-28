@@ -4,6 +4,7 @@ import { toIsoDate } from "../sheetDate";
 import { generateId } from "../id";
 import { EMPLOYMENTS, PAY_TYPES, type BalanceMonth, type Department, type Employee, type Holiday, type Rate } from "../payroll/types";
 import { kpiOf } from "../payroll/rules";
+import type { TimesheetStatus } from "../payroll/timesheet";
 
 /**
  * Справочники модуля «Зарплата» во вкладках Payroll* (чтение — через `rowToRecord` по позиции колонок, числа —
@@ -108,6 +109,8 @@ export const PAYROLL_TABS = [
   SHEET_TABS.PAYROLL_RATES,
   SHEET_TABS.PAYROLL_BALANCE,
   SHEET_TABS.PAYROLL_HOLIDAYS,
+  SHEET_TABS.PAYROLL_TIMESHEET,
+  SHEET_TABS.PAYROLL_TIMESHEET_STATUS,
 ];
 
 /** Все справочники одним batchGet (грабли 1.17): страница зовёт это первым. */
@@ -391,4 +394,132 @@ export async function importStaffing(
   if (rateRecords.length) ops.push({ kind: "append", tab: SHEET_TABS.PAYROLL_RATES, records: rateRecords });
   if (ops.length) await commitAtomic(ops);
   return { departments: plan.newDepartments.length, employees: empRecords.length, changed: plan.changedEmployees.length, rates: plan.newRates.length + firstRates };
+}
+
+// --- Табель ------------------------------------------------------------------------
+
+export interface TimesheetRow {
+  month: string;
+  employeeId: string;
+  /** "" — обычная (дневная) смена, night — ночная у почасовых. */
+  shift: "" | "night";
+  deptId: string;
+  /** Сырое значение ячейки Days; раскладывается по дням `decodeDays`. */
+  days: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface TimesheetStatusRow {
+  month: string;
+  deptId: string;
+  status: TimesheetStatus;
+  submittedBy: string;
+  submittedAt: string;
+  reviewedBy: string;
+  reviewedAt: string;
+  comment: string;
+}
+
+function monthOf(raw: string): string {
+  const v = (raw || "").trim();
+  return /^\d{4}-\d{2}$/.test(v) ? v : toIsoDate(v).slice(0, 7);
+}
+
+function toTimesheet(r: Record<string, string>): TimesheetRow {
+  return {
+    month: monthOf(r.Month),
+    employeeId: (r.EmployeeID || "").trim(),
+    shift: (r.Shift || "").trim().toLowerCase() === "night" ? "night" : "",
+    deptId: (r.DeptID || "").trim().toLowerCase(),
+    days: String(r.Days ?? ""),
+    updatedBy: (r.UpdatedBy || "").trim().toLowerCase(),
+    updatedAt: r.UpdatedAt || "",
+  };
+}
+
+function toTimesheetStatus(r: Record<string, string>): TimesheetStatusRow {
+  const st = (r.Status || "").trim().toLowerCase();
+  return {
+    month: monthOf(r.Month),
+    deptId: (r.DeptID || "").trim().toLowerCase(),
+    status: st === "submitted" || st === "approved" || st === "returned" ? st : "",
+    submittedBy: (r.SubmittedBy || "").trim().toLowerCase(),
+    submittedAt: r.SubmittedAt || "",
+    reviewedBy: (r.ReviewedBy || "").trim().toLowerCase(),
+    reviewedAt: r.ReviewedAt || "",
+    comment: r.Comment || "",
+  };
+}
+
+export async function listTimesheet(month: string): Promise<TimesheetRow[]> {
+  return (await rows(SHEET_TABS.PAYROLL_TIMESHEET, toTimesheet)).filter((t) => t.month === month && t.employeeId);
+}
+
+export async function listTimesheetStatus(month?: string): Promise<TimesheetStatusRow[]> {
+  return (await rows(SHEET_TABS.PAYROLL_TIMESHEET_STATUS, toTimesheetStatus)).filter((s) => s.deptId && (!month || s.month === month));
+}
+
+const TAB_MISSING = "Вкладок табеля ещё нет в таблице зарплаты — администратор открывает /api/payroll/setup один раз, и они появятся.";
+
+async function freshOrMissing(tab: string) {
+  try {
+    return await readTable(tab, { fresh: true });
+  } catch {
+    throw new Error(TAB_MISSING);
+  }
+}
+
+/**
+ * Записать табель подразделения за месяц: строки, где поменялись дни, — правкой одной ячейки Days (и DeptID), новые
+ * — дописываются. Всё одним `commitAtomic` после свежего чтения (грабли 1.15, 1.16). Пустая строка, которой в таблице
+ * ещё нет, не заводится.
+ */
+export async function saveTimesheet(
+  month: string,
+  deptId: string,
+  input: { employeeId: string; shift: "" | "night"; days: string }[],
+  by: string
+): Promise<{ changed: number; added: number }> {
+  const tab = SHEET_TABS.PAYROLL_TIMESHEET;
+  const table = await freshOrMissing(tab);
+  const now = new Date().toISOString();
+  const ops: Parameters<typeof commitAtomic>[0] = [];
+  const append: Record<string, unknown>[] = [];
+  let changed = 0;
+  for (const row of input) {
+    const idx = table.rows.findIndex((r) => {
+      const t = toTimesheet(rowToRecord(tab, r));
+      return t.month === month && t.employeeId === row.employeeId && t.shift === row.shift;
+    });
+    if (idx >= 0) {
+      const t = toTimesheet(rowToRecord(tab, table.rows[idx]));
+      if (t.days === row.days && t.deptId === deptId) continue;
+      ops.push({ kind: "update", tab, rowNumber: table.rowNumbers[idx], changes: { Days: row.days, DeptID: deptId, UpdatedBy: by, UpdatedAt: now } });
+      changed += 1;
+    } else if (row.days !== "") {
+      append.push({ Month: month, EmployeeID: row.employeeId, Shift: row.shift, DeptID: deptId, Days: row.days, UpdatedBy: by, UpdatedAt: now });
+    }
+  }
+  if (append.length) ops.push({ kind: "append", tab, records: append });
+  if (ops.length) await commitAtomic(ops);
+  return { changed, added: append.length };
+}
+
+export async function saveTimesheetStatus(next: Omit<TimesheetStatusRow, "submittedBy" | "submittedAt" | "reviewedBy" | "reviewedAt"> & { by: string; review: boolean }): Promise<void> {
+  const tab = SHEET_TABS.PAYROLL_TIMESHEET_STATUS;
+  const table = await freshOrMissing(tab);
+  const now = new Date().toISOString();
+  const changes: Record<string, unknown> = { Status: next.status, Comment: next.comment };
+  if (next.review) Object.assign(changes, { ReviewedBy: next.by, ReviewedAt: now });
+  else Object.assign(changes, { SubmittedBy: next.by, SubmittedAt: now });
+  const idx = table.rows.findIndex((r) => {
+    const s = toTimesheetStatus(rowToRecord(tab, r));
+    return s.month === next.month && s.deptId === next.deptId;
+  });
+  if (idx >= 0) {
+    await commitAtomic([{ kind: "update", tab, rowNumber: table.rowNumbers[idx], changes }]);
+    return;
+  }
+  await commitAtomic([{ kind: "append", tab, records: [{ Month: next.month, DeptID: next.deptId, ...changes }] }]);
 }

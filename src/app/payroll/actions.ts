@@ -20,6 +20,18 @@ import {
 import { compareWithIsDayOff } from "@/lib/payroll/calendarKz";
 import { parseStaffingMatrix, planStaffingImport, type StaffingPlan } from "@/lib/payroll/staffingImport";
 import { FARM_ORDER } from "@/lib/constants";
+import {
+  cleanRowCells,
+  employedOn,
+  encodeDays,
+  monthDays,
+  nextStatus,
+  rowKey,
+  timesheetEditRefusal,
+  timesheetMoveRefusal,
+  timesheetPeople,
+  type TimesheetMove,
+} from "@/lib/payroll/timesheet";
 import { cleanDeptId } from "@/lib/payroll/access";
 import type { BalanceDraft, DepartmentDraft, EmployeeDraft, RateDraft } from "@/lib/payroll/types";
 import {
@@ -30,6 +42,10 @@ import {
   deleteRate,
   importStaffing,
   listDepartments,
+  listTimesheet,
+  listTimesheetStatus,
+  saveTimesheet,
+  saveTimesheetStatus,
   listHolidays,
   listEmployees,
   listRates,
@@ -287,4 +303,62 @@ function summarize(plan: StaffingPlan) {
 }
 export async function importStaffingAction(matrix: string[][], from: string, farm: string, dry: boolean) {
   return guard(() => importStaffingActionInner(matrix, from, farm, dry));
+}
+
+// --- Табель ---------------------------------------------------------------------
+
+async function saveTimesheetActionInner(month: string, deptId: string, input: { employeeId: string; shift: string; cells: string[] }[]) {
+  const { scope, email } = await payrollSession();
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Непонятный месяц.");
+  const dept = (await listDepartments()).find((d) => d.deptId === deptId);
+  if (!dept) throw new Error("Такого подразделения нет.");
+  const [status] = (await listTimesheetStatus(month)).filter((s) => s.deptId === deptId);
+  const refusal = timesheetEditRefusal(scope, deptId, status?.status ?? "");
+  if (refusal) throw new Error(refusal);
+  const [employees, existing] = await Promise.all([listEmployees(), listTimesheet(month)]);
+  const people = new Map(timesheetPeople(employees, deptId, month, existing).map((p) => [p.key, p]));
+  const n = monthDays(month).length;
+  const days = monthDays(month);
+  const rows: { employeeId: string; shift: "" | "night"; days: string }[] = [];
+  for (const row of input) {
+    const person = people.get(rowKey(row.employeeId, row.shift));
+    // Чужого человека или выдуманную смену сервер не пишет (грабли 1.11).
+    if (!person) throw new Error("В табеле строка сотрудника не из этого подразделения — обновите страницу.");
+    const label = `${person.fullName}${person.shift === "night" ? " (ночь)" : ""}`;
+    const cleaned = cleanRowCells(row.cells, n, label);
+    if (cleaned.error) throw new Error(cleaned.error);
+    // До приёма и после увольнения отметок не бывает — они бы стали часами в расчёте.
+    const cells = cleaned.cells.map((c, i) => (employedOn(days[i], person.hiredAt, person.firedAt) || c === "У" ? c : ""));
+    rows.push({ employeeId: person.employeeId, shift: person.shift, days: encodeDays(cells) });
+  }
+  const result = await saveTimesheet(month, deptId, rows, email);
+  revalidatePath("/payroll/timesheet");
+  return result;
+}
+export async function saveTimesheetAction(month: string, deptId: string, input: { employeeId: string; shift: string; cells: string[] }[]) {
+  return guard(() => saveTimesheetActionInner(month, deptId, input));
+}
+
+async function moveTimesheetActionInner(month: string, deptId: string, move: TimesheetMove, comment: string) {
+  const { scope, email } = await payrollSession();
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Непонятный месяц.");
+  const dept = (await listDepartments()).find((d) => d.deptId === deptId);
+  if (!dept) throw new Error("Такого подразделения нет.");
+  const [current] = (await listTimesheetStatus(month)).filter((s) => s.deptId === deptId);
+  const refusal = timesheetMoveRefusal(scope, deptId, current?.status ?? "", move, comment);
+  if (refusal) throw new Error(refusal);
+  await saveTimesheetStatus({
+    month,
+    deptId,
+    status: nextStatus(move),
+    // Комментарий возврата висит над табелем, пока его не отправят снова; при отправке — стирается.
+    comment: move === "return" ? comment.trim().slice(0, 500) : move === "submit" ? "" : current?.comment ?? "",
+    by: email,
+    review: move !== "submit",
+  });
+  revalidatePath("/payroll/timesheet");
+  return { status: nextStatus(move) };
+}
+export async function moveTimesheetAction(month: string, deptId: string, move: TimesheetMove, comment: string) {
+  return guard(() => moveTimesheetActionInner(month, deptId, move, comment));
 }
