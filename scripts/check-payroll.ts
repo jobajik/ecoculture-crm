@@ -1,0 +1,193 @@
+/**
+ * Проверка правил модуля «Зарплата» — доступ, справочники, ставки, баланс.
+ *
+ * Что ломается молча, если эти правила разъедутся: начальник одного подразделения видит чужих людей или оклады;
+ * строка Users с опечаткой в роли открывает доступ вместо того, чтобы закрыть; ставка с датой в середине месяца
+ * применяется к месяцу, который начался раньше неё; норма шестидневки берётся у пятидневки.
+ *
+ * Запуск: npx tsx scripts/check-payroll.ts
+ */
+import { payrollScope, seesDepartment, cleanDeptId } from "../src/lib/payroll/access";
+import {
+  accessRefusal,
+  balanceRefusal,
+  cleanEmployee,
+  departmentRefusal,
+  employedIn,
+  employeeRefusal,
+  kpiOf,
+  normHours,
+  rateFor,
+  rateRefusal,
+  suggestBalance,
+} from "../src/lib/payroll/rules";
+import type { Department, Employee, Rate } from "../src/lib/payroll/types";
+import { payrollTabsFor } from "../src/app/payroll/tabs";
+import { navLinksFor } from "../src/components/navLinks";
+import { canOpen } from "../src/lib/access";
+
+let fails = 0;
+function check(name: string, actual: unknown, expected: unknown) {
+  const ok = JSON.stringify(actual) === JSON.stringify(expected);
+  if (!ok) fails += 1;
+  console.log(`${ok ? "OK  " : "ПЛОХО"} ${name}: ${JSON.stringify(actual)}${ok ? "" : ` (ждали ${JSON.stringify(expected)})`}`);
+}
+function refuses(name: string, refusal: string) {
+  check(name, refusal.length > 0, true);
+}
+function allows(name: string, refusal: string) {
+  check(name, refusal, "");
+}
+
+// --- Доступ -----------------------------------------------------------------
+const admin = payrollScope({ role: "admin", payrollRole: "", payrollDepartments: [] })!;
+const accountant = payrollScope({ role: "payroll", payrollRole: "accountant", payrollDepartments: [] })!;
+const hr = payrollScope({ role: "payroll", payrollRole: "hr", payrollDepartments: [] })!;
+const agro = payrollScope({ role: "agronomist", payrollRole: "agronomist", payrollDepartments: [] })!;
+const head = payrollScope({ role: "payroll", payrollRole: "head", payrollDepartments: ["teplitsa"] })!;
+
+check("админ — всё", [admin.seesMoney, admin.editsEmployees, admin.editsRates, admin.editsAccess], [true, true, true, true]);
+check("бухгалтер: суммы и ставки, не сотрудники", [accountant.seesMoney, accountant.editsRates, accountant.editsEmployees, accountant.editsAccess], [true, true, false, false]);
+check("кадровик: сотрудники и суммы, не ставки", [hr.seesMoney, hr.editsEmployees, hr.editsRates], [true, true, false]);
+check("агроном: только смотрит, суммы видит", [agro.seesMoney, agro.editsEmployees, agro.editsRates], [true, false, false]);
+check("начальник: своё подразделение, без сумм", [head.seesMoney, head.departments], [false, ["teplitsa"]]);
+check("начальник без подразделений — доступа нет (ошибка закрывает)", payrollScope({ role: "payroll", payrollRole: "head", payrollDepartments: [] }), null);
+check("опечатка в роли — доступа нет", payrollScope({ role: "manager", payrollRole: "acountant", payrollDepartments: [] }), null);
+check("без роли CRM — доступа нет даже с ролью модуля", payrollScope({ role: "", payrollRole: "accountant", payrollDepartments: [] }), null);
+check("менеджер без роли модуля — доступа нет", payrollScope({ role: "manager", payrollRole: "", payrollDepartments: [] }), null);
+check("начальник видит своё", seesDepartment(head, "teplitsa"), true);
+check("начальник не видит чужое", seesDepartment(head, "security"), false);
+check("бухгалтер видит все", seesDepartment(accountant, "security"), true);
+check("код подразделения чистится", cleanDeptId(" Теплица/Rose Farm "), "rose-farm");
+check("вкладки начальника — только сотрудники", payrollTabsFor(head).map((t) => t.label), ["Сотрудники"]);
+check("вкладки админа — с доступом", payrollTabsFor(admin).map((t) => t.label), ["Сотрудники", "Подразделения", "Баланс времени", "Доступ"]);
+check("вкладки бухгалтера — без доступа", payrollTabsFor(accountant).map((t) => t.label), ["Сотрудники", "Подразделения", "Баланс времени"]);
+
+// --- Меню и охранник --------------------------------------------------------
+check("у админа есть «Зарплата» (в группе «Прочее»)", navLinksFor("admin").find((l) => l.label === "Зарплата")?.other, true);
+check("у менеджера без роли модуля «Зарплаты» нет", navLinksFor("manager").some((l) => l.label === "Зарплата"), false);
+check("у менеджера-начальника «Зарплата» — рабочий раздел", navLinksFor("manager", "head", ["teplitsa"]).find((l) => l.label === "Зарплата")?.other, false);
+check("у «только зарплата» — один раздел", navLinksFor("payroll", "hr", []).map((l) => l.label), ["Зарплата"]);
+check("у «только зарплата» без роли модуля меню пустое", navLinksFor("payroll").length, 0);
+check("охранник пускает «только зарплату» в /payroll", canOpen("payroll", "/payroll/employees"), true);
+check("охранник не пускает «только зарплату» в заявки", canOpen("payroll", "/orders"), false);
+check("охранник не пускает «только зарплату» в настройки", canOpen("payroll", "/admin"), false);
+check("охранник пускает менеджера в /payroll (решает роль модуля)", canOpen("manager", "/payroll"), true);
+
+// --- Подразделения ------------------------------------------------------------
+const depts: Department[] = [
+  { deptId: "teplitsa", name: "Теплица", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true },
+  { deptId: "assembly", name: "Сборка готовой продукции", order: 2, workWeek: 6, overtime: true, overtimeRate: 0.5, note: "", active: true },
+];
+allows("подразделение заводится", departmentRefusal(admin, depts, { deptId: "security", name: "Охрана", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("без кода нельзя", departmentRefusal(admin, depts, { deptId: "", name: "Охрана", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("то же название под другим кодом — двойник", departmentRefusal(admin, depts, { deptId: "tepl", name: "теплица", order: 3, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+allows("своё название под своим кодом — правка", departmentRefusal(admin, depts, { deptId: "teplitsa", name: "Теплица", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+refuses("сверхурочные без коэффициента", departmentRefusal(admin, depts, { deptId: "x", name: "X", order: 1, workWeek: 5, overtime: true, overtimeRate: 0, note: "", active: true }));
+refuses("бухгалтер подразделения не заводит", departmentRefusal(accountant, depts, { deptId: "x", name: "X", order: 1, workWeek: 5, overtime: false, overtimeRate: 0, note: "", active: true }));
+
+// --- Сотрудники ---------------------------------------------------------------
+const emp = (p: Partial<Employee> & { employeeId: string; fullName: string }): Employee => ({
+  deptId: "teplitsa",
+  position: "Цветовод",
+  employment: "td",
+  payType: "month",
+  hiredAt: "2024-01-10",
+  firedAt: "",
+  travelAddress: "",
+  travelRate: 0,
+  note: "",
+  createdAt: "",
+  createdBy: "",
+  updatedAt: "",
+  updatedBy: "",
+  ...p,
+});
+const employees = [emp({ employeeId: "E1", fullName: "Шамуратова Гуласал Янгибаевна" }), emp({ employeeId: "E2", fullName: "Иванов Иван", firedAt: "2024-05-31" })];
+const ctx = { departments: depts, employees };
+const draft = {
+  employeeId: "",
+  fullName: "  Нурлаева   Маржаной ",
+  deptId: "teplitsa",
+  position: "Цветовод",
+  employment: "td",
+  payType: "",
+  hiredAt: "2026-11-01",
+  firedAt: "",
+  travelAddress: "",
+  travelRate: 0,
+  note: "",
+};
+allows("кадровик заводит сотрудника", employeeRefusal(hr, ctx, draft));
+check("ФИО и тип расчёта чистятся", [cleanEmployee(draft).fullName, cleanEmployee(draft).payType], ["Нурлаева Маржаной", "month"]);
+refuses("бухгалтер сотрудников не заводит", employeeRefusal(accountant, ctx, draft));
+refuses("начальник сотрудников не заводит", employeeRefusal(head, ctx, draft));
+refuses("без подразделения", employeeRefusal(hr, ctx, { ...draft, deptId: "" }));
+refuses("несуществующее подразделение", employeeRefusal(hr, ctx, { ...draft, deptId: "nope" }));
+refuses("без должности", employeeRefusal(hr, ctx, { ...draft, position: "" }));
+refuses("вид занятости не из списка", employeeRefusal(hr, ctx, { ...draft, employment: "договор" }));
+refuses("увольнение раньше приёма", employeeRefusal(hr, ctx, { ...draft, firedAt: "2026-10-01" }));
+refuses("дата не по форме", employeeRefusal(hr, ctx, { ...draft, hiredAt: "01.11.2026" }));
+refuses("дорожные без адреса", employeeRefusal(hr, ctx, { ...draft, travelRate: 500 }));
+refuses("двойник работающего — по ФИО без учёта регистра и ё", employeeRefusal(hr, ctx, { ...draft, fullName: "шамуратова гуласал янгибаевна" }));
+allows("уволенный двойником не считается", employeeRefusal(hr, ctx, { ...draft, fullName: "Иванов Иван" }));
+allows("правка своей же карточки — не двойник", employeeRefusal(hr, ctx, { ...draft, employeeId: "E1", fullName: "Шамуратова Гуласал Янгибаевна" }));
+check("работал в месяце: принят до конца, уволен после начала", employedIn({ hiredAt: "2024-01-10", firedAt: "2024-05-31" }, "2024-05"), true);
+check("не работал: уволен до начала месяца", employedIn({ hiredAt: "2024-01-10", firedAt: "2024-05-31" }, "2024-06"), false);
+check("не работал: принят после конца месяца", employedIn({ hiredAt: "2024-07-01", firedAt: "" }, "2024-06"), false);
+check("без дат — работал", employedIn({ hiredAt: "", firedAt: "" }, "2024-06"), true);
+
+// --- Ставки ---------------------------------------------------------------------
+const e1 = employees[0];
+const rateDraft = { employeeId: "E1", from: "2024-07-01", salary1c: 74569, total: 175000, dayRate: 0, nightRate: 0, note: "" };
+allows("бухгалтер ставит ставку", rateRefusal(accountant, e1, rateDraft));
+refuses("кадровик ставку не ставит", rateRefusal(hr, e1, rateDraft));
+refuses("без даты начала", rateRefusal(accountant, e1, { ...rateDraft, from: "" }));
+refuses("оклад ноль", rateRefusal(accountant, e1, { ...rateDraft, salary1c: 0 }));
+refuses("ИТОГО меньше оклада", rateRefusal(accountant, e1, { ...rateDraft, total: 50000 }));
+allows("ИТОГО пустое — только оклад (KPI 0)", rateRefusal(accountant, e1, { ...rateDraft, total: 0 }));
+const hourly = emp({ employeeId: "H1", fullName: "Қожабеков Жайнар", payType: "hourly" });
+refuses("почасовому нужен тариф, а не оклад", rateRefusal(accountant, hourly, rateDraft));
+allows("почасовой с тарифами", rateRefusal(accountant, hourly, { ...rateDraft, salary1c: 0, total: 0, dayRate: 437.5, nightRate: 1093.75 }));
+check("KPI = ИТОГО − оклад", kpiOf({ salary1c: 74569, total: 175000 }), 100431);
+check("KPI не отрицательный", kpiOf({ salary1c: 74569, total: 0 }), 0);
+const rates: Rate[] = [
+  { rateId: "R1", employeeId: "E1", from: "2024-01-01", salary1c: 70000, kpi: 80000, total: 150000, dayRate: 0, nightRate: 0, note: "", setBy: "", setAt: "" },
+  { rateId: "R2", employeeId: "E1", from: "2024-07-01", salary1c: 74569, kpi: 100431, total: 175000, dayRate: 0, nightRate: 0, note: "", setBy: "", setAt: "" },
+  { rateId: "R3", employeeId: "E1", from: "2024-09-15", salary1c: 74569, kpi: 120431, total: 195000, dayRate: 0, nightRate: 0, note: "", setBy: "", setAt: "" },
+];
+check("ставка на месяц — последняя, начавшаяся не позже 1-го", rateFor(rates, "E1", "2024-08")?.rateId, "R2");
+check("ставка с 15-го числа к этому месяцу ещё не применяется", rateFor(rates, "E1", "2024-09")?.rateId, "R2");
+check("а к следующему — применяется", rateFor(rates, "E1", "2024-10")?.rateId, "R3");
+check("до первой ставки — null", rateFor(rates, "E1", "2023-12"), null);
+check("чужого сотрудника — null", rateFor(rates, "E2", "2024-08"), null);
+
+// --- Баланс ---------------------------------------------------------------------
+const balanceDraft = { month: "2024-07", days5: 22, hours5: 176, days6: 26, hours6: 176 };
+allows("бухгалтер ведёт баланс", balanceRefusal(accountant, balanceDraft));
+refuses("кадровик баланс не ведёт", balanceRefusal(hr, balanceDraft));
+refuses("месяц не по форме", balanceRefusal(accountant, { ...balanceDraft, month: "07.2024" }));
+refuses("норма без часов", balanceRefusal(accountant, { ...balanceDraft, hours5: 0 }));
+refuses("норма 300 часов — опечатка", balanceRefusal(accountant, { ...balanceDraft, hours6: 300 }));
+const balance = [{ month: "2024-07", days5: 22, hours5: 176, days6: 26, hours6: 174, updatedBy: "", updatedAt: "" }];
+check("норма пятидневки", normHours(balance, "2024-07", 5), 176);
+check("норма шестидневки", normHours(balance, "2024-07", 6), 174);
+check("нет баланса — null, считать нельзя", normHours(balance, "2024-08", 5), null);
+// Июль 2024 по календарю: 23 будних дня (6 июля, День столицы, — суббота) — пятидневка 23 дня, 184 ч;
+// в таблице владельца стоит 22/176 из-за переноса выходного на 8 июля — подсказка только подсказывает.
+// Шестидневка: 23 × 7 + 3 субботы × 5 = 176 — ровно как в таблице.
+check("подсказка по календарю: июль 2024", suggestBalance("2024-07", ["2024-07-06"]), { month: "2024-07", days5: 23, hours5: 184, days6: 26, hours6: 176 });
+check("подсказка: январь 2024 с 1 и 2 января", suggestBalance("2024-01", ["2024-01-01", "2024-01-02"])?.days5, 21);
+
+// --- Назначение ролей ------------------------------------------------------------
+const actx = { actorEmail: "owner@x", departments: depts };
+allows("админ назначает бухгалтера", accessRefusal(admin, actx, { email: "a@x", payrollRole: "accountant", departments: [] }));
+allows("админ назначает начальника с подразделением", accessRefusal(admin, actx, { email: "a@x", payrollRole: "head", departments: ["teplitsa"] }));
+refuses("начальник без подразделений", accessRefusal(admin, actx, { email: "a@x", payrollRole: "head", departments: [] }));
+refuses("начальник с несуществующим подразделением", accessRefusal(admin, actx, { email: "a@x", payrollRole: "head", departments: ["nope"] }));
+refuses("роли нет", accessRefusal(admin, actx, { email: "a@x", payrollRole: "boss", departments: [] }));
+allows("снять доступ — пустая роль", accessRefusal(admin, actx, { email: "a@x", payrollRole: "", departments: [] }));
+refuses("бухгалтер роли не раздаёт", accessRefusal(accountant, actx, { email: "a@x", payrollRole: "hr", departments: [] }));
+
+console.log(fails === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${fails}`);
+process.exit(fails === 0 ? 0 : 1);

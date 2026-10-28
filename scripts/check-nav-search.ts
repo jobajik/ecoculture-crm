@@ -22,7 +22,8 @@ function check(name: string, actual: unknown, expected: unknown) {
 const ROLES_ALL = ["admin", "manager", "sales_head", "accountant", "warehouse", "office", "office_retail", "retail_almaty", "retail_regions", "agronomist", "leadgen"];
 for (const role of ROLES_ALL) {
   const links = navLinksFor(role);
-  check(`${role}: разделов не больше семи`, links.length <= 7, true);
+  // Считаются рабочие разделы: группа «Прочее» (Настройки, у владельца — и Зарплата) стоит отдельно внизу.
+  check(`${role}: разделов не больше семи`, links.filter((l) => !l.other).length <= 7, true);
   const closed = links
     .flatMap((l) => [l.href, ...l.subs.map((s) => s.href)])
     .map((h) => h.split("?")[0])

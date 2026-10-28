@@ -25,6 +25,7 @@ export type AreaKey =
   | "plans"
   | "forecast"
   | "analytics"
+  | "payroll"
   | "admin";
 
 export interface Area {
@@ -167,6 +168,17 @@ export const AREAS: Record<AreaKey, Area> = {
     gradient: "from-section-analytics-soft",
     tabBorder: "border-section-analytics",
   },
+  payroll: {
+    key: "payroll",
+    label: "Зарплата",
+    icon: "card",
+    text: "text-section-payroll",
+    solid: "bg-section-payroll",
+    soft: "bg-section-payroll-soft",
+    border: "border-section-payroll/15",
+    gradient: "from-section-payroll-soft",
+    tabBorder: "border-section-payroll",
+  },
   admin: {
     key: "admin",
     label: "Настройки",
@@ -194,6 +206,7 @@ export function areaForPath(pathname: string): Area {
   if (p.startsWith("/plans") || p.startsWith("/prices")) return AREAS.plans;
   if (p.startsWith("/forecast")) return AREAS.forecast;
   if (p.startsWith("/analytics")) return AREAS.analytics;
+  if (p.startsWith("/payroll")) return AREAS.payroll;
   if (p.startsWith("/admin")) return AREAS.admin;
   return AREAS.home;
 }

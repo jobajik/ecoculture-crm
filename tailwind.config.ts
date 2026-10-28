@@ -71,6 +71,9 @@ const config: Config = {
           "admin-soft": "#f0f1ef",
           forecast: "#5d9a2a",
           "forecast-soft": "#eef6e6",
+          // Зарплата (28.10.2026): медный, чтобы не путаться ни с деньгами клиентов (янтарный), ни с розницей.
+          payroll: "#8c4a1f",
+          "payroll-soft": "#f9ede4",
         },
         // Отсылка к Kaspi в блоке Kaspi-счёта: чуть красный фон и метка.
         kaspi: {

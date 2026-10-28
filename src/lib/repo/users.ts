@@ -1,4 +1,4 @@
-import { appendRow, readTable, rowToRecord, updateRow, SHEET_TABS } from "../sheets";
+import { appendRow, readTable, rowToRecord, updateRow, updateWhere, SHEET_TABS } from "../sheets";
 import type { AppUser } from "../types";
 import type { Role } from "../constants";
 import { formatPhone } from "../phone";
@@ -25,7 +25,19 @@ function toUser(record: Record<string, string>): AppUser {
     farm: (record.Farm || "").trim().toLowerCase() || null,
     active: !INACTIVE.has(active),
     phone: formatPhone(record.Phone || ""),
+    payrollRole: (record.PayrollRole || "").trim().toLowerCase(),
+    payrollDepartments: splitDepartments(record.PayrollDepartments),
   };
+}
+
+/** «teplitsa, security» → ["teplitsa", "security"]: коды подразделений через запятую, без пустых и повторов. */
+export function splitDepartments(raw: string | null | undefined): string[] {
+  const seen = new Set<string>();
+  for (const part of String(raw ?? "").split(/[,;\s]+/)) {
+    const code = part.trim().toLowerCase();
+    if (code) seen.add(code);
+  }
+  return Array.from(seen);
 }
 
 /**
@@ -93,10 +105,12 @@ export async function saveUser(user: {
   const table = await readTable(SHEET_TABS.USERS);
 
   let rowNumber: number | null = null;
+  let before: Record<string, string> | null = null;
   table.rows.forEach((row, idx) => {
     const record = rowToRecord(SHEET_TABS.USERS, row);
     if ((record.Email || "").trim().toLowerCase() === email) {
       rowNumber = table.rowNumbers[idx];
+      before = record;
     }
   });
 
@@ -109,6 +123,10 @@ export async function saveUser(user: {
     Active: user.active ? "TRUE" : "FALSE",
     Farm: user.farm.trim().toLowerCase(),
     Phone: formatPhone(user.phone ?? ""),
+    // Роль в «Зарплате» форма сотрудников не трогает — она ставится на странице доступа модуля. Строка пишется
+    // целиком, поэтому прежнее значение переносится как есть, иначе правка телефона стирала бы доступ к табелю.
+    PayrollRole: (before as Record<string, string> | null)?.PayrollRole ?? "",
+    PayrollDepartments: (before as Record<string, string> | null)?.PayrollDepartments ?? "",
   };
 
   if (rowNumber === null) {
@@ -120,4 +138,20 @@ export async function saveUser(user: {
   await updateRow(SHEET_TABS.USERS, rowNumber, record);
   forgetUsers();
   return { created: false };
+}
+
+/**
+ * Роль в модуле «Зарплата» и подразделения начальника — отдельной записью, только изменившиеся ячейки
+ * (`updateWhere`): остальное в строке сотрудника не трогается. Сотрудника без строки в Users не бывает —
+ * доступ к зарплате даётся тому, кто уже входит в CRM.
+ */
+export async function setPayrollAccess(email: string, payrollRole: string, departments: string[]): Promise<boolean> {
+  const normalized = email.trim().toLowerCase();
+  const changed = await updateWhere(
+    SHEET_TABS.USERS,
+    (r) => (r.Email || "").trim().toLowerCase() === normalized,
+    () => ({ PayrollRole: payrollRole.trim().toLowerCase(), PayrollDepartments: departments.join(", ") })
+  );
+  forgetUsers();
+  return changed;
 }

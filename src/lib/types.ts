@@ -9,6 +9,10 @@ export interface AppUser {
   active: boolean;
   /** Номер WhatsApp сотрудника («+7701…», пусто — не указан): по нему бот и помощник не продают своим, а авто-лид не заводится. */
   phone: string;
+  /** Роль в модуле «Зарплата» (accountant | hr | agronomist | head), пусто — модуль закрыт (админу открыт и так). */
+  payrollRole: string;
+  /** Коды подразделений начальника (PayrollDepartments); у остальных ролей пусто. */
+  payrollDepartments: string[];
 }
 
 export interface Order {
