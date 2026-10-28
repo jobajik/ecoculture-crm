@@ -24,7 +24,7 @@ import {
   shortName,
 } from "../src/lib/payroll/rules";
 import type { Department, Employee, Rate } from "../src/lib/payroll/types";
-import { monthFromTitle, parseStaffingMatrix, planStaffingImport } from "../src/lib/payroll/staffingImport";
+import { firedAtFromNote, monthFromTitle, parseStaffingMatrix, planStaffingImport } from "../src/lib/payroll/staffingImport";
 import { addDays, compareWithIsDayOff, isDayOff, isHoliday, lawHolidays, monthNorm, nonWorkingDays, yearNorm, type ExtraDay } from "../src/lib/payroll/calendarKz";
 import { payrollTabsFor } from "../src/app/payroll/tabs";
 import {
@@ -269,6 +269,32 @@ check("штатка: операторы PRIVA — почасовые", splan.new
 check("штатка: без оклада — в список noRate", splan.noRate, ["Чибиряк Олеся"]);
 check("штатка: без ФИО/подразделения — не разобралось", parseStaffingMatrix([["a", "b"]]).rows.length, 0);
 check("штатка: у Есентая коды с приставкой", planStaffingImport(parsed, { ...sctx, employees: [], farm: "esentai" }).newDepartments.map((d) => d.deptId).slice(0, 2), ["es-teplitsa", "es-admin"]);
+
+// Книга Есентай Агро Хим (28.10.2026): «Данные на: <дата>», «Тип занятости», «Местожительство», дорожные в колонке «Сумма»,
+// два блока с одним подразделением «АУП» (офис и производство), уволенный в примечании.
+const esMatrix: string[][] = [
+  ["", "ШТАТНАЯ РАССТАНОВКА ТОО ЕСЕНТАЙ АГРО ХИМ, 2026 г."],
+  ["", "", "Данные на:", "46296"],
+  ["", "№", "ФИО", "Подразделение", "Должность", "Тип занятости", "Оклад", "KPI", "Итого", "Местожительство", "Сумма", "ПРИМЕЧАНИЕ "],
+  ["", "1", "Садакбаев Ержан", "АУП", "Ген. директор", "ТД", "850000", "", "850000", "", "", ""],
+  ["", "2", "Иманбаев Сергаза", "АУП", "Водитель", "ГПХ", "30000", "70000", "100000", "Аксай", "600", "Оф уволен 16.03.2026 последний рабочий день"],
+  ["", "ИТОГО АУП ОФИС", "", "", "", "", "880000", "70000", "950000"],
+  ["", "1", "Дениско Денис", "АУП", "Главный агроном", "ТД", "782797", "817203", "1600000", "Теплица", "0", ""],
+  ["", "ИТОГО АУП - ПРОИЗВОДСТВО", "", "", "", "", "782797", "817203", "1600000"],
+  ["", "1", "Нурманов Бекбосын", "Оператор PRIVA", "Технический оператор", "ТД", "45000", "195000", "240000", "Аксай", "600", ""],
+  ["", "ИТОГО ОПЕРАТОР PRIVA", "", "", "", "", "45000", "195000", "240000"],
+  ["", "ИТОГО", "", "", "", "", "0", "0", "0"],
+];
+const es = parseStaffingMatrix(esMatrix);
+check("Есентай: дата ставок из «Данные на»", es.dataDate, "2026-10-01");
+check("Есентай: три человека, итоги не строки", es.rows.map((r) => r.fullName), ["Садакбаев Ержан", "Иманбаев Сергаза", "Дениско Денис", "Нурманов Бекбосын"]);
+check("Есентай: блоки «АУП» разведены по имени итога", es.rows.map((r) => r.departmentName), ["АУП офис", "АУП офис", "АУП производство", "Оператор PRIVA"]);
+check("Есентай: дорожные из колонки «Сумма», адрес из «Местожительство»", [es.rows[1].travelRate, es.rows[1].travelAddress], [600, "Аксай"]);
+check("Есентай: уволенный — дата из примечания", [es.rows[1].firedAt, es.rows[0].firedAt], ["2026-03-16", ""]);
+check("уволен: другие написания", [firedAtFromNote("уволена с 1.9.2026"), firedAtFromNote("с 1 декабря 2024 г")], ["2026-09-01", ""]);
+const esPlan = planStaffingImport(es, { departments: [], employees: [], rates: [], from: es.dataDate, farm: "esentai" });
+check("Есентай: подразделения с кодами и помесячными операторами PRIVA", esPlan.newDepartments.map((d) => `${d.deptId}:${d.name}`), ["es-aup-office:АУП офис", "es-aup-farm:АУП производство", "es-priva:Оператор PRIVA"]);
+check("Есентай: операторы PRIVA помесячно (у них оклад и ИТОГО)", esPlan.newEmployees.map((e) => e.payType), ["month", "month", "month", "month"]);
 
 // --- Табель ------------------------------------------------------------------------
 {

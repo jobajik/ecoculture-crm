@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { unwrapValue } from "@/lib/actionResult";
 import { FARM_LABELS, FARM_ORDER } from "@/lib/constants";
-import { monthFromTitle } from "@/lib/payroll/staffingImport";
+import { monthFromTitle, parseStaffingMatrix } from "@/lib/payroll/staffingImport";
 
 type Summary = {
   newDepartments: string[];
@@ -56,8 +56,9 @@ export default function StaffingImportForm({
       const sheet = sheets.find((s) => /штатн/i.test(s.name)) ?? sheets.find((s) => s.matrix.some((r) => r.some((c) => /фио/i.test(c)))) ?? sheets[0];
       if (!sheet) throw new Error("В файле нет листов.");
       setMatrix(sheet.matrix);
-      const title = sheet.matrix.slice(0, 15).flat().find((c) => /штатная расстановка/i.test(c)) ?? "";
-      setFrom(monthFromTitle(title, `${today.slice(0, 7)}-01`));
+      const head = parseStaffingMatrix(sheet.matrix);
+      // Дата ставок: «Данные на: …» из шапки (книга Есентая), иначе месяц из названия («… Октябрь 2026»).
+      setFrom(head.dataDate || monthFromTitle(head.title, `${today.slice(0, 7)}-01`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось прочитать файл");
       setMatrix(null);

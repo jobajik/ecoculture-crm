@@ -345,7 +345,7 @@ export async function importStaffing(
       Employment: n.row.employment,
       PayType: n.payType,
       HiredAt: "",
-      FiredAt: "",
+      FiredAt: n.row.firedAt || "",
       TravelAddress: n.row.travelAddress,
       TravelRate: n.row.travelRate || "",
       Note: n.row.note,

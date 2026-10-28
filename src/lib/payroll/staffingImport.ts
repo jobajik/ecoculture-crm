@@ -13,6 +13,7 @@
  * подразделение, кого не тронем; потом одна запись.
  */
 import { nameKey } from "./rules";
+import { toIsoDate } from "../sheetDate";
 import { PAY_TYPES, type Department, type Employee, type Rate } from "./types";
 
 export interface StaffingRow {
@@ -26,10 +27,14 @@ export interface StaffingRow {
   note: string;
   travelAddress: string;
   travelRate: number;
+  /** «Оф уволен 16.03.2026» в примечании → дата увольнения (ГГГГ-ММ-ДД); иначе пусто. */
+  firedAt: string;
 }
 
 export interface StaffingParse {
   title: string;
+  /** «Данные на: 01.10.2026» в шапке книги Есентая — с какого дня действуют ставки; пусто, если строки нет. */
+  dataDate: string;
   rows: StaffingRow[];
   /** Строки, которые не разобрались (нет ФИО или подразделения) — с номером строки файла. */
   skipped: { line: number; why: string }[];
@@ -47,7 +52,46 @@ export const STAFFING_DEPARTMENTS: Record<string, { deptId: string; order: numbe
   охрана: { deptId: "security", order: 7, workWeek: 5, overtime: false, overtimeRate: 0 },
   "програмное управление": { deptId: "priva", order: 8, workWeek: 5, overtime: false, overtimeRate: 0, payType: "hourly" },
   "программное управление": { deptId: "priva", order: 8, workWeek: 5, overtime: false, overtimeRate: 0, payType: "hourly" },
+  // Книга Есентай Агро Хим (28.10.2026). Сверхурочных у хризантемы нет (владелец: ×0,5 — только Сборке ГП розы);
+  // операторы PRIVA здесь с окладом и ИТОГО, как все, — помесячно, а не почасово.
+  "ауп офис": { deptId: "aup-office", order: 1, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "коммерческий отдел": { deptId: "sales", order: 2, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "ауп производство": { deptId: "aup-farm", order: 3, workWeek: 5, overtime: false, overtimeRate: 0 },
+  ауп: { deptId: "aup", order: 3, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "бутон и выбраковка": { deptId: "buton", order: 5, workWeek: 5, overtime: false, overtimeRate: 0 },
+  срезка: { deptId: "cutting", order: 6, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "подготовка отделения": { deptId: "prep", order: 7, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "посадка и черенкование": { deptId: "planting", order: 8, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "склад готовой продукции": { deptId: "stock", order: 10, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "техническая служба": { deptId: "tech", order: 11, workWeek: 5, overtime: false, overtimeRate: 0 },
+  "оператор priva": { deptId: "priva", order: 12, workWeek: 5, overtime: false, overtimeRate: 0 },
 };
+
+/**
+ * Название блока из строки «ИТОГО АУП - ПРОИЗВОДСТВО» → «АУП производство»: аббревиатуры остаются заглавными,
+ * остальное — строчными, тире и лишние пробелы убираются.
+ */
+function blockLabel(totalRow: string): string {
+  return totalRow
+    .replace(/^итого\s*/i, "")
+    .replace(/\s*[-–—]\s*/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w.length <= 3 && w === w.toUpperCase() ? w : w.toLowerCase()))
+    .join(" ");
+}
+
+/** Дата увольнения из примечания штатки: «уволен 16.03.2026», «уволена с 01.09.2026». */
+export function firedAtFromNote(note: string): string {
+  const m = note.match(/уволен\D{0,12}(\d{1,2})\.(\d{1,2})\.(\d{4})/i);
+  if (!m) return "";
+  return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+}
+
+/** Название подразделения для карточки: первая буква заглавная, остальное — как в файле («Коммерческий отдел»). */
+function deptLabel(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 function norm(s: unknown): string {
   return String(s ?? "")
@@ -60,7 +104,7 @@ function num(s: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-const HEADERS: Record<keyof Omit<StaffingRow, "employment"> | "employment", RegExp> = {
+const HEADERS: Record<keyof Omit<StaffingRow, "employment" | "firedAt"> | "employment", RegExp> = {
   fullName: /фио/i,
   departmentName: /подразделен/i,
   position: /должност/i,
@@ -68,9 +112,22 @@ const HEADERS: Record<keyof Omit<StaffingRow, "employment"> | "employment", RegE
   salary1c: /оклад/i,
   total: /итого/i,
   note: /коммент|примечан/i,
-  travelAddress: /место жительства|адрес/i,
-  travelRate: /проезд|дорожн/i,
+  travelAddress: /место ?жительств|адрес/i,
+  // У Есентая колонка дорожных называется просто «Сумма» (стоит после «Местожительство»).
+  travelRate: /проезд|дорожн|^сумма$/i,
 };
+
+/** «Данные на: <дата>» в шапке книги — дата в соседней ячейке (серийное число, «01.10.2026» или ISO). */
+function dataDateOf(matrix: string[][]): string {
+  for (const row of matrix.slice(0, 15)) {
+    const i = row.findIndex((c) => /данные на/i.test(norm(c)));
+    if (i < 0) continue;
+    const cell = row.slice(i + 1).map(norm).find(Boolean) ?? norm(row[i]).replace(/.*данные на:?/i, "");
+    const d = toIsoDate(cell);
+    if (d) return d;
+  }
+  return "";
+}
 
 export function parseStaffingMatrix(matrix: string[][]): StaffingParse {
   let title = "";
@@ -91,19 +148,40 @@ export function parseStaffingMatrix(matrix: string[][]): StaffingParse {
       break;
     }
   }
+  const dataDate = dataDateOf(matrix);
   if (headerAt < 0 || col.fullName === undefined || col.departmentName === undefined) {
-    return { title, rows: [], skipped: [{ line: 0, why: "Не нашёл строку заголовков со словами «ФИО» и «Подразделение»." }] };
+    return { title, dataDate, rows: [], skipped: [{ line: 0, why: "Не нашёл строку заголовков со словами «ФИО» и «Подразделение»." }] };
   }
   const get = (row: string[], key: keyof typeof HEADERS) => (col[key] === undefined ? "" : row[col[key]!] ?? "");
 
   const rows: StaffingRow[] = [];
   const skipped: StaffingParse["skipped"] = [];
+  // Блок — строки до ближайшего «ИТОГО …». В книге Есентая два разных блока носят одно подразделение «АУП»
+  // («ИТОГО АУП ОФИС» и «ИТОГО АУП - ПРОИЗВОДСТВО»): если имя блока ДЛИННЕЕ подразделения его строк и начинается с него,
+  // подразделением становится имя блока — иначе директор и агрономы оказались бы в одном табеле.
+  let blockStart = 0;
+  const closeBlock = (label: string) => {
+    const block = rows.slice(blockStart);
+    blockStart = rows.length;
+    if (!block.length) return;
+    const names = new Set(block.map((r) => r.departmentName.toLowerCase()));
+    if (names.size !== 1) return;
+    const dept = block[0].departmentName.toLowerCase();
+    const nice = blockLabel(label);
+    const low = nice.toLowerCase();
+    if (low !== dept && low.startsWith(dept) && low.length > dept.length) for (const r of block) r.departmentName = nice;
+  };
   for (let i = headerAt + 1; i < matrix.length; i++) {
     const row = matrix[i] ?? [];
     const fullName = norm(get(row, "fullName"));
-    if (!fullName) continue;
     const departmentName = norm(get(row, "departmentName"));
     const first = norm(row[0]);
+    const totalCell = row.map(norm).find((c) => /^(итого|всего)/i.test(c));
+    if (totalCell && !departmentName) {
+      closeBlock(totalCell);
+      continue;
+    }
+    if (!fullName) continue;
     // Строка группы: «№ | Администрация» или «Звено сортировки» без номера и подразделения.
     if (!departmentName) {
       if (first && first !== "№" && /^\d+$/.test(first)) skipped.push({ line: i + 1, why: `${fullName}: не указано подразделение` });
@@ -121,9 +199,10 @@ export function parseStaffingMatrix(matrix: string[][]): StaffingParse {
       note: norm(get(row, "note")),
       travelAddress: norm(get(row, "travelAddress")),
       travelRate: Math.round(num(get(row, "travelRate"))),
+      firedAt: firedAtFromNote(norm(get(row, "note"))),
     });
   }
-  return { title, rows, skipped };
+  return { title, dataDate, rows, skipped };
 }
 
 export interface StaffingContext {
@@ -178,7 +257,7 @@ export function planStaffingImport(parse: StaffingParse, ctx: StaffingContext): 
     if (ctx.departments.some((d) => d.deptId === deptId)) continue;
     if (!known) plan.unknownDepartments.push(row.departmentName);
     if (plan.newDepartments.some((d) => d.deptId === deptId)) continue;
-    const label = row.departmentName.replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+    const label = deptLabel(row.departmentName);
     plan.newDepartments.push({
       deptId,
       name: label,
