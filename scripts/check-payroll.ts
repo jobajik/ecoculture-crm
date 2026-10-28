@@ -23,6 +23,7 @@ import {
   suggestBalance,
 } from "../src/lib/payroll/rules";
 import type { Department, Employee, Rate } from "../src/lib/payroll/types";
+import { monthFromTitle, parseStaffingMatrix, planStaffingImport } from "../src/lib/payroll/staffingImport";
 import { addDays, compareWithIsDayOff, isDayOff, isHoliday, lawHolidays, monthNorm, nonWorkingDays, yearNorm, type ExtraDay } from "../src/lib/payroll/calendarKz";
 import { payrollTabsFor } from "../src/app/payroll/tabs";
 import { navLinksFor } from "../src/components/navLinks";
@@ -222,6 +223,33 @@ const ours2026 = Array.from({ length: 365 }, (_, i) => (isDayOff(addDays("2026-0
 check("сверка: совпадающий календарь — без расхождений", compareWithIsDayOff(2026, ours2026), []);
 check("сверка: одно расхождение найдено", compareWithIsDayOff(2026, "1" + ours2026.slice(1))?.map((d) => d.date), ["2026-01-01"].filter(() => !isDayOff("2026-01-01", 5)));
 check("сверка: мусор — null", compareWithIsDayOff(2026, "100"), null);
+
+// --- Штатная расстановка файлом ------------------------------------------------------
+const staffingMatrix: string[][] = [
+  ["", "ШТАТНАЯ РАССТАНОВКА СОТРУДНИКОВ ТОО ROSE FARM, Октябрь 2026"],
+  ["№", "ФИО работника", "Подразделение", "Должности", "Вид занятости", "ОКЛАД (1С)", "KPI", "ИТОГО", "Комментарии", "Место жительства ", "Стоимость проезда в 2 конца"],
+  ["№", "Теплица "],
+  ["1", "Мусрепова Айгуль", "Теплица", "Бригадир теплицы", "ТД", "157470", "112530", "270000", "оклад 150 +KPI", "Аксай", "400"],
+  ["2", "Косим Балнұр", "Теплица", "Цветовод", "ГПХ", "74 800", "105200", "180 000", "", "Караой", "900"],
+  ["", "Звено сортировки - упаковки"],
+  ["1", "Чибиряк Олеся", "Администрация теплицы", "Главный бухгалтер", "ТД", "", "", "", "", "Город ", "1000"],
+  ["1", "Әбілда Азамат", "Програмное управление", "Операторы «Priva»", "ТД", "74800", "165200", "240000", "", "Аксай", "400"],
+  ["2", "Новый Человек", "Отдел маркетинга", "Маркетолог", "ТД", "100000", "0", "100000"],
+];
+const parsed = parseStaffingMatrix(staffingMatrix);
+check("штатка: заголовок и месяц", [parsed.title.includes("Октябрь"), monthFromTitle(parsed.title, "")], [true, "2026-10-01"]);
+check("штатка: строки людей (группы и «№» пропущены)", parsed.rows.map((r) => r.fullName), ["Мусрепова Айгуль", "Косим Балнұр", "Чибиряк Олеся", "Әбілда Азамат", "Новый Человек"]);
+check("штатка: числа с пробелами читаются", parsed.rows[1].salary1c + parsed.rows[1].total, 74800 + 180000);
+check("штатка: ГПХ, дорожные, заметка", [parsed.rows[1].employment, parsed.rows[1].travelRate, parsed.rows[0].note], ["gph", 900, "оклад 150 +KPI"]);
+const sctx = { departments: depts, employees: [emp({ employeeId: "e1", fullName: "Мусрепова Айгуль", position: "Бригадир теплицы", travelAddress: "Аксай", travelRate: 400 })], rates: [{ rateId: "r1", employeeId: "e1", from: "2026-07-01", salary1c: 157470, kpi: 0, total: 250000, dayRate: 0, nightRate: 0, note: "", setBy: "", setAt: "" }], from: "2026-10-01", farm: "rose_farm" };
+const splan = planStaffingImport(parsed, sctx);
+check("штатка: новые подразделения с правилами (приставки у Rose Farm нет)", splan.newDepartments.map((d) => `${d.deptId}:${d.workWeek}`), ["admin:5", "priva:5", "otdel-marketinga:5"]);
+check("штатка: незнакомое подразделение названо", splan.unknownDepartments, ["Отдел маркетинга"]);
+check("штатка: существующий по ФИО не заводится, у него новая ставка (ИТОГО изменился)", [splan.newEmployees.length, splan.newRates.map((r) => `${r.employee.fullName}:${r.was?.total}->${r.total}`)], [4, ["Мусрепова Айгуль:250000->270000"]]);
+check("штатка: операторы PRIVA — почасовые", splan.newEmployees.find((n) => n.row.fullName === "Әбілда Азамат")?.payType, "hourly");
+check("штатка: без оклада — в список noRate", splan.noRate, ["Чибиряк Олеся"]);
+check("штатка: без ФИО/подразделения — не разобралось", parseStaffingMatrix([["a", "b"]]).rows.length, 0);
+check("штатка: у Есентая коды с приставкой", planStaffingImport(parsed, { ...sctx, employees: [], farm: "esentai" }).newDepartments.map((d) => d.deptId).slice(0, 2), ["es-teplitsa", "es-admin"]);
 
 // --- Назначение ролей ------------------------------------------------------------
 const actx = { actorEmail: "owner@x", departments: depts };

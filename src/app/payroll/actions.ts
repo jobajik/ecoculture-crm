@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { guard } from "@/lib/actionResult";
+import { readTable, SHEET_TABS } from "@/lib/sheets";
 import { payrollSession } from "@/lib/payroll/session";
 import {
   accessRefusal,
@@ -17,6 +18,8 @@ import {
   extraDays,
 } from "@/lib/payroll/rules";
 import { compareWithIsDayOff } from "@/lib/payroll/calendarKz";
+import { parseStaffingMatrix, planStaffingImport, type StaffingPlan } from "@/lib/payroll/staffingImport";
+import { FARM_ORDER } from "@/lib/constants";
 import { cleanDeptId } from "@/lib/payroll/access";
 import type { BalanceDraft, DepartmentDraft, EmployeeDraft, RateDraft } from "@/lib/payroll/types";
 import {
@@ -25,6 +28,7 @@ import {
   addRate,
   createEmployee,
   deleteRate,
+  importStaffing,
   listDepartments,
   listHolidays,
   listEmployees,
@@ -234,4 +238,53 @@ async function setPayrollAccessActionInner(draft: { email: string; payrollRole: 
 }
 export async function setPayrollAccessAction(draft: { email: string; payrollRole: string; departments: string[] }) {
   return guard(() => setPayrollAccessActionInner(draft));
+}
+
+/**
+ * Загрузка штатной расстановки файлом: предпросмотр (`dry = true`) и запись. Строки присылает браузер (файл
+ * разобран там — `xlsxLite`), сервер разбирает их заново и сам решает, кого заводить и у кого новая ставка.
+ * Может кадровик (сотрудники) и бухгалтер (ставки) — проверяется по тому, что план собирается менять.
+ */
+async function importStaffingActionInner(matrix: string[][], from: string, farm: string, dry: boolean) {
+  const { scope, email } = await payrollSession();
+  if (!scope) throw new Error("Нет доступа к зарплате.");
+  if (!FARM_ORDER.includes(farm)) throw new Error("Выберите компанию (ТОО).");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) throw new Error("Укажите, с какого дня действуют ставки из файла (ГГГГ-ММ-ДД).");
+  if (!Array.isArray(matrix) || matrix.length > 3000) throw new Error("Файл пустой или слишком большой.");
+  const parse = parseStaffingMatrix(matrix.map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? "")) : [])));
+  if (!parse.rows.length) throw new Error(parse.skipped[0]?.why ?? "В файле не нашлось ни одной строки с сотрудником.");
+  const [departments, employees, rates] = await Promise.all([listDepartments(), listEmployees(), listRates()]);
+  const plan: StaffingPlan = planStaffingImport(parse, { departments, employees, rates, from, farm });
+  const needsEmployees = plan.newEmployees.length + plan.changedEmployees.length + plan.newDepartments.length > 0;
+  const needsRates = plan.newRates.length + plan.newEmployees.filter((n) => n.row.salary1c > 0 || n.row.total > 0).length > 0;
+  if (needsEmployees && !scope.editsEmployees) throw new Error("Заводить и менять сотрудников может кадровик или администратор.");
+  if (needsRates && !scope.editsRates) throw new Error("Ставки из файла может записать только бухгалтер по зарплате или администратор.");
+  if (plan.newDepartments.length && !scope.editsDepartments) throw new Error(`В файле новые подразделения (${plan.newDepartments.map((d) => d.name).join(", ")}) — их заводит администратор.`);
+  if (dry) return { title: parse.title, skipped: parse.skipped, plan: summarize(plan) };
+  // Перед записью — свежее строгое чтение: сбой Google не должен завести всех второй раз (грабли 1.14).
+  await readTable(SHEET_TABS.PAYROLL_EMPLOYEES, { fresh: true });
+  const written = await importStaffing(plan, from, email);
+  refreshAll();
+  return { title: parse.title, skipped: parse.skipped, plan: summarize(plan), written };
+}
+function summarize(plan: StaffingPlan) {
+  return {
+    newDepartments: plan.newDepartments.map((d) => d.name),
+    unknownDepartments: plan.unknownDepartments,
+    newEmployees: plan.newEmployees.map((n) => `${n.row.fullName} — ${n.row.departmentName}, ${n.row.position}`),
+    changedEmployees: plan.changedEmployees.map((c) => {
+      const what: string[] = [];
+      if (c.patch.deptId) what.push(`подразделение → ${c.patch.deptId}`);
+      if (c.patch.position) what.push(`должность → ${c.patch.position}`);
+      if (c.patch.employment) what.push(`занятость → ${c.patch.employment === "td" ? "ТД" : "ГПХ"}`);
+      if (c.patch.travelAddress || c.patch.travelRate !== undefined) what.push("дорожные");
+      return `${c.employee.fullName}: ${what.join(", ")}`;
+    }),
+    newRates: plan.newRates.map((r) => `${r.employee.fullName}: ${r.was ? `${r.was.salary1c} / ${r.was.total}` : "ставки не было"} → ${r.salary1c} / ${r.total}`),
+    unchanged: plan.unchanged,
+    noRate: plan.noRate,
+  };
+}
+export async function importStaffingAction(matrix: string[][], from: string, farm: string, dry: boolean) {
+  return guard(() => importStaffingActionInner(matrix, from, farm, dry));
 }

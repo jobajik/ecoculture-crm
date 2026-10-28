@@ -8,7 +8,7 @@ import { listDepartments, listEmployees, listRates, prefetchPayroll } from "@/li
 import { localDayKey } from "@/lib/timezone";
 import { payrollSpreadsheetId } from "@/lib/sheets";
 import { payrollTabsFor } from "../tabs";
-import { saveEmployeeAction } from "../actions";
+import { importStaffingAction, saveEmployeeAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +65,7 @@ export default async function PayrollEmployeesPage() {
         canRate={scope.editsRates}
         seesMoney={scope.seesMoney}
         save={saveEmployeeAction}
+        importStaffing={importStaffingAction}
       />
     </div>
   );
