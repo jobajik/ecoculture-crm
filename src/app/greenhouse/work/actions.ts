@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { guard } from "@/lib/actionResult";
 import { FARM_ORDER } from "@/lib/constants";
 import { payrollSession } from "@/lib/payroll/session";
-import { cleanBudgetAmount, cleanWorkDay, isWorkArea, plausibleDate, workBudgetRefusal, workEditRefusal, workType, type ImportRow, type WorkRowDraft } from "@/lib/payroll/work";
+import { cleanBudgetAmount, isWorkArea, plausibleDate, workBudgetRefusal, workEditRefusal, workType, type ImportRow } from "@/lib/payroll/work";
 import { listDepartments, listEmployees, prefetchPayroll } from "@/lib/repo/payroll";
-import { deleteWorkEntry, importWorkRows, listWorkIds, saveNameLink, saveWorkBudgets, saveWorkDay } from "@/lib/repo/payrollWork";
+import { deleteWorkEntry, importWorkRows, listWorkIds, saveNameLink, saveWorkBudgets } from "@/lib/repo/payrollWork";
 import { localDayKey } from "@/lib/timezone";
 import { isMonth } from "@/lib/payroll/rules";
 
@@ -16,10 +16,7 @@ import { isMonth } from "@/lib/payroll/rules";
  */
 
 function refresh() {
-  revalidatePath("/greenhouse/work");
-  revalidatePath("/greenhouse/work/journal");
-  revalidatePath("/greenhouse/work/analytics");
-  revalidatePath("/greenhouse/work/pay");
+  revalidatePath("/greenhouse", "layout");
 }
 
 function cleanFarm(farm: string): string {
@@ -34,20 +31,6 @@ async function farmEmployees(farm: string) {
   const [departments, employees] = await Promise.all([listDepartments(), listEmployees()]);
   const deptIds = new Set(departments.filter((d) => d.farm === farm).map((d) => d.deptId));
   return employees.filter((e) => deptIds.has(e.deptId));
-}
-
-async function saveWorkDayActionInner(farm: string, area: string, date: string, drafts: WorkRowDraft[]) {
-  const { scope, email } = await payrollSession();
-  const f = cleanFarm(farm);
-  const employees = await farmEmployees(f);
-  const { rows, error } = cleanWorkDay(scope, area, date, drafts, employees, localDayKey());
-  if (error) throw new Error(error);
-  const result = await saveWorkDay(f, area, date, rows, employees, email);
-  refresh();
-  return result;
-}
-export async function saveWorkDayAction(farm: string, area: string, date: string, drafts: WorkRowDraft[]) {
-  return guard(() => saveWorkDayActionInner(farm, area, date, drafts));
 }
 
 async function deleteWorkEntryActionInner(farm: string, workId: string) {

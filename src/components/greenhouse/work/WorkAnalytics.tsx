@@ -49,7 +49,7 @@ export default function WorkAnalytics({
   const types = WORK_TYPES[area];
 
   const go = (next: { from?: string; to?: string; area?: string }) => {
-    router.push(ghHref("/greenhouse/work/analytics", farm, { from: next.from ?? pFrom, to: next.to ?? pTo, area: next.area ?? area }));
+    router.push(ghHref("/greenhouse/analytics", farm, { view: "people", from: next.from ?? pFrom, to: next.to ?? pTo, area: next.area ?? area }));
   };
   const thisMonth = monthRange(today.slice(0, 7));
   const prevMonth = monthRange(shiftDay(thisMonth.from, -1).slice(0, 7));
@@ -359,7 +359,7 @@ export default function WorkAnalytics({
       )}
       {s.entries === 0 && (
         <div className="card text-sm text-ink-secondary">
-          По участку «{AREA_LABELS[area]}» за {formatDay(from)} — {formatDay(to)} записей нет. Внесите день на вкладке «Ввод за день» или загрузите историю в «Журнале».
+          По участку «{AREA_LABELS[area]}» за {formatDay(from)} — {formatDay(to)} записей нет. Внесите день во вкладке «Внести день» или загрузите историю в «Записях».
         </div>
       )}
     </div>

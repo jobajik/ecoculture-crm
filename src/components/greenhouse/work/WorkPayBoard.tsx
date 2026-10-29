@@ -109,11 +109,11 @@ export default function WorkPayBoard({
     <div className="space-y-4 payslip">
       <div className="card !p-3 sm:!p-4 flex flex-wrap items-center gap-3 no-print">
         <div className="flex items-center gap-2 text-sm">
-          <Link className="btn-secondary !py-1.5 !px-3" href={ghHref("/greenhouse/work/pay", farm, { month: shiftMonth(month, -1) })}>
+          <Link className="btn-secondary !py-1.5 !px-3" href={ghHref("/greenhouse/analytics", farm, { view: "pay", month: shiftMonth(month, -1) })}>
             ‹
           </Link>
           <span className="font-medium min-w-[9rem] text-center">{monthLabel(month)}</span>
-          <Link className="btn-secondary !py-1.5 !px-3" href={ghHref("/greenhouse/work/pay", farm, { month: shiftMonth(month, 1) })}>
+          <Link className="btn-secondary !py-1.5 !px-3" href={ghHref("/greenhouse/analytics", farm, { view: "pay", month: shiftMonth(month, 1) })}>
             ›
           </Link>
         </div>

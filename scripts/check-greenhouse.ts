@@ -32,12 +32,14 @@ import {
   type GhCycle,
   type GhHarvest,
   type GhWaste,
+  HARVEST_GRADES,
 } from "../src/lib/greenhouse/production";
 import { blockInsights, cycleCard, cycleInsights, cycleOptions, cyclePhase, defaultCycle, finishedCycles, harvestBuckets, harvestInsight, heatValue, nowByBlock, previousFinished, qualitySplit, rankBlocks, rankVarieties, saneYield, weekStart, wasteByCycle } from "../src/lib/greenhouse/views";
 import { greenhouseScope } from "../src/lib/greenhouse/access";
 import { ghHref, pickGreenhouseFarm } from "../src/lib/greenhouse/farm";
 import { greenhouseTabsFor } from "../src/app/greenhouse/tabs";
-import { navLinksFor } from "../src/components/navLinks";
+import { defaultDayBlock, nextGrade, planDayRows, sectionTotal } from "../src/lib/greenhouse/day";
+import { activeSub, navLinksFor } from "../src/components/navLinks";
 import { canOpen } from "../src/lib/access";
 import { cleanBlock } from "../src/lib/payroll/work";
 
@@ -228,8 +230,12 @@ check("менеджер без роли модуля — закрыто", manage
 check("бригадир (роль модуля «начальник») — журналы и выработка", head && [head.editsLogs, head.editsWork, head.seesMoney], [true, true, false]);
 check("кадровику теплица ни к чему", hr, null);
 check("бухгалтер — смотрит", accountant && [accountant.editsLogs, accountant.editsWork], [false, false]);
-check("вкладки агронома — без выработки", greenhouseTabsFor(agro, "esentai").map((t) => t.label), ["Циклы и блоки", "Срезка", "Черенкование", "Брак", "Аналитика"]);
-check("вкладки админа — с выработкой", greenhouseTabsFor(admin, "esentai").map((t) => t.label), ["Циклы и блоки", "Срезка", "Черенкование", "Брак", "Аналитика", "Выработка"]);
+check("вкладки: четыре по делу — обзор, внести день, записи, аналитика", greenhouseTabsFor(admin, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика"]);
+check("вкладки агронома — тоже «Внести день»", greenhouseTabsFor(agro, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика"]);
+check("бухгалтер CRM без роли модуля — без «Внести день»", accountant && greenhouseTabsFor(accountant, "esentai").map((t) => t.label), ["Обзор", "Записи", "Аналитика"]);
+check("вкладка горит без компании в адресе", greenhouseTabsFor(admin, "esentai").find((t) => t.label === "Записи")?.match, ["/greenhouse/records"]);
+check("меню: страница блока — во вкладке «Обзор»", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица")!.subs, "/greenhouse/cycles/11/4")?.label, "Обзор");
+check("меню: «Внести день» горит на своей странице", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица")!.subs, "/greenhouse/day")?.label, "Внести день");
 check("компания: закреплённая главнее адреса, по умолчанию Есентай", [pickGreenhouseFarm("rose_farm", undefined, "esentai"), pickGreenhouseFarm(undefined, undefined), pickGreenhouseFarm(undefined, "rose_farm"), pickGreenhouseFarm("all", "esentai")], ["esentai", "esentai", "rose_farm", "esentai"]);
 check("адрес с компанией", ghHref("/greenhouse", "esentai", { cycle: 11, block: "" }), "/greenhouse?cycle=11&farm=esentai");
 check("меню: «Теплица» у админа — рабочий раздел", navLinksFor("admin").find((l) => l.label === "Теплица")?.other, false);
@@ -238,6 +244,29 @@ check("меню: агроном без производства — нет", nav
 check("меню: у менеджера нет", navLinksFor("manager").some((l) => l.label === "Теплица"), false);
 check("меню: бригадир — «Теплица» и «Зарплата»", navLinksFor("payroll", "head", ["es-teplitsa"]).map((l) => l.label), ["Теплица", "Зарплата"]);
 check("охранник пускает агронома, склад и бригадира", [canOpen("agronomist", "/greenhouse"), canOpen("warehouse", "/greenhouse/harvest"), canOpen("payroll", "/greenhouse/work")], [true, true, true]);
+
+console.log("--- Внести день");
+{
+  const plan = planDayRows(["a", "b", "c"], [{ id: "a" }, { id: "" }, { id: "" }], (r) => r.id, ["a", "b"]);
+  check("день: новые — без номера, правка — с номером, удаляется убранное с экрана", [plan.add.length, plan.update.map((r) => r.id), plan.remove, plan.error], [2, ["a"], ["b"], ""]);
+  check("день: чужую строку (её не было на экране) не удаляем", plan.remove.includes("c"), false);
+  check("день: строку уже удалили — отказ, а не тихая запись", planDayRows(["a"], [{ id: "x" }], (r) => r.id, ["x"]).error.includes("обновите страницу"), true);
+  check("день: одна запись дважды — отказ", planDayRows(["a"], [{ id: "a" }, { id: "a" }], (r) => r.id, ["a"]).error !== "", true);
+  check("день: известный номер, которого уже нет в таблице, не удаляем", planDayRows(["a"], [], (r: { id: string }) => r.id, ["a", "zz"]).remove, ["a"]);
+  check("категория после «Высшей» — «Первая»", nextGrade("Высшая"), "Первая");
+  check("категория: пропускает уже записанные", nextGrade("", ["Высшая", "Первая"]), "Вторая");
+  check("категория: последняя остаётся", nextGrade(HARVEST_GRADES[HARVEST_GRADES.length - 1]), HARVEST_GRADES[HARVEST_GRADES.length - 1]);
+  const dayBlocks = [
+    { block: "1", cycle: 12, status: "growing", statusLabel: "растёт", varieties: [] },
+    { block: "8", cycle: 11, status: "harvest", statusLabel: "срезка", varieties: [] },
+    { block: "14", cycle: 11, status: "harvest", statusLabel: "срезка", varieties: [] },
+  ];
+  check("блок дня: где больше записей", defaultDayBlock(dayBlocks, [{ block: "14" }, { block: "14" }, { block: "8" }]), "14");
+  check("блок дня: записей нет — первый, что режется", defaultDayBlock(dayBlocks, []), "8");
+  check("блок дня: из адреса, если такой есть", [defaultDayBlock(dayBlocks, [], "1"), defaultDayBlock(dayBlocks, [], "99")], ["1", "8"]);
+  check("итог раздела: пустые и нули не считаются", sectionTotal([{ qty: "1 200" }, { qty: "" }, { qty: 0 }, { qty: "30,5" }]), { qty: 1230.5, rows: 2 });
+  check("охранник: новые адреса", [canOpen("agronomist", "/greenhouse/day"), canOpen("payroll", "/greenhouse/records"), canOpen("warehouse", "/greenhouse/analytics")], [true, true, true]);
+}
 
 if (failed) {
   console.log(`\nНе прошло: ${failed}`);
