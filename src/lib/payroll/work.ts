@@ -134,7 +134,10 @@ export function partLabel(part: string): string {
 export function cleanBlock(raw: string): string {
   const v = String(raw ?? "").trim().replace(/\s+/g, " ");
   if (/^\d+([.,]0+)?$/.test(v)) return String(Number(v.replace(",", ".")));
-  return v;
+  // «RoseFarm», «rose farm», «маточник» — одно написание с известными блоками.
+  const squeezed = v.toLowerCase().replace(/\s+/g, "");
+  const known = ["Маточник", "Rose Farm"].find((k) => k.toLowerCase().replace(/\s+/g, "") === squeezed);
+  return known ?? v;
 }
 
 export const KNOWN_BLOCKS = [...Array.from({ length: 14 }, (_, i) => String(i + 1)), "Маточник", "Rose Farm"];

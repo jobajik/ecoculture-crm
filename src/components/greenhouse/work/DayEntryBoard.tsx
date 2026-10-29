@@ -7,7 +7,7 @@ import clsx from "clsx";
 import { unwrapValue } from "@/lib/actionResult";
 import { formatDay } from "@/lib/formatDate";
 import { decimal } from "@/lib/formatNumber";
-import { payrollHref } from "@/lib/payroll/farmScope";
+import { ghHref } from "@/lib/greenhouse/farm";
 import { PARTS, WORK_AREAS, WORK_TYPES, cleanWorkRow, shiftDay, workType, type WorkArea, type WorkRowDraft } from "@/lib/payroll/work";
 import type { WorkPerson } from "@/lib/payroll/workData";
 
@@ -88,7 +88,7 @@ export default function DayEntryBoard({ farm, date, today, area, areaLabels, cou
 
   const go = (next: { date?: string; area?: string }) => {
     if (dirty && !window.confirm("Есть несохранённые строки. Уйти без сохранения?")) return;
-    router.push(payrollHref("/payroll/work", farm, { date: next.date ?? date, area: next.area ?? area }));
+    router.push(ghHref("/greenhouse/work", farm, { date: next.date ?? date, area: next.area ?? area }));
   };
 
   const update = (uid: number, patch: Partial<Row>) => {
@@ -457,7 +457,7 @@ export default function DayEntryBoard({ farm, date, today, area, areaLabels, cou
           </div>
         )}
         {!canEdit && (
-          <Link href={payrollHref("/payroll/work/journal", farm, { from: date, to: date })} className="text-sm underline">
+          <Link href={ghHref("/greenhouse/work/journal", farm, { from: date, to: date })} className="text-sm underline">
             В журнал
           </Link>
         )}

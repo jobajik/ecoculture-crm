@@ -14,12 +14,7 @@ export function payrollTabsFor(scope: PayrollScope | null, farm = ""): { href: s
   // Обзор — «где мы по месяцу»: три шага (люди → табель → ведомость) одной страницей; начальнику он ни к чему.
   if (scope.seesMoney) push("/payroll", "Обзор");
   push("/payroll/timesheet", "Табель");
-  // Выработка (этап 7): ввод за день, журнал, аналитика, оплата труда — свои вкладки внутри страницы (`WorkTabs`).
-  tabs.push({
-    href: farm ? `/payroll/work?farm=${farm}` : "/payroll/work",
-    label: "Выработка",
-    match: ["/payroll/work", "/payroll/work/journal", "/payroll/work/analytics", "/payroll/work/pay"],
-  });
+  // Выработка цветоводов (этап 7) переехала в раздел «Теплица» (29.10.2026) — к циклам и блокам, где её и смотрят.
   if (scope.seesMoney) push("/payroll/payslip", "Ведомость");
   push("/payroll/employees", "Сотрудники");
   if (scope.kind !== "head") {

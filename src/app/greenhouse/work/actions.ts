@@ -16,10 +16,10 @@ import { isMonth } from "@/lib/payroll/rules";
  */
 
 function refresh() {
-  revalidatePath("/payroll/work");
-  revalidatePath("/payroll/work/journal");
-  revalidatePath("/payroll/work/analytics");
-  revalidatePath("/payroll/work/pay");
+  revalidatePath("/greenhouse/work");
+  revalidatePath("/greenhouse/work/journal");
+  revalidatePath("/greenhouse/work/analytics");
+  revalidatePath("/greenhouse/work/pay");
 }
 
 function cleanFarm(farm: string): string {

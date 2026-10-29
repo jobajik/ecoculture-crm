@@ -112,6 +112,24 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
       "leadgen",
     ],
   },
+  // Теплица (29.10.2026): как «Зарплата» — охранник пускает любую рабочую роль, а решает `greenhouseScope`
+  // (`src/lib/greenhouse/access.ts`): агроном и зав. складом — своим производством, бригадиры — по роли модуля зарплаты.
+  {
+    prefix: "/greenhouse",
+    roles: [
+      "payroll",
+      "manager",
+      "warehouse",
+      "accountant",
+      "sales_head",
+      "agronomist",
+      "retail_almaty",
+      "retail_regions",
+      "office",
+      "office_retail",
+      "leadgen",
+    ],
+  },
   { prefix: "/admin", roles: ["admin"] },
 ];
 

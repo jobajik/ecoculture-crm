@@ -165,7 +165,7 @@ export default function WorkImportForm({
           {progress && (
             <div className="text-sm">
               <div className="h-2 rounded-full bg-surface-sunk overflow-hidden">
-                <div className="h-full bg-section-payroll transition-all" style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 100}%` }} />
+                <div className="h-full bg-section-greenhouse transition-all" style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 100}%` }} />
               </div>
               <div className="text-xs text-ink-muted mt-1">
                 {progress.done} из {progress.total} · записано {progress.added}

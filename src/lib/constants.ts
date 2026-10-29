@@ -89,6 +89,14 @@ export const SHEET_TABS = {
   PAYROLL_WORK: "PayrollWork",
   PAYROLL_WORK_BUDGETS: "PayrollWorkBudgets",
   PAYROLL_WORK_NAMES: "PayrollWorkNames",
+  // Теплица (29.10.2026): производственный учёт хризантемы по циклам и блокам — из книги агронома Есентая. Вкладки
+  // с приставкой Gh лежат в той же второй таблице, что и зарплата (`spreadsheetIdFor`), и заводятся сами при первой
+  // записи. GhCycles — цикл × блок с датами; GhHarvest — учёт цветка (срезка по сортам и категориям, вес);
+  // GhCuttings — черенкование (приход, факт, брак, выбраковка, маточник); GhWaste — брак на блоке (повилика, клещ…).
+  GH_CYCLES: "GhCycles",
+  GH_HARVEST: "GhHarvest",
+  GH_CUTTINGS: "GhCuttings",
+  GH_WASTE: "GhWaste",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -423,6 +431,22 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_TABS.PAYROLL_WORK_BUDGETS]: ["Month", "Farm", "Area", "WorkType", "Amount", "Note", "UpdatedBy", "UpdatedAt"],
   /** Имя из старого учёта → карточка сотрудника: привязывается один раз, дальше все строки с этим именем — его. */
   [SHEET_TABS.PAYROLL_WORK_NAMES]: ["Farm", "Name", "EmployeeID", "SetBy", "SetAt"],
+  /**
+   * Теплица — циклы (`greenhouse/production.ts`). Цикл × блок: когда черенковали, посадили и когда планировали начать
+   * срезку (как в листе «Данные по датам» книги агронома). Факт первой и последней срезки не хранится — считается по
+   * учёту цветка.
+   */
+  [SHEET_TABS.GH_CYCLES]: ["Farm", "Cycle", "Block", "CuttingsAt", "PlantedAt", "PlannedHarvestAt", "Note", "UpdatedBy", "UpdatedAt"],
+  /** Учёт цветка: строка на день, блок, сорт и категорию — штуки и вес в кг (из него средний вес стебля). */
+  [SHEET_TABS.GH_HARVEST]: ["HarvestID", "Farm", "Date", "Cycle", "Block", "Variety", "Grade", "Qty", "WeightKg", "Note", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"],
+  /**
+   * Черенкование: Kind — код вида записи (invoice — приход по инвойсу, actual — по факту, dept_cull — брак с отделения,
+   * nursery_cull — брак с рассадника, cull — выбраковка, from_stock — с маточника, to_stock — на маточник). Посажено не
+   * хранится: факт − брак с отделения − брак с рассадника − тех брак (из GhWaste) − выбраковка, как в книге.
+   */
+  [SHEET_TABS.GH_CUTTINGS]: ["CuttingID", "Farm", "Cycle", "Date", "Block", "Part", "Line", "Variety", "Kind", "Qty", "Note", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"],
+  /** Брак на блоке: Kind — код причины (dodder — повилика, tech — тех брак, mite, aphid, thrips, rust, botrytis, other). */
+  [SHEET_TABS.GH_WASTE]: ["WasteID", "Farm", "Date", "Cycle", "Block", "Variety", "Qty", "Kind", "Note", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"],
   /**
    * Цветы, которые сотрудник взял в счёт зарплаты.
    *

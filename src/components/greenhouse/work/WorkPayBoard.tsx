@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
 import { unwrap } from "@/lib/actionResult";
-import { payrollHref } from "@/lib/payroll/farmScope";
+import { ghHref } from "@/lib/greenhouse/farm";
 import { monthLabel, shiftMonth } from "@/lib/payroll/timesheet";
 import { AREA_DEPT_LABELS, WORK_AREAS, WORK_TYPES, computeAreaPay, type WorkArea, type WorkBudget, type WorkEntry } from "@/lib/payroll/work";
 import { THEAD_ROW, TH, TR } from "@/lib/tableStyle";
@@ -109,11 +109,11 @@ export default function WorkPayBoard({
     <div className="space-y-4 payslip">
       <div className="card !p-3 sm:!p-4 flex flex-wrap items-center gap-3 no-print">
         <div className="flex items-center gap-2 text-sm">
-          <Link className="btn-secondary !py-1.5 !px-3" href={payrollHref("/payroll/work/pay", farm, { month: shiftMonth(month, -1) })}>
+          <Link className="btn-secondary !py-1.5 !px-3" href={ghHref("/greenhouse/work/pay", farm, { month: shiftMonth(month, -1) })}>
             ‹
           </Link>
           <span className="font-medium min-w-[9rem] text-center">{monthLabel(month)}</span>
-          <Link className="btn-secondary !py-1.5 !px-3" href={payrollHref("/payroll/work/pay", farm, { month: shiftMonth(month, 1) })}>
+          <Link className="btn-secondary !py-1.5 !px-3" href={ghHref("/greenhouse/work/pay", farm, { month: shiftMonth(month, 1) })}>
             ›
           </Link>
         </div>
