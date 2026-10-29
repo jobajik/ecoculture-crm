@@ -49,6 +49,8 @@ export interface PayrollScope {
   editsBalance: boolean;
   /** Роли в модуле. */
   editsAccess: boolean;
+  /** Выработка за день (срезка, сортировка и упаковка, посадка, подготовка): админ, бухгалтер по ЗП и начальник. */
+  editsWork: boolean;
 }
 
 const KNOWN: string[] = Object.values(PAYROLL_ROLES);
@@ -67,6 +69,7 @@ export function payrollScope(user: PayrollUser): PayrollScope | null {
       editsDepartments: true,
       editsBalance: true,
       editsAccess: true,
+      editsWork: true,
     };
   }
   const payrollRole = String(user.payrollRole ?? "")
@@ -81,10 +84,11 @@ export function payrollScope(user: PayrollUser): PayrollScope | null {
     editsDepartments: false,
     editsBalance: false,
     editsAccess: false,
+    editsWork: false,
   };
   switch (payrollRole) {
     case PAYROLL_ROLES.ACCOUNTANT:
-      return { ...none, kind: "accountant", seesMoney: true, editsRates: true, editsBalance: true };
+      return { ...none, kind: "accountant", seesMoney: true, editsRates: true, editsBalance: true, editsWork: true };
     case PAYROLL_ROLES.HR:
       return { ...none, kind: "hr", seesMoney: true, editsEmployees: true };
     case PAYROLL_ROLES.AGRONOMIST:
@@ -92,7 +96,9 @@ export function payrollScope(user: PayrollUser): PayrollScope | null {
     case PAYROLL_ROLES.HEAD:
       // Начальник без подразделений — это не «все подразделения», а ошибка в строке Users.
       if (departments.length === 0) return null;
-      return { ...none, kind: "head", departments, seesMoney: false };
+      // Выработку начальник записывает по всей компании: срезчики, сортировщики и посадчики ходят между участками
+      // (одна и та же Косбергенова в книге и режет, и сортирует), а табель — только своих подразделений.
+      return { ...none, kind: "head", departments, seesMoney: false, editsWork: true };
     default:
       return null;
   }
