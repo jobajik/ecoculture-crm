@@ -8,6 +8,8 @@ import { retailTabsFor } from "@/app/retail/tabs";
 import { analyticsTabsFor } from "@/app/analytics/tabs";
 import { payrollTabsFor } from "@/app/payroll/tabs";
 import { payrollScope } from "@/lib/payroll/access";
+import { greenhouseTabsFor } from "@/app/greenhouse/tabs";
+import { greenhouseScope } from "@/lib/greenhouse/access";
 
 /**
  * Разделы бокового меню — ПЯТЬ-ШЕСТЬ на роль, под активным разделом его вкладки.
@@ -70,13 +72,25 @@ function payrollSection(role: string, payrollRole: string | undefined, departmen
   return section("/payroll", "Зарплата", payrollTabsFor(scope), ["/payroll"], crowded);
 }
 
+/**
+ * Раздел «Теплица» (29.10.2026, владелец: «выдели это в отдельную вкладку»): циклы и блоки, журналы срезки,
+ * черенкования и брака, аналитика и выработка цветоводов. Это рабочий раздел у всех, кому он открыт, — у владельца тоже.
+ */
+function greenhouseSection(role: string, farm: string | undefined, payrollRole: string | undefined, departments: string[] | undefined): NavLink | null {
+  const scope = greenhouseScope({ role, farm, payrollRole: payrollRole ?? "", payrollDepartments: departments ?? [] });
+  if (!scope) return null;
+  return section("/greenhouse", "Теплица", greenhouseTabsFor(scope), ["/greenhouse"]);
+}
+
 /** Разделы роли — в порядке, в котором их открывают каждый день. */
-export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[]): NavLink[] {
+export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[], farm?: string): NavLink[] {
   const links = baseLinksFor(role);
   const work = links.filter((l) => !l.other);
   const other = links.filter((l) => l.other);
-  const payroll = payrollSection(role, payrollRole, payrollDepartments, work.length >= 6);
-  if (!payroll) return links;
+  const greenhouse = greenhouseSection(role, farm, payrollRole, payrollDepartments);
+  if (greenhouse) work.push(greenhouse);
+  const payroll = payrollSection(role, payrollRole, payrollDepartments, work.length >= 7);
+  if (!payroll) return [...work, ...other];
   return payroll.other ? [...work, ...other, payroll] : [...work, payroll, ...other];
 }
 

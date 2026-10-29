@@ -1,5 +1,5 @@
-import { payrollSession } from "./session";
-import { payrollFarm } from "./farmServer";
+import { greenhouseSession } from "../greenhouse/session";
+import type { GreenhouseScope } from "../greenhouse/access";
 import { listDepartments, listEmployees } from "../repo/payroll";
 import { prefetchWork } from "../repo/payrollWork";
 import { shortName } from "./rules";
@@ -11,7 +11,10 @@ import type { PayrollScope } from "./access";
  * (`prefetchWork` берёт и вкладки выработки, и сотрудников с подразделениями — грабли 1.17).
  */
 export interface WorkContext {
+  /** Права выработки — роль модуля зарплаты (у кого её нет, выработки не видит). */
   scope: PayrollScope | null;
+  /** Права раздела «Теплица» — для вкладок и переключателя компании. */
+  gh: GreenhouseScope | null;
   email: string;
   farm: string;
   departments: Department[];
@@ -22,14 +25,15 @@ export interface WorkContext {
 }
 
 export async function loadWorkContext(searchParams?: { farm?: string }): Promise<WorkContext> {
-  const { scope, email } = await payrollSession();
-  const farm = payrollFarm(searchParams);
-  if (!scope) return { scope, email, farm, departments: [], employees: [], names: new Map() };
+  // Выработка живёт в «Теплице» (29.10.2026): компания — теплицы, права — из роли модуля зарплаты.
+  const { scope: gh, email, farm } = await greenhouseSession(searchParams);
+  const scope = gh?.payroll ?? null;
+  if (!scope) return { scope, gh, email, farm, departments: [], employees: [], names: new Map() };
   await prefetchWork();
   const [departments, employees] = await Promise.all([listDepartments(), listEmployees()]);
   const deptIds = new Set(departments.filter((d) => d.farm === farm).map((d) => d.deptId));
   const mine = employees.filter((e) => deptIds.has(e.deptId));
-  return { scope, email, farm, departments, employees: mine, names: new Map(mine.map((e) => [e.employeeId, { fullName: e.fullName }])) };
+  return { scope, gh, email, farm, departments, employees: mine, names: new Map(mine.map((e) => [e.employeeId, { fullName: e.fullName }])) };
 }
 
 /** Сотрудник для списков в браузере — без сумм и лишнего. */

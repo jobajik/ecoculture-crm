@@ -7,7 +7,7 @@ import clsx from "clsx";
 import { unwrap } from "@/lib/actionResult";
 import { formatDay } from "@/lib/formatDate";
 import { decimal } from "@/lib/formatNumber";
-import { payrollHref } from "@/lib/payroll/farmScope";
+import { ghHref } from "@/lib/greenhouse/farm";
 import { AREA_LABELS, WORK_AREAS, WORK_TYPES, monthRange, partLabel, shiftDay, type ImportRow, type WorkArea } from "@/lib/payroll/work";
 import { THEAD_ROW, TH, TR } from "@/lib/tableStyle";
 import WorkImportForm from "./WorkImportForm";
@@ -81,7 +81,7 @@ export default function WorkJournal({
   const [pTo, setPTo] = useState(to);
 
   const go = (next: { from?: string; to?: string; area?: string }) => {
-    router.push(payrollHref("/payroll/work/journal", farm, { from: next.from ?? pFrom, to: next.to ?? pTo, area: (next.area ?? area) || undefined }));
+    router.push(ghHref("/greenhouse/work/journal", farm, { from: next.from ?? pFrom, to: next.to ?? pTo, area: (next.area ?? area) || undefined }));
   };
 
   const filtered = useMemo(
@@ -276,7 +276,7 @@ export default function WorkJournal({
             {shown.map((r) => (
               <tr key={r.workId} className={TR}>
                 <td data-label="Дата" className="px-4 py-2 whitespace-nowrap">
-                  <Link href={payrollHref("/payroll/work", farm, { date: r.date, area: r.area })} className="hover:underline" title="Открыть день">
+                  <Link href={ghHref("/greenhouse/work", farm, { date: r.date, area: r.area })} className="hover:underline" title="Открыть день">
                     {formatDay(r.date)}
                   </Link>
                 </td>

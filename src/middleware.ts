@@ -63,5 +63,6 @@ export const config = {
     "/prices/:path*",
     "/admin/:path*",
     "/payroll/:path*",
+    "/greenhouse/:path*",
   ],
 };

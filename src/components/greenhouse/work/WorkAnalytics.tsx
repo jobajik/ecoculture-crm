@@ -9,7 +9,7 @@ import ChartCard, { CHART_COLORS, tooltipStyle } from "@/components/charts/Chart
 import KpiTile from "@/components/KpiTile";
 import { formatDay } from "@/lib/formatDate";
 import { decimal } from "@/lib/formatNumber";
-import { payrollHref } from "@/lib/payroll/farmScope";
+import { ghHref } from "@/lib/greenhouse/farm";
 import { AREA_LABELS, WORK_AREAS, WORK_TYPES, deltaPercent, monthRange, shiftDay, type AreaSummary, type WorkArea } from "@/lib/payroll/work";
 import { THEAD_ROW, TH, TR } from "@/lib/tableStyle";
 
@@ -49,7 +49,7 @@ export default function WorkAnalytics({
   const types = WORK_TYPES[area];
 
   const go = (next: { from?: string; to?: string; area?: string }) => {
-    router.push(payrollHref("/payroll/work/analytics", farm, { from: next.from ?? pFrom, to: next.to ?? pTo, area: next.area ?? area }));
+    router.push(ghHref("/greenhouse/work/analytics", farm, { from: next.from ?? pFrom, to: next.to ?? pTo, area: next.area ?? area }));
   };
   const thisMonth = monthRange(today.slice(0, 7));
   const prevMonth = monthRange(shiftDay(thisMonth.from, -1).slice(0, 7));
@@ -128,7 +128,7 @@ export default function WorkAnalytics({
               key={a}
               type="button"
               onClick={() => go({ area: a })}
-              className={clsx("card !p-4 text-left transition-shadow hover:shadow-card-hover", on && "ring-2 ring-section-payroll/40 border-section-payroll/40")}
+              className={clsx("card !p-4 text-left transition-shadow hover:shadow-card-hover", on && "ring-2 ring-section-greenhouse/40 border-section-greenhouse/40")}
             >
               <div className="text-xs text-ink-muted">{AREA_LABELS[a]}</div>
               <div className="font-display font-extrabold text-[22px] tabular-nums mt-1.5 leading-none">
@@ -285,7 +285,7 @@ export default function WorkAnalytics({
                         )}
                       </div>
                       <div className="h-1.5 rounded-full bg-surface-sunk mt-1 max-w-[16rem]">
-                        <div className="h-full rounded-full bg-section-payroll/70" style={{ width: `${maxQty ? Math.round((x.qty / maxQty) * 100) : 0}%` }} />
+                        <div className="h-full rounded-full bg-section-greenhouse/70" style={{ width: `${maxQty ? Math.round((x.qty / maxQty) * 100) : 0}%` }} />
                       </div>
                     </td>
                     <td data-label={mainLabel} className="px-4 py-2 text-right tabular-nums font-medium">

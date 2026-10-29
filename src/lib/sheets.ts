@@ -83,9 +83,11 @@ function getSpreadsheetId(): string {
  * список (репо глотает ошибку), запись отказывает понятным текстом.
  */
 export const PAYROLL_TAB_PREFIX = "Payroll";
+/** Теплица (29.10.2026): производственные вкладки Gh* живут в той же второй таблице — большие журналы не раздувают общую. */
+export const GREENHOUSE_TAB_PREFIX = "Gh";
 
 export function isPayrollTab(tabName: string): boolean {
-  return tabName.startsWith(PAYROLL_TAB_PREFIX);
+  return tabName.startsWith(PAYROLL_TAB_PREFIX) || tabName.startsWith(GREENHOUSE_TAB_PREFIX);
 }
 
 export const PAYROLL_SHEET_MESSAGE =
