@@ -769,25 +769,21 @@ function PersonView({
 
 // --- Меню отметки -------------------------------------------------------------------------
 //
-// 29.10.2026, владелец со снимком меню клетки: «сделай это окошко удобнее и красивее». Было: ряд голых букв «О Б К П БС»
-// с легендой мелким текстом внизу и выпадающий список «по какое число». Теперь: заголовок — кто и какой день, что стоит
-// сейчас; часы — крупными плитками, норма дня помечена; коды — плиткой «буква + слово» (легенда не нужна); период —
-// кнопками «только этот день / до конца недели / до конца месяца / по число»; «стереть» — внизу отдельно.
+// 29.10.2026, владелец со снимком меню клетки: «сделай это окошко удобнее и красивее», а на первую переделку (крупные
+// плитки с подписями, три раздела с заголовками, окно в полэкрана) — «ещё хуже стало; компактно, удобно и красиво».
+// Поэтому окно маленькое (18 rem): часы одной строкой, коды — восемь плиток «буква + слово» в два ряда (легенда не
+// нужна), период — четыре кнопки одной строкой, «стереть» — внизу. Без заголовков разделов и без лишнего текста.
 
 const CODE_LABEL: Record<string, string> = {
   "О": "Отпуск",
   "Б": "Больничный",
-  "К": "Командировка",
+  "К": "Командир.",
   "П": "Прогул",
-  "БС": "Без содержания",
+  "БС": "Без содерж.",
   "В": "Выходной",
-  "Д": "Дневная смена",
+  "Д": "Дн. смена",
   "У": "Уволен",
 };
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">{children}</div>;
-}
 
 function CellMenu({
   menu,
@@ -835,11 +831,10 @@ function CellMenu({
   }, [onClose]);
 
   // На телефоне — лист снизу во всю ширину: палец попадает, календарь сверху виден.
+  // На компьютере окно не уходит за край: не дальше правого края, ниже клетки, а не влезает — выше или к низу.
   const sheet = typeof window !== "undefined" && window.innerWidth < 640;
-  // На компьютере окно не должно уходить за край экрана: слева прижимается к клетке, но не дальше правого края, по высоте —
-  // ниже клетки, а если не влезает — выше или прижато к низу (высота окна ~34 rem).
-  const MENU_W = 336;
-  const MENU_H = 544;
+  const MENU_W = 288;
+  const MENU_H = 300;
   const style = sheet
     ? { left: 0, right: 0, bottom: 0 }
     : (() => {
@@ -849,19 +844,28 @@ function CellMenu({
         return { left, top };
       })();
 
-  const tile = (key: string, cls: string, onClick: () => void, content: React.ReactNode, title?: string, extra = "") => (
+  const chipBase = "rounded-lg font-semibold transition active:scale-95 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-section-payroll/60";
+  const hourChip = (h: number, isNorm: boolean, onClick: () => void, title: string) => (
+    <button key={h} type="button" title={title} onClick={onClick} className={clsx(chipBase, "h-9 flex-1 min-w-[2.5rem] text-sm leading-none flex flex-col items-center justify-center gap-0.5", hoursStyle(h))}>
+      <span>{h}</span>
+      {isNorm && <span className="text-[8px] font-normal opacity-75 leading-none">норма</span>}
+    </button>
+  );
+  const codeChip = (code: string, onClick: () => void) => (
     <button
-      key={key}
+      key={code}
       type="button"
-      title={title}
+      title={CODE_HINT[code]}
       onClick={onClick}
-      className={clsx(
-        "h-11 rounded-xl text-sm font-semibold transition-transform active:scale-95 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-section-payroll/60",
-        cls,
-        extra
-      )}
+      className={clsx(chipBase, "h-9 flex flex-col items-center justify-center leading-none", CODE_STYLE[code], code === "В" && "bg-surface-sunk ring-1 ring-inset ring-line-hairline")}
     >
-      {content}
+      <span className="text-[13px]">{code}</span>
+      <span className="text-[9px] font-normal opacity-80 mt-0.5 whitespace-nowrap">{CODE_LABEL[code]}</span>
+    </button>
+  );
+  const eraseBtn = (label: string, onClick: () => void, disabled = false) => (
+    <button type="button" disabled={disabled} onClick={onClick} className="text-xs text-status-critical hover:underline disabled:opacity-40 disabled:no-underline whitespace-nowrap">
+      {label}
     </button>
   );
 
@@ -877,25 +881,21 @@ function CellMenu({
     const hours = Array.from(new Set([sched, 8, 12, 24].filter((h) => h > 0))).sort((a, b) => a - b);
     const apply = (v: string) => onCell(t.r, t.c, endC, v);
     const dayLabel = (c: number) => `${days[c].day} ${days[c].weekday}`;
-    // Конец недели — ближайшее воскресенье (или последний день месяца).
     let weekEnd = t.c;
     while (weekEnd + 1 < days.length && days[weekEnd].weekday.toLowerCase() !== "вс") weekEnd++;
     const monthEnd = days.length - 1;
-    const periodBtn = (label: string, c: number, hint?: string) => (
+    const periodBtn = (label: string, c: number, hint: string) => (
       <button
         key={label}
         type="button"
         title={hint}
         onClick={() => setEndC(c)}
-        className={clsx(
-          "h-8 px-2.5 rounded-lg text-xs font-medium whitespace-nowrap",
-          endC === c ? "bg-ink-primary text-white" : "bg-surface-sunk text-ink-secondary hover:bg-surface-plane"
-        )}
+        className={clsx("h-7 px-1.5 rounded-md text-[11px] font-medium whitespace-nowrap", endC === c ? "bg-ink-primary text-white" : "bg-surface-sunk text-ink-secondary hover:bg-surface-plane")}
       >
         {label}
       </button>
     );
-    const currentText = current === "" ? "пусто" : CODE_LABEL[current] ? `${current} · ${CODE_LABEL[current]}` : `${current} ч`;
+    const customSelected = endC !== t.c && endC !== weekEnd && endC !== monthEnd;
     title = (
       <>
         {shortName(p.fullName)}
@@ -906,103 +906,66 @@ function CellMenu({
       <>
         {d.day} {d.weekday}
         {d.holiday ? " · праздник" : d.off ? " · выходной" : ""}
-        <span className="text-ink-muted"> · сейчас: </span>
-        <span className={clsx("inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold", current ? cellStyle(current) : "bg-surface-sunk text-ink-muted")}>{currentText}</span>
+        {current ? (
+          <>
+            {" · "}
+            <span className={clsx("inline-block rounded px-1 text-[10px] font-semibold", cellStyle(current))}>{CODE_LABEL[current] ? `${current} · ${CODE_LABEL[current]}` : `${current} ч`}</span>
+          </>
+        ) : null}
       </>
     );
     body = (
       <>
-        <div className="space-y-1.5">
-          <SectionLabel>Часы</SectionLabel>
-          <div className="flex gap-1.5">
-            {hours.map((h) =>
-              tile(
-                String(h),
-                hoursStyle(h),
-                () => apply(String(h)),
-                <span className="flex flex-col items-center leading-none">
-                  <span className="text-base">{h}</span>
-                  {h === sched && !d.off && <span className="text-[9px] font-normal opacity-80 mt-0.5">норма</span>}
-                </span>,
-                h === sched && !d.off ? `${h} ч — норма дня по графику` : `${h} ч`,
-                "flex-1 min-w-[2.75rem]"
-              )
+        <div className="flex gap-1.5">
+          {hours.map((h) => hourChip(h, h === sched && !d.off, () => apply(String(h)), h === sched && !d.off ? `${h} ч — норма дня по графику` : `${h} ч`))}
+          <form
+            className="flex gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = normalizeCell(custom);
+              if (v !== null && v !== "") apply(v);
+            }}
+          >
+            <input
+              className="input !h-9 !py-0 !px-1 w-[3.2rem] text-center !text-sm !rounded-lg"
+              inputMode="decimal"
+              placeholder="своё"
+              aria-label="Своё число часов"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+            />
+            {custom.trim() && (
+              <button type="submit" className="h-9 w-9 rounded-lg bg-ink-primary text-white text-sm font-semibold" aria-label="Поставить">
+                ✓
+              </button>
             )}
-            <form
-              className="flex gap-1"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const v = normalizeCell(custom);
-                if (v !== null && v !== "") apply(v);
-              }}
-            >
-              <input
-                className="input !h-11 !py-0 w-[3.6rem] text-center !rounded-xl"
-                inputMode="decimal"
-                placeholder="своё"
-                aria-label="Своё число часов"
-                value={custom}
-                onChange={(e) => setCustom(e.target.value)}
-              />
-              {custom.trim() && (
-                <button type="submit" className="h-11 px-2.5 rounded-xl bg-ink-primary text-white text-sm font-semibold">
-                  ✓
-                </button>
-              )}
-            </form>
-          </div>
+          </form>
         </div>
 
-        <div className="space-y-1.5">
-          <SectionLabel>Отметка</SectionLabel>
-          <div className="grid grid-cols-2 gap-1.5">
-            {CODES_ORDER.map((code) =>
-              tile(
-                code,
-                clsx(CODE_STYLE[code], code === "В" && "bg-surface-sunk ring-1 ring-inset ring-line-hairline"),
-                () => apply(code),
-                <span className="flex items-center gap-2 px-2.5 text-left">
-                  <span className="w-7 shrink-0 text-center text-[13px] font-bold">{code}</span>
-                  <span className="text-xs font-medium leading-tight">{CODE_LABEL[code]}</span>
-                </span>,
-                CODE_HINT[code],
-                "justify-start"
-              )
-            )}
-          </div>
-        </div>
+        <div className="grid grid-cols-4 gap-1.5">{CODES_ORDER.map((code) => codeChip(code, () => apply(code)))}</div>
 
-        <div className="space-y-1.5">
-          <SectionLabel>Применить</SectionLabel>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {periodBtn("только этот день", t.c)}
-            {weekEnd > t.c && periodBtn("до конца недели", weekEnd, `по ${dayLabel(weekEnd)}`)}
-            {monthEnd > t.c && periodBtn("до конца месяца", monthEnd, `по ${dayLabel(monthEnd)}`)}
-            {monthEnd > t.c && (
-              <label className={clsx("h-8 flex items-center gap-1 rounded-lg px-2 text-xs", endC !== t.c && endC !== weekEnd && endC !== monthEnd ? "bg-ink-primary text-white" : "bg-surface-sunk text-ink-secondary")}>
-                по
-                <select className="bg-transparent text-xs font-medium outline-none cursor-pointer" value={endC} onChange={(e) => setEndC(Number(e.target.value))} aria-label="По какое число">
-                  {days.map((dd, c) => (
-                    <option key={dd.date} value={c} disabled={c < t.c} className="text-ink-primary">
-                      {dd.day} {dd.weekday}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          {endC > t.c && (
-            <div className="text-[11px] text-ink-muted">
-              {endC - t.c + 1} дн., {dayLabel(t.c)} — {dayLabel(endC)}. Часы ставятся только в рабочие дни, отметки — во все.
-            </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-ink-muted mr-0.5">на</span>
+          {periodBtn("день", t.c, "Только этот день")}
+          {weekEnd > t.c && periodBtn("неделя", weekEnd, `До конца недели — по ${dayLabel(weekEnd)}`)}
+          {monthEnd > t.c && periodBtn("месяц", monthEnd, `До конца месяца — по ${dayLabel(monthEnd)}`)}
+          {monthEnd > t.c && (
+            <label className={clsx("h-7 flex items-center gap-0.5 rounded-md pl-1.5 pr-0.5 text-[11px] font-medium cursor-pointer", customSelected ? "bg-ink-primary text-white" : "bg-surface-sunk text-ink-secondary")}>
+              по
+              <select className="bg-transparent text-[11px] font-medium outline-none cursor-pointer max-w-[4.5rem]" value={endC} onChange={(e) => setEndC(Number(e.target.value))} aria-label="По какое число">
+                {days.map((dd, c) => (
+                  <option key={dd.date} value={c} disabled={c < t.c} className="text-ink-primary">
+                    {dd.day} {dd.weekday}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-line-hairline pt-2.5">
-          <button type="button" className="text-xs text-status-critical hover:underline disabled:opacity-40" disabled={!current && endC === t.c} onClick={() => apply("")}>
-            Стереть{endC > t.c ? " за период" : ""}
-          </button>
-          <span className="text-[11px] text-ink-muted hidden sm:inline">Esc — закрыть</span>
+        <div className="flex items-center justify-between border-t border-line-hairline pt-2">
+          {eraseBtn("Стереть", () => apply(""), !current && endC === t.c)}
+          <span className="text-[10px] text-ink-muted text-right">{endC > t.c ? `${endC - t.c + 1} дн.: ${dayLabel(t.c)} — ${dayLabel(endC)}, часы — в рабочие` : ""}</span>
         </div>
       </>
     );
@@ -1016,45 +979,20 @@ function CellMenu({
         {d.holiday ? <span className="font-normal text-[#8a5a00]"> · праздник</span> : d.off ? <span className="font-normal text-ink-muted"> · выходной</span> : null}
       </>
     );
-    subtitle = <>Отметка всем сразу — {working} чел.</>;
+    subtitle = <>всем сразу — {working} чел.</>;
     body = (
       <>
-        <div className="space-y-1.5">
-          <SectionLabel>Часы</SectionLabel>
-          <div className="flex gap-1.5">
-            {sched > 0 &&
-              tile(
-                "schedule",
-                "bg-[#e3f3e8] text-[#1e5a38] ring-1 ring-inset ring-[#b5dcc1]",
-                () => onDay(t.c, "schedule"),
-                <span className="flex flex-col items-center leading-none">
-                  <span className="text-base">{sched}</span>
-                  <span className="text-[9px] font-normal opacity-80 mt-0.5">по графику</span>
-                </span>,
-                `${sched} ч каждому (кроме почасовых)`,
-                "flex-1"
-              )}
-            {[8, 12, 24].filter((h) => h !== sched).map((h) => tile(String(h), hoursStyle(h), () => onDay(t.c, String(h)), <span className="text-base">{h}</span>, `${h} ч всем`, "flex-1"))}
-          </div>
+        <div className="flex gap-1.5">
+          {sched > 0 && (
+            <button type="button" title={`${sched} ч каждому (кроме почасовых)`} onClick={() => onDay(t.c, "schedule")} className={clsx(chipBase, "h-9 flex-1 text-sm leading-none flex flex-col items-center justify-center gap-0.5 bg-[#e3f3e8] text-[#1e5a38] ring-1 ring-inset ring-[#b5dcc1]")}>
+              <span>{sched}</span>
+              <span className="text-[8px] font-normal opacity-75 leading-none">по графику</span>
+            </button>
+          )}
+          {[8, 12, 24].filter((h) => h !== sched).map((h) => hourChip(h, false, () => onDay(t.c, String(h)), `${h} ч всем`))}
+          {codeChip("В", () => onDay(t.c, "В"))}
         </div>
-        <div className="space-y-1.5">
-          <SectionLabel>Отметка</SectionLabel>
-          <div className="grid grid-cols-2 gap-1.5">
-            {tile(
-              "В",
-              "bg-surface-sunk text-ink-secondary ring-1 ring-inset ring-line-hairline",
-              () => onDay(t.c, "В"),
-              <span className="flex items-center gap-2 px-2.5"><span className="w-7 text-center text-[13px] font-bold">В</span><span className="text-xs font-medium">Выходной всем</span></span>,
-              "Выходной всем",
-              "justify-start"
-            )}
-          </div>
-        </div>
-        <div className="border-t border-line-hairline pt-2.5">
-          <button type="button" className="text-xs text-status-critical hover:underline" onClick={() => onDay(t.c, "")}>
-            Стереть день у всех
-          </button>
-        </div>
+        <div className="border-t border-line-hairline pt-2">{eraseBtn("Стереть день у всех", () => onDay(t.c, ""))}</div>
       </>
     );
   } else {
@@ -1065,24 +1003,15 @@ function CellMenu({
         {p.shift === "night" ? <span className="font-normal text-ink-muted"> · ночь</span> : null}
       </>
     );
-    subtitle = <>Вся строка за месяц</>;
+    subtitle = <>вся строка за месяц</>;
     body = (
       <>
-        <div className="grid gap-1.5">
-          {!p.hourly &&
-            tile(
-              "fill",
-              "bg-[#e3f3e8] text-[#1e5a38] ring-1 ring-inset ring-[#b5dcc1]",
-              () => onRow(t.r, "fill"),
-              <span className="px-3">Заполнить по графику</span>,
-              "Пустые рабочие дни до сегодня — часами режима"
-            )}
-        </div>
-        <div className="border-t border-line-hairline pt-2.5">
-          <button type="button" className="text-xs text-status-critical hover:underline" onClick={() => onRow(t.r, "clear")}>
-            Очистить строку
+        {!p.hourly && (
+          <button type="button" title="Пустые рабочие дни до сегодня — часами режима" onClick={() => onRow(t.r, "fill")} className={clsx(chipBase, "h-9 w-full text-sm bg-[#e3f3e8] text-[#1e5a38] ring-1 ring-inset ring-[#b5dcc1]")}>
+            Заполнить по графику
           </button>
-        </div>
+        )}
+        <div className="border-t border-line-hairline pt-2">{eraseBtn("Очистить строку", () => onRow(t.r, "clear"))}</div>
       </>
     );
   }
@@ -1092,16 +1021,16 @@ function CellMenu({
       ref={ref}
       style={style}
       className={clsx(
-        "fixed z-50 border border-line-hairline bg-surface shadow-card-hover space-y-3",
-        sheet ? "rounded-t-2xl p-4 pb-6 max-h-[85vh] overflow-y-auto" : "w-[21rem] max-h-[calc(100vh-1rem)] overflow-y-auto rounded-2xl p-3.5"
+        "fixed z-50 border border-line-hairline bg-surface shadow-card-hover space-y-2",
+        sheet ? "rounded-t-2xl p-3 pb-5 max-h-[85vh] overflow-y-auto" : "w-[18rem] max-h-[calc(100vh-1rem)] overflow-y-auto rounded-xl p-3"
       )}
     >
       <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="font-display font-bold text-[15px] leading-tight truncate">{title}</div>
-          <div className="text-xs text-ink-secondary mt-0.5">{subtitle}</div>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="font-display font-bold text-[13.5px] truncate">{title}</div>
+          <div className="text-[11px] text-ink-secondary mt-0.5">{subtitle}</div>
         </div>
-        <button type="button" className="-mr-1 -mt-1 h-7 w-7 rounded-full text-ink-muted hover:bg-surface-sunk text-lg leading-none" onClick={onClose} aria-label="закрыть">
+        <button type="button" className="-mr-1.5 -mt-1.5 h-6 w-6 rounded-full text-ink-muted hover:bg-surface-sunk text-base leading-none" onClick={onClose} aria-label="закрыть">
           ×
         </button>
       </div>
