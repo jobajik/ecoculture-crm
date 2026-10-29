@@ -12,6 +12,8 @@ import { ghHref } from "@/lib/greenhouse/farm";
 import { loadGreenhousePage } from "@/lib/greenhouse/pageData";
 import { CYCLE_PHASE_LABELS, cycleOptions, cyclePhase, defaultCycle, nowByBlock, pointsDelta, previousFinished, qualitySplit, rankBlocks, rankVarieties, saneYield, type BlockCard } from "@/lib/greenhouse/views";
 import { greenhouseTabsFor } from "./tabs";
+import type { GhData } from "@/lib/repo/greenhouse";
+import { compareBlocks } from "@/lib/payroll/work";
 import { importCyclesAction, importLogRowsAction, listLogIdsAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -88,7 +90,9 @@ export default async function GreenhousePage({ searchParams }: { searchParams?: 
     <div className="space-y-6">
       {header}
 
-      <NowCard cycles={cycles} year={year} blockHref={blockHref} action={importPanel(false, "Загрузить книгу")} />
+      <TodayStrip farm={farm} today={today} data={p.data} canEnter={scope.editsLogs || (!!scope.payroll && scope.editsWork)} />
+
+      <NowCard cycles={cycles} year={year} blockHref={blockHref} />
 
       {/* Выбранный цикл — главное */}
       <section className="card !p-5 space-y-5">
@@ -187,7 +191,7 @@ function MiniStat({ label, value, delta, unit = "п.", invert }: { label: string
 }
 
 /** «Сейчас в теплице» — три строки словами вместо пятнадцати плиток. */
-function NowCard({ cycles, year, blockHref, action }: { cycles: Parameters<typeof nowByBlock>[0]; year: string; blockHref: (b: BlockCard) => string; action: React.ReactNode }) {
+function NowCard({ cycles, year, blockHref, action }: { cycles: Parameters<typeof nowByBlock>[0]; year: string; blockHref: (b: BlockCard) => string; action?: React.ReactNode }) {
   const now = nowByBlock(cycles);
   // Режется — по всем циклам: блок уже пересажен под новый цикл, а старый ещё дорезают.
   const cutting = cycles.flatMap((c) => c.blocks.filter((b) => b.status === "harvest"));
@@ -288,5 +292,36 @@ function VarietyTable({ rows }: { rows: ReturnType<typeof rankVarieties> }) {
         </span>
       </li>
     </ul>
+  );
+}
+
+/**
+ * «Сегодня» — первая строка обзора (29.10.2026): что уже внесено за день и кнопка «Внести день». Ответственный
+ * открывает раздел и сразу видит, сделал ли он сегодняшнюю запись.
+ */
+function TodayStrip({ farm, today, data, canEnter }: { farm: string; today: string; data: GhData; canEnter: boolean }) {
+  const sum = (list: { date: string; qty: number }[]) => list.filter((x) => x.date === today).reduce((t, x) => t + x.qty, 0);
+  const cut = sum(data.harvest);
+  const waste = sum(data.waste);
+  const cuttings = sum(data.cuttings);
+  const blocks = Array.from(new Set(data.harvest.filter((h) => h.date === today).map((h) => h.block))).sort(compareBlocks);
+  const parts = [
+    cut > 0 && `срезано ${num(cut)} шт.${blocks.length ? ` (${blocks.length === 1 ? "блок" : "блоки"} ${blocks.join(", ")})` : ""}`,
+    waste > 0 && `брак ${num(waste)} шт.`,
+    cuttings > 0 && `черенкование ${num(cuttings)} шт.`,
+  ].filter(Boolean) as string[];
+  const label = new Date(`${today}T00:00:00`).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+  return (
+    <div className={clsx("rounded-2xl border px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2", parts.length ? "border-line-hairline bg-surface" : "border-section-greenhouse/30 bg-section-greenhouse-soft")}>
+      <div className="min-w-0 mr-auto">
+        <div className="text-xs text-ink-muted first-letter:uppercase">{label}</div>
+        <div className="text-[15px]">{parts.length ? parts.join(" · ") : "Сегодня ещё ничего не внесено."}</div>
+      </div>
+      {canEnter && (
+        <Link href={ghHref("/greenhouse/day", farm)} className="btn-primary !py-2">
+          {parts.length ? "Открыть день" : "+ Внести день"}
+        </Link>
+      )}
+    </div>
   );
 }

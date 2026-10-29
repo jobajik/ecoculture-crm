@@ -398,7 +398,7 @@ export default async function BlockPage({ params, searchParams }: { params: { cy
         ) : (
           <div className="px-5 pb-4 text-sm text-ink-secondary">
             Черенкование по этому блоку не записано — посажено считать не из чего.{" "}
-            <Link className="underline" href={ghHref("/greenhouse/cuttings", farm, { cycle, block })}>
+            <Link className="underline" href={ghHref("/greenhouse/records", farm, { type: "cuttings", cycle, block })}>
               Записать черенкование
             </Link>
           </div>
@@ -473,14 +473,19 @@ export default async function BlockPage({ params, searchParams }: { params: { cy
         </section>
       )}
 
-      <div className="flex flex-wrap gap-3 text-sm">
-        <Link className="underline" href={ghHref("/greenhouse/harvest", farm, { cycle, block })}>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        {scope.editsLogs && (
+          <Link className="btn-primary !py-1.5" href={ghHref("/greenhouse/day", farm, { block, section: "harvest" })}>
+            + Внести день по блоку
+          </Link>
+        )}
+        <Link className="underline" href={ghHref("/greenhouse/records", farm, { type: "harvest", cycle, block })}>
           Записи срезки блока
         </Link>
-        <Link className="underline" href={ghHref("/greenhouse/cuttings", farm, { cycle, block })}>
+        <Link className="underline" href={ghHref("/greenhouse/records", farm, { type: "cuttings", cycle, block })}>
           Черенкование блока
         </Link>
-        <Link className="underline" href={ghHref("/greenhouse/waste", farm, { cycle, block })}>
+        <Link className="underline" href={ghHref("/greenhouse/records", farm, { type: "waste", cycle, block })}>
           Брак блока
         </Link>
       </div>

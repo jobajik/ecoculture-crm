@@ -3,6 +3,10 @@ import { ensurePayrollSheet } from "../payrollSheet";
 import { sheetNumber } from "../sheetCell";
 import { toIsoDate } from "../sheetDate";
 import { generateId } from "../id";
+import { planDayRows } from "../greenhouse/day";
+import { planWorkDay } from "./payrollWork";
+import type { WorkArea, WorkRowClean } from "../payroll/work";
+import type { Employee } from "../payroll/types";
 import { cycleOf, importLogId, type GhCutting, type GhCycle, type GhHarvest, type GhWaste, type ImportLogRow, type LogKind, type LogRowClean } from "../greenhouse/production";
 
 /**
@@ -216,27 +220,120 @@ export async function saveLogRows(log: LogKind, farm: string, input: LogRowClean
         return x && x.id === r.id && x.farm === farm;
       });
       if (idx < 0) throw new Error("Запись не найдена — возможно, её уже удалили. Обновите страницу.");
-      const was = rowToRecord(spec.tab, table.rows[idx]);
-      const next = spec.changes(r);
-      const diff: Record<string, unknown> = {};
-      for (const [col, val] of Object.entries(next)) {
-        const old = (was[col] ?? "").trim();
-        const nv = String(val ?? "").trim();
-        // Числа таблица отдаёт «как показано» — сравниваем через sheetNumber, где это число.
-        const same = old === nv || (nv !== "" && !Number.isNaN(Number(nv)) && sheetNumber(old) === Number(nv)) || (col.endsWith("At") || col === "Date" ? toIsoDate(old) === nv : false);
-        if (!same) diff[col] = val;
-      }
-      if (Object.keys(diff).length) {
-        ops.push({ kind: "update", tab: spec.tab, rowNumber: table.rowNumbers[idx], changes: { ...diff, UpdatedBy: by, UpdatedAt: now } });
+      const op = logUpdateOp(spec, table.rows[idx], table.rowNumbers[idx], r, by, now);
+      if (op) {
+        ops.push(op);
         changed += 1;
       }
     } else {
-      append.push({ [spec.idCol]: generateId(spec.idPrefix), ...spec.toRecord(farm, r), CreatedBy: by, CreatedAt: now, UpdatedBy: by, UpdatedAt: now });
+      append.push(logAppendRecord(spec, farm, r, by, now));
     }
   }
   if (append.length) ops.push({ kind: "append", tab: spec.tab, records: append });
   if (ops.length) await commitAtomic(ops);
   return { added: append.length, changed };
+}
+
+function logAppendRecord(spec: LogSpec, farm: string, r: LogRowClean, by: string, now: string): Record<string, unknown> {
+  return { [spec.idCol]: generateId(spec.idPrefix), ...spec.toRecord(farm, r), CreatedBy: by, CreatedAt: now, UpdatedBy: by, UpdatedAt: now };
+}
+
+/** Правка строки журнала — только изменившиеся ячейки; ничего не изменилось — `null`. */
+function logUpdateOp(spec: LogSpec, row: string[], rowNumber: number, r: LogRowClean, by: string, now: string): Parameters<typeof commitAtomic>[0][number] | null {
+  const was = rowToRecord(spec.tab, row);
+  const next = spec.changes(r);
+  const diff: Record<string, unknown> = {};
+  for (const [col, val] of Object.entries(next)) {
+    const old = (was[col] ?? "").trim();
+    const nv = String(val ?? "").trim();
+    // Числа таблица отдаёт «как показано» — сравниваем через sheetNumber, где это число.
+    const same = old === nv || (nv !== "" && !Number.isNaN(Number(nv)) && sheetNumber(old) === Number(nv)) || (col.endsWith("At") || col === "Date" ? toIsoDate(old) === nv : false);
+    if (!same) diff[col] = val;
+  }
+  if (!Object.keys(diff).length) return null;
+  return { kind: "update", tab: spec.tab, rowNumber, changes: { ...diff, UpdatedBy: by, UpdatedAt: now } };
+}
+
+export interface DayLogInput {
+  rows: LogRowClean[];
+  /** Номера строк, которые человек видел на экране: удаляются только они. */
+  known: string[];
+}
+
+export interface DayWorkInput {
+  rows: WorkRowClean[];
+  known: string[];
+}
+
+export interface DaySaveResult {
+  added: number;
+  changed: number;
+  removed: number;
+}
+
+/**
+ * «Внести день»: срезка, брак, черенкование и выработка участков за один день — одним `commitAtomic` (все вкладки в
+ * таблице зарплаты, грабли 1.16). По каждому журналу — план `planDayRows`: новые дописываются, изменённые правятся
+ * ячейками, убранные с экрана удаляются. Присылаются только разделы, которые человек менял.
+ */
+export async function saveGreenhouseDay(
+  farm: string,
+  date: string,
+  logs: Partial<Record<LogKind, DayLogInput>>,
+  work: Partial<Record<WorkArea, DayWorkInput>>,
+  employees: Pick<Employee, "employeeId" | "fullName">[],
+  by: string,
+): Promise<DaySaveResult> {
+  const now = new Date().toISOString();
+  const ops: Parameters<typeof commitAtomic>[0] = [];
+  const result: DaySaveResult = { added: 0, changed: 0, removed: 0 };
+  for (const kind of Object.keys(logs) as LogKind[]) {
+    const input = logs[kind];
+    if (!input) continue;
+    const spec = LOGS[kind];
+    const table = await freshOrMissing(spec.tab);
+    const mine: { idx: number; id: string }[] = [];
+    table.rows.forEach((row, idx) => {
+      const rec = rowToRecord(spec.tab, row);
+      const x = spec.read(rec);
+      if (x && x.farm === farm && toIsoDate(rec.Date) === date) mine.push({ idx, id: x.id });
+    });
+    const plan = planDayRows(
+      mine.map((m) => m.id),
+      input.rows,
+      (r) => r.id,
+      input.known,
+    );
+    if (plan.error) throw new Error(plan.error);
+    const at = new Map(mine.map((m) => [m.id, m.idx]));
+    for (const r of plan.update) {
+      const idx = at.get(r.id)!;
+      const op = logUpdateOp(spec, table.rows[idx], table.rowNumbers[idx], r, by, now);
+      if (op) {
+        ops.push(op);
+        result.changed += 1;
+      }
+    }
+    if (plan.add.length) {
+      ops.push({ kind: "append", tab: spec.tab, records: plan.add.map((r) => logAppendRecord(spec, farm, r, by, now)) });
+      result.added += plan.add.length;
+    }
+    if (plan.remove.length) {
+      ops.push({ kind: "delete", tab: spec.tab, rowNumbers: plan.remove.map((id) => table.rowNumbers[at.get(id)!]) });
+      result.removed += plan.remove.length;
+    }
+  }
+  for (const area of Object.keys(work) as WorkArea[]) {
+    const input = work[area];
+    if (!input) continue;
+    const plan = await planWorkDay(farm, area, date, input.rows, employees, by, input.known);
+    ops.push(...plan.ops);
+    result.added += plan.added;
+    result.changed += plan.changed;
+    result.removed += plan.removed;
+  }
+  if (ops.length) await commitAtomic(ops);
+  return result;
 }
 
 export async function deleteLogRow(log: LogKind, farm: string, id: string): Promise<boolean> {

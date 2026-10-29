@@ -1,7 +1,8 @@
-import { renderLogPage } from "../logPage";
+import { movedTo } from "../moved";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page({ searchParams }: { searchParams?: { farm?: string; from?: string; to?: string; cycle?: string; block?: string } }) {
-  return renderLogPage("harvest", searchParams);
+/** Журнал переехал во вкладку «Записи» (29.10.2026). */
+export default function Page({ searchParams }: { searchParams?: Record<string, string | undefined> }) {
+  movedTo("/greenhouse/records", searchParams, { type: "harvest" });
 }

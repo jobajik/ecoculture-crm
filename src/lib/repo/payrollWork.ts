@@ -146,6 +146,25 @@ export async function saveWorkDay(
   employees: Pick<Employee, "employeeId" | "fullName">[],
   by: string,
 ): Promise<{ added: number; changed: number; removed: number }> {
+  const plan = await planWorkDay(farm, area, date, input, employees, by);
+  if (plan.ops.length) await commitAtomic(plan.ops);
+  return { added: plan.added, changed: plan.changed, removed: plan.removed };
+}
+
+/**
+ * Правки дня участка без записи — для «Внести день» в «Теплице», где выработка пишется одним пакетом вместе со
+ * срезкой и браком. `known` — номера строк, которые человек видел: удаляются только они (строку, которую за это время
+ * записал другой, сохранение не тронет). Без `known` — как раньше: всё, чего нет в присланном.
+ */
+export async function planWorkDay(
+  farm: string,
+  area: string,
+  date: string,
+  input: WorkRowClean[],
+  employees: Pick<Employee, "employeeId" | "fullName">[],
+  by: string,
+  known?: string[],
+): Promise<{ ops: Parameters<typeof commitAtomic>[0]; added: number; changed: number; removed: number }> {
   const tab = SHEET_TABS.PAYROLL_WORK;
   const table = await freshOrMissing(tab);
   const now = new Date().toISOString();
@@ -162,6 +181,7 @@ export async function saveWorkDay(
   for (const row of input) {
     const name = row.employeeId ? nameOf.get(row.employeeId) ?? "" : row.name;
     const found = row.workId ? existing.find((x) => x.entry.workId === row.workId) : undefined;
+    if (row.workId && !found && known) throw new Error("Одну из строк выработки этого дня уже удалили — обновите страницу.");
     if (found) {
       kept.add(found.entry.workId);
       const e = found.entry;
@@ -199,11 +219,11 @@ export async function saveWorkDay(
       });
     }
   }
-  const gone = existing.filter((x) => !kept.has(x.entry.workId));
+  const seen = known ? new Set(known) : null;
+  const gone = existing.filter((x) => !kept.has(x.entry.workId) && (!seen || seen.has(x.entry.workId)));
   if (append.length) ops.push({ kind: "append", tab, records: append });
   if (gone.length) ops.push({ kind: "delete", tab, rowNumbers: gone.map((x) => table.rowNumbers[x.idx]) });
-  if (ops.length) await commitAtomic(ops);
-  return { added: append.length, changed, removed: gone.length };
+  return { ops, added: append.length, changed, removed: gone.length };
 }
 
 export async function deleteWorkEntry(farm: string, workId: string): Promise<boolean> {

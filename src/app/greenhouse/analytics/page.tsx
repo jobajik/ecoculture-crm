@@ -26,6 +26,16 @@ import {
 } from "@/lib/greenhouse/views";
 import { shiftDay } from "@/lib/payroll/work";
 import { greenhouseTabsFor } from "../tabs";
+import GhSegments from "@/components/greenhouse/GhSegments";
+import type { IconName } from "@/components/Icon";
+import WorkAnalytics from "@/components/greenhouse/work/WorkAnalytics";
+import WorkPayBoard from "@/components/greenhouse/work/WorkPayBoard";
+import { isMonth } from "@/lib/payroll/rules";
+import { shiftMonth } from "@/lib/payroll/timesheet";
+import { WORK_AREAS, isWorkArea, monthRange, periodFor, previousPeriod, summarizeArea, type WorkArea } from "@/lib/payroll/work";
+import { loadWorkContext } from "@/lib/payroll/workData";
+import { listWork, listWorkBudgets } from "@/lib/repo/payrollWork";
+import { saveWorkBudgetsAction } from "../work/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -34,21 +44,25 @@ export const dynamic = "force-dynamic";
  * экран: «Блоки», «Сорта», «Циклы», «Срезка». Сверху каждого — выводы словами, ниже рейтинг полосами или график.
  * Выход считается только по ЗАВЕРШЁННЫМ блокам и циклам: у тех, что ещё режутся, он неполный.
  */
-type View = "blocks" | "varieties" | "cycles" | "harvest";
-type Params = { farm?: string; view?: string; span?: string; metric?: string; by?: string };
+type View = "blocks" | "varieties" | "cycles" | "harvest" | "people" | "pay";
+type Params = { farm?: string; view?: string; span?: string; metric?: string; by?: string; from?: string; to?: string; month?: string; area?: string };
 
-const VIEWS: { key: View; label: string }[] = [
-  { key: "blocks", label: "Блоки" },
-  { key: "varieties", label: "Сорта" },
-  { key: "cycles", label: "Циклы" },
-  { key: "harvest", label: "Срезка по месяцам" },
+const VIEWS: { key: View; label: string; icon: IconName }[] = [
+  { key: "blocks", label: "Блоки", icon: "box" },
+  { key: "varieties", label: "Сорта", icon: "leaf" },
+  { key: "cycles", label: "Циклы", icon: "clock" },
+  { key: "harvest", label: "Срезка", icon: "chart" },
+  { key: "people", label: "Люди", icon: "client" },
+  { key: "pay", label: "Оплата труда", icon: "wallet" },
 ];
 
 export default async function GreenhouseAnalyticsPage({ searchParams }: { searchParams?: Params }) {
   const p = await loadGreenhousePage(searchParams);
   const { scope, farm, today, data, rows, cycles } = p;
   const sp = searchParams ?? {};
-  const view: View = VIEWS.some((v) => v.key === sp.view) ? (sp.view as View) : "blocks";
+  // «Люди» — у кого есть роль в модуле зарплаты (выработка), «Оплата труда» — кому открыты деньги.
+  const views = VIEWS.filter((v) => (v.key === "people" ? !!scope?.payroll : v.key === "pay" ? !!scope?.payroll?.seesMoney : true));
+  const view: View = views.some((v) => v.key === sp.view) ? (sp.view as View) : "blocks";
   const span = sp.span === "1" || sp.span === "3" || sp.span === "6" ? Number(sp.span) : sp.span === "all" ? 0 : 3;
   const metric: RankMetric = RANK_METRICS.some((m) => m.key === sp.metric) ? (sp.metric as RankMetric) : "yield";
   const by = sp.by === "week" ? "week" : "month";
@@ -57,7 +71,7 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
   const header = (
     <PageHeader
       area="greenhouse"
-      title="Аналитика теплицы"
+      title="Аналитика"
       subtitle={FARM_LABELS[farm] ?? farm}
       icon="chart"
       tabs={greenhouseTabsFor(scope, farm)}
@@ -71,14 +85,14 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
         <div className="card text-sm text-ink-secondary">{GREENHOUSE_NO_ACCESS}</div>
       </div>
     );
-  if (!cycles.length)
+  if (!cycles.length && view !== "people" && view !== "pay")
     return (
       <div className="space-y-5">
         {header}
         <div className="card text-sm text-ink-secondary">
-          Данных пока нет — загрузите книгу агронома на вкладке{" "}
-          <Link className="underline" href={ghHref("/greenhouse", farm)}>
-            «Циклы и блоки»
+          Данных пока нет — загрузите книгу агронома во вкладке{" "}
+          <Link className="underline" href={ghHref("/greenhouse/records", farm)}>
+            «Записи»
           </Link>
           .
         </div>
@@ -202,6 +216,8 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
         <div className="text-xs text-ink-muted">Здесь только завершённые циклы: у тех, что ещё режутся, выход неполный.</div>
       </>
     );
+  } else if (view === "people" || view === "pay") {
+    body = await workView(view, farm, sp, today);
   } else {
     const fromDate = by === "week" ? shiftDay(today, -7 * 16) : `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`;
     const buckets = harvestBuckets(data.harvest, fromDate, today, by);
@@ -233,18 +249,56 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
   return (
     <div className="space-y-5">
       {header}
-      <div className="flex gap-2 overflow-x-auto scroll-x-hidden -mx-1 px-1 py-0.5">
-        {VIEWS.map((v) => (
-          <Link
-            key={v.key}
-            href={link({ view: v.key })}
-            className={clsx("h-9 px-4 rounded-full text-sm whitespace-nowrap inline-flex items-center", v.key === view ? "bg-section-greenhouse text-white font-medium" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane")}
-          >
-            {v.label}
-          </Link>
-        ))}
-      </div>
+      <GhSegments active={view} items={views.map((v) => ({ key: v.key, label: v.label, icon: v.icon, href: ghHref("/greenhouse/analytics", farm, { view: v.key }) }))} />
       {body}
     </div>
+  );
+}
+
+/** «Люди» (выработка по участкам) и «Оплата труда» (бюджеты и доли) — то, что раньше было вкладками «Выработки». */
+async function workView(view: "people" | "pay", farm: string, sp: Params, today: string): Promise<React.ReactNode> {
+  const ctx = await loadWorkContext({ farm });
+  const scope = ctx.scope;
+  if (!scope) return null;
+  if (view === "people") {
+    const period = periodFor(sp, today);
+    const prev = previousPeriod(period.from, period.to);
+    const area: WorkArea = sp.area && isWorkArea(sp.area) ? sp.area : "cut";
+    const entries = await listWork({ farm, from: prev.from, to: period.to });
+    const now = entries.filter((e) => e.date >= period.from);
+    const before = entries.filter((e) => e.date < period.from);
+    return (
+      <WorkAnalytics
+        key={`${farm}-${period.from}-${period.to}-${area}`}
+        farm={farm}
+        today={today}
+        from={period.from}
+        to={period.to}
+        prevFrom={prev.from}
+        prevTo={prev.to}
+        area={area}
+        summaries={Object.fromEntries(WORK_AREAS.map((a) => [a, summarizeArea(a, now, ctx.names)]))}
+        previous={Object.fromEntries(WORK_AREAS.map((a) => [a, summarizeArea(a, before, ctx.names)]))}
+      />
+    );
+  }
+  const month = sp.month && isMonth(sp.month) ? sp.month : today.slice(0, 7);
+  const range = monthRange(month);
+  const prevMonth = shiftMonth(month, -1);
+  const [entries, budgets, prevBudgets] = await Promise.all([listWork({ farm, from: range.from, to: range.to }), listWorkBudgets(farm, month), listWorkBudgets(farm, prevMonth)]);
+  return (
+    <WorkPayBoard
+      key={`${farm}-${month}`}
+      farm={farm}
+      farmLabel={FARM_LABELS[farm] ?? farm}
+      month={month}
+      entries={entries.map((e) => ({ area: e.area, employeeId: e.employeeId, name: e.name, workType: e.workType, qty: e.qty, hours: e.hours }))}
+      names={Object.fromEntries(ctx.names)}
+      budgets={budgets.map((b) => ({ area: b.area, workType: b.workType, amount: b.amount, note: b.note }))}
+      prevBudgets={prevBudgets.map((b) => ({ area: b.area, workType: b.workType, amount: b.amount, note: b.note }))}
+      prevMonth={prevMonth}
+      canEdit={scope.editsRates}
+      save={saveWorkBudgetsAction}
+    />
   );
 }

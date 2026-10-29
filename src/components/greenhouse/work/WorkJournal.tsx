@@ -33,7 +33,7 @@ const PAGE = 100;
 
 /**
  * Журнал выработки: период и участок — в адресе (сервер читает только нужное), сотрудник, блок и вид — отбор на месте.
- * Правка строки — через «Ввод за день» (там сетка всего дня), здесь — только удалить лишнее.
+ * Правка строки — через «Внести день» (там сетка всего дня), здесь — только удалить лишнее.
  */
 export default function WorkJournal({
   farm,
@@ -81,7 +81,7 @@ export default function WorkJournal({
   const [pTo, setPTo] = useState(to);
 
   const go = (next: { from?: string; to?: string; area?: string }) => {
-    router.push(ghHref("/greenhouse/work/journal", farm, { from: next.from ?? pFrom, to: next.to ?? pTo, area: (next.area ?? area) || undefined }));
+    router.push(ghHref("/greenhouse/records", farm, { type: "work", from: next.from ?? pFrom, to: next.to ?? pTo, area: (next.area ?? area) || undefined }));
   };
 
   const filtered = useMemo(
@@ -269,14 +269,14 @@ export default function WorkJournal({
             {shown.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-6 text-ink-secondary">
-                  Записей нет. {canEdit && "Внесите день на вкладке «Ввод за день» или загрузите историю из Excel."}
+                  Записей нет. {canEdit && "Внесите день во вкладке «Внести день» или загрузите историю из Excel."}
                 </td>
               </tr>
             )}
             {shown.map((r) => (
               <tr key={r.workId} className={TR}>
                 <td data-label="Дата" className="px-4 py-2 whitespace-nowrap">
-                  <Link href={ghHref("/greenhouse/work", farm, { date: r.date, area: r.area })} className="hover:underline" title="Открыть день">
+                  <Link href={ghHref("/greenhouse/day", farm, { date: r.date, section: "people" })} className="hover:underline" title="Открыть день">
                     {formatDay(r.date)}
                   </Link>
                 </td>

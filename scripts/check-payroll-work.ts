@@ -116,9 +116,9 @@ const agro = payrollScope({ role: "payroll", payrollRole: "agronomist", payrollD
 const acc = payrollScope({ role: "payroll", payrollRole: "accountant", payrollDepartments: [] });
 check("ввод: админ, начальник, бухгалтер — да; агроном — нет", [admin?.editsWork, head?.editsWork, acc?.editsWork, agro?.editsWork], [true, true, true, false]);
 const ghHead = greenhouseScope({ role: "payroll", payrollRole: "head", payrollDepartments: ["es-teplitsa"] });
-check("вкладка «Выработка» у начальника — в «Теплице»", greenhouseTabsFor(ghHead, "esentai").some((t) => t.label === "Выработка"), true);
+check("у начальника в «Теплице» — «Внести день» (там и выработка)", greenhouseTabsFor(ghHead, "esentai").some((t) => t.label === "Внести день"), true);
 check("в «Зарплате» вкладки «Выработка» больше нет", payrollTabsFor(admin, "esentai").some((t) => t.label === "Выработка"), false);
-check("вкладка с компанией и match без неё", greenhouseTabsFor(greenhouseScope({ role: "admin", payrollRole: "", payrollDepartments: [] }), "esentai").find((t) => t.label === "Выработка")?.match?.includes("/greenhouse/work/pay"), true);
+check("вкладка с компанией и match без неё", greenhouseTabsFor(greenhouseScope({ role: "admin", payrollRole: "", payrollDepartments: [] }), "esentai").find((t) => t.label === "Внести день")?.match, ["/greenhouse/day"]);
 
 const good = cleanWorkDay(admin, "cut", "2026-10-28", [{ workId: "", employeeId: "E1", block: "7", part: "", workType: "cut", qty: "4 000", hours: "10", note: "" }, { workId: "", employeeId: "E2", block: "7", part: "", workType: "cleanup", qty: "", hours: "4", note: "" }], employees, TODAY);
 check("день: две строки чистые", [good.error, good.rows.length, good.rows[0].qty, good.rows[1].qty, good.rows[1].hours], ["", 2, 4000, 0, 4]);

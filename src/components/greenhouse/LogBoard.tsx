@@ -2,17 +2,18 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import clsx from "clsx";
-import { unwrap, unwrapValue } from "@/lib/actionResult";
+import { unwrap } from "@/lib/actionResult";
 import { ghHref } from "@/lib/greenhouse/farm";
-import { cleanLogRow, type LogKind, type LogRowDraft } from "@/lib/greenhouse/production";
+import type { LogKind, LogRowDraft } from "@/lib/greenhouse/production";
 import { GRADE_COLORS } from "@/lib/greenhouse/views";
 import { THEAD_ROW, TH, TR } from "@/lib/tableStyle";
 
 /**
- * Журнал теплицы (срезка, черенкование или брак) — одна доска на три журнала: сверху отбор (период, цикл, блок,
- * сорт), итоги отобранного, «Записать» — шапка (дата, блок, цикл) и строки (сорт, категория/вид/причина, штуки,
- * вес), ниже — сами записи с правкой и удалением. Цикл подставляется по блоку: тот, что сейчас на блоке растёт.
+ * Записи журнала теплицы (срезка, черенкование или брак) во вкладке «Записи»: отбор (период, цикл, блок, сорт),
+ * итоги отобранного и сами записи днями — с правкой и удалением в строке. Вносятся записи не здесь, а на «Внести
+ * день» (29.10.2026): у каждого дня — ссылка «открыть день».
  */
 
 export interface LogRowView {
@@ -48,6 +49,7 @@ const n0 = (n: number) => Math.round(n).toLocaleString("ru-RU");
 export default function LogBoard({
   log,
   path,
+  params = {},
   farm,
   today,
   from,
@@ -60,7 +62,6 @@ export default function LogBoard({
   kinds,
   blocks,
   cycles,
-  blockCycle,
   varieties,
   canEdit,
   save,
@@ -68,6 +69,8 @@ export default function LogBoard({
 }: {
   log: LogKind;
   path: string;
+  /** Постоянные параметры адреса (вид записей). */
+  params?: Record<string, string>;
   farm: string;
   today: string;
   from: string;
@@ -80,8 +83,6 @@ export default function LogBoard({
   kinds: { code: string; label: string }[];
   blocks: string[];
   cycles: number[];
-  /** Блок → цикл, который на нём сейчас (для подстановки). */
-  blockCycle: Record<string, number>;
   varieties: string[];
   canEdit: boolean;
   save: (log: string, farm: string, rows: LogRowDraft[]) => Promise<unknown>;
@@ -97,7 +98,7 @@ export default function LogBoard({
   const go = (next: { from?: string; to?: string; cycle?: number | null; block?: string }) => {
     const c = next.cycle === undefined ? cycle : next.cycle;
     const b = next.block === undefined ? block : next.block;
-    router.push(ghHref(path, farm, { from: next.from ?? from, to: next.to ?? to, cycle: c ?? undefined, block: b || undefined }));
+    router.push(ghHref(path, farm, { ...params, from: next.from ?? from, to: next.to ?? to, cycle: c ?? undefined, block: b || undefined }));
   };
   const monthStart = today.slice(0, 8) + "01";
   const prevMonthEnd = shiftDay(monthStart, -1);
@@ -144,54 +145,6 @@ export default function LogBoard({
     }
     return { qty, byKind, avgG: kgQty ? (kg * 1000) / kgQty : null };
   }, [shown]);
-
-  // --- ввод ---
-  const [entryDate, setEntryDate] = useState(today);
-  const [entryBlock, setEntryBlock] = useState(block || "");
-  const [entryCycle, setEntryCycle] = useState<string>(block && blockCycle[block] ? String(blockCycle[block]) : cycle ? String(cycle) : "");
-  const blank = (k: number, prev?: Line): Line => ({ key: k, variety: prev?.variety ?? "", kind: prev?.kind ?? (log === "harvest" ? "" : ""), qty: "", weightKg: "", part: prev?.part ?? "", line: prev?.line ?? "", note: "" });
-  const [lines, setLines] = useState<Line[]>([blank(1)]);
-  const [nextKey, setNextKey] = useState(2);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [open, setOpen] = useState(false);
-
-  const setLine = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
-  const addLine = () => {
-    setLines((ls) => [...ls, blank(nextKey, ls[ls.length - 1])]);
-    setNextKey((k) => k + 1);
-  };
-  const pickBlock = (b: string) => {
-    setEntryBlock(b);
-    if (blockCycle[b]) setEntryCycle(String(blockCycle[b]));
-  };
-
-  const drafts = (): LogRowDraft[] =>
-    lines
-      .filter((l) => l.variety.trim() || l.qty.trim())
-      .map((l) => ({ id: "", date: entryDate, cycle: entryCycle, block: entryBlock, variety: l.variety, kind: l.kind, qty: l.qty, weightKg: l.weightKg, part: l.part, line: l.line, note: l.note }));
-  const lineErrors = lines.map((l) => {
-    if (!l.variety.trim() && !l.qty.trim()) return "";
-    const { error } = cleanLogRow(log, { id: "", date: entryDate, cycle: entryCycle, block: entryBlock, variety: l.variety, kind: l.kind, qty: l.qty, weightKg: l.weightKg, part: l.part, line: l.line, note: l.note }, today, varieties);
-    return error;
-  });
-  const ready = drafts().length > 0 && lineErrors.every((e) => !e);
-
-  async function submit() {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const r = unwrapValue(await save(log, farm, drafts())) as { added: number };
-      setMsg({ ok: true, text: `Записано строк: ${r.added}.` });
-      setLines([blank(nextKey, lines[lines.length - 1])]);
-      setNextKey((k) => k + 1);
-      router.refresh();
-    } catch (err) {
-      setMsg({ ok: false, text: err instanceof Error ? err.message : "Не записалось." });
-    } finally {
-      setBusy(false);
-    }
-  }
 
   // --- правка строки ---
   const [editId, setEditId] = useState("");
@@ -277,89 +230,12 @@ export default function LogBoard({
           </select>
           <input className="input !h-9 !py-1 w-44" placeholder="Сорт…" value={q} onChange={(e) => setQ(e.target.value)} />
           {canEdit && (
-            <button type="button" className="btn-primary !py-1.5 ml-auto" onClick={() => setOpen((v) => !v)}>
-              {open ? "Скрыть форму" : `+ ${t.add}`}
-            </button>
+            <Link href={ghHref("/greenhouse/day", farm, { section: log, block: block || undefined })} className="btn-primary !py-1.5 ml-auto">
+              + Внести день
+            </Link>
           )}
         </div>
       </div>
-
-      {/* Ввод */}
-      {canEdit && open && (
-        <div className="card !p-4 space-y-3 border-section-greenhouse/30">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <label className="text-xs text-ink-muted">
-              Дата
-              <input type="date" className="input mt-1 w-full" value={entryDate} max={today} onChange={(e) => setEntryDate(e.target.value)} />
-            </label>
-            <label className="text-xs text-ink-muted">
-              Блок
-              <input className="input mt-1 w-full" list="gh-blocks" value={entryBlock} onChange={(e) => pickBlock(e.target.value)} placeholder="напр. 4" />
-              <datalist id="gh-blocks">
-                {blocks.map((b) => (
-                  <option key={b} value={b} />
-                ))}
-              </datalist>
-            </label>
-            <label className="text-xs text-ink-muted">
-              Цикл
-              <input className="input mt-1 w-full" inputMode="numeric" value={entryCycle} onChange={(e) => setEntryCycle(e.target.value)} />
-              {entryBlock && blockCycle[entryBlock] && String(blockCycle[entryBlock]) === entryCycle && <span className="text-[11px] text-ink-muted">текущий цикл блока</span>}
-            </label>
-          </div>
-          <div className="space-y-2">
-            {lines.map((l, i) => (
-              <div key={l.key} className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-start">
-                <input className="input col-span-2 sm:col-span-4" list={listId} placeholder="Сорт" value={l.variety} onChange={(e) => setLine(l.key, { variety: e.target.value })} />
-                <select className="input sm:col-span-3" value={l.kind} onChange={(e) => setLine(l.key, { kind: e.target.value })}>
-                  <option value="">{t.kind}…</option>
-                  {kinds.map((k) => (
-                    <option key={k.code} value={k.code}>
-                      {k.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="input sm:col-span-2 text-right"
-                  inputMode="numeric"
-                  placeholder={t.qty}
-                  value={l.qty}
-                  onChange={(e) => setLine(l.key, { qty: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (i === lines.length - 1) addLine();
-                    }
-                  }}
-                />
-                {log === "harvest" ? (
-                  <input className="input sm:col-span-2 text-right" inputMode="decimal" placeholder="Вес, кг" value={l.weightKg} onChange={(e) => setLine(l.key, { weightKg: e.target.value })} />
-                ) : log === "cuttings" ? (
-                  <div className="sm:col-span-2 grid grid-cols-2 gap-1">
-                    <input className="input" placeholder="Секц." value={l.part} onChange={(e) => setLine(l.key, { part: e.target.value })} />
-                    <input className="input" placeholder="Линия" value={l.line} onChange={(e) => setLine(l.key, { line: e.target.value })} />
-                  </div>
-                ) : (
-                  <input className="input sm:col-span-2" placeholder="Заметка" value={l.note} onChange={(e) => setLine(l.key, { note: e.target.value })} />
-                )}
-                <button type="button" className="text-ink-muted hover:text-[#a12b2b] text-lg leading-none py-2 sm:col-span-1" title="Убрать строку" onClick={() => setLines((ls) => (ls.length > 1 ? ls.filter((x) => x.key !== l.key) : [blank(nextKey)]))}>
-                  ×
-                </button>
-                {lineErrors[i] && <div className="col-span-2 sm:col-span-12 text-[11px] text-[#a12b2b] -mt-1">{lineErrors[i]}</div>}
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button type="button" className="btn-secondary !py-1.5" onClick={addLine}>
-              + строка
-            </button>
-            <button type="button" className="btn-primary" disabled={!ready || busy} onClick={submit}>
-              {busy ? "Записываю…" : `Записать ${drafts().length || ""}`}
-            </button>
-            {msg && <span className={clsx("text-sm", msg.ok ? "text-status-good" : "text-[#a12b2b]")}>{msg.text}</span>}
-          </div>
-        </div>
-      )}
 
       {/* Итоги отобранного */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
@@ -417,6 +293,11 @@ export default function LogBoard({
                             .map((b) => (b === "—" ? "весь цикл" : /^\d+$/.test(b) ? `блок ${b}` : b))
                             .join(", ")}
                         </span>
+                        {canEdit && (
+                          <Link href={ghHref("/greenhouse/day", farm, { date: r.date, section: log })} className="float-right text-section-greenhouse hover:underline">
+                            открыть день →
+                          </Link>
+                        )}
                       </td>
                     </tr>
                   ) : null;
