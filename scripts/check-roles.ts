@@ -10,7 +10,7 @@
 import { ROLES, ORDER_STATUSES } from "../src/lib/constants";
 import { cancelRefusal, isClosed, moneyRefusal } from "../src/lib/orderRules";
 import { shipmentPartsRefusal, shipmentRefusal, statusAfterShipping } from "../src/lib/shipRules";
-import { isQuotaError } from "../src/lib/sheets";
+import { isQuotaError, QUOTA_MESSAGE } from "../src/lib/sheets";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -347,8 +347,10 @@ check(
     isQuotaError(new Error("Превышен лимит запросов")),
     isQuotaError(new Error("Партия не найдена")),
     isQuotaError({ code: 403 }),
+    // Наш же отказ, брошенный `callGoogle`, — тоже лимит (рассылка повторяет, а не ставит получателю «ошибка»).
+    isQuotaError(new Error(QUOTA_MESSAGE)),
   ],
-  [true, true, true, true, false, false]
+  [true, true, true, true, false, false, true]
 );
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);

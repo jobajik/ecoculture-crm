@@ -173,7 +173,9 @@ export function isQuotaError(err: unknown): boolean {
   const e = err as { code?: unknown; status?: unknown; response?: { status?: unknown }; message?: unknown };
   if (e?.code === 429 || e?.status === 429 || e?.response?.status === 429) return true;
   const text = String(e?.message ?? "");
-  return /quota|rate limit|too many requests|RESOURCE_EXHAUSTED|превышен/i.test(text);
+  // Наш же текст отказа (`QUOTA_MESSAGE`) — тоже лимит: его бросает `callGoogle`, и выше по коду его надо узнать
+  // (29.10.2026: рассылка ставила получателю «ошибка» с этим текстом вместо того, чтобы повторить через минуту).
+  return /quota|rate limit|too many requests|RESOURCE_EXHAUSTED|превышен|ограничил число обращений/i.test(text);
 }
 
 export const QUOTA_MESSAGE =

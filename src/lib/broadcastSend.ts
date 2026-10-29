@@ -1,5 +1,5 @@
 import { localDayKey } from "./timezone";
-import { commitAtomic, prefetchTables, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "./sheets";
+import { commitAtomic, isQuotaError, prefetchTables, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "./sheets";
 import {
   botChatWrite,
   broadcastUpdate,
@@ -298,6 +298,13 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
       // Сбой связи: этого же получателя попробуем через минуту, ошибку ему не ставим.
       await commitAtomic(writes);
       return result({ waitSeconds: 60, note: e.message });
+    }
+    // Google ограничил обращения к таблице (фото из ротации читается из таблицы прямо перед отправкой): сообщение
+    // не ушло не из-за получателя — его же через минуту, без «ошибки» (29.10.2026, номер Земфиры: получатель остался
+    // с «ошибка — Google временно ограничил…», и рассылка его больше не брала).
+    if (!e && isQuotaError(err)) {
+      await commitAtomic(writes).catch(() => undefined);
+      return result({ waitSeconds: 60, note: "Google ограничил обращения к таблице — повторю через минуту" });
     }
     writes.push(recipientUpdate(next.rowNumber, { Status: "error", Error: (err instanceof Error ? err.message : "ошибка").slice(0, 200), SentAt: now.toISOString() }));
     await commitAtomic(writes);
