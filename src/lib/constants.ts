@@ -83,6 +83,12 @@ export const SHEET_TABS = {
   PAYROLL_TIMESHEET_STATUS: "PayrollTimesheetStatus",
   // Ведомость: что бухгалтер вписывает руками на сотрудника за месяц (этап 3).
   PAYROLL_ADJUST: "PayrollAdjust",
+  // Выработка (этап 7, 29.10.2026): строка на человека, день, участок и вид работ — срезка, сортировка и упаковка,
+  // посадка и черенкование, подготовка к посадке. Бюджеты на месяц по видам работ — отдельной вкладкой; имена из
+  // старого Excel без карточки сотрудника привязываются через PayrollWorkNames.
+  PAYROLL_WORK: "PayrollWork",
+  PAYROLL_WORK_BUDGETS: "PayrollWorkBudgets",
+  PAYROLL_WORK_NAMES: "PayrollWorkNames",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -400,6 +406,23 @@ export const SHEET_HEADERS: Record<string, string[]> = {
    * (пусто — из выдач склада). Всё остальное считается и не хранится.
    */
   [SHEET_TABS.PAYROLL_ADJUST]: ["Month", "EmployeeID", "SalaryOverride", "Sick", "Vacation", "KpiDeduction", "Advance", "Loan", "Flowers", "Note", "UpdatedBy", "UpdatedAt"],
+  /**
+   * Выработка — строка на сотрудника, день, участок и вид работ (`payroll/work.ts`). Area — участок кодом (cut —
+   * срезка, pack — сортировка и упаковка, plant — посадка и черенкование, prep — подготовка к посадке), WorkType —
+   * код вида работ из закрытого списка участка, Block — блок теплицы (число, «Маточник», «Rose Farm»), Part —
+   * секция блока (1–4, только у подготовки), Qty — штуки (у подготовки — 1 на блок-секцию), Hours — часы.
+   * EmployeeID — карточка сотрудника; Name — ФИО снимком (у строк из старого Excel карточки может не быть, тогда
+   * человека узнают по имени и по PayrollWorkNames). WorkID у загруженных из файла строк — хэш содержимого:
+   * повторная загрузка того же файла ничего не дублирует.
+   */
+  [SHEET_TABS.PAYROLL_WORK]: ["WorkID", "Farm", "Date", "Area", "EmployeeID", "Name", "Block", "Part", "WorkType", "Qty", "Hours", "Note", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"],
+  /**
+   * Бюджет месяца на вид работ (как в листе «Расчёт заработной платы» книги Есентая): каждый получает долю бюджета,
+   * равную его доле в выработке по этому виду (штуки или часы — `basis` у вида работ).
+   */
+  [SHEET_TABS.PAYROLL_WORK_BUDGETS]: ["Month", "Farm", "Area", "WorkType", "Amount", "Note", "UpdatedBy", "UpdatedAt"],
+  /** Имя из старого учёта → карточка сотрудника: привязывается один раз, дальше все строки с этим именем — его. */
+  [SHEET_TABS.PAYROLL_WORK_NAMES]: ["Farm", "Name", "EmployeeID", "SetBy", "SetAt"],
   /**
    * Цветы, которые сотрудник взял в счёт зарплаты.
    *
