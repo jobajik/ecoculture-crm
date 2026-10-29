@@ -66,12 +66,12 @@ export function GradeBar({ grades, className, height = "h-2" }: { grades: { grad
   );
 }
 
-export function GradeLegend({ grades, className }: { grades: string[]; className?: string }) {
+export function GradeLegend({ grades, className, colors = GRADE_COLORS }: { grades: string[]; className?: string; colors?: Record<string, string> }) {
   return (
     <div className={clsx("flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-secondary", className)}>
       {grades.map((g) => (
         <span key={g} className="inline-flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: GRADE_COLORS[g] ?? "#bbb" }} />
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: colors[g] ?? "#bbb" }} />
           {g}
         </span>
       ))}

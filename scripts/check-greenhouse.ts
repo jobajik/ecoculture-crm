@@ -33,7 +33,7 @@ import {
   type GhHarvest,
   type GhWaste,
 } from "../src/lib/greenhouse/production";
-import { cycleCard, defaultCycle, harvestBuckets, heatValue, nowByBlock, weekStart, wasteByCycle } from "../src/lib/greenhouse/views";
+import { blockInsights, cycleCard, cycleInsights, cycleOptions, cyclePhase, defaultCycle, finishedCycles, harvestBuckets, harvestInsight, heatValue, nowByBlock, previousFinished, qualitySplit, rankBlocks, rankVarieties, saneYield, weekStart, wasteByCycle } from "../src/lib/greenhouse/views";
 import { greenhouseScope } from "../src/lib/greenhouse/access";
 import { ghHref, pickGreenhouseFarm } from "../src/lib/greenhouse/farm";
 import { greenhouseTabsFor } from "../src/app/greenhouse/tabs";
@@ -187,6 +187,31 @@ check("сорта поверх циклов", summarizeVarieties(rows).map((v) =
 check("неделя с понедельника", [weekStart("2026-10-29"), weekStart("2026-10-26"), weekStart("2026-11-01")], ["2026-10-26", "2026-10-26", "2026-10-26"]);
 check("срезка по месяцам", harvestBuckets(harvest, "2024-01-01", TODAY, "month").map((x) => [x.key, x.total]), [["2024-11", 15535]]);
 check("брак по циклам", wasteByCycle(waste), [{ cycle: 4, total: 588, byKind: { dodder: 588 } }]);
+
+console.log("--- Простой вид: цикл списком, качество тремя группами, рейтинги");
+check("качество тремя группами", qualitySplit([{ grade: "Высшая", qty: 10 }, { grade: "Первая", qty: 30 }, { grade: "Третья", qty: 40 }, { grade: "Брак", qty: 20 }]).map((q) => [q.label, q.pct]), [["Высшая и 1-я", 40], ["2-я и 3-я", 40], ["4-я, мини и брак", 20]]);
+check("фазы циклов", cards.map((c) => [c.cycle, cyclePhase(c)]), [[13, "cuttings"], [12, "growing"], [4, "done"]]);
+check("пункты выбора: текущий помечен", cycleOptions(cards).map((o) => o.label), ["Цикл 13 — черенкование", "Цикл 12 — растёт", "Цикл 4 — завершён · текущий"]);
+const live = [
+  { ...cards[2], cycle: 11, blocks: cards[2].blocks.map((b) => ({ ...b, cycle: 11, status: "harvest" as const })) },
+  { ...cards[2], cycle: 10 },
+  { ...cards[2], cycle: 9, yieldPct: 70, topShare: 50 },
+];
+check("текущий — тот, что режется", cycleOptions(live).find((o) => o.current)?.cycle, 11);
+check("прошлый ЗАВЕРШЁННЫЙ для сравнения", [previousFinished(live, 11)?.cycle, previousFinished(live, 10)?.cycle], [10, 9]);
+check("завершённые циклы", finishedCycles(live).map((c) => c.cycle), [10, 9]);
+check("выход > 130 % в рейтинг не идёт", [saneYield(98), saneYield(214), saneYield(null)], [98, null, null]);
+const rb = rankBlocks([cards[2], { ...cards[1] }]);
+check("рейтинг блоков: завершённый с выходом, растущий — пометкой", rb.map((r) => [r.label, r.yieldPct, r.note]), [["Блок 4", 80.4, ""], ["Блок 2", null, "растёт"]]);
+check("рейтинг блоков по живому циклу: идёт срезка", rankBlocks([live[0]]).map((r) => r.note), ["идёт срезка"]);
+check("сорта: посадка не записана — без выхода", rankVarieties(rows, 3000).map((r) => [r.label, r.yieldPct, r.harvested]), [["Altaj", 80.4, 15535]]);
+const two = [
+  { key: "1", label: "Блок 1", planted: 100, harvested: 90, yieldPct: 90, topShare: 40, avgWeight: 70, cycles: 1, quality: [], note: "" },
+  { key: "2", label: "Блок 2", planted: 100, harvested: 60, yieldPct: 60, topShare: 20, avgWeight: 60, cycles: 1, quality: [], note: "" },
+];
+check("выводы по блокам словами", blockInsights(two)[0], "Лучший выход — Блок 1: 90 %, слабее всех — Блок 2: 60 %.");
+check("выводы по циклам", cycleInsights([{ ...cards[2], cycle: 10, yieldPct: 82, topShare: 30 }, { ...cards[2], cycle: 9, yieldPct: 78, topShare: 35 }])[0], "Цикл 10: выход 82 % — на 4 п. лучше, чем в цикле 9.");
+check("вывод по срезке", harvestInsight([{ key: "2026-09", label: "", total: 100000, byGrade: {} }, { key: "2026-10", label: "", total: 120000, byGrade: {} }], "month")?.replace(/\s/g, " "), "За последний месяц срезали 120 000 шт. — на 20 % больше, чем за предыдущий.");
 
 console.log("--- Права, компания, меню");
 const admin = greenhouseScope({ role: "admin", payrollRole: "", payrollDepartments: [] });
