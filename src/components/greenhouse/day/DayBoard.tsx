@@ -274,7 +274,7 @@ export default function DayBoard({
             к сегодня
           </button>
         )}
-        <Link href={ghHref("/greenhouse/records", farm, { from: date, to: date })} className="ml-auto text-sm text-ink-secondary hover:text-ink-primary underline-offset-2 hover:underline">
+        <Link href={ghHref("/greenhouse/records", farm, { period: "day", date })} className="ml-auto text-sm text-ink-secondary hover:text-ink-primary underline-offset-2 hover:underline">
           Все записи за день →
         </Link>
       </div>

@@ -42,6 +42,8 @@ import { harvestTotals, lossByMonth, lossReport, previousRange, saleClass } from
 import { forecastAccuracy, forecastHarvest, harvestCurve, planFact } from "../src/lib/greenhouse/forecast";
 import { buildReport, changePct, changePoints, dailyQuality, planForRange } from "../src/lib/greenhouse/dashboard";
 import { reportRange } from "../src/lib/greenhouse/reportPeriod";
+import { recordDays, recordIssues, recordTotals, type RecordKind, type WorkLine } from "../src/lib/greenhouse/records";
+import { compareRows, filterGh, qualitySeries } from "../src/lib/greenhouse/analyticsView";
 import { shiftDay as shiftDayGh } from "../src/lib/payroll/work";
 import { defaultDayBlock, nextGrade, planDayRows, sectionTotal } from "../src/lib/greenhouse/day";
 import { activeSub, navLinksFor } from "../src/components/navLinks";
@@ -348,6 +350,48 @@ console.log("--- Панель руководителя, потери, план, 
   const fc2 = forecastHarvest(frows, "2026-08-10", 3, { curve, harvest: [{ ...fx.harvest[0], date: "2026-08-05", qty: 2100 }] });
   check("прогноз: смешан пополам с темпом трёх недель", [fc2.paceTotal, fc2.total], [2100, 5050]);
   check("прогноз: точность на прошлом без данных — пусто, не ноль", forecastAccuracy(fx, "2026-08-10", { runs: 2 }).medianError, null);
+}
+
+console.log("--- Записи по дням и аналитика срезки");
+{
+  const H = (date: string, block: string, grade: string, qty: number, weightKg = 0, variety = "Altaj", cycle = 11): GhHarvest => ({ id: `${date}${block}${grade}${qty}${variety}`, farm: "esentai", date, cycle, block, variety, grade, qty, weightKg, note: "" });
+  const harvest = [H("2026-10-20", "8", "Высшая", 600, 48), H("2026-10-20", "8", "Первая", 400), H("2026-10-20", "14", "Третья", 1000), H("2026-10-20", "8", "Высшая", 100, 40, "Chic"), H("2026-10-21", "14", "Брак", 50), H("2026-10-21", "14", "Брак", 50)];
+  const waste: GhWaste[] = [{ id: "w1", farm: "esentai", date: "2026-10-21", cycle: 11, block: "8", variety: "Altaj", qty: 70, kind: "dodder", note: "" }];
+  const cyclesD: GhCycle[] = [{ farm: "esentai", cycle: 11, block: "8", cuttingsAt: "", plantedAt: "2026-07-01", plannedHarvestAt: "", note: "", updatedBy: "", updatedAt: "" }, { farm: "esentai", cycle: 12, block: "14", cuttingsAt: "", plantedAt: "2026-11-01", plannedHarvestAt: "", note: "", updatedBy: "", updatedAt: "" }];
+  const work: WorkLine[] = [
+    { date: "2026-10-20", area: "cut", areaLabel: "Срезка", name: "Иванова", hasCard: true, block: "8", typeLabel: "Срезка", qty: 500, hours: 0 },
+    { date: "2026-10-20", area: "cut", areaLabel: "Срезка", name: "Петрова", hasCard: false, block: "8", typeLabel: "Срезка", qty: 300, hours: 0 },
+  ];
+  const f = { from: "2026-10-01", to: "2026-10-31", kinds: ["harvest", "waste", "cuttings", "work"] as RecordKind[] };
+  const days = recordDays({ harvest, waste, cuttings: [], work }, f);
+  check("записи: дни сверху свежие", days.map((d) => d.date), ["2026-10-21", "2026-10-20"]);
+  const d20 = days[1];
+  check("лист дня: строка «блок · сорт», категории в ряд", d20.harvest.map((r) => [r.block, r.variety, r.total, r.byGrade["Высшая"] ?? 0]), [["8", "Altaj", 1000, 600], ["8", "Chic", 100, 100], ["14", "Altaj", 1000, 0]]);
+  check("лист дня: категории дня в порядке книги, итог, блоки", [d20.grades, d20.harvestTotal, d20.harvestBlocks], [["Высшая", "Первая", "Третья"], 2100, ["8", "14"]]);
+  check("лист дня: вес по правдоподобным строкам (48 кг на 600 шт. — 80 г; 40 кг на 100 — 400 г ок)", [d20.harvest[0].avgG, d20.harvest[1].avgG], [80, 400]);
+  check("выработка дня: по участку, люди и штуки", [d20.workPeople, d20.work[0].people, d20.work[0].qty], [2, 2, 800]);
+  check("брак дня", [days[0].wasteTotal, days[0].waste[0].label], [70, "Повилика"]);
+  check("отбор по сорту: выработку не показывает", recordDays({ harvest, waste, cuttings: [], work }, { ...f, variety: "chic" }).map((d) => [d.date, d.harvestTotal, d.work.length]), [["2026-10-20", 100, 0]]);
+  check("отбор по блоку", recordDays({ harvest, waste, cuttings: [], work }, { ...f, block: "14" }).map((d) => d.harvestTotal), [100, 1000]);
+  check("отбор по циклу", recordDays({ harvest: [...harvest, H("2026-10-20", "8", "Первая", 5, 0, "Altaj", 10)], waste, cuttings: [], work }, { ...f, cycle: 10 }).map((d) => d.harvestTotal), [5]);
+  check("итоги отобранного", recordTotals(days), { harvest: 2200, waste: 70, cuttings: 0, workRows: 2, days: 2 });
+  const issues = recordIssues({ cycles: cyclesD, harvest: [...harvest, H("2026-10-22", "14", "Первая", 10, 0, "Altaj", 12), H("2026-10-22", "8", "Вторая", 100, 99)], waste, cuttings: [], work }, f);
+  const texts = issues.map((x) => x.text).join(" | ");
+  check("проверьте: вес вне 10–400 г", texts.includes("990 г за стебель"), true);
+  check("проверьте: задвоенные строки", texts.includes("2 одинаковые строки"), true);
+  check("проверьте: срезка раньше посадки цикла", texts.includes("посажен только 01.11.2026"), true);
+  check("проверьте: выработка без карточки", texts.includes("Петрова"), true);
+  check("проверьте: правильные записи не тревожат", recordIssues({ cycles: cyclesD, harvest: [H("2026-10-20", "8", "Высшая", 600, 48)], waste: [], cuttings: [] }, f).length, 0);
+
+  // Аналитика срезки.
+  check("отбор данных по блоку и сорту", [filterGh({ cycles: [], harvest, cuttings: [], waste }, "8", "").harvest.length, filterGh({ cycles: [], harvest, cuttings: [], waste }, "", "CHIC").harvest.length], [3, 1]);
+  const sDay = qualitySeries(harvest, "2026-10-15", "2026-10-21");
+  check("срезка во времени: до двух месяцев — по дням, пустые дни нулём", [sDay.by, sDay.points.length, sDay.points.reduce((t, p) => t + p.total, 0)], ["day", 7, 2200]);
+  check("срезка во времени: квартал — по неделям, год — по месяцам", [qualitySeries(harvest, "2026-07-01", "2026-09-30").by, qualitySeries(harvest, "2025-11-01", "2026-10-31").by, qualitySeries(harvest, "2025-11-01", "2026-10-31").points.length], ["week", "month", 12]);
+  const row = (key: string, qty: number, topPct: number | null, lossPct: number | null, avgWeight: number | null) => ({ key, label: `Блок ${key}`, qty, saleable: qty, substandard: 0, reject: 0, saleablePct: 100, topPct, avgWeight, waste: 0, lossPct });
+  const cmp = compareRows([row("1", 5000, 40, 5, 60), row("2", 3000, 20, 12, 50), row("3", 2000, 30, 8, 70), row("4", 50, 90, 0, 90)], [row("1", 4000, 0, 0, 0), row("2", 3000, 0, 0, 0)], 10050);
+  check("сравнение: изменение к прошлому и доля", cmp.map((r) => [r.key, r.change, r.share]), [["1", 25, 49.8], ["2", 0, 29.9], ["3", null, 19.9], ["4", null, 0.5]]);
+  check("сравнение: лучший и худший — среди заметных (крошечный блок 4 не лучший)", [cmp.find((r) => r.best.includes("top"))?.key, cmp.find((r) => r.worst.includes("top"))?.key, cmp.find((r) => r.worst.includes("loss"))?.key, cmp.find((r) => r.best.includes("weight"))?.key], ["1", "2", "2", "3"]);
 }
 
 if (failed) {

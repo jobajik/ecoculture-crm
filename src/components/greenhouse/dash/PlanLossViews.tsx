@@ -219,10 +219,12 @@ export function LossView({
   return (
     <>
       <section className="card !p-5 space-y-4">
-        <div className="flex flex-wrap items-center gap-3 justify-between">
-          {periodChips}
-          <span className="text-xs text-ink-muted">{periodLabel}</span>
-        </div>
+        {(periodChips || periodLabel) && (
+          <div className="flex flex-wrap items-center gap-3 justify-between">
+            {periodChips}
+            <span className="text-xs text-ink-muted">{periodLabel}</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div>
             <div className="flex items-center gap-1 text-[11px] text-ink-muted">

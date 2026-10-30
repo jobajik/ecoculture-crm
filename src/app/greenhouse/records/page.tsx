@@ -1,58 +1,81 @@
+import Link from "next/link";
+import clsx from "clsx";
 import PageHeader from "@/components/PageHeader";
 import GhFarmSwitch from "@/components/greenhouse/GhFarmSwitch";
+import GhFilterBar from "@/components/greenhouse/GhFilterBar";
 import GhImportPanel from "@/components/greenhouse/GhImportPanel";
-import GhSegments from "@/components/greenhouse/GhSegments";
-import LogBoard, { type LogRowView } from "@/components/greenhouse/LogBoard";
-import WorkJournal, { type JournalRow } from "@/components/greenhouse/work/WorkJournal";
-import type { IconName } from "@/components/Icon";
+import DayCard from "@/components/greenhouse/records/DayCard";
+import WorkTools from "@/components/greenhouse/work/WorkTools";
 import { FARM_LABELS } from "@/lib/constants";
 import { GREENHOUSE_NO_ACCESS } from "@/lib/greenhouse/access";
 import { ghHref } from "@/lib/greenhouse/farm";
 import { loadGreenhousePage } from "@/lib/greenhouse/pageData";
-import { CUTTING_KINDS, GH_VARIETIES, HARVEST_GRADES, WASTE_KINDS, cycleOf, type LogKind } from "@/lib/greenhouse/production";
+import { cycleOf } from "@/lib/greenhouse/production";
+import { RECORD_KINDS, recordDays, recordIssues, recordTotals, type RecordKind, type WorkLine } from "@/lib/greenhouse/records";
+import { reportRange } from "@/lib/greenhouse/reportPeriod";
 import { nameKey } from "@/lib/payroll/rules";
-import { AREA_LABELS, KNOWN_BLOCKS, compareBlocks, displayName, isWorkArea, periodFor, shiftDay, workTypeLabel } from "@/lib/payroll/work";
+import { AREA_LABELS, compareBlocks, displayName, shiftDay, workTypeLabel } from "@/lib/payroll/work";
 import { loadWorkContext, workPeople } from "@/lib/payroll/workData";
 import { listNameLinks, listWork } from "@/lib/repo/payrollWork";
-import { toIsoDate } from "@/lib/sheetDate";
 import { greenhouseTabsFor } from "../tabs";
-import { deleteLogRowAction, importCyclesAction, importLogRowsAction, listLogIdsAction, saveLogRowsAction } from "../actions";
-import { deleteWorkEntryAction, importWorkRowsAction, linkWorkNameAction, listWorkIdsAction } from "../work/actions";
+import { importCyclesAction, importLogRowsAction, listLogIdsAction } from "../actions";
+import { importWorkRowsAction, linkWorkNameAction, listWorkIdsAction } from "../work/actions";
 
 export const dynamic = "force-dynamic";
 
 /**
- * «Записи» (29.10.2026): всё внесённое в теплице одним местом — срезка, брак, черенкование и выработка, переключателем
- * сверху. Здесь ищут, проверяют и правят; вносят — на «Внести день» (у каждого дня ссылка «открыть день»). Сюда же
- * переехала загрузка книг Excel. В браузер уходит не больше `LIMIT` последних записей журнала.
+ * «Записи» (30.10.2026, владелец: «вкладку Записи прям переделай, не очень»). Было — журнал строкой на категорию:
+ * за месяц шесть с половиной тысяч пикселей одинаковых строк. Стало — день карточкой: сверху итоги дня по журналам,
+ * внутри лист дня, как в книге (строка «блок · сорт», категории в ряд). Отбор — период со стрелками, блок, сорт и что
+ * показывать. Сверху — «Проверьте»: похожее на ошибку ввода. Правят на «Внести день» — ссылки ведут на тот же день и
+ * блок. Расчёт — `src/lib/greenhouse/records.ts`.
  */
-const LIMIT = 1500;
-type RecordType = LogKind | "work";
+type Params = { farm?: string; type?: string; period?: string; date?: string; from?: string; to?: string; block?: string; variety?: string; cycle?: string };
 
-const TYPES: { key: RecordType; label: string; icon: IconName }[] = [
-  { key: "harvest", label: "Срезка", icon: "leaf" },
-  { key: "waste", label: "Брак", icon: "alert" },
-  { key: "cuttings", label: "Черенкование", icon: "tag" },
-  { key: "work", label: "Выработка", icon: "client" },
-];
-
-type Params = { farm?: string; type?: string; from?: string; to?: string; month?: string; cycle?: string; block?: string; area?: string };
+const MAX_DAYS = 93;
+const TONE: Record<RecordKind, string> = { harvest: "#2f8a55", waste: "#c9584e", cuttings: "#e2a13b", work: "#4f7fb8" };
 
 export default async function GreenhouseRecordsPage({ searchParams }: { searchParams?: Params }) {
-  const p = await loadGreenhousePage(searchParams);
+  const sp = searchParams ?? {};
+  const p = await loadGreenhousePage(sp);
   const { scope, farm, today, data } = p;
-  const types = TYPES.filter((t) => t.key !== "work" || !!scope?.payroll);
-  const type: RecordType = types.some((t) => t.key === searchParams?.type) ? (searchParams!.type as RecordType) : "harvest";
-  const keep = { from: searchParams?.from, to: searchParams?.to };
+  const kindsAllowed = RECORD_KINDS.filter((k) => k.key !== "work" || !!scope?.payroll);
+  const type = kindsAllowed.some((k) => k.key === sp.type) ? (sp.type as RecordKind) : "all";
+  const kinds: RecordKind[] = type === "all" ? kindsAllowed.map((k) => k.key) : [type];
+
+  const block = String(sp.block ?? "").trim();
+  const variety = String(sp.variety ?? "").trim();
+  // Из карточки блока приходят «записи цикла»: период тогда — от первой до последней записи цикла на блоке.
+  const cycle = cycleOf(sp.cycle) || 0;
+  const cycleDates = cycle
+    ? [...data.harvest, ...data.waste, ...data.cuttings].filter((r) => r.cycle === cycle && (!block || r.block === block)).map((r) => r.date).sort()
+    : [];
+  const range = cycleDates.length
+    ? reportRange({ period: "custom", from: cycleDates[0], to: cycleDates[cycleDates.length - 1] }, today)
+    : reportRange({ period: sp.period ?? "month", date: sp.date, from: sp.from, to: sp.to }, today);
+  // Записи смотрят по дням — не больше квартала, иначе страница снова станет полотном (цикл — целиком).
+  const from = !cycle && range.period === "custom" && Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86400000) >= MAX_DAYS ? shiftDay(range.to, -(MAX_DAYS - 1)) : range.from;
+  const to = range.to;
 
   const header = (
     <PageHeader
       area="greenhouse"
       title="Записи"
-      subtitle={`${FARM_LABELS[farm] ?? farm} · всё внесённое — найти, проверить, поправить`}
+      subtitle={FARM_LABELS[farm] ?? farm}
       icon="list"
       tabs={greenhouseTabsFor(scope, farm)}
-      actions={scope && <GhFarmSwitch farm={farm} locked={!!scope.farmLocked} href={(f) => ghHref("/greenhouse/records", f, { type })} />}
+      actions={
+        scope && (
+          <>
+            {(scope.editsLogs || (scope.payroll && scope.editsWork)) && (
+              <Link href={ghHref("/greenhouse/day", farm)} className="btn-primary !py-2 whitespace-nowrap">
+                + Внести день
+              </Link>
+            )}
+            <GhFarmSwitch farm={farm} locked={!!scope.farmLocked} href={(f) => ghHref("/greenhouse/records", f)} />
+          </>
+        )
+      }
     />
   );
   if (!scope)
@@ -63,123 +86,202 @@ export default async function GreenhouseRecordsPage({ searchParams }: { searchPa
       </div>
     );
 
-  const segments = <GhSegments active={type} items={types.map((t) => ({ key: t.key, label: t.label, icon: t.icon, href: ghHref("/greenhouse/records", farm, { type: t.key, ...keep }) }))} />;
-
-  if (type === "work") {
-    const ctx = await loadWorkContext(searchParams);
-    const ws = ctx.scope!;
-    const period = periodFor(searchParams, today);
-    const area = searchParams?.area && isWorkArea(searchParams.area) ? searchParams.area : "";
-    const [entries, links, all] = await Promise.all([listWork({ farm, from: period.from, to: period.to }), listNameLinks(farm), listWork({ farm })]);
-    const rows: JournalRow[] = entries.map((e) => ({
-      workId: e.workId,
-      date: e.date,
-      area: e.area,
-      areaLabel: AREA_LABELS[e.area],
-      employeeId: e.employeeId,
-      name: displayName(e, ctx.names),
-      block: e.block,
-      part: e.part,
-      workType: e.workType,
-      typeLabel: workTypeLabel(e.area, e.workType),
-      qty: e.qty,
-      hours: e.hours,
-      note: e.note,
-      by: e.updatedBy || e.createdBy,
-    }));
-    // Имена без карточки — по всей истории компании: привязать нужно один раз.
-    const unmatched = new Map<string, { name: string; rows: number; last: string }>();
-    for (const e of all) {
-      if (e.employeeId) continue;
-      const key = nameKey(e.name);
-      const cur = unmatched.get(key);
-      if (cur) {
-        cur.rows += 1;
-        if (e.date > cur.last) cur.last = e.date;
-      } else unmatched.set(key, { name: e.name, rows: 1, last: e.date });
-    }
-    return (
-      <div className="space-y-5">
-        {header}
-        {segments}
-        <WorkJournal
-          key={`${farm}-${period.from}-${period.to}-${area}`}
+  // Выработка — из таблицы зарплаты, только тем, у кого есть роль модуля.
+  let work: WorkLine[] | undefined;
+  let tools: React.ReactNode = null;
+  if (scope.payroll && kinds.includes("work")) {
+    const ctx = await loadWorkContext(sp);
+    const [all, links] = await Promise.all([listWork({ farm }), listNameLinks(farm)]);
+    work = all
+      .filter((e) => e.date >= from && e.date <= to)
+      .map((e) => ({
+        date: e.date,
+        area: e.area,
+        areaLabel: AREA_LABELS[e.area],
+        name: displayName(e, ctx.names),
+        hasCard: !!e.employeeId,
+        block: e.block,
+        typeLabel: workTypeLabel(e.area, e.workType),
+        qty: e.qty,
+        hours: e.hours,
+      }));
+    if (scope.payroll.editsWork) {
+      const unmatched = new Map<string, { name: string; rows: number; last: string }>();
+      for (const e of all) {
+        if (e.employeeId) continue;
+        const key = nameKey(e.name);
+        const cur = unmatched.get(key);
+        if (cur) {
+          cur.rows += 1;
+          if (e.date > cur.last) cur.last = e.date;
+        } else unmatched.set(key, { name: e.name, rows: 1, last: e.date });
+      }
+      tools = (
+        <WorkTools
           farm={farm}
           today={today}
-          from={period.from}
-          to={period.to}
-          area={area}
-          rows={rows}
-          blocks={Array.from(new Set(entries.map((e) => e.block).filter(Boolean))).sort(compareBlocks)}
           people={workPeople(ctx).map((pp) => ({ employeeId: pp.employeeId, fullName: pp.fullName, deptName: pp.deptName }))}
           unmatched={Array.from(unmatched.values()).sort((a, b) => b.rows - a.rows)}
           links={links.map((l) => ({ name: l.name, employeeId: l.employeeId }))}
-          canEdit={ws.editsWork}
-          remove={deleteWorkEntryAction}
           listIds={listWorkIdsAction}
           importRows={importWorkRowsAction}
           linkName={linkWorkNameAction}
         />
-      </div>
-    );
+      );
+    }
   }
 
-  const log = type;
-  const cycle = cycleOf(searchParams?.cycle) || null;
-  const block = String(searchParams?.block ?? "").trim();
-  // По циклу или блоку — за всё время (там вопрос «что было с блоком»), иначе по умолчанию 30 дней.
-  const defFrom = cycle || block ? "2000-01-01" : shiftDay(today, -29);
-  const from = searchParams?.from && toIsoDate(searchParams.from) === searchParams.from ? searchParams.from : defFrom;
-  const to = searchParams?.to && toIsoDate(searchParams.to) === searchParams.to ? searchParams.to : today;
+  const filter = { from, to, block, variety, kinds, cycle: cycle || undefined };
+  const days = recordDays({ ...data, work }, filter);
+  const issues = recordIssues({ ...data, work }, filter);
+  const totals = recordTotals(days);
 
-  const allRows: LogRowView[] =
-    log === "harvest"
-      ? data.harvest.map((h) => ({ id: h.id, date: h.date, cycle: h.cycle, block: h.block, variety: h.variety, kind: h.grade, qty: h.qty, weightKg: h.weightKg, part: "", line: "", note: h.note }))
-      : log === "cuttings"
-        ? data.cuttings.map((c) => ({ id: c.id, date: c.date, cycle: c.cycle, block: c.block, variety: c.variety, kind: c.kind, qty: c.qty, weightKg: 0, part: c.part, line: c.line, note: c.note }))
-        : data.waste.map((w) => ({ id: w.id, date: w.date, cycle: w.cycle, block: w.block, variety: w.variety, kind: w.kind, qty: w.qty, weightKg: 0, part: "", line: "", note: w.note }));
-  const matched = allRows
-    .filter((r) => r.date >= from && r.date <= to && (!cycle || r.cycle === cycle) && (!block || r.block === block))
-    .sort((a, b) => b.date.localeCompare(a.date) || compareBlocks(a.block, b.block) || a.variety.localeCompare(b.variety));
+  const blocks = new Set<string>();
+  for (const c of data.cycles) blocks.add(c.block);
+  for (const list of [data.harvest, data.waste, data.cuttings]) for (const r of list) if (r.block && r.block !== "—") blocks.add(r.block);
+  const varieties = new Set<string>();
+  for (const list of [data.harvest, data.waste, data.cuttings]) for (const r of list) if (r.variety) varieties.add(r.variety);
 
-  const blocksSet = new Set<string>(KNOWN_BLOCKS.filter((b) => b !== "Маточник"));
-  for (const c of data.cycles) blocksSet.add(c.block);
-  for (const r of allRows) if (r.block && r.block !== "—") blocksSet.add(r.block);
-  const cycles = Array.from(new Set([...data.cycles.map((c) => c.cycle), ...allRows.map((r) => r.cycle)])).filter(Boolean).sort((a, b) => b - a);
-  const varietySet = new Set<string>(GH_VARIETIES);
-  for (const list of [data.harvest, data.cuttings, data.waste]) for (const x of list) if (x.variety) varietySet.add(x.variety);
-  const kinds = log === "harvest" ? HARVEST_GRADES.map((g) => ({ code: g, label: g })) : log === "cuttings" ? CUTTING_KINDS.map((k) => ({ code: k.code, label: k.label })) : WASTE_KINDS.map((k) => ({ code: k.code, label: k.label }));
-  const importPanel = (open: boolean, label?: string) =>
-    scope.editsLogs ? <GhImportPanel farm={farm} today={today} only={log} open={open} label={label} listIds={listLogIdsAction} importRows={importLogRowsAction} importCycles={importCyclesAction} /> : null;
+  const keep = { type: type === "all" ? undefined : type, cycle: cycle || undefined, period: range.period, date: range.period === "custom" ? undefined : range.anchor, from: range.period === "custom" ? from : undefined, to: range.period === "custom" ? to : undefined, block: block || undefined, variety: variety || undefined };
+  const typeChip = (key: string, label: string) => (
+    <Link
+      key={key}
+      href={ghHref("/greenhouse/records", farm, { ...keep, type: key === "all" ? undefined : key })}
+      className={clsx("text-xs px-3 py-1.5 rounded-full border whitespace-nowrap inline-flex items-center gap-1.5", key === type ? "bg-section-greenhouse text-white border-section-greenhouse" : "border-line-hairline bg-surface hover:bg-surface-plane")}
+    >
+      {key !== "all" && <span className="w-1.5 h-1.5 rounded-full" style={{ background: key === type ? "#fff" : TONE[key as RecordKind] }} />}
+      {label}
+    </Link>
+  );
+  const issuesByDay = new Map<string, typeof issues>();
+  for (const x of issues) issuesByDay.set(x.date, [...(issuesByDay.get(x.date) ?? []), x]);
+  const canEdit = scope.editsLogs || (!!scope.payroll && scope.editsWork);
+  const empty = !data.harvest.length && !data.cuttings.length && !data.waste.length;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {header}
-      {segments}
-      {allRows.length === 0 && importPanel(true)}
-      <LogBoard
-        key={`${farm}-${log}-${from}-${to}-${cycle ?? ""}-${block}`}
-        log={log}
+
+      <GhFilterBar
         path="/greenhouse/records"
-        params={{ type: log }}
         farm={farm}
-        today={today}
+        params={type === "all" ? {} : { type }}
+        cycleNote={cycle ? { label: `Цикл ${cycle}`, clearHref: ghHref("/greenhouse/records", farm, { ...keep, cycle: undefined, period: "month", from: undefined, to: undefined, date: undefined }) } : undefined}
+        period={range.period}
         from={from}
         to={to}
-        cycle={cycle}
+        anchor={range.anchor}
+        title={range.period === "custom" ? "" : range.title}
+        prevAnchor={range.prevAnchor}
+        nextAnchor={range.nextAnchor}
+        periods={["day", "week", "month", "custom"]}
+        today={today}
+        blocks={Array.from(blocks).sort(compareBlocks)}
         block={block}
-        rows={matched.slice(0, LIMIT)}
-        shownLimit={LIMIT}
-        totalMatched={matched.length}
-        kinds={kinds}
-        blocks={Array.from(blocksSet).sort(compareBlocks)}
-        cycles={cycles}
-        varieties={Array.from(varietySet).sort((a, b) => a.localeCompare(b))}
-        canEdit={scope.editsLogs}
-        save={saveLogRowsAction}
-        remove={deleteLogRowAction}
-      />
-      {allRows.length > 0 && <div className="pt-2">{importPanel(false, "Догрузить из книги агронома")}</div>}
+        varieties={Array.from(varieties).sort((a, b) => a.localeCompare(b))}
+        variety={variety}
+      >
+        {typeChip("all", "Всё")}
+        {kindsAllowed.map((k) => typeChip(k.key, k.label))}
+      </GhFilterBar>
+
+      {empty && scope.editsLogs ? (
+        <div className="card space-y-3">
+          <div className="text-sm text-ink-secondary">Записей пока нет — загрузите книгу агронома, и срезка, брак и черенкование лягут сюда сами.</div>
+          <GhImportPanel farm={farm} today={today} open listIds={listLogIdsAction} importRows={importLogRowsAction} importCycles={importCyclesAction} />
+        </div>
+      ) : (
+        <>
+          {/* Итог отобранного одной строкой */}
+          {days.length > 0 && (
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm px-1">
+              <span className="text-ink-muted">
+                {days.length} {days.length === 1 ? "день" : days.length < 5 ? "дня" : "дней"} с записями
+              </span>
+              {totals.harvest > 0 && (
+                <span>
+                  срезано <b className="tabular-nums">{totals.harvest.toLocaleString("ru-RU")}</b>
+                </span>
+              )}
+              {totals.waste > 0 && (
+                <span>
+                  брак <b className="tabular-nums">{totals.waste.toLocaleString("ru-RU")}</b>
+                </span>
+              )}
+              {totals.cuttings > 0 && (
+                <span>
+                  черенкование <b className="tabular-nums">{totals.cuttings}</b> зап.
+                </span>
+              )}
+              {totals.workRows > 0 && (
+                <span>
+                  выработка <b className="tabular-nums">{totals.workRows}</b> строк
+                </span>
+              )}
+            </div>
+          )}
+
+          {issues.length > 0 && (
+            <section className="card !p-4 border-[#e0a526]/40 bg-[#fffaf0] space-y-2">
+              <div className="flex items-baseline gap-2">
+                <h3 className="font-display font-bold text-[15px]">Проверьте</h3>
+                <span className="text-xs text-ink-muted">похоже на ошибку ввода · {issues.length}</span>
+              </div>
+              <ul className="space-y-1.5">
+                {issues.slice(0, 6).map((x, i) => (
+                  <li key={i} className="flex gap-2 text-sm">
+                    <span className="text-xs text-ink-muted w-12 flex-none pt-0.5 tabular-nums">{x.date.slice(8, 10)}.{x.date.slice(5, 7)}</span>
+                    <span className="flex-1 min-w-0">{x.text}</span>
+                    {canEdit && x.kind !== "work" && (
+                      <Link href={ghHref("/greenhouse/day", farm, { date: x.date, section: x.kind, block: x.block || undefined })} className="text-xs text-section-greenhouse hover:underline whitespace-nowrap pt-0.5">
+                        исправить →
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {issues.length > 6 && <div className="text-xs text-ink-muted">Ещё {issues.length - 6} — в карточках дней ниже, помечены ⚠.</div>}
+            </section>
+          )}
+
+          {days.length === 0 ? (
+            <div className="card text-sm text-ink-secondary">
+              {type !== "all" || block || variety ? "За этот период под отбор ничего не попало." : "За этот период записей нет."}{" "}
+              {range.prevAnchor && (
+                <Link href={ghHref("/greenhouse/records", farm, { ...keep, date: range.prevAnchor })} className="underline">
+                  Посмотреть раньше
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {days.map((d, i) => (
+                <DayCard key={d.date} day={d} farm={farm} today={today} canEdit={canEdit} open={i === 0} issues={issuesByDay.get(d.date) ?? []} maxHarvest={Math.max(0, ...days.map((x) => x.harvestTotal))} />
+              ))}
+            </div>
+          )}
+
+          {(scope.editsLogs || tools) && (
+            <details className="card !p-4">
+              <summary className="cursor-pointer text-sm font-medium">Загрузка из Excel</summary>
+              <div className="mt-3 space-y-4">
+                {scope.editsLogs && (
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-ink-muted">Книга агронома: срезка, черенкование, брак и даты циклов. Повторная загрузка не задваивает.</div>
+                    <GhImportPanel farm={farm} today={today} label="Загрузить книгу агронома" listIds={listLogIdsAction} importRows={importLogRowsAction} importCycles={importCyclesAction} />
+                  </div>
+                )}
+                {tools && (
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-ink-muted">Книга учёта работ цветоводов и имена без карточки сотрудника.</div>
+                    {tools}
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
+        </>
+      )}
     </div>
   );
 }
