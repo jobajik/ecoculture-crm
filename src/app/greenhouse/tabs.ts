@@ -7,7 +7,8 @@ import type { GreenhouseScope } from "@/lib/greenhouse/access";
  *   Обзор — что сейчас в теплице и как идёт цикл (сюда же карточки блоков);
  *   Внести день — всё за день одной записью (только тем, кто ведёт записи);
  *   Записи — всё внесённое: найти, проверить, поправить, загрузить книгу;
- *   Аналитика — блоки, сорта, циклы, срезка, люди и оплата труда.
+ *   Аналитика — блоки, сорта, циклы, срезка, план, потери, люди и оплата труда;
+ *   Отчёты — сводка за день, неделю, месяц, квартал, год или свой период; Excel и печать в PDF.
  * Компания едет параметром; `match` — без него.
  */
 export function greenhouseTabsFor(scope: GreenhouseScope | null, farm = ""): { href: string; label: string; match?: string[] }[] {
@@ -17,5 +18,7 @@ export function greenhouseTabsFor(scope: GreenhouseScope | null, farm = ""): { h
   if (scope.editsLogs || (scope.payroll && scope.editsWork)) tabs.push({ href: `/greenhouse/day${q}`, label: "Внести день", match: ["/greenhouse/day"] });
   tabs.push({ href: `/greenhouse/records${q}`, label: "Записи", match: ["/greenhouse/records"] });
   tabs.push({ href: `/greenhouse/analytics${q}`, label: "Аналитика", match: ["/greenhouse/analytics"] });
+  // 30.10.2026 (ТЗ: «ежедневный, недельный, месячный отчёт… экспорт в Excel и PDF»).
+  tabs.push({ href: `/greenhouse/report${q}`, label: "Отчёты", match: ["/greenhouse/report"] });
   return tabs;
 }

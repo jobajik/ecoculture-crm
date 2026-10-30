@@ -38,6 +38,11 @@ import { blockInsights, cycleCard, cycleInsights, cycleOptions, cyclePhase, defa
 import { greenhouseScope } from "../src/lib/greenhouse/access";
 import { ghHref, pickGreenhouseFarm } from "../src/lib/greenhouse/farm";
 import { greenhouseTabsFor } from "../src/app/greenhouse/tabs";
+import { harvestTotals, lossByMonth, lossReport, previousRange, saleClass } from "../src/lib/greenhouse/insights";
+import { forecastAccuracy, forecastHarvest, harvestCurve, planFact } from "../src/lib/greenhouse/forecast";
+import { buildReport, changePct, changePoints, dailyQuality, planForRange } from "../src/lib/greenhouse/dashboard";
+import { reportRange } from "../src/lib/greenhouse/reportPeriod";
+import { shiftDay as shiftDayGh } from "../src/lib/payroll/work";
 import { defaultDayBlock, nextGrade, planDayRows, sectionTotal } from "../src/lib/greenhouse/day";
 import { activeSub, navLinksFor } from "../src/components/navLinks";
 import { canOpen } from "../src/lib/access";
@@ -230,9 +235,9 @@ check("менеджер без роли модуля — закрыто", manage
 check("бригадир (роль модуля «начальник») — журналы и выработка", head && [head.editsLogs, head.editsWork, head.seesMoney], [true, true, false]);
 check("кадровику теплица ни к чему", hr, null);
 check("бухгалтер — смотрит", accountant && [accountant.editsLogs, accountant.editsWork], [false, false]);
-check("вкладки: четыре по делу — обзор, внести день, записи, аналитика", greenhouseTabsFor(admin, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика"]);
-check("вкладки агронома — тоже «Внести день»", greenhouseTabsFor(agro, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика"]);
-check("бухгалтер CRM без роли модуля — без «Внести день»", accountant && greenhouseTabsFor(accountant, "esentai").map((t) => t.label), ["Обзор", "Записи", "Аналитика"]);
+check("вкладки по делу — обзор, внести день, записи, аналитика, отчёты", greenhouseTabsFor(admin, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика", "Отчёты"]);
+check("вкладки агронома — тоже «Внести день»", greenhouseTabsFor(agro, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика", "Отчёты"]);
+check("бухгалтер CRM без роли модуля — без «Внести день»", accountant && greenhouseTabsFor(accountant, "esentai").map((t) => t.label), ["Обзор", "Записи", "Аналитика", "Отчёты"]);
 check("вкладка горит без компании в адресе", greenhouseTabsFor(admin, "esentai").find((t) => t.label === "Записи")?.match, ["/greenhouse/records"]);
 check("меню: страница блока — во вкладке «Обзор»", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица")!.subs, "/greenhouse/cycles/11/4")?.label, "Обзор");
 check("меню: «Внести день» горит на своей странице", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица")!.subs, "/greenhouse/day")?.label, "Внести день");
@@ -266,6 +271,83 @@ console.log("--- Внести день");
   check("блок дня: из адреса, если такой есть", [defaultDayBlock(dayBlocks, [], "1"), defaultDayBlock(dayBlocks, [], "99")], ["1", "8"]);
   check("итог раздела: пустые и нули не считаются", sectionTotal([{ qty: "1 200" }, { qty: "" }, { qty: 0 }, { qty: "30,5" }]), { qty: 1230.5, rows: 2 });
   check("охранник: новые адреса", [canOpen("agronomist", "/greenhouse/day"), canOpen("payroll", "/greenhouse/records"), canOpen("warehouse", "/greenhouse/analytics")], [true, true, true]);
+}
+
+console.log("--- Панель руководителя, потери, план, прогноз, отчёты");
+{
+  const H = (date: string, block: string, grade: string, qty: number, weightKg = 0, variety = "Altaj"): GhHarvest => ({ id: `${date}${block}${grade}${qty}`, farm: "esentai", date, cycle: 11, block, variety, grade, qty, weightKg, note: "" });
+  const W = (date: string, block: string, kind: string, qty: number): GhWaste => ({ id: `${date}${block}${kind}`, farm: "esentai", date, cycle: 11, block, variety: "Altaj", qty, kind, note: "" });
+  check("товарность: брак, некондиция и товарные", [saleClass("Брак"), saleClass("Уценка"), saleClass("Нераскрывшийся"), saleClass("Четвёртая"), saleClass("Мини-микс")], ["reject", "substandard", "substandard", "saleable", "saleable"]);
+  const hv = [H("2026-10-20", "8", "Высшая", 600, 48), H("2026-10-20", "8", "Брак", 100), H("2026-10-21", "14", "Уценка", 300), H("2026-10-21", "14", "Третья", 1000, 9999)];
+  const tot = harvestTotals(hv, "2026-10-20", "2026-10-21");
+  check("итоги срезки: товарность = товарные / всё срезанное", [tot.qty, tot.saleable, tot.substandard, tot.reject, tot.saleablePct, tot.rejectPct, tot.topPct], [2000, 1600, 300, 100, 80, 5, 30]);
+  check("итоги срезки: вес — только правдоподобные строки (9 999 кг на 1 000 шт. отброшены)", tot.avgWeight, 80);
+  check("итоги срезки: в день срезки", [tot.days, tot.perDay, tot.blocks], [2, 1000, 2]);
+  check("прошлый отрезок той же длины", previousRange("2026-10-01", "2026-10-30"), { from: "2026-09-01", to: "2026-09-30" });
+  const cut = (date: string, kind: string, qty: number): GhCutting => ({ id: `${date}${kind}`, farm: "esentai", cycle: 12, date, block: "1", part: "", line: "", variety: "Altaj", kind, qty, note: "" });
+  const lr = lossReport({ harvest: hv, waste: [W("2026-10-20", "8", "dodder", 400)], cuttings: [cut("2026-10-20", "actual", 10000), cut("2026-10-20", "cull", 500), cut("2026-10-20", "invoice", 11000)] }, "2026-10-20", "2026-10-21");
+  check("потери: брак на блоках + при срезке от (срезано + брак на блоках)", [lr.onBlocks, lr.atHarvest, lr.lost, lr.lossPct], [400, 100, 500, 20.8]);
+  check("отход при посадке — от факта, а не инвойса", [lr.culls, lr.arrived, lr.cullPct], [500, 10000, 5]);
+  check("потери по блоку: блок 8 — 500 из 700 + 400", lr.byBlock[0].key === "8" && lr.byBlock[0].lost === 500 && lr.byBlock[0].pct === 45.5, true);
+  check("причины: при посадке помечены отдельно", lr.reasons.find((r) => r.code === "cull")?.stage, "planting");
+  const lm = lossByMonth({ harvest: hv, waste: [] }, "2026-10-31", 3);
+  check("потери по месяцам: пустые месяцы есть, без деления на ноль", [lm.map((m) => m.month), lm[0].pct, lm[2].pct], [["2026-08", "2026-09", "2026-10"], null, 5]);
+
+  // План: неделя месяца целиком — вся, текущая — по дням.
+  const plan = [
+    { period: "2026-10-W1", variety: "Altaj", targetStems: 3500 },
+    { period: "2026-10-W2", variety: "Altaj", targetStems: 7000 },
+    { period: "2026-10-W3", variety: "Bacardi", targetStems: 7000 },
+  ];
+  const pf = planFact(plan, [H("2026-10-03", "8", "Первая", 3000), H("2026-10-06", "8", "Первая", 2000)], "2026-10", "2026-10-08");
+  // Октябрь 2026: W1 — 1–4 (4 дня), W2 — 5–11, W3 — 12–18.
+  check("план: к сегодня — прошедшая неделя целиком и 4 из 7 дней текущей", [pf.plan, pf.fact, pf.planToDate, pf.pacePct, pf.pct], [17500, 5000, 7500, 67, 29]);
+  check("план: неделя с риской «прошла / идёт / впереди»", pf.weeks.slice(0, 3).map((w) => w.when), ["past", "current", "future"]);
+  check("план по сортам: регистр не важен, вне плана — без процента", [pf.varieties.find((v) => v.variety === "Altaj")?.pct, pf.varieties.find((v) => v.variety === "Bacardi")?.fact], [48, 0]);
+  check("план нет — hasPlan false", planFact([], hv, "2026-10", "2026-10-21").hasPlan, false);
+  const range = planForRange(plan, "2026-10-01", "2026-10-07");
+  check("план на отрезок: W1 целиком + 3 из 7 дней W2", Math.round(range.get("altaj")!.qty), 3500 + 3000);
+
+  // Отчёт за период.
+  const rep = buildReport({ cycles: [], harvest: hv, cuttings: [], waste: [W("2026-10-20", "8", "dodder", 400)] }, plan, "2026-10-20", "2026-10-21");
+  check("отчёт: по блокам в порядке блоков, у блока 8 потери с браком на блоке", [rep.byBlock.map((b) => b.key), rep.byBlock[0].waste, rep.byBlock[0].lossPct], [["8", "14"], 400, 45.5]);
+  check("отчёт: по дням — брак на блоке в свой день", rep.byDay.map((d) => [d.date, d.qty, d.waste, d.blocks]), [["2026-10-20", 700, 400, 1], ["2026-10-21", 1300, 0, 1]]);
+  const rep2 = buildReport({ cycles: [], harvest: [H("2026-10-10", "8", "Первая", 1500)], cuttings: [], waste: [] }, plan, "2026-10-10", "2026-10-13");
+  check("отчёт: план отрезка — 2 дня из 7 у недели W2 и W3", [rep2.byVariety.find((v) => v.label === "Altaj")?.plan, rep2.byVariety.find((v) => v.label === "Altaj")?.planPct, rep2.plan, rep2.planPct], [2000, 75, 4000, 38]);
+  check("отчёт: сорт из плана без срезки виден с нулём", rep2.byVariety.some((v) => v.label === "Bacardi" && v.qty === 0 && v.plan === 2000), true);
+
+  // Период отчёта.
+  const r1 = reportRange({ period: "week", date: "2026-10-28" }, "2026-10-30");
+  check("неделя — с понедельника, будущее отрезано", [r1.from, r1.to, r1.nextAnchor], ["2026-10-26", "2026-10-30", null]);
+  const r2 = reportRange({ period: "quarter", date: "2026-08-15" }, "2026-10-30");
+  check("квартал и соседи", [r2.from, r2.to, r2.title, r2.prevAnchor, r2.nextAnchor], ["2026-07-01", "2026-09-30", "3-й квартал 2026", "2026-04-01", "2026-10-01"]);
+  check("месяц по умолчанию, неизвестный период — месяц", [reportRange({}, "2026-10-30").from, reportRange({ period: "zzz" }, "2026-10-30").period], ["2026-10-01", "month"]);
+  const r3 = reportRange({ period: "custom", from: "2026-11-05", to: "2026-10-01" }, "2026-10-30");
+  check("свой период: перепутанные даты и будущее", [r3.from, r3.to], ["2026-10-01", "2026-10-30"]);
+  check("месяц: декабрь → январь", reportRange({ period: "month", date: "2025-12-10" }, "2026-10-30").nextAnchor, "2026-01-01");
+
+  // Срезка по дням для графика: 30 точек, пустые — нулём, три группы качества.
+  const dq = dailyQuality(hv, "2026-10-21", 30);
+  check("график: 30 дней, сумма сходится", [dq.length, dq.reduce((s, d) => s + d.total, 0), dq[dq.length - 1]["4-я, мини и брак"]], [30, 2000, 300]);
+  check("изменение: проценты и пункты", [changePct(120, 100), changePct(5, 0), changePoints(41.3, 38), changePoints(null, 3)], [20, null, 3.3, null]);
+
+  // Прогноз: блок посажен, кривая — по двум завершённым блокам; темп смешивается пополам.
+  const cyc = (cycle: number, block: string, plantedAt: string, plannedHarvestAt: string): GhCycle => ({ farm: "esentai", cycle, block, cuttingsAt: "", plantedAt, plannedHarvestAt, note: "", updatedBy: "", updatedAt: "" });
+  const fx: { cycles: GhCycle[]; harvest: GhHarvest[]; cuttings: GhCutting[]; waste: GhWaste[] } = { cycles: [], harvest: [], cuttings: [], waste: [] };
+  for (const [cycle, block, planted] of [[1, "1", "2026-01-01"], [1, "2", "2026-01-05"], [2, "1", "2026-06-01"]] as [number, string, string][]) {
+    fx.cycles.push(cyc(cycle, block, planted, ""));
+    fx.cuttings.push({ id: `c${cycle}${block}`, farm: "esentai", cycle, date: planted, block, part: "", line: "", variety: "Altaj", kind: "actual", qty: 10000, note: "" });
+  }
+  for (const [block, start] of [["1", "2026-03-20"], ["2", "2026-03-24"]] as [string, string][])
+    for (let i = 0; i < 10; i++) fx.harvest.push({ id: `h${block}${i}`, farm: "esentai", date: shiftDayGh(start, i), cycle: 1, block, variety: "Altaj", grade: "Первая", qty: 800, weightKg: 0, note: "" });
+  const frows = summarizeCycles(fx, "2026-08-10");
+  const curve = harvestCurve(frows);
+  check("кривая: два блока, выход 80 %, 10 дней срезки, от посадки до срезки ≈ 78 дн.", [curve.blocks, curve.medianYield, curve.daily.length, curve.lagDays], [2, 80, 10, 78]);
+  const fc = forecastHarvest(frows, "2026-08-10", 3, { curve });
+  check("прогноз: новый блок даст 8 000 в горизонте, без темпа — только модель", [fc.total, fc.modelTotal, fc.paceTotal, fc.blocks[0]?.block], [8000, 8000, null, "1"]);
+  const fc2 = forecastHarvest(frows, "2026-08-10", 3, { curve, harvest: [{ ...fx.harvest[0], date: "2026-08-05", qty: 2100 }] });
+  check("прогноз: смешан пополам с темпом трёх недель", [fc2.paceTotal, fc2.total], [2100, 5050]);
+  check("прогноз: точность на прошлом без данных — пусто, не ноль", forecastAccuracy(fx, "2026-08-10", { runs: 2 }).medianError, null);
 }
 
 if (failed) {

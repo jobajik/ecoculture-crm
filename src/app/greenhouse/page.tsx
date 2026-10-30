@@ -15,6 +15,11 @@ import { greenhouseTabsFor } from "./tabs";
 import type { GhData } from "@/lib/repo/greenhouse";
 import { compareBlocks } from "@/lib/payroll/work";
 import { importCyclesAction, importLogRowsAction, listLogIdsAction } from "./actions";
+import { askGreenhouseAction } from "./ask-actions";
+import { AlertsCard, DailyHarvestCard, DashboardKpis, ForecastCard } from "@/components/greenhouse/dash/GhDashboard";
+import AskGreenhouse from "@/components/greenhouse/dash/AskGreenhouse";
+import { buildDashboard, greenhouseAlerts } from "@/lib/greenhouse/dashboard";
+import { cachedAccuracy, greenhouseForecast, loadGreenhousePlan } from "@/lib/greenhouse/dashboardData";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +28,10 @@ export const dynamic = "force-dynamic";
  * сделай проще и интереснее»). Цикл — выбор списком в шапке (по умолчанию текущий, тот, что режется). Сверху одной
  * карточкой — что сейчас в теплице; ниже — выбранный цикл: сколько срезали из посаженного и как к прошлому циклу,
  * качество тремя группами, рейтинг блоков и сортов. Сравнение циклов и блоков между собой — во вкладке «Аналитика».
+ *
+ * 30.10.2026 (ТЗ владельца «понять за 10–15 секунд, что происходит») сверху встала панель руководителя: шесть цифр,
+ * «требует внимания», срезка за 30 дней, прогноз на 3 недели и «спросить по данным» (`GhDashboard`, расчёты —
+ * `src/lib/greenhouse/dashboard.ts`, `forecast.ts`).
  */
 export default async function GreenhousePage({ searchParams }: { searchParams?: { farm?: string; cycle?: string } }) {
   const p = await loadGreenhousePage(searchParams);
@@ -85,12 +94,29 @@ export default async function GreenhousePage({ searchParams }: { searchParams?: 
   const lossPct = c.cullPct;
   const firstHarvest = c.blocks.map((b) => b.firstHarvestAt).filter(Boolean).sort()[0] ?? "";
   const yieldNow = saneYield(c.yieldPct);
+  const plan = await loadGreenhousePlan(farm);
+  const dash = buildDashboard(p.data, rows, plan, today);
+  const forecast = greenhouseForecast(rows, p.data, today);
+  const accuracy = forecast ? cachedAccuracy(farm, p.data, today) : null;
+  const alerts = greenhouseAlerts(p.data, rows, dash, forecast);
 
   return (
     <div className="space-y-6">
       {header}
 
       <TodayStrip farm={farm} today={today} data={p.data} canEnter={scope.editsLogs || (!!scope.payroll && scope.editsWork)} />
+
+      <DashboardKpis dash={dash} forecast={forecast} accuracy={accuracy} farm={farm} />
+
+      <div className="grid lg:grid-cols-[1.5fr_1fr] gap-5 items-start">
+        <DailyHarvestCard dash={dash} />
+        <AlertsCard alerts={alerts} farm={farm} />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5 items-start">
+        <ForecastCard forecast={forecast} accuracy={accuracy} farm={farm} blockHref={(cycle, block) => blockHref({ cycle, block })} />
+        <AskGreenhouse farm={farm} ask={askGreenhouseAction} />
+      </div>
 
       <NowCard cycles={cycles} year={year} blockHref={blockHref} />
 
