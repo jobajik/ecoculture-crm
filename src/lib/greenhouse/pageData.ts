@@ -9,6 +9,7 @@ import type { GreenhouseScope } from "./access";
 export interface GreenhousePage {
   scope: GreenhouseScope | null;
   email: string;
+  role: string;
   farm: string;
   today: string;
   data: GhData;
@@ -17,11 +18,11 @@ export interface GreenhousePage {
 }
 
 export async function loadGreenhousePage(searchParams?: { farm?: string }): Promise<GreenhousePage> {
-  const { scope, email, farm } = await greenhouseSession(searchParams);
+  const { scope, email, role, farm } = await greenhouseSession(searchParams);
   const today = localDayKey();
   const empty: GhData = { cycles: [], harvest: [], cuttings: [], waste: [] };
-  if (!scope) return { scope, email, farm, today, data: empty, rows: [], cycles: [] };
+  if (!scope) return { scope, email, role, farm, today, data: empty, rows: [], cycles: [] };
   const data = await loadGreenhouse(farm);
   const rows = summarizeCycles(data, today);
-  return { scope, email, farm, today, data, rows, cycles: rows.map((r) => cycleCard(r, today)) };
+  return { scope, email, role, farm, today, data, rows, cycles: rows.map((r) => cycleCard(r, today)) };
 }

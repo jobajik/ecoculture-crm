@@ -36,6 +36,12 @@ import { WORK_AREAS, isWorkArea, monthRange, periodFor, previousPeriod, summariz
 import { loadWorkContext } from "@/lib/payroll/workData";
 import { listWork, listWorkBudgets } from "@/lib/repo/payrollWork";
 import { saveWorkBudgetsAction } from "../work/actions";
+import { LossView, PlanView } from "@/components/greenhouse/dash/PlanLossViews";
+import { dayLabel } from "@/lib/greenhouse/dashboard";
+import { greenhouseForecast, loadGreenhousePlan } from "@/lib/greenhouse/dashboardData";
+import { planFact } from "@/lib/greenhouse/forecast";
+import { lossByMonth, lossReport, previousRange } from "@/lib/greenhouse/insights";
+import { canOpen } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -44,14 +50,16 @@ export const dynamic = "force-dynamic";
  * экран: «Блоки», «Сорта», «Циклы», «Срезка». Сверху каждого — выводы словами, ниже рейтинг полосами или график.
  * Выход считается только по ЗАВЕРШЁННЫМ блокам и циклам: у тех, что ещё режутся, он неполный.
  */
-type View = "blocks" | "varieties" | "cycles" | "harvest" | "people" | "pay";
-type Params = { farm?: string; view?: string; span?: string; metric?: string; by?: string; from?: string; to?: string; month?: string; area?: string };
+type View = "blocks" | "varieties" | "cycles" | "harvest" | "plan" | "losses" | "people" | "pay";
+type Params = { farm?: string; view?: string; span?: string; metric?: string; by?: string; from?: string; to?: string; month?: string; area?: string; lp?: string };
 
 const VIEWS: { key: View; label: string; icon: IconName }[] = [
   { key: "blocks", label: "Блоки", icon: "box" },
   { key: "varieties", label: "Сорта", icon: "leaf" },
   { key: "cycles", label: "Циклы", icon: "clock" },
   { key: "harvest", label: "Срезка", icon: "chart" },
+  { key: "plan", label: "План", icon: "check" },
+  { key: "losses", label: "Потери", icon: "alert" },
   { key: "people", label: "Люди", icon: "client" },
   { key: "pay", label: "Оплата труда", icon: "wallet" },
 ];
@@ -85,7 +93,7 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
         <div className="card text-sm text-ink-secondary">{GREENHOUSE_NO_ACCESS}</div>
       </div>
     );
-  if (!cycles.length && view !== "people" && view !== "pay")
+  if (!cycles.length && view !== "people" && view !== "pay" && view !== "plan")
     return (
       <div className="space-y-5">
         {header}
@@ -215,6 +223,44 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
         </section>
         <div className="text-xs text-ink-muted">Здесь только завершённые циклы: у тех, что ещё режутся, выход неполный.</div>
       </>
+    );
+  } else if (view === "plan") {
+    const month = sp.month && isMonth(sp.month) ? sp.month : today.slice(0, 7);
+    const isCurrent = month === today.slice(0, 7);
+    const monthEnd = monthRange(month).to;
+    const plan = await loadGreenhousePlan(farm);
+    const pf = planFact(plan, data.harvest, month, today);
+    const forecast = isCurrent ? greenhouseForecast(rows, data, today) : null;
+    const next = shiftMonth(month, 1);
+    body = (
+      <PlanView
+        pf={pf}
+        isCurrent={isCurrent}
+        forecast={forecast}
+        monthEnd={monthEnd}
+        prevHref={ghHref("/greenhouse/analytics", farm, { view, month: shiftMonth(month, -1) })}
+        nextHref={next <= today.slice(0, 7) ? ghHref("/greenhouse/analytics", farm, { view, month: next }) : null}
+        forecastHref={canOpen(p.role, "/forecast") ? `/forecast?period=${month}` : null}
+      />
+    );
+  } else if (view === "losses") {
+    const LP = [
+      { key: "7", days: 7, label: "7 дней" },
+      { key: "30", days: 30, label: "30 дней" },
+      { key: "90", days: 90, label: "Квартал" },
+      { key: "365", days: 365, label: "Год" },
+    ];
+    const lp = LP.find((x) => x.key === sp.lp) ?? LP[1];
+    const from = shiftDay(today, -(lp.days - 1));
+    const prevR = previousRange(from, today);
+    body = (
+      <LossView
+        loss={lossReport(data, from, today)}
+        prev={lossReport(data, prevR.from, prevR.to)}
+        months={lossByMonth(data, today, 12)}
+        periodChips={<div className="flex flex-wrap gap-1.5">{LP.map((x) => chip(x.key === lp.key, ghHref("/greenhouse/analytics", farm, { view, lp: x.key }), x.label))}</div>}
+        periodLabel={`${dayLabel(from)} — ${dayLabel(today)}, сравнение с ${dayLabel(prevR.from)} — ${dayLabel(prevR.to)}`}
+      />
     );
   } else if (view === "people" || view === "pay") {
     body = await workView(view, farm, sp, today);
