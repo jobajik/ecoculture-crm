@@ -133,12 +133,34 @@ export function kaspiDueAmount(part: { amount: number; paidAmount: number }): nu
  * Что делать со строкой счёта при новом статусе от ApiPay. Платёж
  * проводится ОДИН раз: только если счёт оплачен, а ссылки на платёж ещё нет.
  */
+/** Сколько держит отметка «claim-…»: проведение платежа занимает секунды. */
+export const KASPI_CLAIM_STALE_MS = 5 * 60000;
+
+/**
+ * Номер проведённого платежа у счёта. Отметка «claim-<мс>» — строку заняли под проведение; если она старше 5 минут,
+ * платёж так и не записался (30.10.2026: 29.10 таблица упёрлась в предел 20 млн ячеек, запись платежа падала, а отметка
+ * оставалась навсегда — счёт «оплачен · проводится…», заявка не оплачена, и ни вебхук, ни сверка её больше не брали).
+ */
+export function recordedPaymentId(paymentId: string | null | undefined, now = Date.now()): string {
+  const id = String(paymentId || "").trim();
+  const m = /^claim-(\d+)$/.exec(id);
+  if (m && now - Number(m[1]) > KASPI_CLAIM_STALE_MS) return "";
+  return id;
+}
+
+/** Платёж журнала проведён по этому счёту: в заметке «Kaspi-счёт №<id>» (№12 не путается с №123). */
+export function noteHasInvoice(note: string, invoiceId: string): boolean {
+  const id = String(invoiceId || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return !!id && new RegExp(`№${id}(?![\\w-])`).test(String(note || ""));
+}
+
 export function kaspiStatusPlan(
   row: Pick<KaspiInvoice, "status" | "paymentId">,
-  next: { status: string }
+  next: { status: string },
+  now = Date.now()
 ): { changed: boolean; recordPayment: boolean } {
   const changed = row.status !== next.status;
-  const recordPayment = isPaidKaspiStatus(next.status) && !row.paymentId;
+  const recordPayment = isPaidKaspiStatus(next.status) && !recordedPaymentId(row.paymentId, now);
   return { changed, recordPayment };
 }
 

@@ -10,6 +10,8 @@ import {
   kaspiPhone,
   kaspiSendRefusal,
   kaspiStatusPlan,
+  recordedPaymentId,
+  noteHasInvoice,
   suggestedKaspiPhone,
   type KaspiSendInput,
 } from "../src/lib/kaspiInvoice";
@@ -90,7 +92,12 @@ check("открытый счёт другой компании не мешает
 // --- Проводка оплаты один раз -----------------------------------------------------------
 check("pending → paid: провести", kaspiStatusPlan({ status: "pending", paymentId: "" }, { status: "paid" }), { changed: true, recordPayment: true });
 check("повтор paid: не проводить", kaspiStatusPlan({ status: "paid", paymentId: "PAY-1" }, { status: "paid" }), { changed: false, recordPayment: false });
-check("paid, но уже «занят»: не проводить", kaspiStatusPlan({ status: "pending", paymentId: "claim-1" }, { status: "paid" }), { changed: true, recordPayment: false });
+check("paid, но уже «занят»: не проводить", kaspiStatusPlan({ status: "pending", paymentId: `claim-${Date.now()}` }, { status: "paid" }), { changed: true, recordPayment: false });
+check("paid, «занят» больше 5 минут назад (запись упала): провести", kaspiStatusPlan({ status: "paid", paymentId: `claim-${Date.now() - 6 * 60000}` }, { status: "paid" }), { changed: false, recordPayment: true });
+check("номер платежа — не отметка", recordedPaymentId("PAY-1", 0), "PAY-1");
+check("заметка платежа: тот же счёт", noteHasInvoice("Kaspi-счёт №123", "123"), true);
+check("заметка платежа: №123 — не счёт №12", noteHasInvoice("Kaspi-счёт №123 (тест)", "12"), false);
+check("заметка платежа: счёт с текстом после", noteHasInvoice("Kaspi-счёт №12 (тест)", "12"), true);
 check("expired: без платежа", kaspiStatusPlan({ status: "pending", paymentId: "" }, { status: "expired" }), { changed: true, recordPayment: false });
 check("paid → частичный возврат: второй платёж не нужен", kaspiStatusPlan({ status: "paid", paymentId: "PAY-1" }, { status: "partially_refunded" }), { changed: true, recordPayment: false });
 

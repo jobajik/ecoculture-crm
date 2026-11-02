@@ -20,6 +20,7 @@ import {
   kaspiStatusLabel,
   kaspiTrackerStep,
   prettyKaspiPhone,
+  recordedPaymentId,
   waitingWords,
 } from "@/lib/kaspiInvoice";
 import { formatMoment } from "@/lib/formatDate";
@@ -393,7 +394,7 @@ function Tracker({
           ? "Счёт отменяется…"
           : paid
             ? `Оплачен ${formatMoment(inv.paidAt || inv.updatedAt)}${
-                inv.paymentId && !inv.paymentId.startsWith("claim-") ? " · платёж проведён" : " · проводится…"
+                inv.paymentId && !inv.paymentId.startsWith("claim-") ? " · платёж проведён" : recordedPaymentId(inv.paymentId) ? " · проводится…" : " · платёж не проведён — проведёт сверка"
               }`
             : kaspiStatusLabel(inv.status);
 

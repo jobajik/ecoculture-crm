@@ -346,7 +346,7 @@ export async function appendRow(tabName: string, record: Record<string, unknown>
     spreadsheetId: spreadsheetIdFor(tabName),
     range: `${tabName}!A1`,
     valueInputOption: "USER_ENTERED",
-    insertDataOption: "INSERT_ROWS",
+    insertDataOption: "OVERWRITE", // в пустые строки под таблицей: INSERT_ROWS раздувал сетку (предел 20 млн ячеек, 29.10.2026)
     requestBody: { values: [row] },
   }));
 }
@@ -359,7 +359,7 @@ export async function appendRows(tabName: string, records: Record<string, unknow
     spreadsheetId: spreadsheetIdFor(tabName),
     range: `${tabName}!A1`,
     valueInputOption: "USER_ENTERED",
-    insertDataOption: "INSERT_ROWS",
+    insertDataOption: "OVERWRITE", // в пустые строки под таблицей: INSERT_ROWS раздувал сетку (предел 20 млн ячеек, 29.10.2026)
     requestBody: { values: rows },
   }));
 }

@@ -2,7 +2,8 @@ import type { ApiPayInvoice } from "./apipay";
 import { findKaspiInvoice, updateKaspiInvoiceRow } from "./repo/kaspiInvoices";
 import { getOrderById } from "./repo/orders";
 import { recordPayment } from "./paymentWrite";
-import { isPaidKaspiStatus, kaspiStatusPlan } from "./kaspiInvoice";
+import { isPaidKaspiStatus, kaspiStatusPlan, recordedPaymentId, noteHasInvoice } from "./kaspiInvoice";
+import { listPayments } from "./repo/payments";
 import { ORDER_STATUSES } from "./constants";
 import { localDayKey } from "./timezone";
 import { isKaspiSessionError } from "./kaspiHealth";
@@ -58,12 +59,20 @@ export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" 
 
   // Занять строку: ещё раз прочитать свежей и проверить, что никто не успел.
   const again = await findKaspiInvoice(row.invoiceId);
-  if (!again || again.invoice.paymentId) return "same";
+  if (!again || recordedPaymentId(again.invoice.paymentId)) return "same";
+  // Платёж по этому счёту уже в журнале (прошлая попытка записала платёж и упала дальше) — только связать.
+  const already = (await listPayments({ fresh: true })).find((p) => p.orderId === row.orderId && noteHasInvoice(p.note, row.invoiceId));
+  if (already) {
+    await updateKaspiInvoiceRow(again.rowNumber, { ...changes, PaymentID: already.paymentId, UpdatedAt: new Date().toISOString() });
+    return isPaidKaspiStatus(status) ? "paid" : "updated";
+  }
   const claim = `claim-${Date.now()}`;
   await updateKaspiInvoiceRow(again.rowNumber, { ...changes, PaymentID: claim, UpdatedAt: new Date().toISOString() });
 
   const paidAt = inv.paid_at ? new Date(inv.paid_at) : new Date();
   const amount = Math.round((Number(inv.amount) || row.amount) * 100) / 100;
+  // Запись не удалась (лимит Google, предел ячеек) — снять отметку, чтобы следующий вебхук или сверка провели снова.
+  const release = () => updateKaspiInvoiceRow(again.rowNumber, { PaymentID: "", UpdatedAt: new Date().toISOString() }).catch(() => undefined);
   const result = await recordPayment({
     orderId: row.orderId,
     farm: row.farm,
@@ -74,6 +83,9 @@ export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" 
     actorEmail: KASPI_ACTOR,
     // Счета Rose Farm и Есентай одной заявки оплачивают одним заходом — вебхуки приходят в ту же секунду.
     verify: true,
+  }).catch(async (e) => {
+    await release();
+    throw e;
   });
   await updateKaspiInvoiceRow(again.rowNumber, {
     PaymentID: result?.paymentId ?? "",
