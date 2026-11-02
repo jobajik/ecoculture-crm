@@ -9,6 +9,7 @@ import Icon, { type IconName } from "./Icon";
 import { areaForPath } from "@/lib/areas";
 import { ROLE_LABELS, farmLabel, isFarmBoundRole } from "@/lib/constants";
 import { navLinksFor, isActive, activeSub, type NavLink } from "./navLinks";
+import { useGhFarm } from "./useGhFarm";
 
 /**
  * Боковое меню (19.10.2026, владелец прислал образец: «такой дизайн нам нужен — удобный и лаконичный; давай всё
@@ -30,6 +31,7 @@ function iconFor(link: NavLink): IconName {
 export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void }) {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const ghFarm = useGhFarm();
   if (!session) return null;
 
   const role = session.user?.role ?? "manager";
@@ -43,7 +45,7 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
     .join("");
 
   const item = (l: NavLink) => {
-    const active = isActive(l, pathname, links);
+    const active = isActive(l, pathname, links, ghFarm);
     const area = areaForPath(l.match[0] ?? l.href);
     const subs = active ? l.subs : [];
     const current = activeSub(subs, pathname);

@@ -51,8 +51,8 @@ export default async function GreenhousePage({ searchParams }: { searchParams?: 
   const header = (
     <PageHeader
       area="greenhouse"
-      title="Теплица"
-      subtitle={FARM_LABELS[farm] ?? farm}
+      title={`Теплица ${FARM_LABELS[farm] ?? farm}`}
+      subtitle="хризантема по циклам и блокам"
       icon="leaf"
       tabs={greenhouseTabsFor(scope, farm)}
       actions={

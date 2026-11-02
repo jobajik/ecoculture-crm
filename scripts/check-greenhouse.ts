@@ -241,15 +241,15 @@ check("вкладки по делу — обзор, внести день, за�
 check("вкладки агронома — тоже «Внести день»", greenhouseTabsFor(agro, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика", "Отчёты"]);
 check("бухгалтер CRM без роли модуля — без «Внести день»", accountant && greenhouseTabsFor(accountant, "esentai").map((t) => t.label), ["Обзор", "Записи", "Аналитика", "Отчёты"]);
 check("вкладка горит без компании в адресе", greenhouseTabsFor(admin, "esentai").find((t) => t.label === "Записи")?.match, ["/greenhouse/records"]);
-check("меню: страница блока — во вкладке «Обзор»", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица")!.subs, "/greenhouse/cycles/11/4")?.label, "Обзор");
-check("меню: «Внести день» горит на своей странице", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица")!.subs, "/greenhouse/day")?.label, "Внести день");
+check("меню: страница блока — во вкладке «Обзор»", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица Есентай")!.subs, "/greenhouse/cycles/11/4")?.label, "Обзор");
+check("меню: «Внести день» горит на своей странице", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица Есентай")!.subs, "/greenhouse/day")?.label, "Внести день");
 check("компания: закреплённая главнее адреса, по умолчанию Есентай", [pickGreenhouseFarm("rose_farm", undefined, "esentai"), pickGreenhouseFarm(undefined, undefined), pickGreenhouseFarm(undefined, "rose_farm"), pickGreenhouseFarm("all", "esentai")], ["esentai", "esentai", "rose_farm", "esentai"]);
 check("адрес с компанией", ghHref("/greenhouse", "esentai", { cycle: 11, block: "" }), "/greenhouse?cycle=11&farm=esentai");
-check("меню: «Теплица» у админа — рабочий раздел", navLinksFor("admin").find((l) => l.label === "Теплица")?.other, false);
-check("меню: агроном видит «Теплицу»", navLinksFor("agronomist", "", [], "esentai").some((l) => l.label === "Теплица"), true);
-check("меню: агроном без производства — нет", navLinksFor("agronomist").some((l) => l.label === "Теплица"), false);
-check("меню: у менеджера нет", navLinksFor("manager").some((l) => l.label === "Теплица"), false);
-check("меню: бригадир — «Теплица» и «Зарплата»", navLinksFor("payroll", "head", ["es-teplitsa"]).map((l) => l.label), ["Теплица", "Зарплата"]);
+check("меню: «Теплица» у админа — рабочий раздел", navLinksFor("admin").find((l) => l.label === "Теплица Есентай")?.other, false);
+check("меню: агроном Есентая видит только свою теплицу", navLinksFor("agronomist", "", [], "esentai").filter((l) => l.label.startsWith("Теплица")).map((l) => l.label), ["Теплица Есентай"]);
+check("меню: агроном без производства — нет", navLinksFor("agronomist").some((l) => l.label.startsWith("Теплица")), false);
+check("меню: у менеджера нет", navLinksFor("manager").some((l) => l.label.startsWith("Теплица")), false);
+check("меню: бригадир — обе теплицы и «Зарплата»", navLinksFor("payroll", "head", ["es-teplitsa"]).map((l) => l.label), ["Теплица Rose Farm", "Теплица Есентай", "Зарплата"]);
 check("охранник пускает агронома, склад и бригадира", [canOpen("agronomist", "/greenhouse"), canOpen("warehouse", "/greenhouse/harvest"), canOpen("payroll", "/greenhouse/work")], [true, true, true]);
 
 console.log("--- Внести день");

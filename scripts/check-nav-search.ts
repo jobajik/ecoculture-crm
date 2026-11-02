@@ -23,7 +23,8 @@ const ROLES_ALL = ["admin", "manager", "sales_head", "accountant", "warehouse", 
 for (const role of ROLES_ALL) {
   const links = navLinksFor(role);
   // Считаются рабочие разделы: группа «Прочее» (Настройки, у владельца — и Зарплата) стоит отдельно внизу.
-  check(`${role}: разделов не больше семи`, links.filter((l) => !l.other).length <= 7, true);
+  // Восемь — у владельца и РОПа с 02.11.2026: две теплицы отдельными разделами (просьба владельца).
+  check(`${role}: разделов не больше восьми`, links.filter((l) => !l.other).length <= 8, true);
   const closed = links
     .flatMap((l) => [l.href, ...l.subs.map((s) => s.href)])
     .map((h) => h.split("?")[0])
@@ -31,6 +32,18 @@ for (const role of ROLES_ALL) {
   check(`${role}: все адреса меню открыты роли`, closed, []);
   const dup = links.map((l) => l.label).filter((v, i, a) => a.indexOf(v) !== i);
   check(`${role}: названия разделов не повторяются`, dup, []);
+}
+
+// Две теплицы (02.11.2026): адреса одни, горит раздел открытой компании; закреплённому — один раздел.
+{
+  const links = navLinksFor("admin");
+  const gh = (farm: string) => links.filter((l) => isActive(l, "/greenhouse/day", links, farm)).map((l) => l.label);
+  check("теплица: Rose Farm горит своим разделом", gh("rose_farm"), ["Теплица Rose Farm"]);
+  check("теплица: Есентай горит своим разделом", gh("esentai"), ["Теплица Есентай"]);
+  check("теплица: вкладки Rose Farm — приёмка", links.find((l) => l.label === "Теплица Rose Farm")?.subs.map((s) => s.label), ["Обзор", "Приёмка", "Записи", "Аналитика"]);
+  const agro = navLinksFor("agronomist", "", [], "rose_farm");
+  check("теплица: агроном Rose Farm — один раздел", agro.filter((l) => l.href.startsWith("/greenhouse")).map((l) => l.label), ["Теплица Rose Farm"]);
+  check("теплица: агроном горит при любой cookie", agro.filter((l) => isActive(l, "/greenhouse/day", agro, "esentai")).map((l) => l.label), ["Теплица Rose Farm"]);
 }
 
 function activeLabel(role: string, pathname: string): string {

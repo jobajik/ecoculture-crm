@@ -5,6 +5,8 @@ import { FARM_ORDER, FARMS } from "../constants";
  * там. Чистое правило — для проверки.
  */
 export const GREENHOUSE_FARM_COOKIE = "greenhouse_farm";
+/** Событие окна: страница теплицы сообщает меню, какая компания открыта (detail — код компании). */
+export const GREENHOUSE_FARM_EVENT = "greenhouse-farm";
 
 export function pickGreenhouseFarm(param: string | undefined, cookie: string | undefined, locked: string | null = null): string {
   if (locked && FARM_ORDER.includes(locked)) return locked;
