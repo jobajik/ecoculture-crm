@@ -3429,7 +3429,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`, `check-wa-lines`, `check-auto-broadcast`, `check-staff-command`, `check-leads-bulk`, `check-payroll`, `check-payroll-work`, `check-greenhouse`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`, `check-wa-lines`, `check-auto-broadcast`, `check-staff-command`, `check-leads-bulk`, `check-payroll`, `check-payroll-work`, `check-greenhouse`, `check-intake`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;
@@ -4617,6 +4617,33 @@ Rose Farm / Есентай Агро Хим — в шапке страницы (`
   старые адреса `view=blocks|varieties` открывают его). **План и прогноз** — план агронома и карточка прогноза. **Люди**,
   **Оплата труда** — без изменений.
 Проверка — `check-greenhouse` («Записи по дням и аналитика срезки»).
+
+**Приёмка Rose Farm по характеристикам** (02.11.2026, владелец: «такой же учёт для Rose Farm, где будет приёмка цветка по
+характеристикам: розы, эустомы и с завтрашнего дня хризантема — но это хризантема только от Rose Farm; сделай удобную и
+понятную систему»). Живёт в «Теплице» по тем же адресам, что учёт Есентая: страница с компанией Rose Farm отдаёт рисовку в
+`src/app/greenhouse/_intake/views.tsx` (`/greenhouse` — Обзор, `/greenhouse/day` — Приёмка, `/greenhouse/records` — Записи,
+`/greenhouse/analytics` и `/greenhouse/report` — Аналитика). Правила — чистый `src/lib/greenhouse/intake.ts`, сорта —
+`intakeData.ts`, запись — `loadIntake` / `saveIntakeDay` в `repo/greenhouse.ts`, действие — `src/app/greenhouse/intake-actions.ts`,
+экран дня — `IntakeDayBoard`, кирпичи — `IntakeParts`, Excel — `intakeExcel.ts` и `/api/greenhouse/intake`, проверка — `check-intake`.
+
+- **почему не циклы, как у Есентая**: роза многолетняя, циклов нет; вопрос другой — ЧТО пришло из теплицы. Вкладка `GhIntake`
+  (вторая таблица, заводится сама при первой записи): строка — `accept` (сорт × длина/категория, стеблей), `reject` (сорт,
+  причина из `REJECT_REASONS`, стеблей), `measure` (по сорту за день: вес стебля, г; высота бутона, см — роза; бутонов на
+  стебле — эустома; цветков на стебле — хризантема). Длины/категории — как на складе, без «Уценки» (это цена, а не цветок);
+  у хризантемы «Брак» — не категория, а строка брака с причиной. Пределы замеров — `INTAKE_SPECS`;
+- **хризантема Rose Farm отдельно от Есентая** — колонка `Farm`: она в записях Rose Farm и ни в одном расчёте с хризантемой
+  Есентая не встречается. **Склад и продажи это НЕ меняет**: `FARM_BY_FLOWER_TYPE` по-прежнему ведёт хризантему в Есентай
+  (счёт, склад, оплата по компаниям). Если хризантема Rose Farm пойдёт на склад и в продажу от Rose Farm — это отдельное
+  решение владельца и правка в constants + склад + счета;
+- **экран дня** — как тетрадь приёмки: плитки цветков с итогом дня → строка на сорт (и блок, если включить «по блокам»),
+  колонки длин (2 сорт и B — под галочкой), «Всего», характеристики → брак с причиной; Enter в клетке — та же длина у
+  следующего сорта; «Как 31.10: N сортов» ставит сорта последнего дня приёмки, чипы — недавние сорта. Сохраняется одной
+  кнопкой; удаляется только виденное (`planDayRows`), повтор клетки или замера в дне — отказ (`intakeDuplicate`);
+- **цифры** (`intakeStats`): брак — от пришедшего (принято + брак); средняя длина розы — только первый сорт; «80 см и длиннее»
+  / «Высшая» / «Стандарт» — `TOP_GRADES_BY_FLOWER_TYPE`; характеристики — средние, взвешенные стеблями сорта за тот же день.
+  Аналитика без отбора — последние 30 дней, записи — 7 дней (календарный месяц второго числа — это два дня);
+- пишут те же, кто ведёт записи теплицы (`editsLogs`): админ, зав. складом и агроном Rose Farm (у них компания закреплена),
+  ответственные из «Зарплаты»; РОП и бухгалтер смотрят. Меню у закреплённых за Rose Farm показывает её вкладки.
 
 Дальше: этап 4 — закрытие месяца (ведомость замораживается, табели не правятся) и выгрузки для 1С (табель, приказы о
 премировании, дорожные); выработка в ведомость (сдельный заработок как «Оклада» у сдельщиков).

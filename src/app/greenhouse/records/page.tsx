@@ -20,6 +20,9 @@ import { listNameLinks, listWork } from "@/lib/repo/payrollWork";
 import { greenhouseTabsFor } from "../tabs";
 import { importCyclesAction, importLogRowsAction, listLogIdsAction } from "../actions";
 import { importWorkRowsAction, linkWorkNameAction, listWorkIdsAction } from "../work/actions";
+import { IntakeRecordsPage } from "../_intake/views";
+import { greenhouseSession } from "@/lib/greenhouse/session";
+import { FARMS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +39,9 @@ const MAX_DAYS = 93;
 const TONE: Record<RecordKind, string> = { harvest: "#2f8a55", waste: "#c9584e", cuttings: "#e2a13b", work: "#4f7fb8" };
 
 export default async function GreenhouseRecordsPage({ searchParams }: { searchParams?: Params }) {
+  // Rose Farm — приёмка цветка по характеристикам (02.11.2026): те же адреса, своё содержимое.
+  const gs = await greenhouseSession(searchParams);
+  if (gs.farm === FARMS.ROSE_FARM) return <IntakeRecordsPage s={gs} sp={(searchParams ?? {}) as Record<string, string | undefined>} />;
   const sp = searchParams ?? {};
   const p = await loadGreenhousePage(sp);
   const { scope, farm, today, data } = p;

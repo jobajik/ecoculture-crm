@@ -97,6 +97,9 @@ export const SHEET_TABS = {
   GH_HARVEST: "GhHarvest",
   GH_CUTTINGS: "GhCuttings",
   GH_WASTE: "GhWaste",
+  // Приёмка Rose Farm (02.11.2026): цветок из теплицы принимается по характеристикам — роза, эустома и хризантема
+  // самой Rose Farm. Строка: сорт × длина/категория (принято), брак с причиной, замер сорта (вес стебля, бутон).
+  GH_INTAKE: "GhIntake",
 } as const;
 
 export const SHEET_HEADERS: Record<string, string[]> = {
@@ -447,6 +450,7 @@ export const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_TABS.GH_CUTTINGS]: ["CuttingID", "Farm", "Cycle", "Date", "Block", "Part", "Line", "Variety", "Kind", "Qty", "Note", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"],
   /** Брак на блоке: Kind — код причины (dodder — повилика, tech — тех брак, mite, aphid, thrips, rust, botrytis, other). */
   [SHEET_TABS.GH_WASTE]: ["WasteID", "Farm", "Date", "Cycle", "Block", "Variety", "Qty", "Kind", "Note", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"],
+  [SHEET_TABS.GH_INTAKE]: ["IntakeID", "Farm", "Date", "Flower", "Block", "Variety", "Kind", "Grade", "Reason", "Qty", "StemG", "HeadCm", "Buds", "Note", "CreatedBy", "CreatedAt", "UpdatedBy", "UpdatedAt"],
   /**
    * Цветы, которые сотрудник взял в счёт зарплаты.
    *
