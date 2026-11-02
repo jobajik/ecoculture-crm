@@ -70,6 +70,7 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
       "retail_regions",
     ],
   },
+  { prefix: "/analytics/month", roles: ["sales_head", "admin"] },
   { prefix: "/analytics", roles: ["manager", "warehouse", "accountant", "sales_head", "admin"] },
   // «Лиды с рекламы» (Земфира) — только лиды и отчёт «С рекламы»; обзвон, разговоры,
   // карточки клиентов и всё остальное ей закрыты. Узкие адреса — выше общего «/clients/leads».

@@ -17,8 +17,17 @@ import { ROLES } from "@/lib/constants";
  * календарь), а отчёт лежит соседней вкладкой.
  */
 export function analyticsTabsFor(role: string | null | undefined) {
+  // «Итоги месяца» (02.11.2026, владелец: «мощная аналитика по продажам, срезу и другим показателям за месяц») —
+  // владельцу и РОПу.
+  if (role === ROLES.SALES_HEAD) {
+    return [
+      { href: "/analytics", label: "Аналитика хозяйства" },
+      { href: "/analytics/month", label: "Итоги месяца" },
+    ];
+  }
   if (role !== ROLES.ADMIN) return [];
   return [
+    { href: "/analytics/month", label: "Итоги месяца" },
     { href: "/analytics/calendar", label: "Календарь" },
     { href: "/analytics", label: "Отчёт" },
   ];
