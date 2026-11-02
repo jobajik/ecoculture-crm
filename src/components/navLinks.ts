@@ -79,7 +79,7 @@ function payrollSection(role: string, payrollRole: string | undefined, departmen
 function greenhouseSection(role: string, farm: string | undefined, payrollRole: string | undefined, departments: string[] | undefined): NavLink | null {
   const scope = greenhouseScope({ role, farm, payrollRole: payrollRole ?? "", payrollDepartments: departments ?? [] });
   if (!scope) return null;
-  return section("/greenhouse", "Теплица", greenhouseTabsFor(scope), ["/greenhouse"]);
+  return section("/greenhouse", "Теплица", greenhouseTabsFor(scope, scope?.farmLocked ?? ""), ["/greenhouse"]);
 }
 
 /** Разделы роли — в порядке, в котором их открывают каждый день. */

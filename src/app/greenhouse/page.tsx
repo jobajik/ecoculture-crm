@@ -20,6 +20,9 @@ import { AlertsCard, DailyHarvestCard, DashboardKpis, ForecastCard } from "@/com
 import AskGreenhouse from "@/components/greenhouse/dash/AskGreenhouse";
 import { buildDashboard, greenhouseAlerts } from "@/lib/greenhouse/dashboard";
 import { cachedAccuracy, greenhouseForecast, loadGreenhousePlan } from "@/lib/greenhouse/dashboardData";
+import { IntakeOverviewPage } from "./_intake/views";
+import { greenhouseSession } from "@/lib/greenhouse/session";
+import { FARMS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +37,9 @@ export const dynamic = "force-dynamic";
  * `src/lib/greenhouse/dashboard.ts`, `forecast.ts`).
  */
 export default async function GreenhousePage({ searchParams }: { searchParams?: { farm?: string; cycle?: string } }) {
+  // Rose Farm — приёмка цветка по характеристикам (02.11.2026): те же адреса, своё содержимое.
+  const gs = await greenhouseSession(searchParams);
+  if (gs.farm === FARMS.ROSE_FARM) return <IntakeOverviewPage s={gs} />;
   const p = await loadGreenhousePage(searchParams);
   const { scope, farm, today, cycles, rows } = p;
   const year = today.slice(0, 4);

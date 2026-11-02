@@ -17,6 +17,9 @@ import { payrollSpreadsheetId } from "@/lib/sheets";
 import { toIsoDate } from "@/lib/sheetDate";
 import { greenhouseTabsFor } from "../tabs";
 import { saveDayAction } from "../actions";
+import { IntakeDayPage } from "../_intake/views";
+import { greenhouseSession } from "@/lib/greenhouse/session";
+import { FARMS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +28,9 @@ export const dynamic = "force-dynamic";
  * выработка) → блок → строки; сохраняется всё одной кнопкой. Подробнее — в `DayBoard`.
  */
 export default async function GreenhouseDayPage({ searchParams }: { searchParams?: { farm?: string; date?: string; section?: string; block?: string } }) {
+  // Rose Farm — приёмка цветка по характеристикам (02.11.2026): те же адреса, своё содержимое.
+  const gs = await greenhouseSession(searchParams);
+  if (gs.farm === FARMS.ROSE_FARM) return <IntakeDayPage s={gs} sp={(searchParams ?? {}) as Record<string, string | undefined>} />;
   const p = await loadGreenhousePage(searchParams);
   const { scope, farm, today, data, rows, cycles } = p;
   if (!scope) redirect(ghHref("/greenhouse", farm));

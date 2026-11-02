@@ -1,3 +1,4 @@
+import { FARMS } from "@/lib/constants";
 import type { GreenhouseScope } from "@/lib/greenhouse/access";
 
 /**
@@ -14,6 +15,14 @@ import type { GreenhouseScope } from "@/lib/greenhouse/access";
 export function greenhouseTabsFor(scope: GreenhouseScope | null, farm = ""): { href: string; label: string; match?: string[] }[] {
   if (!scope) return [];
   const q = farm ? `?farm=${farm}` : "";
+  // Rose Farm (02.11.2026): приёмка цветка по характеристикам — те же адреса, другое содержимое (`_intake/`).
+  if (farm === FARMS.ROSE_FARM) {
+    const rose: { href: string; label: string; match?: string[] }[] = [{ href: `/greenhouse${q}`, label: "Обзор", match: ["/greenhouse"] }];
+    if (scope.editsLogs) rose.push({ href: `/greenhouse/day${q}`, label: "Приёмка", match: ["/greenhouse/day"] });
+    rose.push({ href: `/greenhouse/records${q}`, label: "Записи", match: ["/greenhouse/records"] });
+    rose.push({ href: `/greenhouse/analytics${q}`, label: "Аналитика", match: ["/greenhouse/analytics", "/greenhouse/report"] });
+    return rose;
+  }
   const tabs: { href: string; label: string; match?: string[] }[] = [{ href: `/greenhouse${q}`, label: "Обзор", match: ["/greenhouse"] }];
   if (scope.editsLogs || (scope.payroll && scope.editsWork)) tabs.push({ href: `/greenhouse/day${q}`, label: "Внести день", match: ["/greenhouse/day"] });
   tabs.push({ href: `/greenhouse/records${q}`, label: "Записи", match: ["/greenhouse/records"] });

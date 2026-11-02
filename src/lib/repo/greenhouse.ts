@@ -7,6 +7,7 @@ import { planDayRows } from "../greenhouse/day";
 import { planWorkDay } from "./payrollWork";
 import type { WorkArea, WorkRowClean } from "../payroll/work";
 import type { Employee } from "../payroll/types";
+import { isIntakeFlower, type IntakeClean, type IntakeRow } from "../greenhouse/intake";
 import { cycleOf, importLogId, type GhCutting, type GhCycle, type GhHarvest, type GhWaste, type ImportLogRow, type LogKind, type LogRowClean } from "../greenhouse/production";
 
 /**
@@ -382,4 +383,105 @@ export async function importLogRows(log: LogKind, farm: string, input: ImportLog
   }
   if (records.length) await commitAtomic([{ kind: "append", tab: spec.tab, records }]);
   return { added: records.length, skipped };
+}
+
+// --- Приёмка Rose Farm (02.11.2026) -------------------------------------------------------------------------------
+
+const INTAKE_TAB = SHEET_TABS.GH_INTAKE;
+
+function toIntake(r: Record<string, string>): IntakeRow | null {
+  const id = (r.IntakeID || "").trim();
+  const flower = (r.Flower || "").trim().toLowerCase();
+  const kind = (r.Kind || "").trim().toLowerCase();
+  if (!id || !isIntakeFlower(flower) || !["accept", "reject", "measure"].includes(kind)) return null;
+  return {
+    id,
+    farm: (r.Farm || "").trim().toLowerCase(),
+    date: toIsoDate(r.Date),
+    flower,
+    block: (r.Block || "").trim(),
+    variety: (r.Variety || "").trim(),
+    kind: kind as IntakeRow["kind"],
+    grade: (r.Grade || "").trim(),
+    reason: (r.Reason || "").trim().toLowerCase(),
+    qty: sheetNumber(r.Qty),
+    stemG: sheetNumber(r.StemG),
+    headCm: sheetNumber(r.HeadCm),
+    buds: sheetNumber(r.Buds),
+    note: r.Note || "",
+  };
+}
+
+/** Вся приёмка компании. Вкладки ещё нет (ничего не вносили) — пусто, а не ошибка. */
+export async function loadIntake(farm: string): Promise<IntakeRow[]> {
+  const list = await rows(INTAKE_TAB, toIntake);
+  return list.filter((r) => r.farm === farm && r.date).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function intakeCells(r: IntakeClean): Record<string, unknown> {
+  return {
+    Date: r.date,
+    Flower: r.flower,
+    Block: r.block,
+    Variety: r.variety,
+    Kind: r.kind,
+    Grade: r.grade,
+    Reason: r.reason,
+    Qty: r.qty || "",
+    StemG: r.stemG || "",
+    HeadCm: r.headCm || "",
+    Buds: r.buds || "",
+    Note: r.note,
+  };
+}
+
+/**
+ * День приёмки одним `commitAtomic` после свежего чтения: новые строки дописываются, изменённые правятся ячейками,
+ * убранные с экрана удаляются — только те, что человек видел (`known`, `planDayRows`). Чужие строки дня (внесённые за
+ * это время другим) не трогаются.
+ */
+export async function saveIntakeDay(farm: string, date: string, input: IntakeClean[], known: string[], by: string): Promise<DaySaveResult> {
+  const table = await freshOrMissing(INTAKE_TAB);
+  const mine: { idx: number; id: string }[] = [];
+  table.rows.forEach((row, idx) => {
+    const rec = rowToRecord(INTAKE_TAB, row);
+    const x = toIntake(rec);
+    if (x && x.farm === farm && x.date === date) mine.push({ idx, id: x.id });
+  });
+  const plan = planDayRows(
+    mine.map((m) => m.id),
+    input,
+    (r) => r.id,
+    known,
+  );
+  if (plan.error) throw new Error(plan.error);
+  const now = new Date().toISOString();
+  const at = new Map(mine.map((m) => [m.id, m.idx]));
+  const ops: Parameters<typeof commitAtomic>[0] = [];
+  const result: DaySaveResult = { added: 0, changed: 0, removed: 0 };
+  for (const r of plan.update) {
+    const idx = at.get(r.id)!;
+    const was = rowToRecord(INTAKE_TAB, table.rows[idx]);
+    const diff: Record<string, unknown> = {};
+    for (const [col, val] of Object.entries(intakeCells(r))) {
+      const old = (was[col] ?? "").trim();
+      const nv = String(val ?? "").trim();
+      const same = old === nv || (nv !== "" && !Number.isNaN(Number(nv)) && sheetNumber(old) === Number(nv)) || (col === "Date" && toIsoDate(old) === nv);
+      if (!same) diff[col] = val;
+    }
+    if (Object.keys(diff).length) {
+      ops.push({ kind: "update", tab: INTAKE_TAB, rowNumber: table.rowNumbers[idx], changes: { ...diff, UpdatedBy: by, UpdatedAt: now } });
+      result.changed += 1;
+    }
+  }
+  if (plan.add.length) {
+    ops.push({ kind: "append", tab: INTAKE_TAB, records: plan.add.map((r) => ({ IntakeID: generateId("GI"), Farm: farm, ...intakeCells(r), CreatedBy: by, CreatedAt: now, UpdatedBy: by, UpdatedAt: now })) });
+    result.added += plan.add.length;
+  }
+  if (plan.remove.length) {
+    ops.push({ kind: "delete", tab: INTAKE_TAB, rowNumbers: plan.remove.map((id) => table.rowNumbers[at.get(id)!]) });
+    result.removed += plan.remove.length;
+  }
+  if (ops.length) await commitAtomic(ops);
+  return result;
 }

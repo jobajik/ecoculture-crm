@@ -42,6 +42,9 @@ import { cachedAccuracy, greenhouseForecast, loadGreenhousePlan } from "@/lib/gr
 import { planFact } from "@/lib/greenhouse/forecast";
 import { lossByMonth, lossReport, previousRange } from "@/lib/greenhouse/insights";
 import { canOpen } from "@/lib/access";
+import { IntakeAnalyticsPage } from "../_intake/views";
+import { greenhouseSession } from "@/lib/greenhouse/session";
+import { FARMS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +87,9 @@ const VIEWS: { key: View; label: string; icon: IconName }[] = [
 const OLD_VIEWS: Record<string, View> = { blocks: "cycles", varieties: "cycles" };
 
 export default async function GreenhouseAnalyticsPage({ searchParams }: { searchParams?: Params }) {
+  // Rose Farm — приёмка цветка по характеристикам (02.11.2026): те же адреса, своё содержимое.
+  const gs = await greenhouseSession(searchParams);
+  if (gs.farm === FARMS.ROSE_FARM) return <IntakeAnalyticsPage s={gs} sp={(searchParams ?? {}) as Record<string, string | undefined>} />;
   const p = await loadGreenhousePage(searchParams);
   const { scope, farm, today, data, rows, cycles } = p;
   const sp = searchParams ?? {};

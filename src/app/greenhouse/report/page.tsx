@@ -16,6 +16,8 @@ import { greenhouseSession } from "@/lib/greenhouse/session";
 import { loadGreenhouse } from "@/lib/repo/greenhouse";
 import { localDayKey } from "@/lib/timezone";
 import { greenhouseTabsFor } from "../tabs";
+import { IntakeAnalyticsPage } from "../_intake/views";
+import { FARMS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,9 @@ const fmt1 = (n: number | null | undefined) => (n === null || n === undefined ? 
 const STAGE = { block: "на блоке", harvest: "при срезке", planting: "при посадке" } as const;
 
 export default async function GreenhouseReportPage({ searchParams }: { searchParams?: Params }) {
+  // Rose Farm — приёмка цветка по характеристикам (02.11.2026): те же адреса, своё содержимое.
+  const gs = await greenhouseSession(searchParams);
+  if (gs.farm === FARMS.ROSE_FARM) return <IntakeAnalyticsPage s={gs} sp={(searchParams ?? {}) as Record<string, string | undefined>} />;
   const sp = searchParams ?? {};
   const { scope, farm } = await greenhouseSession(sp);
   const today = localDayKey();
