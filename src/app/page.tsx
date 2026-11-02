@@ -218,6 +218,11 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
             <Link href={focus.action.href} className="btn-primary">
               {focus.action.label}
             </Link>
+          ) : role === ROLES.AGRONOMIST && farm ? (
+            // Агроном вносит день теплицы: у Rose Farm это приёмка цветка, у Есентая — срезка и журналы.
+            <Link href="/greenhouse/day" className="btn-primary">
+              {farm === "rose_farm" ? "Внести приёмку" : "Внести день"}
+            </Link>
           ) : undefined
         }
       />
