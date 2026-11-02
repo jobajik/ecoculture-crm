@@ -3,7 +3,7 @@ import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets
 import { localDayKey } from "./timezone";
 import { getCurrentPrices } from "./repo/prices";
 import { listBatches } from "./repo/batches";
-import { almatyHourOf, botStoreFor, botStoreNote, inStore } from "./officeStore";
+import { almatyHourOf, botStoreFor, botStoreNote, inStore, isRegionStore, regionStoreForCity, type StoreCode } from "./officeStore";
 import { notifyBotSale } from "./botSalesAlert";
 import { ourPhoneKeys } from "./lineNotify";
 import { getSettings } from "./repo/settings";
@@ -136,23 +136,37 @@ async function priceText(): Promise<string> {
  * после — два списка: «сегодня из офиса» и «на завтра» с основного (подсклад
  * «Офис», `officeStore.ts`). Сбой — пусто, бот тогда о наличии не говорит.
  */
-async function stockText(mainOnly = false): Promise<{ text: string; storeNote: string }> {
+async function stockText(mainOnly = false, region?: { store: StoreCode; city: string; shipDay: string }): Promise<{ text: string; storeNote: string; inCity: boolean }> {
   try {
     const now = new Date();
     const hour = almatyHourOf(now);
     const [batches, settings] = await Promise.all([listSellableBatches(), getSettings()]);
     const office = inStore(batches, "office");
     const main = inStore(batches, "");
+    // Склад в городе региона (Астана, 02.11.2026): что уже приехало — первым списком, основной — «следующей фурой».
+    if (region?.store) {
+      const local = inStore(batches, region.store);
+      if (stockMap(local, settings, now).size > 0) {
+        return {
+          text:
+            `Сейчас на складе в городе (${region.city}) — отгрузим сразу:\n${stockForBot(local, settings, now)}\n\n` +
+            `Следующей фурой${region.shipDay ? ` (${region.shipDay})` : ""}, основной склад:\n${stockForBot(main, settings, now)}`,
+          storeNote: "",
+          inCity: true,
+        };
+      }
+    }
     // Региональный менеджер: в регион уезжает только основной склад (фура), офис не предлагаем.
-    if (mainOnly) return { text: stockForBot(main, settings, now), storeNote: "" };
+    if (mainOnly) return { text: stockForBot(main, settings, now), storeNote: "", inCity: false };
     const officeToday = botStoreFor(hour, stockMap(office, settings, now).size > 0) === "office";
-    if (!officeToday) return { text: stockForBot(main, settings, now), storeNote: botStoreNote(false, hour) };
+    if (!officeToday) return { text: stockForBot(main, settings, now), storeNote: botStoreNote(false, hour), inCity: false };
     return {
       text: `Сегодня, из офиса:\n${stockForBot(office, settings, now)}\n\nНа завтра и позже (основной склад):\n${stockForBot(main, settings, now)}`,
       storeNote: botStoreNote(true, hour),
+      inCity: false,
     };
   } catch {
-    return { text: "", storeNote: "" };
+    return { text: "", storeNote: "", inCity: false };
   }
 }
 
@@ -161,7 +175,8 @@ async function sellableText(): Promise<string> {
   try {
     const now = new Date();
     const [batches, settings, prices] = await Promise.all([listSellableBatches(), getSettings(), getCurrentPrices(localDayKey())]);
-    return sellableForBot(Array.from(stockMap(batches, settings, now).values()), (f, v, g) => priceFor(prices, f, v, g));
+    // Склад региона (Астана) — только для клиентов региона (`stockText`), остальным его не предлагаем.
+    return sellableForBot(Array.from(stockMap(batches.filter((b) => !isRegionStore(b.store)), settings, now).values()), (f, v, g) => priceFor(prices, f, v, g));
   } catch {
     return "";
   }
@@ -565,9 +580,11 @@ export async function botPrompt(
     SHEET_TABS.SETTINGS,
   ]).catch(() => undefined);
   const profile = channel.profile ?? null;
+  const shipDay = profile?.shipWeekday ? nextShipDay(localDayKey(), profile.shipWeekday, almatyHourOf(new Date())) : "";
+  const regionStore = regionStoreForCity(profile?.city);
   const [prices, stockInfo, broadcast, client, harvest, push] = await Promise.all([
     priceText(),
-    stockText(!!profile?.shipWeekday),
+    stockText(!!profile?.shipWeekday, regionStore ? { store: regionStore, city: profile?.city || "", shipDay } : undefined),
     // Рассылка основного номера к разговору на номере менеджера отношения не имеет.
     channel.line ? Promise.resolve("") : broadcastText(chat.phone),
     botClientContext(chat.phone, channel),
@@ -588,7 +605,7 @@ export async function botPrompt(
       harvest,
       push,
       managerName: channel.line ? channel.managerName || "менеджер" : "",
-      region: profile ? regionPromptBlock(profile, profile.shipWeekday ? nextShipDay(localDayKey(), profile.shipWeekday, almatyHourOf(new Date())) : "") : "",
+      region: profile ? regionPromptBlock(profile, shipDay, stockInfo.inCity) : "",
       female: !!profile?.female,
       closer: !!profile?.closer,
     }),

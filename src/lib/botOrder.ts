@@ -359,7 +359,7 @@ export function toWhatsApp(text: string): string {
 // Данияру сообщением». Решение: два сообщения — «бот оформил заказ» и «оплачено,
 // можно собирать». Номера — настройка `BotSalesPhones` («Настройки»).
 
-const storeText = (store: string) => (store === "office" ? "Офис — отправка такси за счёт клиента" : "основной склад");
+const storeText = (store: string) => (store === "office" ? "Офис — отправка такси за счёт клиента" : store === "astana" ? "склад Астаны (уже в Астане)" : "основной склад");
 
 /** «Бот оформил заказ»: кто, что, сумма, когда, откуда и что со счётом. */
 export function botSaleAlertText(input: {

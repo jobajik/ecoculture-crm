@@ -212,16 +212,16 @@ export function buildOwnerDay(input: OwnerDayInput): OwnerDay {
     for (const i of o.items) {
       const left = Math.max(0, i.quantity - i.shippedQuantity);
       if (left <= 0) continue;
-      const key = normalizeStore(o.store) === "office" ? "office" : getFarmFor(i.flowerType) || "";
+      const key = normalizeStore(o.store) || getFarmFor(i.flowerType) || "";
       const b = buckets.get(key) ?? { orders: new Set<string>(), stems: 0 };
       b.orders.add(o.orderId);
       b.stems += left;
       buckets.set(key, b);
     }
   }
-  const shipToday = [...FARM_ORDER, "office"]
+  const shipToday = [...FARM_ORDER, "office", "astana"]
     .filter((k) => buckets.has(k))
-    .map((k) => ({ label: k === "office" ? storeLabel("office") : farmLabel(k), orders: buckets.get(k)!.orders.size, stems: buckets.get(k)!.stems }));
+    .map((k) => ({ label: k === "office" || k === "astana" ? storeLabel(k) : farmLabel(k), orders: buckets.get(k)!.orders.size, stems: buckets.get(k)!.stems }));
 
   const overall = input.stock.overall;
   return {

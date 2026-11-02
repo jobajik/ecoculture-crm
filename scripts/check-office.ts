@@ -16,6 +16,8 @@ import {
   moveWrites,
   normalizeStore,
   planStockMove,
+  regionArrivalWrites,
+  regionStoreForCity,
   shipStoreRefusal,
   storeChangeRefusal,
   storeOfRole,
@@ -39,8 +41,8 @@ function check(name: string, actual: unknown, expected: unknown) {
 async function main() {
   console.log("Склад и роли");
   check("значение склада", ["office", "OFFICE ", "", "склад", null].map(normalizeStore), ["office", "office", "", "", ""]);
-  check("чей склад", ["office", "warehouse", "admin", "manager"].map(storeOfRole), ["office", "", "any", null]);
-  check("на главной склад видит своё, остальные — всё", ["office", "warehouse", "admin", "sales_head"].map(stockStoreOfRole), ["office", "", undefined, undefined]);
+  check("чей склад", ["office", "warehouse", "admin", "manager"].map((r) => storeOfRole(r)), ["office", "", "any", null]);
+  check("на главной склад видит своё, остальные — всё", ["office", "warehouse", "admin", "sales_head"].map((r) => stockStoreOfRole(r)), ["office", "", undefined, undefined]);
   check("перемещает РОП и админ", ["sales_head", "admin", "office", "warehouse", "manager"].map(canMoveStock), [true, true, false, false, false]);
   check("раздел «Офис» видят", ["office", "sales_head", "admin", "warehouse", "manager"].map(canSeeOffice), [true, true, true, false, false]);
   check("склад в заявке выбирают", ["manager", "sales_head", "admin", "retail_almaty", "warehouse"].map(canChooseOrderStore), [true, true, true, false, false]);
@@ -186,6 +188,27 @@ async function main() {
   const pick = await getPicklist("2026-10-02", now, { orders: [mk("A", ""), mk("B", "office")] as never, batches, users: [] });
   check("лист сборки основного склада — без заявок офиса", JSON.stringify(pick).includes('"B"'), false);
   check("…а основная заявка в нём есть", JSON.stringify(pick).includes('"A"'), true);
+
+  // --- Склад Астаны (02.11.2026) ---
+  console.log("\nСклад Астаны");
+  check("значение склада: астана", ["astana", "ASTANA ", "almaty"].map(normalizeStore), ["astana", "astana", ""]);
+  check("склад по городу", ["Астана", "г. Астана", "Нур-Султан", "Алматы", ""].map(regionStoreForCity), ["astana", "astana", "astana", "", ""]);
+  check("менеджер Астаны ведёт склад Астаны, другой менеджер — никакой", [storeOfRole("manager", "astana"), storeOfRole("manager"), storeOfRole("warehouse", "astana")], ["astana", null, ""]);
+  check("заявку Астаны отгружает менеджер Астаны, не основной склад", [shipStoreRefusal("manager", "astana", "astana"), shipStoreRefusal("warehouse", "astana") !== "", shipStoreRefusal("manager", "", "astana") !== ""], ["", true, true]);
+  check("партия основного склада не идёт в заявку Астаны", batchStoreRefusal("", "astana"), "партия лежит на основном складе, а заявка — со склада «Астана»");
+  check("основную заявку можно перевести в Астану", storeChangeRefusal({ role: "manager", isOwner: true, order: { status: "new", kind: "", retail: "", store: "", items: [{ shippedQuantity: 0 }] }, to: "astana" }), "");
+  const rowsA = [
+    { rowNumber: 2, batchId: "M1", receivedAt: "2026-10-30", harvestDate: "2026-10-30", flowerType: "chrysanthemum", variety: "Altaj", grade: "Третья", quantityRemaining: 500, store: "", sourceBatchId: "" },
+    { rowNumber: 3, batchId: "M2", receivedAt: "2026-10-31", harvestDate: "2026-10-31", flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantityRemaining: 300, store: "", sourceBatchId: "" },
+    { rowNumber: 4, batchId: "A1", receivedAt: "2026-10-30", harvestDate: "2026-10-30", flowerType: "chrysanthemum", variety: "Altaj", grade: "Третья", quantityRemaining: 40, store: "astana", sourceBatchId: "M1" },
+  ];
+  let na = 0;
+  const arr = regionArrivalWrites({ store: "astana", taken: [{ batchId: "M1", quantity: 200 }, { batchId: "M2", quantity: 100 }], rows: rowsA, byEmail: "w@x", newId: () => `NEW${++na}` });
+  check("фура: партия Астаны от той же основной растёт", arr.updates, [{ rowNumber: 4, quantityRemaining: 240 }]);
+  check("фура: от новой основной — новая партия Астаны с приходом ноль", arr.appends.map((a) => [a.Store, a.SourceBatchID, a.QuantityIn, a.QuantityRemaining, a.Grade]), [["astana", "M2", 0, 100, "Первая"]]);
+  check("фура: журнал — две строки", arr.moves.map((m) => `${m.fromBatchId}>${m.toBatchId}:${m.quantity}`), ["M1>A1:200", "M2>NEW1:100"]);
+  check("не региональный склад — прихода нет", regionArrivalWrites({ store: "", taken: [{ batchId: "M1", quantity: 1 }], rows: rowsA, byEmail: "", newId: () => "X" }).moves.length, 0);
+  check("Астана: раздел пускает менеджера, отгрузка — тоже", [canOpen("manager", "/astana"), canOpen("manager", "/warehouse/ship/X"), canOpen("accountant", "/astana")], [true, true, false]);
 
   console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
   process.exit(failed === 0 ? 0 : 1);

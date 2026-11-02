@@ -21,6 +21,7 @@ import { unwrap } from "@/lib/actionResult";
 import Pill from "./Pill";
 import Icon from "./Icon";
 import Watermark from "./Watermark";
+import { storeLabel } from "@/lib/officeStore";
 
 /**
  * Карточка заявки СБОКУ от списка (19.10.2026, макет принят владельцем: «открыл заявку из списка — она открывается
@@ -112,7 +113,7 @@ export default function OrderDrawer({
         <div className="min-w-0 flex-1">
           <div className="text-xs text-ink-muted">
             Заявка · {formatDay(order.createdAt)} · {managerName}
-            {order.store === "office" && <span className="text-section-stock font-medium"> · офис</span>}
+            {order.store && <span className="text-section-stock font-medium"> · {order.store === "office" ? "офис" : storeLabel(order.store)}</span>}
           </div>
           <div className="font-display font-extrabold text-[24px] leading-tight text-accent">№ {orderCode(order.orderId)}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">

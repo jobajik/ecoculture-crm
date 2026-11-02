@@ -1,4 +1,7 @@
 import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
+import { normalizeStore, regionStoreForCity } from "../officeStore";
+import { cleanOrderKind } from "../orderKind";
+import { ORDER_KINDS } from "../constants";
 
 /**
  * Удаляет заявку вместе со всем, что на ней висит, ОДНИМ атомарным запросом
@@ -52,6 +55,21 @@ export async function deleteOrderFully(
       returned += next - remaining;
       ops.push({ kind: "update", tab: SHEET_TABS.BATCHES, rowNumber: batches.rowNumbers[i], changes: { QuantityRemaining: next } });
     });
+    // «Объём на город» в регион со складом (Астана): отгруженное тогда пришло на склад региона — вернули на основной,
+    // значит с регионального снимаем столько же (сколько там ещё лежит), иначе стебли задвоились бы.
+    const order = orderRows[0].record;
+    const region = cleanOrderKind(order.Kind) === ORDER_KINDS.REGION ? regionStoreForCity(order.Direction) : "";
+    if (region) {
+      batches.rows.forEach((row, i) => {
+        const b = rowToRecord(SHEET_TABS.BATCHES, row);
+        if (normalizeStore(b.Store) !== region) return;
+        const back = byBatch.get((b.SourceBatchID || "").trim()) ?? 0;
+        if (back <= 0) return;
+        const remaining = Number(b.QuantityRemaining) || 0;
+        const take = Math.min(remaining, back);
+        if (take > 0) ops.push({ kind: "update", tab: SHEET_TABS.BATCHES, rowNumber: batches.rowNumbers[i], changes: { QuantityRemaining: remaining - take } });
+      });
+    }
     ops.push({ kind: "delete", tab: SHEET_TABS.SHIPMENTS, rowNumbers: shipmentRows.map((r) => r.rowNumber) });
   } else {
     for (const s of shipmentRows) {

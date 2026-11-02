@@ -1,4 +1,5 @@
 import { sheetNumber } from "../sheetCell";
+import { normalizeStore } from "../officeStore";
 import { appendRow, appendRows, readTable, rowToRecord, SHEET_TABS, updateWhere, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import type { FlowerType } from "../constants";
@@ -20,7 +21,7 @@ export function toBatch(record: Record<string, string>): Batch {
     quantityRemaining: sheetNumber(record.QuantityRemaining),
     location: record.Location || "",
     receivedByEmail: (record.ReceivedByEmail || "").toLowerCase(),
-    store: (record.Store || "").trim().toLowerCase() === "office" ? "office" : "",
+    store: normalizeStore(record.Store),
     sourceBatchId: (record.SourceBatchID || "").trim(),
   };
 }

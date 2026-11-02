@@ -4,6 +4,7 @@ import { WAREHOUSE_TABS } from "@/app/warehouse/tabs";
 import { plansTabsFor } from "@/app/plans/tabs";
 import { salesTabsFor } from "@/app/sales/tabs";
 import { officeTabsFor } from "@/app/office/tabs";
+import { astanaTabsFor } from "@/app/astana/tabs";
 import { retailTabsFor } from "@/app/retail/tabs";
 import { analyticsTabsFor } from "@/app/analytics/tabs";
 import { payrollTabsFor } from "@/app/payroll/tabs";
@@ -103,8 +104,10 @@ function greenhouseSections(role: string, farm: string | undefined, payrollRole:
 }
 
 /** Разделы роли — в порядке, в котором их открывают каждый день. */
-export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[], farm?: string): NavLink[] {
+export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[], farm?: string, store?: string): NavLink[] {
   const links = baseLinksFor(role);
+  // Менеджер, который ведёт склад региона (Салтанат — Астана, `officeStore.ts`), — раздел своего склада.
+  if (role === "manager" && store === "astana") links.splice(2, 0, section("/astana", "Склад Астаны", astanaTabsFor(role), ["/warehouse/ship"]));
   const work = links.filter((l) => !l.other);
   const other = links.filter((l) => l.other);
   work.push(...greenhouseSections(role, farm, payrollRole, payrollDepartments));
@@ -133,7 +136,7 @@ function baseLinksFor(role: string): NavLink[] {
     case "warehouse":
       return [
         DAY,
-        section("/warehouse", "Склад", WAREHOUSE_TABS),
+        section("/warehouse", "Склад", [...WAREHOUSE_TABS, { href: "/astana", label: "Астана" }], ["/astana"]),
         ORDERS,
         // Зав. складом производства в «Рознице» ведёт только регионы — пункт ведёт сразу туда.
         section("/retail/regions", "Розница", retailTabsFor(role), ["/retail"]),
@@ -156,7 +159,7 @@ function baseLinksFor(role: string): NavLink[] {
         DAY,
         ORDERS,
         section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
-        section("/office", "Склад", officeTabsFor(role), ["/warehouse"]),
+        section("/office", "Склад", [...officeTabsFor(role), { href: "/astana", label: "Астана" }], ["/warehouse", "/astana"]),
         section("/finance", "Деньги", financeTabsFor(role)),
         section(
           "/plans",
@@ -178,7 +181,7 @@ function baseLinksFor(role: string): NavLink[] {
         DAY,
         ORDERS,
         section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
-        section("/warehouse", "Склад", [...WAREHOUSE_TABS, { href: "/office", label: "Офис" }], ["/office"]),
+        section("/warehouse", "Склад", [...WAREHOUSE_TABS, { href: "/office", label: "Офис" }, { href: "/astana", label: "Астана" }], ["/office", "/astana"]),
         section("/finance", "Деньги", financeTabsFor(role)),
         section(
           "/plans",

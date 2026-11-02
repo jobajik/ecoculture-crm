@@ -8,6 +8,7 @@ import ClientPicker, { type ClientOption } from "./ClientPicker";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
 import { ORDER_PAYMENT_METHODS, SHIPMENT_DIRECTIONS } from "@/lib/constants";
 import { directionForCity } from "@/lib/direction";
+import { regionStoreForCity } from "@/lib/officeStore";
 import { unwrapValue } from "@/lib/actionResult";
 import { addDaysToKey } from "@/lib/dayKey";
 
@@ -21,6 +22,7 @@ export default function OrderForm({
   initialDirection = "",
   stock,
   officeStock,
+  astanaStock,
   initialItems,
   initialNotes = "",
   draftId = "",
@@ -65,6 +67,11 @@ export default function OrderForm({
    * РОП, админ; `officeStore.ts`), и подсказка остатка берётся с выбранного.
    */
   officeStock?: Record<string, number>;
+  /**
+   * Остаток склада Астаны (02.11.2026). Есть — в выборе склада появляется «Астана»; клиенту из Астаны склад
+   * подставляется сам, пока там что-то лежит (решение владельца: любая заявка клиенту Астаны — оттуда, пока есть товар).
+   */
+  astanaStock?: Record<string, number>;
   /** Позиции из заказа WhatsApp (`waOrder.ts`) — менеджер проверяет и сохраняет. */
   initialItems?: DraftItem[];
   initialNotes?: string;
@@ -108,7 +115,10 @@ export default function OrderForm({
   // шаг на каждую заявку. Снять — если состав ещё обсуждается.
   const [confirmed, setConfirmed] = useState(true);
   // Склад отгрузки: основной или «Офис» (заказы после 12:00 — `officeStore.ts`).
-  const [store, setStore] = useState("");
+  const astanaHas = !!astanaStock && Object.values(astanaStock).some((q) => q > 0);
+  const storeFor = (c: ClientOption | null) => (astanaHas && regionStoreForCity(c?.city) === "astana" ? "astana" : "");
+  const [store, setStore] = useState(storeFor(initialClient));
+  const [storeTouched, setStoreTouched] = useState(false);
   const managerOf = (c: ClientOption | null) =>
     managers?.find((m) => m.email === (c?.managerEmail ?? "") && m !== managers[0])?.email ?? managers?.[0]?.email ?? "";
   const [assignTo, setAssignTo] = useState(managerOf(initialClient));
@@ -142,7 +152,7 @@ export default function OrderForm({
         direction,
         paymentMethod,
         confirmed,
-        store: officeStock ? store : "",
+        store: officeStock || astanaHas ? store : "",
         draftId: draftId || undefined,
         assignTo: managers ? assignTo : undefined,
         items: items.map((it) => ({
@@ -174,6 +184,7 @@ export default function OrderForm({
               if (!directionTouched) setDirection(directionForCity(next?.city));
               if (!methodTouched) setPaymentMethod(methodOf(next));
               if (!assignTouched) setAssignTo(managerOf(next));
+              if (!storeTouched) setStore(storeFor(next));
               // Телефон доставки — нового клиента, а не набранный для прежнего.
               setClientPhone(next?.phone ?? "");
             }}
@@ -273,12 +284,20 @@ export default function OrderForm({
             )}
           </div>
         )}
-        {officeStock && (
+        {(officeStock || astanaHas) && (
           <div>
             <label className="label">Склад</label>
-            <select className="input" value={store} onChange={(e) => setStore(e.target.value)}>
+            <select
+              className="input"
+              value={store}
+              onChange={(e) => {
+                setStore(e.target.value);
+                setStoreTouched(true);
+              }}
+            >
               <option value="">Основной склад</option>
-              <option value="office">Офис (после 12:00)</option>
+              {officeStock && <option value="office">Офис (после 12:00)</option>}
+              {astanaHas && <option value="astana">Астана (уже в Астане)</option>}
             </select>
           </div>
         )}
@@ -311,7 +330,7 @@ export default function OrderForm({
         prices={prices}
         items={items}
         onChange={setItems}
-        stock={officeStock && store === "office" ? officeStock : stock}
+        stock={officeStock && store === "office" ? officeStock : astanaStock && store === "astana" ? astanaStock : stock}
       />
 
       {error && (

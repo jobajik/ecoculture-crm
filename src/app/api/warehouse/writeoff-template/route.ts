@@ -14,13 +14,14 @@ export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return new Response("Не авторизован", { status: 401 });
   const role = session.user.role ?? "";
-  if (role !== "warehouse" && role !== "admin" && !isOfficeRole(role)) {
+  const regionStore = role === "manager" ? normalizeStore(session.user.store) : "";
+  if (role !== "warehouse" && role !== "admin" && !isOfficeRole(role) && !regionStore) {
     return new Response("Недостаточно прав", { status: 403 });
   }
   if (missingFarm(session.user.role, session.user.farm)) return new Response(MISSING_FARM_MESSAGE, { status: 403 });
 
   const farm = role === "warehouse" ? session.user.farm ?? null : null;
-  const own = storeOfRole(role);
+  const own = storeOfRole(role, regionStore);
   const store = own === "any" ? normalizeStore(new URL(request.url).searchParams.get("store")) : own ?? "";
   if (session.user.role === "warehouse" && !farm) {
     return new Response("У вас не указано производство", { status: 403 });

@@ -1,5 +1,5 @@
 import { FLOWER_TYPES, FLOWER_TYPE_LABELS, compareGrades, formatGrade, getFarmFor, retailLabel } from "../constants";
-import { inStore, isOffice, isOfficeRole, type StoreCode } from "../officeStore";
+import { inStore, isMainStore, isOfficeRole, type StoreCode } from "../officeStore";
 import { farmScopeFor, isRetailOrder } from "../retail";
 import { isConsignment, isRegionOrder } from "../orderKind";
 import { isReadyToShip, notReadyReason, shipsOnCredit } from "../orderReady";
@@ -117,7 +117,7 @@ export function dayStoreOf(role: string): StoreCode {
 export function dayOrdersFor(input: Pick<WarehouseDayInput, "role" | "farm" | "email" | "orders">): OrderWithItems[] {
   if (isOfficeRole(input.role)) return inStore(input.orders, "office").filter((o) => o.items.length > 0);
   return input.orders
-    .filter((o) => !isOffice(o))
+    .filter((o) => isMainStore(o))
     .map((o) => {
       const scope = farmScopeFor({ role: input.role, farm: input.farm, order: o, email: input.email });
       if (!scope) return o;

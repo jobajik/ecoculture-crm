@@ -13,7 +13,7 @@ import { authOptions } from "@/lib/auth";
 
 import PageHeader from "@/components/PageHeader";
 import { WAREHOUSE_TABS } from "./tabs";
-import { isOffice } from "@/lib/officeStore";
+import { isMainStore } from "@/lib/officeStore";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export default async function WarehousePage() {
   // Зав. складом видит только заявки со своим цветком и только эти позиции.
   // Заявки офиса собирает склад офиса — здесь их нет (`officeStore.ts`).
   const scoped = orders
-    .filter((o) => !isOffice(o))
+    .filter((o) => isMainStore(o))
     .map((o) => ({
       ...o,
       items: farm ? o.items.filter((i) => getFarmFor(i.flowerType) === farm) : o.items,

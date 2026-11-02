@@ -18,7 +18,7 @@ export default async function OfficeMovesPage() {
   const [moves, users] = await Promise.all([listStockMoves(), listUsers()]);
   const names = nameIndex(users);
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const recent = moves.filter((m) => m.createdAt >= since);
+  const recent = moves.filter((m) => m.createdAt >= since && m.direction !== "to_region");
   const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
   const toOffice = recent.filter((m) => m.direction === "to_office").reduce((s, m) => s + m.quantity, 0);
   const back = recent.filter((m) => m.direction === "to_main").reduce((s, m) => s + m.quantity, 0);

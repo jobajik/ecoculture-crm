@@ -34,18 +34,21 @@ import { deleteBatchRow, loadBatchForFix, updateBatchRow } from "@/lib/repo/batc
 import { logMoney } from "@/lib/repo/moneyLog";
 import { MONEY_LOG_ACTIONS } from "@/lib/constants";
 import { localDayKey } from "@/lib/timezone";
-import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeOfRole, type StoreCode } from "@/lib/officeStore";
+import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeLabel, storeOfRole, type StoreCode } from "@/lib/officeStore";
+import { regionStoreOfEmail } from "@/lib/repo/regionStore";
 
 async function requireWarehouse() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
   const role = session.user.role ?? "";
-  if (role !== "warehouse" && role !== "admin" && !isOfficeRole(role)) {
+  // Менеджер региона ведёт свой региональный склад (Салтанат — «Астана», `officeStore.ts`): отгрузка и списание там.
+  const regionStore = role === "manager" ? await regionStoreOfEmail(session.user.email) : "";
+  if (role !== "warehouse" && role !== "admin" && !isOfficeRole(role) && !regionStore) {
     throw new Error("Недостаточно прав: действие доступно только зав. складом");
   }
   const isAdmin = role === "admin";
-  // Склад офиса работает со всеми цветами, но только в офисе (`officeStore.ts`).
-  const farm = isAdmin || isOfficeRole(role) ? null : session.user.farm ?? null;
+  // Склад офиса и склад региона работают со всеми цветами, но только на своём складе (`officeStore.ts`).
+  const farm = isAdmin || isOfficeRole(role) || regionStore ? null : session.user.farm ?? null;
   // Пустая колонка Farm у зав. складом раньше означала «все производства»:
   // `assertOwnFlowerType` выходил на `if (!farm) return`. То есть строка в
   // Users, где Farm просто забыли дописать, открывала человеку чужой склад —
@@ -57,12 +60,13 @@ async function requireWarehouse() {
         "на вкладке Users — без неё работать со складом нельзя."
     );
   }
-  return { email: session.user.email, farm, role, own: storeOfRole(role) };
+  return { email: session.user.email, farm, role, own: storeOfRole(role, regionStore), regionStore };
 }
 
 /** Приёмка — только на основном складе: в офис цветок попадает перемещением. */
 function assertNotOffice(role: string) {
   if (isOfficeRole(role)) throw new Error("Приёмка — на основном складе. В офис цветок попадает перемещением от РОПа.");
+  if (role === "manager") throw new Error("Приёмка — на основном складе. На склад региона цветок приходит отгрузкой «объёма на город».");
 }
 
 /** На каком складе действует человек: свой; админ — какой попросил. */
@@ -168,14 +172,14 @@ async function createShipmentActionInner(input: {
   /** Склад отметил «Отгрузили без полной оплаты» (`canShipUnpaid`). */
   unpaidAck?: boolean;
 }) {
-  const { email, farm, role } = await requireWarehouse();
+  const { email, farm, role, regionStore } = await requireWarehouse();
 
   // Цветок не уезжает раньше денег. Проверка стоит именно здесь, а не только
   // в интерфейсе: кнопку можно не показать, а вот прямую ссылку на страницу
   // отгрузки никто не отменял.
   const order = await getOrderById(input.orderId);
   if (!order) throw new Error("Заявка не найдена");
-  const storeRefusal = shipStoreRefusal(role, order.store);
+  const storeRefusal = shipStoreRefusal(role, order.store, regionStore);
   if (storeRefusal) throw new Error(storeRefusal);
   const gate = shipGateRefusal(order, input.unpaidAck === true);
   if (gate) throw new Error(gate);
@@ -192,6 +196,8 @@ async function createShipmentActionInner(input: {
   if (unpaid) await logUnpaidShipment(email, order, input.parts.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0));
   revalidatePath("/office");
   revalidatePath("/office/ship");
+  revalidatePath("/astana");
+  revalidatePath("/astana/ship");
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
   revalidatePath(`/orders/${input.orderId}`);
@@ -208,7 +214,7 @@ async function createWriteoffActionInner(input: Omit<NewWriteoffInput, "warehous
   if (!writeoffBatch) throw new Error("Партия не найдена");
   assertOwnFlowerType(farm, writeoffBatch.flowerType);
   if (own !== "any" && normalizeStore(writeoffBatch.store) !== own) {
-    throw new Error(own === "office" ? "Эта партия на основном складе" : "Эта партия в офисе — её списывает склад офиса");
+    throw new Error(own === "" ? "Эта партия не на основном складе — её списывает тот, кто ведёт её склад" : `Эта партия не на складе «${storeLabel(own)}»`);
   }
   if (!input.reason.trim()) throw new Error("Укажите причину списания");
 
@@ -440,11 +446,11 @@ async function logUnpaidShipment(
 }
 
 async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal: number; unpaidAck?: boolean }) {
-  const { email, farm, role } = await requireWarehouse();
+  const { email, farm, role, regionStore } = await requireWarehouse();
   forgetReads();
   const order = await getOrderById(input.orderId);
   if (!order) throw new Error("Заявка не найдена");
-  const storeRefusal = shipStoreRefusal(role, order.store);
+  const storeRefusal = shipStoreRefusal(role, order.store, regionStore);
   if (storeRefusal) throw new Error(storeRefusal);
   const gate = shipGateRefusal(order, input.unpaidAck === true);
   if (gate) throw new Error(gate);
@@ -466,6 +472,8 @@ async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal
   revalidatePath("/warehouse/picklist");
   revalidatePath("/office");
   revalidatePath("/office/ship");
+  revalidatePath("/astana");
+  revalidatePath("/astana/ship");
   revalidatePath(`/orders/${order.orderId}`);
   revalidatePath("/orders");
   revalidatePath("/");

@@ -22,20 +22,49 @@ import { planWriteoffs, type WriteoffBatch, type WriteoffPlan } from "./writeoff
 // ---------------------------------------------------------------------------
 
 export const OFFICE_STORE = "office";
-export type StoreCode = "" | "office";
+/**
+ * Региональный склад «Астана» (02.11.2026, владелец: «перемещение с основного склада в регион — это количество должно
+ * списываться с нашего остатка и поступать на остаток склада Астаны; заявки через чат-бот после отправки — с остатков
+ * Астаны»). Решения владельца: на склад Астаны цветок попадает ОТГРУЗКОЙ «объёма на город» (`regionArrivalWrites`),
+ * ведёт склад менеджер Астаны (Салтанат — по городу в `ManagerProfiles`), со склада Астаны — любая заявка клиенту
+ * Астаны, пока там есть товар; прайс общий.
+ */
+export const ASTANA_STORE = "astana";
+export type StoreCode = "" | "office" | "astana";
 
-export const STORE_LABELS: Record<StoreCode, string> = { "": "Основной склад", office: "Офис" };
+export const STORE_LABELS: Record<StoreCode, string> = { "": "Основной склад", office: "Офис", astana: "Астана" };
+
+/** Региональные склады: код, подпись и как пишут город (карточка клиента, направление заявки, профиль менеджера). */
+export const REGION_STORES: { code: StoreCode; label: string; cities: string[] }[] = [
+  { code: ASTANA_STORE, label: "Астана", cities: ["астана", "нур-султан", "нурсултан", "нур султан", "astana"] },
+];
+
+const cityKey = (city: string | null | undefined) => String(city ?? "").trim().toLowerCase().replace(/ё/g, "е").replace(/^г\.?\s*/, "");
+
+/** Склад региона по городу; не региональный город — «» (основной). */
+export function regionStoreForCity(city: string | null | undefined): StoreCode {
+  const k = cityKey(city);
+  if (!k) return "";
+  return REGION_STORES.find((r) => r.cities.includes(k))?.code ?? "";
+}
+
+export const isRegionStore = (store: string | null | undefined) => REGION_STORES.some((r) => r.code === normalizeStore(store));
 
 export function storeLabel(store: string | null | undefined): string {
   return STORE_LABELS[normalizeStore(store)];
 }
 
-/** Любое присланное значение → «» или «office». Чужое — основной склад. */
+/** Любое присланное значение → «», «office» или код регионального склада. Чужое — основной склад. */
 export function normalizeStore(raw: unknown): StoreCode {
-  return String(raw ?? "").trim().toLowerCase() === OFFICE_STORE ? OFFICE_STORE : "";
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (v === OFFICE_STORE) return OFFICE_STORE;
+  if (REGION_STORES.some((r) => r.code === v)) return v as StoreCode;
+  return "";
 }
 
 export const isOffice = (x: { store?: string | null }) => normalizeStore(x.store) === OFFICE_STORE;
+/** Лежит или отгружается с основного склада. */
+export const isMainStore = (x: { store?: string | null }) => normalizeStore(x.store) === "";
 
 /** Только то, что лежит (или отгружается) на этом складе. */
 export function inStore<T extends { store?: string | null }>(list: T[], store: StoreCode): T[] {
@@ -45,18 +74,22 @@ export function inStore<T extends { store?: string | null }>(list: T[], store: S
 /** Склад офиса — и в чистом виде, и вместе с розницей Алматы (Руслан). */
 export const isOfficeRole = (role: string | null | undefined) => role === "office" || role === "office_retail";
 
-/** Чей склад: зав. складом — основной, склад офиса — офис, админ — оба, остальные — никакой. */
-export function storeOfRole(role: string | null | undefined): StoreCode | "any" | null {
+/**
+ * Чей склад: зав. складом — основной, склад офиса — офис, менеджер региона со своим складом (`regionStore`, по городу
+ * профиля) — его региональный склад, админ — любой, остальные — никакой.
+ */
+export function storeOfRole(role: string | null | undefined, regionStore: StoreCode = ""): StoreCode | "any" | null {
   if (isOfficeRole(role)) return OFFICE_STORE;
   if (role === "warehouse") return "";
   if (role === "admin") return "any";
+  if (role === "manager" && isRegionStore(regionStore)) return regionStore;
   return null;
 }
 
-/** Какой склад показывать роли на главной: свой у склада и склада офиса, остальным — оба вместе. */
-export function stockStoreOfRole(role: string | null | undefined): StoreCode | undefined {
-  const own = storeOfRole(role);
-  return own === "" || own === OFFICE_STORE ? own : undefined;
+/** Какой склад показывать роли на главной: свой у склада, склада офиса и менеджера региона, остальным — все вместе. */
+export function stockStoreOfRole(role: string | null | undefined, regionStore: StoreCode = ""): StoreCode | undefined {
+  const own = storeOfRole(role, regionStore);
+  return own === "any" || own === null ? undefined : own;
 }
 
 /** Перемещает между складами РОП (решение владельца) и админ. */
@@ -71,23 +104,23 @@ export const canChooseOrderStore = (role: string | null | undefined) =>
   role === "manager" || role === "sales_head" || role === "admin";
 
 /** Может ли этот человек отгружать заявку этого склада. Пусто — может. */
-export function shipStoreRefusal(role: string | null | undefined, orderStore: string | null | undefined): string {
-  const own = storeOfRole(role);
+export function shipStoreRefusal(role: string | null | undefined, orderStore: string | null | undefined, regionStore: StoreCode = ""): string {
+  const own = storeOfRole(role, regionStore);
   const store = normalizeStore(orderStore);
   if (own === "any") return "";
   if (own === null) return "Недостаточно прав: отгружает склад";
   if (own === store) return "";
-  return store === OFFICE_STORE
-    ? "Эта заявка отгружается из офиса — её собирает склад офиса"
-    : "Эта заявка с основного склада — склад офиса её не отгружает";
+  if (store === OFFICE_STORE) return "Эта заявка отгружается из офиса — её собирает склад офиса";
+  if (isRegionStore(store)) return `Эта заявка со склада «${storeLabel(store)}» — её отгружает менеджер региона`;
+  return `Эта заявка с основного склада — склад «${storeLabel(own)}» её не отгружает`;
 }
 
 /** Партия обязана лежать на складе заявки. Пусто — лежит. */
 export function batchStoreRefusal(batchStore: string | null | undefined, orderStore: string | null | undefined): string {
   if (normalizeStore(batchStore) === normalizeStore(orderStore)) return "";
-  return normalizeStore(orderStore) === OFFICE_STORE
-    ? "партия лежит на основном складе, а заявка — из офиса"
-    : "партия лежит в офисе, а заявка — с основного склада";
+  const where = (s: string | null | undefined) => (normalizeStore(s) === "" ? "на основном складе" : normalizeStore(s) === OFFICE_STORE ? "в офисе" : `на складе «${storeLabel(s)}»`);
+  const from = (s: string | null | undefined) => (normalizeStore(s) === "" ? "с основного склада" : normalizeStore(s) === OFFICE_STORE ? "из офиса" : `со склада «${storeLabel(s)}»`);
+  return `партия лежит ${where(batchStore)}, а заявка — ${from(orderStore)}`;
 }
 
 /** С этого часа (по Алматы) основной склад заявки не принимает — бот продаёт из офиса. */
@@ -153,6 +186,7 @@ export function storeChangeRefusal(input: {
   if (isOfficeRole(role) && !(normalizeStore(order.store) === OFFICE_STORE && to === "")) {
     return "Склад офиса может только отдать офисную заявку на основной склад";
   }
+  if (to === OFFICE_STORE && isRegionStore(order.store)) return "Заявку регионального склада в офис не переводят — сначала на основной";
   if (order.kind || order.retail) return "Склад выбирается только у заявки клиенту";
   if (order.status === "cancelled") return "Заявка отменена";
   if (order.items.some((i) => i.shippedQuantity > 0)) return "По заявке уже есть отгрузка — склад не меняется";
@@ -161,7 +195,8 @@ export function storeChangeRefusal(input: {
 
 // --- Перемещение ---------------------------------------------------------------
 
-export type MoveDirection = "to_office" | "to_main";
+/** to_region — приход на региональный склад отгрузкой «объёма на город» (`regionArrivalWrites`). */
+export type MoveDirection = "to_office" | "to_main" | "to_region";
 
 export interface MoveLine {
   flowerType: string;
@@ -277,6 +312,68 @@ export function moveWrites(input: {
   for (const r of input.rows) {
     const now = remaining.get(r.batchId) ?? r.quantityRemaining;
     if (now !== r.quantityRemaining) out.updates.push({ rowNumber: r.rowNumber, quantityRemaining: now });
+  }
+  out.appends = Array.from(created.values());
+  return out;
+}
+
+// --- Приход на региональный склад ------------------------------------------------
+
+/**
+ * «Объём на город» отгружен с основного склада — те же стебли приходят на склад региона (решение владельца 02.11.2026:
+ * перемещение — это отгрузка объёма). Как у офиса: региональная партия — ОТРЕЗОК основной той же срезки
+ * (`SourceBatchID`), приход ноль (стебли уже приняты один раз), уже есть партия региона от этой основной — прибавляем.
+ * Ничего не пишет — только считает; пишет `createOrderShipments` одним запросом вместе с отгрузкой.
+ */
+export function regionArrivalWrites(input: {
+  store: StoreCode;
+  taken: { batchId: string; quantity: number }[];
+  rows: MoveBatchRow[];
+  byEmail: string;
+  newId: () => string;
+}): Omit<MoveWrites, "error"> {
+  const out: Omit<MoveWrites, "error"> = { updates: [], appends: [], moves: [] };
+  if (!isRegionStore(input.store)) return out;
+  const byId = new Map(input.rows.map((r) => [r.batchId, r]));
+  const added = new Map<number, number>(); // строка региональной партии → прибавка
+  const created = new Map<string, Record<string, unknown>>();
+  for (const t of input.taken) {
+    const qty = Math.round(Number(t.quantity));
+    const from = byId.get(t.batchId);
+    if (!from || !(qty > 0)) continue;
+    const existing = input.rows.find((r) => normalizeStore(r.store) === input.store && r.sourceBatchId === from.batchId);
+    let toId: string;
+    if (existing) {
+      added.set(existing.rowNumber, (added.get(existing.rowNumber) ?? 0) + qty);
+      toId = existing.batchId;
+    } else {
+      const fresh = created.get(from.batchId);
+      if (fresh) {
+        fresh.QuantityRemaining = Number(fresh.QuantityRemaining) + qty;
+        toId = String(fresh.BatchID);
+      } else {
+        toId = input.newId();
+        created.set(from.batchId, {
+          BatchID: toId,
+          ReceivedAt: from.receivedAt,
+          HarvestDate: from.harvestDate,
+          FlowerType: from.flowerType,
+          Variety: from.variety,
+          Grade: from.grade,
+          QuantityIn: 0,
+          QuantityRemaining: qty,
+          Location: storeLabel(input.store),
+          ReceivedByEmail: input.byEmail,
+          Store: input.store,
+          SourceBatchID: from.batchId,
+        });
+      }
+    }
+    out.moves.push({ fromBatchId: from.batchId, toBatchId: toId, quantity: qty, flowerType: from.flowerType, variety: from.variety, grade: from.grade });
+  }
+  for (const r of input.rows) {
+    const plus = added.get(r.rowNumber);
+    if (plus) out.updates.push({ rowNumber: r.rowNumber, quantityRemaining: r.quantityRemaining + plus });
   }
   out.appends = Array.from(created.values());
   return out;

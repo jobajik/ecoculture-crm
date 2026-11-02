@@ -1,4 +1,5 @@
 import { sheetNumber } from "../sheetCell";
+import { normalizeStore } from "../officeStore";
 import { formatPhone } from "../phone";
 import { statusAfterShipping } from "../shipRules";
 import {
@@ -72,7 +73,7 @@ export function toOrder(record: Record<string, string>): Order {
     invoiceSentAt: toIsoDateTime(record.InvoiceSentAt),
     invoiceNote: (record.InvoiceNote || "").trim(),
     realization1c: (record.Realization1C || "").trim(),
-    store: (record.Store || "").trim().toLowerCase() === "office" ? "office" : "",
+    store: normalizeStore(record.Store),
   };
 }
 
@@ -247,7 +248,7 @@ export function buildNewOrder(
     Kind: input.kind || "",
     InvoiceSentAt: "",
     InvoiceNote: "",
-    Store: input.store === "office" ? "office" : "",
+    Store: normalizeStore(input.store),
   };
 
   const itemRecords = input.items.map((item, idx) => ({
@@ -796,11 +797,11 @@ export async function clearOrdersPaid(orderIds: string[], accountantEmail: strin
   return touched;
 }
 
-/** Склад отгрузки заявки: пусто — основной, «office» — подсклад «Офис». */
+/** Склад отгрузки заявки: пусто — основной, «office» — подсклад «Офис», «astana» — склад Астаны. */
 export async function setOrderStore(orderId: string, store: string): Promise<boolean> {
   return updateWhere(
     SHEET_TABS.ORDERS,
     (record) => record.OrderID === orderId,
-    () => ({ Store: store === "office" ? "office" : "" })
+    () => ({ Store: normalizeStore(store) })
   );
 }

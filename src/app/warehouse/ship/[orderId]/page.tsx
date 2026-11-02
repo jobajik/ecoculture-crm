@@ -18,7 +18,7 @@ import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
 import { canShipUnpaid, creditNote, isReadyToShip, notReadyReason, unpaidRest } from "@/lib/orderReady";
 import UnpaidShipGate from "@/components/UnpaidShipGate";
-import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
+import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
 import ConfirmOrderButton from "@/components/ConfirmOrderButton";
 import { confirmRefusal } from "@/lib/orderRules";
@@ -34,7 +34,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
   const order = await getOrderById(params.orderId);
   if (!order) notFound();
   // Заявку офиса отгружает склад офиса, основную — основной склад (`officeStore.ts`).
-  const storeRefusal = shipStoreRefusal(role, order.store);
+  const storeRefusal = shipStoreRefusal(role, order.store, normalizeStore(session?.user?.store));
   const store = normalizeStore(order.store);
   const office = store === "office";
 
@@ -58,7 +58,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
     availableBatches: availableBatchesFor(allBatches, item.flowerType, item.variety, item.grade),
   }));
   // Куда вернуться после отгрузки: склад офиса — к своей очереди.
-  const backHref = office || isOfficeRole(role) ? "/office/ship" : "/warehouse";
+  const backHref = office || isOfficeRole(role) ? "/office/ship" : store === "astana" && role !== "warehouse" ? "/astana/ship" : "/warehouse";
   // Своё отгружено целиком: после «Отгрузить» страница перерисовывается, и вместо
   // формы должен стоять понятный итог с дорогой обратно, а не «Отгружать рано».
   const ownShipped =
@@ -199,7 +199,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
                   </>
                 )}
                 <dt className="text-ink-muted">Склад</dt>
-                <dd className="text-right">{office ? "Офис" : "Основной"}</dd>
+                <dd className="text-right">{store === "" ? "Основной" : storeLabel(store)}</dd>
               </dl>
               {order.notes && (
                 <p className="mt-3 text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">{order.notes}</p>
@@ -244,7 +244,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
               <OrderStoreSwitch
                 orderId={order.orderId}
                 store={order.store}
-                editable={storeChangeRefusal({ role, isOwner: false, order, to: "" }) === ""}
+                targets={storeChangeRefusal({ role, isOwner: false, order, to: "" }) === "" ? [{ code: "", label: "Основной склад" }] : []}
               />
               <p className="text-xs text-ink-muted mt-1">Не хватает в офисе — отдайте заявку на основной склад.</p>
             </div>

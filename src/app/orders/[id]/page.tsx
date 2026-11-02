@@ -18,7 +18,7 @@ import {
 } from "@/lib/constants";
 import OrderStageBadge from "@/components/OrderStageBadge";
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
-import { isOfficeRole, shipStoreRefusal, storeChangeRefusal } from "@/lib/officeStore";
+import { isOfficeRole, normalizeStore, REGION_STORES, shipStoreRefusal, STORE_LABELS, storeChangeRefusal, type StoreCode } from "@/lib/officeStore";
 import { orderStage } from "@/lib/orderStage";
 import { localDayKey } from "@/lib/timezone";
 import { nameIndex, personName } from "@/lib/personName";
@@ -84,6 +84,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
   const role = session?.user?.role;
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
+  // Склад региона, который ведёт менеджер (Салтанат — «Астана», `officeStore.ts`).
+  const myStore = normalizeStore(session?.user?.store);
   // Зав. складом видит только свой цветок — кроме СВОЕЙ заявки в регион: её она
   // составила сама, включая чужой цветок, и прятать от неё собственную заявку
   // было бы просто поломкой (`farmScopeFor`).
@@ -188,7 +190,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const openOrder = order.status !== "shipped" && order.status !== "cancelled";
   const ready = isReadyToShip(order);
   // Офисную заявку отгружает склад офиса (`officeStore.ts`) — у основного склада кнопки нет.
-  const canShip = isWarehouse && openOrder && ready && shipStoreRefusal(role, loaded.store) === "";
+  // Заявку регионального склада отгружает менеджер региона (Салтанат — склад Астаны).
+  const storeKeeper = role === ROLES.MANAGER && myStore !== "" && normalizeStore(loaded.store) === myStore;
+  const canShip = (isWarehouse || storeKeeper) && openOrder && ready && shipStoreRefusal(role, loaded.store, myStore) === "";
   const shipBlockedReason = isWarehouse && openOrder && !ready ? notReadyReason(order) : "";
   // Этап и «чей ход» — та же функция, что в списках (`orderStage`).
   const stage = orderStage(order, localDayKey());
@@ -255,14 +259,15 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // Склад отгрузки (подсклад «Офис») — показываем у клиентских заявок; менять
   // можно, пока ничего не отгружено (`storeChangeRefusal` — то же, что на сервере).
   const showStore = !loaded.kind && !loaded.retail;
-  const canChangeStore =
-    showStore &&
-    storeChangeRefusal({
-      role: role ?? "",
-      isOwner: loaded.managerEmail.toLowerCase() === myEmail,
-      order: loaded,
-      to: loaded.store ? "" : "office",
-    }) === "";
+  const storeTargets: { code: StoreCode; label: string }[] = showStore
+    ? (["", "office", ...REGION_STORES.map((r) => r.code)] as StoreCode[])
+        .filter(
+          (to) =>
+            storeChangeRefusal({ role: role ?? "", isOwner: loaded.managerEmail.toLowerCase() === myEmail, order: loaded, to }) === ""
+        )
+        .map((code) => ({ code, label: STORE_LABELS[code] }))
+    : [];
+  const canChangeStore = storeTargets.length > 0;
   const canSetOrderDirection =
     !farm &&
     directionEditRefusal({
@@ -509,7 +514,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 <Icon name="store" className="w-4 h-4" />
               </span>
               <div className="min-w-0 flex-1">
-                <OrderStoreSwitch orderId={order.orderId} store={loaded.store} editable={canChangeStore} />
+                <OrderStoreSwitch orderId={order.orderId} store={loaded.store} targets={storeTargets} />
               </div>
             </div>
           )}

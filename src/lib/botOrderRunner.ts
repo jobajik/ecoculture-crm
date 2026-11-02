@@ -3,7 +3,7 @@ import { prefetchTables, SHEET_TABS } from "./sheets";
 import { localDayKey } from "./timezone";
 import { FARM_LABELS, MONEY_LOG_ACTIONS, ORDER_STATUSES, ROLES } from "./constants";
 import { listBatches } from "./repo/batches";
-import { almatyHourOf, botOrderStore, inStore } from "./officeStore";
+import { almatyHourOf, botOrderStore, inStore, regionStoreForCity, type StoreCode } from "./officeStore";
 import { getSettings } from "./repo/settings";
 import { getCurrentPrices } from "./repo/prices";
 import { priceFor } from "./priceList";
@@ -145,24 +145,41 @@ export async function placeBotOrder(input: {
     }
     const profile = ch.profile ?? profileOf(parseManagerProfiles(map[MANAGER_PROFILES_SETTING]), regionEmail);
     const shipDay = profile?.shipWeekday ? nextShipDay(today, profile.shipWeekday, almatyHourOf(now)) : "";
-    if (shipDay) draft = { ...draft, deliveryDate: shipDay };
     const regionCity = profile?.city || "";
-    // После 12:00 заказ НА СЕГОДНЯ — из подсклада «Офис», остальное — основной
-    // склад (`officeStore.ts`): то же деление, что бот видел в подсказке.
-    const store = shipDay ? "" : botOrderStore({
-      almatyHour: almatyHourOf(now),
-      deliveryDate: draft.deliveryDate,
-      today,
-      officeHasStock: stockMap(inStore(allBatches, "office"), settings, now).size > 0,
-    });
-    const batches = inStore(allBatches, store);
-    const plan = planBotOrder({
-      draft,
-      stock: Array.from(stockMap(batches, settings, new Date()).values()),
-      priceOf: (f, v, g) => priceFor(prices, f, v, g),
-      volumePrice: (f, g, q, list) => pushUnitPrice(push, f, g, q, list),
-      today,
-    });
+    const planOn = (d: typeof draft, store: StoreCode) =>
+      planBotOrder({
+        draft: d,
+        stock: Array.from(stockMap(inStore(allBatches, store), settings, new Date()).values()),
+        priceOf: (f, v, g) => priceFor(prices, f, v, g),
+        volumePrice: (f, g, q, list) => pushUnitPrice(push, f, g, q, list),
+        today,
+      });
+    // Склад региона (Астана, 02.11.2026, владелец: «заявки через чат-бот после отправки товара — с остатков склада
+    // Астаны»): всё, что клиент берёт, есть на складе Астаны — заказ оттуда, день — как договорились (не фура). Хоть
+    // одной позиции там нет — как раньше: основной склад, ближайшей фурой.
+    const regionStore = regionStoreForCity(regionCity);
+    let store: StoreCode = "";
+    let plan: ReturnType<typeof planBotOrder> | null = null;
+    if (regionStore && stockMap(inStore(allBatches, regionStore), settings, now).size > 0) {
+      const fromRegion = planOn(draft.deliveryDate ? draft : { ...draft, deliveryDate: today }, regionStore);
+      if (fromRegion.ok) {
+        store = regionStore;
+        plan = fromRegion;
+        if (!draft.deliveryDate) draft = { ...draft, deliveryDate: today };
+      }
+    }
+    if (!plan) {
+      if (shipDay) draft = { ...draft, deliveryDate: shipDay };
+      // После 12:00 заказ НА СЕГОДНЯ — из подсклада «Офис», остальное — основной
+      // склад (`officeStore.ts`): то же деление, что бот видел в подсказке.
+      store = shipDay ? "" : botOrderStore({
+        almatyHour: almatyHourOf(now),
+        deliveryDate: draft.deliveryDate,
+        today,
+        officeHasStock: stockMap(inStore(allBatches, "office"), settings, now).size > 0,
+      });
+      plan = planOn(draft, store);
+    }
     if (!plan.ok) return { text: plan.question, orderId: "", note: "" };
 
     // Карточка клиента: по номеру (телефон или Kaspi-номер), иначе лид, иначе новая.

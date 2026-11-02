@@ -28,7 +28,7 @@ export async function listStockMoves(): Promise<StockMove[]> {
       .map((r) => ({
         moveId: r.MoveID,
         createdAt: toIsoDateTime(r.CreatedAt) || r.CreatedAt || "",
-        direction: (r.Direction === "to_main" ? "to_main" : "to_office") as MoveDirection,
+        direction: (r.Direction === "to_main" || r.Direction === "to_region" ? r.Direction : "to_office") as MoveDirection,
         flowerType: r.FlowerType || "",
         variety: r.Variety || "",
         grade: r.Grade || "",

@@ -5,7 +5,9 @@ import { generateId } from "../id";
 import type { Shipment } from "../types";
 import { toBatch } from "./batches";
 import { shipmentPartsRefusal, statusAfterShipping } from "../shipRules";
-import { batchStoreRefusal } from "../officeStore";
+import { batchStoreRefusal, regionArrivalWrites, regionStoreForCity, type MoveBatchRow } from "../officeStore";
+import { cleanOrderKind } from "../orderKind";
+import { ORDER_KINDS } from "../constants";
 import { toOrderItem } from "./orders";
 
 function toShipment(record: Record<string, string>): Shipment {
@@ -142,6 +144,43 @@ export async function createOrderShipments(input: {
       rowNumber: b.rowNumber,
       changes: { QuantityRemaining: (Number(b.record.QuantityRemaining) || 0) - qty },
     });
+  }
+
+  // «Объём на город» в регион со своим складом (Астана, 02.11.2026): отгруженное с основного склада приходит на склад
+  // региона — в том же атомарном запросе, что и отгрузка (`regionArrivalWrites`).
+  const orderRec = orderTable.rows.map((row) => rowToRecord(SHEET_TABS.ORDERS, row)).find((r) => r.OrderID === input.orderId);
+  const arrivalStore = orderRec && cleanOrderKind(orderRec.Kind) === ORDER_KINDS.REGION ? regionStoreForCity(orderRec.Direction) : "";
+  if (arrivalStore) {
+    const rows: MoveBatchRow[] = Array.from(batchRows.values()).map((b) => ({ ...toBatch(b.record), rowNumber: b.rowNumber }));
+    const arrival = regionArrivalWrites({
+      store: arrivalStore,
+      taken: Array.from(taken.entries()).map(([batchId, quantity]) => ({ batchId, quantity })),
+      rows,
+      byEmail: input.warehouseEmail,
+      newId: () => generateId("BATCH"),
+    });
+    for (const u of arrival.updates) ops.push({ kind: "update", tab: SHEET_TABS.BATCHES, rowNumber: u.rowNumber, changes: { QuantityRemaining: u.quantityRemaining } });
+    if (arrival.appends.length) ops.push({ kind: "append", tab: SHEET_TABS.BATCHES, records: arrival.appends });
+    if (arrival.moves.length) {
+      const at = new Date().toISOString();
+      ops.push({
+        kind: "append",
+        tab: SHEET_TABS.STOCK_MOVES,
+        records: arrival.moves.map((m) => ({
+          MoveID: generateId("MOVE"),
+          CreatedAt: at,
+          Direction: "to_region",
+          FlowerType: m.flowerType,
+          Variety: m.variety,
+          Grade: m.grade,
+          Quantity: m.quantity,
+          FromBatchID: m.fromBatchId,
+          ToBatchID: m.toBatchId,
+          ByEmail: input.warehouseEmail,
+          Note: `Объём на город: ${orderRec?.Direction || ""} · заявка ${input.orderId}`,
+        })),
+      });
+    }
   }
 
   const orderIndex = orderTable.rows.findIndex(
