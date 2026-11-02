@@ -63,8 +63,8 @@ function Header({ s, path, title, subtitle, actions }: { s: IntakeSession; path:
   return (
     <PageHeader
       area="greenhouse"
-      title={title}
-      subtitle={subtitle ?? `${FARM_LABELS[s.farm] ?? s.farm} · приёмка цветка`}
+      title={title === "Обзор" ? `Теплица ${FARM_LABELS[s.farm] ?? s.farm}` : title}
+      subtitle={subtitle ?? (title === "Обзор" ? "приёмка цветка по характеристикам" : `${FARM_LABELS[s.farm] ?? s.farm} · приёмка цветка`)}
       icon="leaf"
       tabs={greenhouseTabsFor(s.scope, s.farm)}
       actions={
@@ -82,7 +82,7 @@ function Header({ s, path, title, subtitle, actions }: { s: IntakeSession; path:
 function NoAccess({ s }: { s: IntakeSession }) {
   return (
     <div className="space-y-5">
-      <Header s={s} path="/greenhouse" title="Теплица" />
+      <Header s={s} path="/greenhouse" title="Обзор" />
       <div className="card text-sm text-ink-secondary">{GREENHOUSE_NO_ACCESS}</div>
     </div>
   );
@@ -107,7 +107,7 @@ export async function IntakeOverviewPage({ s }: { s: IntakeSession }) {
   if (!rows.length)
     return (
       <div className="space-y-5">
-        <Header s={s} path="/greenhouse" title="Теплица" actions={newBtn} />
+        <Header s={s} path="/greenhouse" title="Обзор" actions={newBtn} />
         <div className="card space-y-3 max-w-2xl">
           <div className="font-display font-extrabold text-[17px]">Приёмки Rose Farm пока нет</div>
           <p className="text-sm text-ink-secondary">
@@ -140,7 +140,7 @@ export async function IntakeOverviewPage({ s }: { s: IntakeSession }) {
 
   return (
     <div className="space-y-5">
-      <Header s={s} path="/greenhouse" title="Теплица" actions={newBtn} />
+      <Header s={s} path="/greenhouse" title="Обзор" actions={newBtn} />
 
       {/* День */}
       <div className="card space-y-3">

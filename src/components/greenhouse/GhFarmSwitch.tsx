@@ -1,22 +1,11 @@
-import Link from "next/link";
-import clsx from "clsx";
-import { FARM_LABELS, FARM_ORDER } from "@/lib/constants";
 import RememberGhFarm from "./RememberGhFarm";
 
 /**
- * Компания в шапке «Теплицы». У агронома и зав. складом производство закреплено — вместо переключателя подпись.
- * Без "use client": ссылки, страница открывается заново.
+ * Компания на страницах «Теплицы». С 02.11.2026 переключателя здесь нет: владелец разделил теплицы на два раздела меню
+ * («Теплица Rose Farm», «Теплица Есентай»), и компанию выбирает пункт меню, а название стоит в шапке страницы.
+ * Остаётся невидимая часть — запомнить компанию и сообщить её меню (`RememberGhFarm`). `href` и `locked` больше не
+ * нужны, но страницы их передают — оставлены, чтобы не править семь мест ради ничего.
  */
-export default function GhFarmSwitch({ farm, href, locked }: { farm: string; href: (farm: string) => string; locked: boolean }) {
-  if (locked) return <span className="text-sm text-ink-secondary">{FARM_LABELS[farm] ?? farm}</span>;
-  return (
-    <div className="flex rounded-lg border border-line-hairline overflow-hidden text-sm">
-      <RememberGhFarm farm={farm} />
-      {FARM_ORDER.map((f) => (
-        <Link key={f} href={href(f)} className={clsx("px-3 py-1.5 whitespace-nowrap", f === farm ? "bg-ink-primary text-white" : "hover:bg-surface-sunk")}>
-          {FARM_LABELS[f] ?? f}
-        </Link>
-      ))}
-    </div>
-  );
+export default function GhFarmSwitch({ farm }: { farm: string; href?: (farm: string) => string; locked?: boolean }) {
+  return <RememberGhFarm farm={farm} />;
 }

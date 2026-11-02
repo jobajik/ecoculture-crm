@@ -11,6 +11,7 @@ import SidebarMenu from "./SidebarMenu";
 import { areaForPath } from "@/lib/areas";
 import { navLinksFor, isActive, activeSub } from "./navLinks";
 import SearchTrigger from "./SearchTrigger";
+import { useGhFarm } from "./useGhFarm";
 
 /**
  * Телефон и планшет: верхняя полоска с кнопкой ☰ и выезжающее слева меню (19.10.2026, владелец выбрал «выезжающее
@@ -21,6 +22,7 @@ export default function MobileNav() {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const ghFarm = useGhFarm();
 
   // Переход по ссылке закрывает панель — иначе она висит поверх новой страницы.
   useEffect(() => setOpen(false), [pathname]);
@@ -42,7 +44,7 @@ export default function MobileNav() {
   const area = areaForPath(pathname);
   // Где человек сейчас: раздел и его вкладка — из того же списка, что и боковое меню.
   const links = navLinksFor(session.user?.role ?? "manager", session.user?.payrollRole, session.user?.payrollDepartments, session.user?.farm ?? undefined);
-  const link = links.find((l) => isActive(l, pathname, links));
+  const link = links.find((l) => isActive(l, pathname, links, ghFarm));
   const tab = link ? activeSub(link.subs, pathname) : undefined;
   const title = link?.label ?? area.label;
 

@@ -10,6 +10,7 @@ import { payrollTabsFor } from "@/app/payroll/tabs";
 import { payrollScope } from "@/lib/payroll/access";
 import { greenhouseTabsFor } from "@/app/greenhouse/tabs";
 import { greenhouseScope } from "@/lib/greenhouse/access";
+import { FARM_ORDER, FARMS } from "@/lib/constants";
 
 /**
  * Разделы бокового меню — ПЯТЬ-ШЕСТЬ на роль, под активным разделом его вкладки.
@@ -43,6 +44,11 @@ export interface NavLink {
   subs: NavSub[];
   /** Пункт из группы «Прочее» (Настройки). */
   other?: boolean;
+  /**
+   * Теплица одной компании: адреса у обеих теплиц одни и те же (`/greenhouse…`), компания — в `?farm=` и cookie,
+   * поэтому раздел горит, только когда открыта ЕГО компания (`isActive(…, ghFarm)`).
+   */
+  farm?: string;
 }
 
 const path = (href: string) => href.split("?")[0];
@@ -72,14 +78,28 @@ function payrollSection(role: string, payrollRole: string | undefined, departmen
   return section("/payroll", "Зарплата", payrollTabsFor(scope), ["/payroll"], crowded);
 }
 
+/** Название раздела теплицы в меню: полное «Есентай Агро Хим» в колонку меню не помещается. */
+export const GREENHOUSE_MENU_LABEL: Record<string, string> = {
+  [FARMS.ROSE_FARM]: "Теплица Rose Farm",
+  [FARMS.ESENTAI]: "Теплица Есентай",
+};
+
 /**
- * Раздел «Теплица» (29.10.2026, владелец: «выдели это в отдельную вкладку»): циклы и блоки, журналы срезки,
- * черенкования и брака, аналитика и выработка цветоводов. Это рабочий раздел у всех, кому он открыт, — у владельца тоже.
+ * Разделы «Теплица» (29.10.2026, владелец: «выдели это в отдельную вкладку»; 02.11.2026: «раздели всё же теплицы
+ * отдельно как вкладки — теплица Rose Farm и теплица Есентай Агро Хим»). У Rose Farm — приёмка цветка по
+ * характеристикам, у Есентая — циклы, блоки, срезка и выработка: работа разная, поэтому и разделы в меню два, каждый со
+ * своими вкладками. Переключателя компании на страницах больше нет — компанию выбирает пункт меню. Кому производство
+ * закреплено (агроном, зав. складом), тот видит один раздел своей компании.
  */
-function greenhouseSection(role: string, farm: string | undefined, payrollRole: string | undefined, departments: string[] | undefined): NavLink | null {
+function greenhouseSections(role: string, farm: string | undefined, payrollRole: string | undefined, departments: string[] | undefined): NavLink[] {
   const scope = greenhouseScope({ role, farm, payrollRole: payrollRole ?? "", payrollDepartments: departments ?? [] });
-  if (!scope) return null;
-  return section("/greenhouse", "Теплица", greenhouseTabsFor(scope, scope?.farmLocked ?? ""), ["/greenhouse"]);
+  if (!scope) return [];
+  const farms = scope.farmLocked ? [scope.farmLocked] : [FARMS.ROSE_FARM, FARMS.ESENTAI].filter((f) => FARM_ORDER.includes(f));
+  return farms.map((f) => ({
+    ...section(`/greenhouse?farm=${f}`, GREENHOUSE_MENU_LABEL[f] ?? "Теплица", greenhouseTabsFor(scope, f), ["/greenhouse"]),
+    // Один раздел — сравнивать компанию незачем (и cookie от прошлого входа не погасит его).
+    farm: farms.length > 1 ? f : undefined,
+  }));
 }
 
 /** Разделы роли — в порядке, в котором их открывают каждый день. */
@@ -87,8 +107,7 @@ export function navLinksFor(role: string, payrollRole?: string, payrollDepartmen
   const links = baseLinksFor(role);
   const work = links.filter((l) => !l.other);
   const other = links.filter((l) => l.other);
-  const greenhouse = greenhouseSection(role, farm, payrollRole, payrollDepartments);
-  if (greenhouse) work.push(greenhouse);
+  work.push(...greenhouseSections(role, farm, payrollRole, payrollDepartments));
   const payroll = payrollSection(role, payrollRole, payrollDepartments, work.length >= 7);
   if (!payroll) return [...work, ...other];
   return payroll.other ? [...work, ...other, payroll] : [...work, payroll, ...other];
@@ -180,9 +199,11 @@ function baseLinksFor(role: string): NavLink[] {
  * у РОПа «/clients/leads» входит и в «Клиенты», и — у Земфиры — в «Лиды», а «/warehouse/ship» у склада офиса —
  * в «Офис», а не в «Склад».
  */
-export function isActive(link: NavLink, pathname: string, all?: NavLink[]): boolean {
+export function isActive(link: NavLink, pathname: string, all?: NavLink[], ghFarm: string = FARMS.ESENTAI): boolean {
   const score = (l: NavLink) =>
-    l.match.reduce((best, m) => {
+    l.farm && l.farm !== ghFarm
+      ? 0
+      : l.match.reduce((best, m) => {
       const hit = m === "/" ? pathname === "/" : pathname === m || pathname.startsWith(m + "/") || pathname.startsWith(m + "?");
       return hit && m.length > best ? m.length : best;
     }, 0);
