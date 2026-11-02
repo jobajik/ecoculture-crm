@@ -27,6 +27,8 @@ import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade, ORDER_STATUSES, ROLES }
 import {
   broadcastCount,
   pickBroadcastContacts,
+  pickListedContacts,
+  type ListedCandidate,
   staffBroadcastPlanText,
   staffBroadcastText,
   type ContactCandidate,
@@ -68,7 +70,9 @@ const itemTitle = (it: StaffItem) => [FLOWER_TYPE_LABELS[it.flowerType] ?? it.fl
 export async function planStaffBroadcast(
   command: StaffCommand,
   staff: AppUser | null,
-  ctx: { prices: Map<string, PriceRow>; stock: { flower: string; variety: string; grade: string; qty: number }[] }
+  ctx: { prices: Map<string, PriceRow>; stock: { flower: string; variety: string; grade: string; qty: number }[] },
+  /** Номера, перечисленные в поручении (`phonesInText`): есть — шлём ровно им, а не «тёплым». */
+  listedPhones: string[] = []
 ): Promise<{ reply: string; plan: StaffBroadcastPlan | null }> {
   if (!staff) return { reply: "Не узнал вас как сотрудника: ваш номер не записан в карточке («Настройки → Сотрудники»). Попросите владельца записать — и рассылка заработает.", plan: null };
   await prefetchTables([SHEET_TABS.WA_MESSAGES, SHEET_TABS.CLIENTS, SHEET_TABS.LEADS, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS, SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]).catch(() => undefined);
@@ -165,9 +169,34 @@ export async function planStaffBroadcast(
     });
   }
   const autoOf = new Map(broadcasts.map((b) => [b.broadcastId, b.auto]));
-  const exclusion: ExclusionContext = { now: new Date(), staff: await ourPhoneKeys(map), optedOut, facts, sent: sentFacts(recipients, autoOf) };
-  const asked = broadcastCount(command.count);
-  const { take, skipped } = pickBroadcastContacts(candidates, exclusion, asked);
+  const staffKeys = await ourPhoneKeys(map);
+  const exclusion: ExclusionContext = { now: new Date(), staff: staffKeys, optedOut, facts, sent: sentFacts(recipients, autoOf) };
+  const listed = listedPhones.length > 0;
+  let asked = broadcastCount(command.count);
+  let take: Array<ContactCandidate | ListedCandidate>;
+  let skipped: Record<string, number>;
+  if (listed) {
+    // Сотрудник сам перечислил номера — им и шлём; имя — из карточки, лида или WhatsApp (любой номер).
+    const senderByKey = new Map<string, string>();
+    for (const m of messages) if (m.direction === "in" && (m.senderName || "").trim() && phoneKey(m.phone)) senderByKey.set(phoneKey(m.phone), m.senderName.trim());
+    const list: ListedCandidate[] = listedPhones.map((phone) => {
+      const key = phoneKey(phone);
+      const client = clientByKey.get(key);
+      const lead = client ? undefined : leadByKey.get(key);
+      return {
+        key,
+        phone,
+        name: client ? greetingName(client.contactPerson, client.name) : lead && !/^Клиент WhatsApp/i.test(lead.name.trim()) ? greetingName(lead.contactPerson, lead.name) : greetingName("", senderByKey.get(key) || ""),
+        kind: client ? "client" : lead ? "lead" : "contact",
+        refId: client?.clientId || lead?.leadId || "",
+        managerEmail: client?.managerEmail || lead?.managerEmail || staff.email,
+      };
+    });
+    asked = list.length;
+    ({ take, skipped } = pickListedContacts(list, { staff: staffKeys, optedOut }));
+  } else {
+    ({ take, skipped } = pickBroadcastContacts(candidates, exclusion, asked));
+  }
 
   const profile = profileOf(parseManagerProfiles(map[MANAGER_PROFILES_SETTING]), staff.email);
   const shipDay = profile?.shipWeekday ? shipDayLabel(nextShipDay(localDayKey(), profile.shipWeekday, almatyHourOf(new Date()))) : "";
@@ -175,11 +204,17 @@ export async function planStaffBroadcast(
   const focusTitle = command.items.length ? command.items.map(itemTitle).join(", ") : "ходовые позиции";
   if (!take.length) {
     const why = Object.entries(skipped).map(([w, k]) => `${w} — ${k}`).join("; ");
-    return { reply: `Некому отправить: из ваших собеседников в WhatsApp никто сейчас не подходит${why ? ` (${why})` : ""}.`, plan: null };
+    return {
+      reply: listed
+        ? `Некому отправить: из названных номеров никто не подходит${why ? ` (${why})` : ""}.`
+        : `Некому отправить: из ваших собеседников в WhatsApp никто сейчас не подходит${why ? ` (${why})` : ""}.`,
+      plan: null,
+    };
   }
   const today = localDayKey();
   const plan: StaffBroadcastPlan = {
     at: new Date().toISOString(),
+    ...(listed ? { listed: true } : {}),
     line,
     via,
     title: `Поручение ${firstName(staff.name)} · ${focusTitle} · ${today.slice(8, 10)}.${today.slice(5, 7)}`,
@@ -203,7 +238,7 @@ export async function runStaffBroadcastPlan(plan: StaffBroadcastPlan, staff: App
     text: list[0].text,
     fileId: plan.fileId,
     fileName: plan.fileName,
-    audience: `По просьбе ${firstName(staff?.name || "") || "сотрудника"} в WhatsApp: тёплые контакты (${list.length})`,
+    audience: `По просьбе ${firstName(staff?.name || "") || "сотрудника"} в WhatsApp: ${plan.listed ? "номера из его сообщения" : "тёплые контакты"} (${list.length})`,
     recipients: list,
     line: plan.line,
     status: BROADCAST_STATUSES.SENDING,

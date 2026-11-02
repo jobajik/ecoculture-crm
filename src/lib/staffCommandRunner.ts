@@ -22,7 +22,7 @@ import { sendOnLine } from "./lineAssistant";
 import { loadPhotoContext, photoPrices } from "./botPhotoSend";
 import { isInfoPhoto, photoLabel, photoMessage } from "./botPhotos";
 import { pricesForBot } from "./botKnowledge";
-import { isNoText, isYesText, parseStaffBroadcastPlan, STAFF_BROADCAST_PREFIX, type StaffBroadcastPlan } from "./staffBroadcast";
+import { isNoText, isYesText, parseStaffBroadcastPlan, phonesInText, STAFF_BROADCAST_PREFIX, type StaffBroadcastPlan } from "./staffBroadcast";
 import { planStaffBroadcast, runStaffBroadcastPlan } from "./staffBroadcastRunner";
 import {
   dropRecipients,
@@ -356,7 +356,7 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
     if (command.intent === "none") return true;
     // Рассылка своим клиентам: сначала план и «ДА».
     if (command.intent === "broadcast") {
-      const { reply, plan } = await planStaffBroadcast(command, staff, ctx);
+      const { reply, plan } = await planStaffBroadcast(command, staff, ctx, phonesInText(text));
       if (plan) await saveSettings({ [broadcastKey]: JSON.stringify(plan) });
       await replyStaff(main, message.phone, reply);
       return true;
@@ -430,7 +430,7 @@ export async function dryRunStaffCommand(text: string, staffPhone: string): Prom
   let command = await understand(text, ctx);
   out.push(`Разбор: ${JSON.stringify(command)}`);
   if (command.intent === "broadcast") {
-    const { reply, plan } = await planStaffBroadcast(command, staff, ctx);
+    const { reply, plan } = await planStaffBroadcast(command, staff, ctx, phonesInText(text));
     out.push("Сотруднику:", reply);
     if (plan) out.push(`Номер: «${plan.line || "основной"}», фото: ${plan.fileId ? "из ротации" : "нет"}, получатели: ${plan.recipients.map((r) => `${r.name || "—"} …${r.phone.slice(-4)} (${r.kind})`).join("; ")}`);
     return out;

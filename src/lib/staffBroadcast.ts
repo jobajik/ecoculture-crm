@@ -1,5 +1,6 @@
 import { commonExclusion, type ExclusionContext } from "./autoBroadcast";
 import type { NudgeOffer } from "./botNudge";
+import { waPhone } from "./broadcast";
 
 // ---------------------------------------------------------------------------
 // Рассылка по просьбе менеджера в WhatsApp основному номеру (27.10.2026, владелец: «дай менеджерам делать рассылку,
@@ -28,6 +29,8 @@ export interface StaffBroadcastRecipient {
 
 export interface StaffBroadcastPlan {
   at: string;
+  /** Номера назвал сам сотрудник — шлём ровно им. */
+  listed?: boolean;
   line: string;
   /** «вашего номера», «основного номера». */
   via: string;
@@ -120,6 +123,55 @@ export function pickBroadcastContacts(
   return { take: ok.slice(0, count), skipped };
 }
 
+/** Больше номеров списком за раз не берём (как «Написать» выделенным лидам). */
+export const STAFF_BROADCAST_LISTED_MAX = 60;
+
+/**
+ * Номера, перечисленные в поручении (02.11.2026, владелец со снимком: менеджер написал «Сделай рассылки с ценами на
+ * хризантемы, эустому этим клиентам» и девять номеров, а бот собрал план из своих «тёплых» контактов — тоже девять, но
+ * других; «почему, если просят рассылку по номерам, ты не делаешь?»). Номера вынимает код, не модель: мобильные к виду
+ * 7XXXXXXXXXX, городские и обрывки отбрасываются, повторы склеиваются.
+ */
+export function phonesInText(text: string): string[] {
+  const out: string[] = [];
+  for (const m of String(text || "").match(/(?:\+|\b)\d[\d \t \-()]{8,17}\d/g) ?? []) {
+    const d = m.replace(/\D/g, "");
+    if (d.length < 10 || d.length > 13) continue;
+    const w = waPhone(d);
+    if (w && !out.includes(w)) out.push(w);
+  }
+  return out;
+}
+
+export interface ListedCandidate {
+  key: string;
+  phone: string;
+  name: string;
+  kind: string;
+  refId: string;
+  managerEmail: string;
+}
+
+/**
+ * Кому из названных сотрудником номеров: всем, кроме своих (сотрудники) и отписавшихся («СТОП» — навсегда). «Сам ни разу
+ * не писал», «рассылка за 7 дней», «заказывал за 3 дня» здесь НЕ режут: список выбрал менеджер, он знает своих клиентов.
+ */
+export function pickListedContacts(
+  listed: ListedCandidate[],
+  ctx: { staff: Set<string>; optedOut: Set<string> }
+): { take: ListedCandidate[]; skipped: Record<string, number> } {
+  const skipped: Record<string, number> = {};
+  const skip = (why: string) => (skipped[why] = (skipped[why] || 0) + 1);
+  const take: ListedCandidate[] = [];
+  for (const c of listed) {
+    if (ctx.staff.has(c.key)) skip("наш сотрудник");
+    else if (ctx.optedOut.has(c.key)) skip("отписался (СТОП)");
+    else if (take.length >= STAFF_BROADCAST_LISTED_MAX) skip(`больше ${STAFF_BROADCAST_LISTED_MAX} за раз`);
+    else take.push(c);
+  }
+  return { take, skipped };
+}
+
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\s/g, " ")} ₸`;
 
 /**
@@ -136,9 +188,10 @@ export function staffBroadcastText(input: { manager: string; offers: NudgeOffer[
 export function staffBroadcastPlanText(input: { plan: StaffBroadcastPlan; asked: number; skipped: Record<string, number>; withPhoto: boolean }): string {
   const { plan } = input;
   const n = plan.recipients.length;
+  const show = plan.listed ? 20 : 8;
   const names = plan.recipients
-    .slice(0, 8)
-    .map((r) => r.name || `…${r.phone.slice(-4)}`)
+    .slice(0, show)
+    .map((r) => (plan.listed ? `${r.name ? `${r.name} ` : ""}…${r.phone.slice(-4)}` : r.name || `…${r.phone.slice(-4)}`))
     .join(", ");
   const skippedText = Object.entries(input.skipped)
     .sort((a, b) => b[1] - a[1])
@@ -147,8 +200,10 @@ export function staffBroadcastPlanText(input: { plan: StaffBroadcastPlan; asked:
     .join("; ");
   const sample = (plan.recipients[0]?.text || "").replace("{имя}", plan.recipients[0]?.name || "");
   return [
-    `Рассылка с ${plan.via}: *${n}* ${n < input.asked ? `(просили ${input.asked}, подходящих меньше) ` : ""}— ${plan.focus}.`,
-    `Кому: ${names}${n > 8 ? ` и ещё ${n - 8}` : ""}.`,
+    plan.listed
+      ? `Рассылка с ${plan.via}: *${n}* по вашему списку${n < input.asked ? ` (номеров было ${input.asked})` : ""} — ${plan.focus}.`
+      : `Рассылка с ${plan.via}: *${n}* ${n < input.asked ? `(просили ${input.asked}, подходящих меньше) ` : ""}— ${plan.focus}.`,
+    `Кому: ${names}${n > show ? ` и ещё ${n - show}` : ""}.`,
     ...(skippedText ? [`Не беру: ${skippedText}.`] : []),
     "",
     `Текст${input.withPhoto ? " (с фото позиции)" : ""}:`,

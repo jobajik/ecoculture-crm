@@ -35,7 +35,7 @@ import {
   type StaffTarget,
 } from "../src/lib/staffCommand";
 import { priceKey, type PriceRow } from "../src/lib/priceList";
-import { broadcastCount, isNoText, isYesText, parseStaffBroadcastPlan, pickBroadcastContacts, staffBroadcastText, STAFF_BROADCAST_MAX, type ContactCandidate } from "../src/lib/staffBroadcast";
+import { broadcastCount, isNoText, isYesText, parseStaffBroadcastPlan, phonesInText, pickBroadcastContacts, pickListedContacts, staffBroadcastPlanText, staffBroadcastText, STAFF_BROADCAST_MAX, type ContactCandidate } from "../src/lib/staffBroadcast";
 import { focusOffers } from "../src/lib/staffBroadcastRunner";
 import type { BotPhoto } from "../src/lib/botPhotos";
 
@@ -209,6 +209,28 @@ check("«без фото» — false, остальное — с фото", [pars
 check("сколько: не назвал — 20, много — предел", [broadcastCount(0), broadcastCount(15), broadcastCount(200)], [20, 15, STAFF_BROADCAST_MAX]);
 check("«ДА» и «НЕТ»", [isYesText("Да"), isYesText("да, запускай!"), isYesText("иә"), isYesText("да нет наверное подумаю ещё"), isNoText("Нет"), isNoText("не надо"), isNoText("нет цены?")], [true, true, true, false, true, true, false]);
 check("план старше 3 часов — забыт", [!!parseStaffBroadcastPlan(JSON.stringify({ at: new Date().toISOString(), recipients: [] })), parseStaffBroadcastPlan(JSON.stringify({ at: new Date(Date.now() - 4 * 3600000).toISOString(), recipients: [] }))], [true, null]);
+
+// Номера списком (02.11.2026: «Сделай рассылки с ценами … этим клиентам» и девять номеров — бот взял своих «тёплых»).
+const listedText = "Чат Бот\nСделай рассылки с ценами на ассортимент Хризантемы, эустома,\nЭтим клиентама\n+7 747 090 8997\n+7 747 823 9543\n+7 771 573 3731\n8 (771) 442-30-28\n+7 747 090 8997\n+7 727 300 1122";
+check("номера из поручения: мобильные, без повторов и городских", phonesInText(listedText), ["77470908997", "77478239543", "77715733731", "77714423028"]);
+check("без номеров — пусто (числа и категории не номера)", phonesInText("Сделай рассылку 20 клиентам, хризантема 3 категории, 60 см, 1500 шт"), []);
+const lp = pickListedContacts(
+  [
+    { key: "a", phone: "77470000001", name: "Асель", kind: "client", refId: "c1", managerEmail: "m@x" },
+    { key: "staff1", phone: "77470000002", name: "", kind: "contact", refId: "", managerEmail: "m@x" },
+    { key: "stop1", phone: "77470000003", name: "", kind: "lead", refId: "l1", managerEmail: "m@x" },
+    { key: "never", phone: "77470000004", name: "", kind: "contact", refId: "", managerEmail: "m@x" },
+  ],
+  { staff: new Set(["staff1"]), optedOut: new Set(["stop1"]) }
+);
+check("по списку: берём и не писавших, режем только своих и СТОП", [lp.take.map((c) => c.key), lp.skipped], [["a", "never"], { "наш сотрудник": 1, "отписался (СТОП)": 1 }]);
+const lpText = staffBroadcastPlanText({
+  plan: { at: new Date().toISOString(), listed: true, line: "", via: "вашего номера", title: "", fileId: "", fileName: "", focus: "Хризантема, Эустома", recipients: lp.take.map((c) => ({ ...c, text: "Здравствуйте, {имя}!" })) },
+  asked: 4,
+  skipped: lp.skipped,
+  withPhoto: true,
+});
+check("план по списку: «по вашему списку», имя и хвост номера", [lpText.includes("по вашему списку"), lpText.includes("Асель …0001"), lpText.includes("…0004")], [true, true, true]);
 
 const nowB = new Date("2026-10-27T05:00:00Z");
 const cand = (key: string, p: Partial<ContactCandidate>): ContactCandidate => ({ key, phone: `7701${key}`, name: key, kind: "client", refId: key, managerEmail: "m@x", lastInAt: "2026-10-20T10:00:00Z", boughtFocus: false, closed: "", ...p });
