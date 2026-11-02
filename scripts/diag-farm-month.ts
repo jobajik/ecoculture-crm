@@ -17,6 +17,10 @@ import { listShipments } from "../src/lib/repo/shipments";
 import { listWriteoffs } from "../src/lib/repo/writeoffs";
 import { listStaffTakeouts } from "../src/lib/repo/staffTakeouts";
 import { listUsers } from "../src/lib/repo/users";
+import { listPointDays } from "../src/lib/repo/point";
+import { listPayments } from "../src/lib/repo/payments";
+import { listPrices } from "../src/lib/repo/prices";
+import { currentPrices, priceFor } from "../src/lib/priceList";
 import { localDayKey } from "../src/lib/timezone";
 import { isConsignment, isRegionOrder } from "../src/lib/orderKind";
 import { FARM_LABELS, FLOWER_TYPE_LABELS, flowerTypesForFarm, formatGrade, ORDER_STATUSES } from "../src/lib/constants";
@@ -55,15 +59,18 @@ async function main() {
   const flowers = new Set(flowerTypesForFarm(farm));
   const inMonth = (iso: string, ym = month) => day(iso).startsWith(ym);
 
-  await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.SHIPMENTS, SHEET_TABS.WRITEOFFS, SHEET_TABS.STAFF_TAKEOUTS]);
-  const [batches, orders, shipments, writeoffs, takeouts, users] = await Promise.all([
+  await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.SHIPMENTS, SHEET_TABS.WRITEOFFS, SHEET_TABS.STAFF_TAKEOUTS, SHEET_TABS.PAYMENTS]);
+  const [batches, orders, shipments, writeoffs, takeouts, users, pointDays, payments] = await Promise.all([
     listBatches(),
     listOrdersWithItems(),
     listShipments(),
     listWriteoffs(),
     listStaffTakeouts().catch(() => []),
     listUsers().catch(() => []),
+    listPointDays().catch(() => []),
+    listPayments().catch(() => []),
   ]);
+  const priceRows = await listPrices().catch(() => []);
   const nameOf = new Map(users.map((u) => [u.email.toLowerCase(), u.name]));
   const batchById = new Map(batches.map((b) => [b.batchId, b]));
   const ours = (b: { flowerType: string } | undefined) => !!b && flowers.has(b.flowerType);
@@ -194,6 +201,87 @@ async function main() {
   for (const [r, q] of Array.from(woByReason.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8)) console.log(`    ${r.slice(0, 40).padEnd(40)} ${fmt(q).padStart(8)}`);
   console.log(`  списано по категориям: ${Array.from(woByGrade.entries()).sort((a, b) => b[1] - a[1]).map(([g, q]) => `${formatGrade(g)} ${fmt(q)}`).join(" · ")}`);
   console.log(`ВЫДАНО сотрудникам: ${fmt(toTotal)} шт.${toSum ? ` на ${fmt(toSum)} ₸` : ""}`);
+
+  // --- Продажи другими способами счёта (02.11.2026: владелец — «продано и выручка не те») ---
+  // ВСЁ, что ушло по заявкам месяца, — продажи клиентам, Пожарка, регионы, наши магазины. Где цены в заявке нет
+  // (регион, магазин), — по клиентскому прайсу на день оформления заявки.
+  console.log("\nВСЕ ПРОДАЖИ МЕСЯЦА (клиенты + Пожарка + регионы + наши магазины; без цены в заявке — по прайсу на день заявки):");
+  const priceOnDay = new Map<string, ReturnType<typeof currentPrices>>();
+  const all = new Map<string, Acc & { byList: number }>();
+  const allGrade = new Map<string, Acc>();
+  const allTotal = acc();
+  for (const o of orders) {
+    if (o.status === ORDER_STATUSES.CANCELLED || !inMonth(o.createdAt)) continue;
+    const d = day(o.createdAt);
+    if (!priceOnDay.has(d)) priceOnDay.set(d, currentPrices(priceRows, d));
+    for (const i of o.items.filter((x) => flowers.has(x.flowerType))) {
+      const b = bucketOf(o);
+      if (!all.has(b)) all.set(b, { ...acc(), byList: 0 });
+      let price = i.unitPrice;
+      if (!(price > 0)) {
+        price = priceFor(priceOnDay.get(d)!, i.flowerType, i.variety, i.grade);
+        if (price > 0) all.get(b)!.byList += i.quantity;
+      }
+      add(all.get(b)!, i.quantity, price);
+      add(allTotal, i.quantity, price);
+      if (!allGrade.has(i.grade)) allGrade.set(i.grade, acc());
+      add(allGrade.get(i.grade)!, i.quantity, price);
+    }
+  }
+  for (const [b, a] of Array.from(all.entries()).sort((x, y) => y[1].qty - x[1].qty))
+    console.log(`  ${b.padEnd(26)} ${fmt(a.qty).padStart(9)} шт. · ${fmt(a.sum).padStart(12)} ₸ · средняя ${fmt(avg(a))}${a.byList ? ` (по прайсу: ${fmt(a.byList)} шт.)` : ""}${a.qty - a.pricedQty ? ` · без цены и в прайсе: ${fmt(a.qty - a.pricedQty)} шт.` : ""}`);
+  console.log(`  ИТОГО                      ${fmt(allTotal.qty).padStart(9)} шт. · ${fmt(allTotal.sum).padStart(12)} ₸ · средняя ${fmt(avg(allTotal))} · ${pct(allTotal.qty, cutTotal)} от срезанного`);
+  console.log("  по категориям (всё вместе):");
+  for (const [g, a] of Array.from(allGrade.entries()).sort((x, y) => y[1].qty - x[1].qty)) console.log(`    ${formatGrade(g).padEnd(14)} ${fmt(a.qty).padStart(9)} шт. · ${fmt(a.sum).padStart(12)} ₸ · средняя ${fmt(avg(a))}`);
+
+  console.log("\nПРОДАЖИ — ДРУГИЕ СПОСОБЫ СЧЁТА:");
+  const itemById = new Map<string, { order: (typeof orders)[number]; price: number }>();
+  for (const o of orders) for (const i of o.items) itemById.set(i.itemId, { order: o, price: i.unitPrice });
+  // а) по дню ДОСТАВКИ
+  const byDelivery = new Map<string, Acc>();
+  for (const o of orders) {
+    if (o.status === ORDER_STATUSES.CANCELLED || !inMonth(o.deliveryDate)) continue;
+    for (const i of o.items.filter((x) => flowers.has(x.flowerType))) {
+      const b = bucketOf(o);
+      if (!byDelivery.has(b)) byDelivery.set(b, acc());
+      add(byDelivery.get(b)!, i.quantity, i.unitPrice);
+    }
+  }
+  console.log("  а) заявки по дню ДОСТАВКИ в месяце:");
+  for (const [b, a] of Array.from(byDelivery.entries())) console.log(`     ${b.padEnd(26)} ${fmt(a.qty).padStart(9)} шт. · ${fmt(a.sum).padStart(12)} ₸ · средняя ${fmt(avg(a))}`);
+  // б) по факту ОТГРУЗКИ в месяце (журнал отгрузок × цена позиции)
+  const byShip = new Map<string, Acc>();
+  let shipNoItem = 0;
+  for (const sh of shipped) {
+    const it = itemById.get(sh.itemId);
+    if (!it) {
+      shipNoItem += sh.quantity;
+      continue;
+    }
+    const b = it.order.status === ORDER_STATUSES.CANCELLED ? "отменённые заявки" : bucketOf(it.order);
+    if (!byShip.has(b)) byShip.set(b, acc());
+    add(byShip.get(b)!, sh.quantity, it.price);
+  }
+  console.log("  б) по факту ОТГРУЗКИ в месяце (журнал отгрузок × цена позиции):");
+  for (const [b, a] of Array.from(byShip.entries())) console.log(`     ${b.padEnd(26)} ${fmt(a.qty).padStart(9)} шт. · ${fmt(a.sum).padStart(12)} ₸ · средняя ${fmt(avg(a))}`);
+  if (shipNoItem) console.log(`     без позиции заявки           ${fmt(shipNoItem).padStart(9)} шт.`);
+  // в) Пожарка — отчёты точки за дни месяца
+  const pd = pointDays.filter((d) => inMonth(d.date) && (d.farm || "") === farm);
+  const pdAll = pointDays.filter((d) => inMonth(d.date) && !(d.farm || ""));
+  const pdMoney = pd.reduce((s, d) => s + d.kaspi + d.cash, 0);
+  const pdStems = pd.reduce((s, d) => s + Object.entries(d.soldStems ?? {}).filter(([f]) => flowers.has(f)).reduce((x, [, q]) => x + q, 0), 0);
+  console.log(`  в) Пожарка — продано точкой (отчёты за ${pd.length} дн.): ${fmt(pdMoney)} ₸${pdStems ? `, ${fmt(pdStems)} шт., средняя ${fmt(pdMoney / pdStems)}` : ", штуки не вносили"}${pdAll.length ? `; ещё ${pdAll.length} дн. одной суммой без компании: ${fmt(pdAll.reduce((s, d) => s + d.kaspi + d.cash, 0))} ₸` : ""}`);
+  // г) деньги, пришедшие в месяце этому производству
+  const orderById = new Map(orders.map((o) => [o.orderId, o]));
+  let paid = 0;
+  for (const p of payments) {
+    if (!inMonth(p.date)) continue;
+    const o = orderById.get(p.orderId);
+    if (!o) continue;
+    const mine = p.farm ? p.farm === farm : p.flowerType ? flowers.has(p.flowerType) : o.items.length > 0 && o.items.every((i) => flowers.has(i.flowerType));
+    if (mine) paid += p.amount;
+  }
+  console.log(`  г) деньги, пришедшие в месяце по заявкам ${FARM_LABELS[farm] ?? farm} (журнал оплат, по дню оплаты): ${fmt(paid)} ₸`);
 
   // --- Остаток срезанного в месяце ---
   const left = cut.reduce((s, b) => s + b.quantityRemaining, 0);
