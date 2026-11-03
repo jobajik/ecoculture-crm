@@ -1,4 +1,4 @@
-import { FLOWER_TYPE_LABELS, formatGrade } from "./constants";
+import { FLOWER_TYPE_LABELS, baseFlowerType, formatGrade } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Фото для клиентов (владелец, 01.10.2026: «надо, чтобы ты отправлял клиентам
@@ -110,7 +110,7 @@ export function flowersInText(text: string): string[] {
 /** Фото цветка для каталога: свежие первыми; первое — большое, следующие три — галерея. */
 export function catalogPhotos(photos: BotPhoto[], flowerType: string): BotPhoto[] {
   return photos
-    .filter((p) => p.active && p.fileId && !isInfoPhoto(p) && p.flowerType === flowerType)
+    .filter((p) => p.active && p.fileId && !isInfoPhoto(p) && p.flowerType === baseFlowerType(flowerType))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
     .slice(0, 4);
 }
@@ -204,7 +204,7 @@ export function pickItemPhoto(
   const g = norm(item.grade);
   const liveSent = photos.some((p) => !isInfoPhoto(p) && p.caption && recent.includes(p.caption.slice(0, 40)));
   const scored = photos
-    .filter((p) => p.active && p.fileId && p.flowerType === item.flowerType)
+    .filter((p) => p.active && p.fileId && p.flowerType === baseFlowerType(item.flowerType))
     .filter((p) => !(p.caption && recent.includes(p.caption.slice(0, 40))))
     .filter((p) => !(isInfoPhoto(p) && infoSent.includes(p.photoId)))
     // Инфографика — только после ЖИВОГО фото в этом разговоре (14.10.2026: «[фото:» в памяти было от прошлой

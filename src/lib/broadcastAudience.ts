@@ -3,7 +3,7 @@ import { listLeads } from "./repo/leads";
 import { listOrdersWithItems } from "./repo/orders";
 import { optedOutKeys } from "./repo/broadcasts";
 import { prefetchTables, SHEET_TABS } from "./sheets";
-import { ORDER_STATUSES } from "./constants";
+import { ORDER_STATUSES, baseFlowerType } from "./constants";
 import { isNotASale } from "./orderKind";
 import { prepareAudience, type AudienceCandidate, type AudienceRow } from "./broadcast";
 
@@ -33,7 +33,7 @@ export async function loadAudience(options: { withOrders?: boolean } = {}): Prom
     if (!o.clientId || o.status === ORDER_STATUSES.CANCELLED) continue;
     if (!isNotASale(o)) {
       const set = boughtFlowers.get(o.clientId) ?? new Set<string>();
-      for (const it of o.items) if (it.quantity > 0) set.add(it.flowerType);
+      for (const it of o.items) if (it.quantity > 0) set.add(baseFlowerType(it.flowerType));
       boughtFlowers.set(o.clientId, set);
     }
     const day = (o.createdAt || "").slice(0, 10);

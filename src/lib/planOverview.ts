@@ -22,7 +22,7 @@ import type { SalesSnapshot } from "./salesAnalytics";
  * Всё считается из уже прочитанного, чистой функцией (`check-plan-overview`).
  */
 
-export const FLOWER_ORDER: string[] = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+export const FLOWER_ORDER: string[] = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
 
 /** Отстаёт — если выполнение ниже темпа больше чем на столько процентных пунктов. */
 export const BEHIND_MARGIN = 15;
@@ -265,6 +265,9 @@ export function buildPlanOverview(input: {
   // --- Что не заполнено ------------------------------------------------------
   const filledWeeks = weeks.filter((w) => (planByWeek[w.code] ?? 0) > 0).length;
   const flowersWithForecast = harvestFlowers.filter((f) => f.forecast > 0);
+  // Хризантема Rose Farm — новая культура (03.11.2026): прогноз по ней ждём, только когда на неё есть план или прогноз,
+  // иначе пункт «Прогноз срезки» не закрылся бы ни в одном месяце, где её просто нет.
+  const forecastNeeded = harvestFlowers.filter((f) => f.flowerType !== FLOWER_TYPES.CHRYSANTHEMUM_RF || f.forecast > 0 || f.planned > 0);
   const checklist: ChecklistItem[] = [
     {
       key: "sales",
@@ -287,12 +290,12 @@ export function buildPlanOverview(input: {
       key: "forecast",
       label: "Прогноз срезки",
       detail:
-        flowersWithForecast.length === FLOWER_ORDER.length
+        flowersWithForecast.length >= forecastNeeded.length
           ? "по всем цветкам"
           : flowersWithForecast.length === 0
             ? "не загружен"
-            : `нет: ${harvestFlowers.filter((f) => f.forecast <= 0).map((f) => f.label.toLowerCase()).join(", ")}`,
-      done: flowersWithForecast.length === FLOWER_ORDER.length,
+            : `нет: ${forecastNeeded.filter((f) => f.forecast <= 0).map((f) => f.label.toLowerCase()).join(", ")}`,
+      done: flowersWithForecast.length >= forecastNeeded.length,
       href: `/plans/balance?period=${month}`,
     },
   ];

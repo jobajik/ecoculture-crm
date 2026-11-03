@@ -8,7 +8,7 @@ import type { Picklist, PicklistLine, PicklistOrder } from "@/lib/picklist";
 import { orderPicklistColumns } from "@/lib/picklistOrder";
 import { orders as orderWord } from "@/lib/plural";
 
-const TYPE_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const TYPE_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 /** «Айгерим Смагулова» → «Айгерим С.» — в шапке места мало. */
 function shortName(full: string): string {

@@ -95,7 +95,7 @@ check("агроном Есентая НЕ пишет розу", mayWrite("esenta
 check("агроном Есентая НЕ пишет эустому", mayWrite("esentai", "eustoma"), false);
 check("админ пишет любой цветок", [mayWrite(null, "rose"), mayWrite(null, "chrysanthemum")], [true, true]);
 
-check("сетка агронома Rose Farm", flowerTypesForFarm("rose_farm"), ["rose", "eustoma"]);
+check("сетка агронома Rose Farm", flowerTypesForFarm("rose_farm"), ["rose", "eustoma", "chrysanthemum_rf"]);
 check("сетка агронома Есентая", flowerTypesForFarm("esentai"), ["chrysanthemum"]);
 check(
   "у агронома Есентая нет розы в сетке",

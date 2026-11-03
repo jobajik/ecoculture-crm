@@ -155,14 +155,14 @@ check("за два дня итого", twoDays.total, 157_000);
 check(
   "порядок цветков привычный и не зависит от сумм",
   day.rows.map((r) => r.flowerType),
-  [ROSE, CHR, EUS]
+  [ROSE, CHR, "chrysanthemum_rf", EUS]
 );
 
 // --- Пустая база не падает ---------------------------------------------------
 
 const empty = cashByFlower([], "2026-09-01", "2026-09-30");
 check("пустая касса: итого ноль", empty.total, 0);
-check("но строки всё равно есть — с нулями", empty.rows.length, 3);
+check("но строки всё равно есть — с нулями", empty.rows.length, 4);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

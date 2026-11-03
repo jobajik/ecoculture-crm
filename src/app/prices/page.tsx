@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getCurrentPrices, listPrices } from "@/lib/repo/prices";
 import { listVarietiesByType } from "@/lib/repo/varieties";
-import { FLOWER_TYPES, ROLES } from "@/lib/constants";
+import { FLOWER_TYPES, FLOWER_TYPE_LABELS_PLURAL, ROLES } from "@/lib/constants";
 import { PRICE_KINDS, cleanPriceKind, priceMapForClient } from "@/lib/priceList";
 import { priceChangeDays, daysSinceLastChange } from "@/lib/priceChanges";
 import PriceBoard from "@/components/PriceBoard";
@@ -20,7 +20,7 @@ import { salesTabsFor } from "../sales/tabs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
 
 /** После скольких дней без правок прайс считаем залежавшимся. */
 const STALE_DAYS = 30;
@@ -55,7 +55,13 @@ export default async function PricesPage({
   const changeDays = priceChangeDays(all);
   const today = localDayKey();
   const sinceChange = daysSinceLastChange(changeDays, today);
-  const filled = Array.from(prices.values()).filter((r) => r.price > 0).length;
+  const filled = Array.from(prices.values()).filter((r) => r.price > 0 && !r.borrowedFrom).length;
+  // Цветок без своих цен на часть категорий берёт цены другого (`PRICE_BORROW`) — сказать это над его прайсом.
+  const notes: Record<string, string> = {};
+  for (const r of Array.from(prices.values())) {
+    if (!r.borrowedFrom || notes[r.flowerType]) continue;
+    notes[r.flowerType] = `Где своей цены нет, стоит цена ${r.borrowedFrom === FLOWER_TYPES.CHRYSANTHEMUM ? "хризантемы Есентая" : FLOWER_TYPE_LABELS_PLURAL[r.borrowedFrom] ?? r.borrowedFrom}. Поставьте свою — она заменит её только здесь.`;
+  }
 
   const stale = sinceChange !== null && sinceChange > STALE_DAYS;
   const lastChange =
@@ -144,6 +150,7 @@ export default async function PricesPage({
         canEdit={canEdit}
         kind={kind}
         history={<PriceChangesView days={changeDays} />}
+        notes={notes}
       />
     </div>
   );

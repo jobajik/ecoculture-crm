@@ -1061,6 +1061,8 @@ export const BONUS_RATE_BY_FLOWER_TYPE: Record<string, number> = {
   rose: 0.015,
   eustoma: 0.015,
   chrysanthemum: 0.02,
+  // Хризантема Rose Farm (03.11.2026, владелец: «2 %, как хризантема») — ставка по цветку, а не по хозяйству.
+  chrysanthemum_rf: 0.02,
 };
 
 export function bonusRateFor(flowerType: string): number {
@@ -1070,9 +1072,30 @@ export function bonusRateFor(flowerType: string): number {
 export const FLOWER_TYPES = {
   ROSE: "rose",
   CHRYSANTHEMUM: "chrysanthemum",
+  // Хризантема, выращенная в Rose Farm (03.11.2026, владелец: «есть хриза на розах и есть хриза на Есентае; стоки,
+  // ответственные лица и всё остальное тоже должно быть прописано»). Отдельный ТОВАР, а не признак партии: свой склад и
+  // остаток, свой прайс, счёт и оплата от ТОО Rose Farm, отгружает и списывает зав. складом Rose Farm, Есентай её не видит.
+  // Всё «по хозяйству» (`getFarmFor`, разделение склада, счета, оплата, изоляция) работает от типа цветка само; всё «как у
+  // хризантемы» (категории, слово «категория», сорта, ликвид) — через `baseFlowerType()` / `isChrysanthemum()`.
+  CHRYSANTHEMUM_RF: "chrysanthemum_rf",
   EUSTOMA: "eustoma",
 } as const;
 export type FlowerType = (typeof FLOWER_TYPES)[keyof typeof FLOWER_TYPES];
+
+/** Хризантема любого хозяйства. */
+export const CHRYSANTHEMUM_TYPES: string[] = [FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF];
+
+export function isChrysanthemum(flowerType: string | null | undefined): boolean {
+  return !!flowerType && CHRYSANTHEMUM_TYPES.includes(flowerType);
+}
+
+/** Цветок «по сути», без хозяйства: хризантема Rose Farm — это хризантема (категории, сорта, слова). */
+export function baseFlowerType(flowerType: string): string {
+  return flowerType === FLOWER_TYPES.CHRYSANTHEMUM_RF ? FLOWER_TYPES.CHRYSANTHEMUM : flowerType;
+}
+
+/** Общий порядок цветков на экранах и в отчётах. */
+export const FLOWER_ORDER_ALL: string[] = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 // ---------------------------------------------------------------------------
 // Производства (ТОО). Каждый тип цветка выращивает своё хозяйство, и у каждого
@@ -1095,11 +1118,12 @@ export const FARM_BY_FLOWER_TYPE: Record<string, Farm> = {
   rose: FARMS.ROSE_FARM,
   eustoma: FARMS.ROSE_FARM,
   chrysanthemum: FARMS.ESENTAI,
+  chrysanthemum_rf: FARMS.ROSE_FARM,
 };
 
 /** Какие типы цветка выращивает производство (порядок важен для интерфейса). */
 export const FLOWER_TYPES_BY_FARM: Record<string, string[]> = {
-  rose_farm: ["rose", "eustoma"],
+  rose_farm: ["rose", "eustoma", "chrysanthemum_rf"],
   esentai: ["chrysanthemum"],
 };
 
@@ -1126,13 +1150,32 @@ export function flowerTypesForFarm(farm: string | null | undefined): string[] {
 export const FLOWER_TYPE_LABELS: Record<string, string> = {
   rose: "Роза",
   chrysanthemum: "Хризантема",
+  chrysanthemum_rf: "Хризантема Rose Farm",
   eustoma: "Эустома",
 };
+
+/**
+ * Подпись цветка там, где его ВЫБИРАЮТ (заявка, приёмка, выдача, прайс): хризантема двух хозяйств, и обе строки
+ * должны называть хозяйство — «Хризантема Есентай» и «Хризантема Rose Farm». В текстах клиенту остаётся
+ * `FLOWER_TYPE_LABELS` («Хризантема»).
+ */
+export function flowerPickLabel(flowerType: string): string {
+  if (flowerType === FLOWER_TYPES.CHRYSANTHEMUM) return "Хризантема Есентай";
+  return FLOWER_TYPE_LABELS[flowerType] ?? flowerType;
+}
+
+/** То же во множественном числе — вкладки прайса и склада. */
+export function flowerPickLabelPlural(flowerType: string): string {
+  if (flowerType === FLOWER_TYPES.CHRYSANTHEMUM) return "Хризантемы Есентай";
+  return FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType;
+}
 
 /** Множественная форма — для заголовков разделов («Розы», «Хризантемы»). */
 export const FLOWER_TYPE_LABELS_PLURAL: Record<string, string> = {
   rose: "Розы",
-  chrysanthemum: "Хризантемы",
+  // Во множественном — заголовки внутренних экранов (склад, прайс, планы, аналитика): хозяйство названо у обеих.
+  chrysanthemum: "Хризантемы Есентай",
+  chrysanthemum_rf: "Хризантемы Rose Farm",
   eustoma: "Эустома",
 };
 
@@ -1193,6 +1236,7 @@ export const EUSTOMA_GRADES = ["Стандарт", "50", "Мини-микс", "�
 export const GRADES_BY_FLOWER_TYPE: Record<string, readonly string[]> = {
   rose: ROSE_GRADES,
   chrysanthemum: CHRYSANTHEMUM_GRADES,
+  chrysanthemum_rf: CHRYSANTHEMUM_GRADES,
   eustoma: EUSTOMA_GRADES,
 };
 
@@ -1248,11 +1292,15 @@ export const DEFAULT_VARIETIES: Record<string, string[]> = {
   ],
   eustoma: ["Alissa White", "Alissa Pink", "Corelli Pink"],
 };
+// Хризантема Rose Farm — те же сорта, пока во вкладке Varieties нет своих строк (`listVarietiesByType` берёт тогда сорта
+// хризантемы из таблицы).
+DEFAULT_VARIETIES.chrysanthemum_rf = [...DEFAULT_VARIETIES.chrysanthemum];
 
 /** Как называется поле градации в интерфейсе — у роз это длина, у хризантем категория. */
 export const GRADE_LABELS: Record<string, string> = {
   rose: "Длина",
   chrysanthemum: "Категория",
+  chrysanthemum_rf: "Категория",
   eustoma: "Длина",
 };
 
@@ -1370,6 +1418,7 @@ export const TOP_GRADES_BY_FLOWER_TYPE: Record<string, string[]> = {
   // роза начинается с 80 см; всё, что короче, это обычный товарный цветок.
   rose: ["80", "90", "100"],
   chrysanthemum: ["Высшая"],
+  chrysanthemum_rf: ["Высшая"],
   eustoma: ["Стандарт"],
 };
 
@@ -1387,6 +1436,7 @@ export const TOP_GRADES_BY_FLOWER_TYPE: Record<string, string[]> = {
 export const LIQUID_GRADES_BY_FLOWER_TYPE: Record<string, string[]> = {
   rose: ["40", "50", "60", "70", "80", "90", "100"],
   chrysanthemum: ["Высшая", "Первая", "Вторая"],
+  chrysanthemum_rf: ["Высшая", "Первая", "Вторая"],
   eustoma: ["Стандарт", "50"],
 };
 
@@ -1399,6 +1449,7 @@ const GRADE_NOUN: Record<string, [string, string, string]> = {
   rose: ["ростовка", "ростовки", "ростовок"],
   eustoma: ["ростовка", "ростовки", "ростовок"],
   chrysanthemum: ["категория", "категории", "категорий"],
+  chrysanthemum_rf: ["категория", "категории", "категорий"],
 };
 
 /**
@@ -1422,7 +1473,7 @@ export function gradeNoun(flowerType: string | null, count: number): string {
 /** Заголовок колонки: «Ростовка» или «Категория». */
 export function gradeColumnLabel(flowerType: string | null): string {
   if (!flowerType) return "Позиция";
-  return flowerType === "chrysanthemum" ? "Категория" : "Ростовка";
+  return isChrysanthemum(flowerType) ? "Категория" : "Ростовка";
 }
 
 /**
@@ -1433,8 +1484,8 @@ export function gradeColumnLabel(flowerType: string | null): string {
 export function gradeColumnLabelFor(flowerTypes: readonly string[]): string {
   const set = new Set(flowerTypes);
   if (set.size === 0) return "Позиция";
-  const hasChrysanthemum = set.has("chrysanthemum");
-  const hasOther = Array.from(set).some((t) => t !== "chrysanthemum");
+  const hasChrysanthemum = Array.from(set).some(isChrysanthemum);
+  const hasOther = Array.from(set).some((t) => !isChrysanthemum(t));
   if (hasChrysanthemum && hasOther) return "Ростовка и категория";
   return hasChrysanthemum ? "Категория" : "Ростовка";
 }
@@ -1442,8 +1493,8 @@ export function gradeColumnLabelFor(flowerTypes: readonly string[]): string {
 /** «5 ростовок» / «5 категорий» / «5 позиций» — по составу списка. */
 export function gradeNounFor(flowerTypes: readonly string[], count: number): string {
   const set = new Set(flowerTypes);
-  const hasChrysanthemum = set.has("chrysanthemum");
-  const hasOther = Array.from(set).some((t) => t !== "chrysanthemum");
+  const hasChrysanthemum = Array.from(set).some(isChrysanthemum);
+  const hasOther = Array.from(set).some((t) => !isChrysanthemum(t));
   if (set.size === 0 || (hasChrysanthemum && hasOther)) return gradeNoun(null, count);
   return gradeNoun(hasChrysanthemum ? "chrysanthemum" : "rose", count);
 }
@@ -1666,6 +1717,7 @@ export const ORDER_STATUS_LABELS: Record<string, string> = {
 export const DEFAULT_SHELF_LIFE_DAYS: Record<string, number> = {
   rose: 7,
   chrysanthemum: 18,
+  chrysanthemum_rf: 18,
   eustoma: 10,
 };
 

@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // Порядок цветков в переключателе — тот же, что везде в системе.
-const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
 
 export default async function ShipmentPlansPage({
   searchParams,

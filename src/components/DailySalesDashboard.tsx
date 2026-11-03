@@ -25,6 +25,7 @@ const REFRESH_MS = 30_000;
 const TYPE_COLOR: Record<string, string> = {
   rose: CHART_COLORS.series1,
   chrysanthemum: CHART_COLORS.series2,
+  chrysanthemum_rf: CHART_COLORS.series4,
   eustoma: CHART_COLORS.series3,
 };
 

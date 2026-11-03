@@ -28,7 +28,7 @@ export const revalidate = 0;
 
 const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const money = (n: number) => `${nf(n)} ₸`;
-const FLOWERS = ["rose", "chrysanthemum", "eustoma"];
+const FLOWERS = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 /**
  * «Продажи → Цветы»: что продали за месяц по цветку, ростовке или категории,

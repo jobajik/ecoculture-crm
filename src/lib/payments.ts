@@ -342,10 +342,11 @@ function round2(n: number): number {
 // ---------------------------------------------------------------------------
 
 /** Порядок и подписи реализаций — как везде: роза, хризантема, эустома. */
-export const REALIZATION_FLOWERS = ["rose", "chrysanthemum", "eustoma"] as const;
+export const REALIZATION_FLOWERS = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"] as const;
 export const REALIZATION_LABELS: Record<string, string> = {
   rose: "роза",
   chrysanthemum: "хризантема",
+  chrysanthemum_rf: "хризантема Rose Farm",
   eustoma: "эустома",
 };
 

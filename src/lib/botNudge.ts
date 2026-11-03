@@ -1,4 +1,5 @@
 import { BOT_MODES, type BotChat, type BotSettings } from "./broadcast";
+import { isChrysanthemum } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Дожим молчащего клиента (владелец, 01.10.2026: «бот уходит в инактив, когда
@@ -198,7 +199,7 @@ export function mentionedGrades(clientText: string): string[] {
 }
 
 const gradeMatches = (flowerType: string, grade: string, asked: string) =>
-  normWord(grade) === normWord(asked) || (flowerType !== "chrysanthemum" && normWord(grade).startsWith(normWord(asked)));
+  normWord(grade) === normWord(asked) || (!isChrysanthemum(flowerType) && normWord(grade).startsWith(normWord(asked)));
 
 /**
  * Текст касания. Цены — из `pickNudgeOffers`, то есть из прайса. Оформление

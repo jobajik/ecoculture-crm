@@ -88,7 +88,7 @@ export const STAFF_COMMAND_SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
         required: ["flowerType", "variety", "grade", "many", "quantity", "kind", "color"],
         properties: {
-          flowerType: { type: "string", enum: ["rose", "chrysanthemum", "eustoma"] },
+          flowerType: { type: "string", enum: ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"], description: "chrysanthemum_rf — хризантема Rose Farm, только если прямо сказано «Rose Farm», «с роз», «розовской»; иначе хризантема — chrysanthemum (Есентай)." },
           variety: S("Сорт ТОЧНО как в списках ниже (фото или прайс), только если он НАЗВАН или цвет прямо в названии сорта («белая эустома» → Alissa White, «розовая эустома» → Alissa Pink). Цвет розы («ярко-розовые», «нежные») или вид («кустовая») — НЕ сорт: пусто, цвет — в color. Не угадывай."),
           color: S("Цвет, если назван («ярко-розовые», «нежные», «белые»). Иначе пусто."),
           grade: S("Категория или длина, если названа («Первая», «Третья», «60», «Стандарт», «Мини-микс»). Эустома «классическая» — Стандарт. Иначе пусто."),
@@ -138,7 +138,7 @@ export function staffCommandPrompt(photoLabels: string[], priceList = "", now = 
   ].join("\n");
 }
 
-const FLOWERS = ["rose", "chrysanthemum", "eustoma"];
+const FLOWERS = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 const INTENTS = ["send", "quote", "broadcast", "send_order", "remind", "mute", "unmute", "other"];
 
 export function parseStaffCommand(raw: unknown): StaffCommand {

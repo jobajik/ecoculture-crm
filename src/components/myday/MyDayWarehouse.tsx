@@ -324,7 +324,7 @@ function plural(n: number, one: string, few: string, many: string): string {
 }
 
 /** «роза 7 · хризантема 18 · эустома 10 дн.» — сроки хранения из настроек, для подсказки «Сколько дней лежит». */
-function shelfNoteOf(settings: { shelfLifeDays: Record<string, number> }, types: string[] = ["rose", "chrysanthemum", "eustoma"]): string {
-  const name: Record<string, string> = { rose: "роза", chrysanthemum: "хризантема", eustoma: "эустома" };
+function shelfNoteOf(settings: { shelfLifeDays: Record<string, number> }, types: string[] = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"]): string {
+  const name: Record<string, string> = { rose: "роза", chrysanthemum: "хризантема", chrysanthemum_rf: "хризантема Rose Farm", eustoma: "эустома" };
   return types.filter((t) => settings.shelfLifeDays[t]).map((t) => `${name[t] ?? t} ${settings.shelfLifeDays[t]}`).join(" · ") + " дн.";
 }

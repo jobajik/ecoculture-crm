@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { createStaffTakeoutAction } from "@/app/warehouse/actions";
-import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, formatGrade } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, formatGrade, flowerPickLabel } from "@/lib/constants";
 import { findSimilarStaff } from "@/lib/staffTakeout";
 import { unwrap } from "@/lib/actionResult";
 
@@ -223,7 +223,7 @@ export default function StaffTakeoutForm({
           <select className="input" value={flowerType} onChange={(e) => pickFlower(e.target.value)}>
             {flowerTypes.map((t) => (
               <option key={t} value={t}>
-                {FLOWER_TYPE_LABELS[t] ?? t}
+                {flowerPickLabel(t)}
               </option>
             ))}
           </select>

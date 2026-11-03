@@ -13,9 +13,9 @@ import { realizationsOf, type Realization } from "./payments";
 import { dueDateOf, termDays } from "./debtReminder";
 
 /** Порядок цветков в денежных строках — как везде: роза, хризантема, эустома. */
-const FLOWER_ORDER_FOR_MONEY = ["rose", "chrysanthemum", "eustoma"];
+const FLOWER_ORDER_FOR_MONEY = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 /** Короткие подписи для узкой колонки суммы. */
-const FLOWER_SHORT: Record<string, string> = { rose: "роза", chrysanthemum: "хриз.", eustoma: "эуст." };
+const FLOWER_SHORT: Record<string, string> = { rose: "роза", chrysanthemum: "хриз.", chrysanthemum_rf: "хриз. RF", eustoma: "эуст." };
 
 /** Платёж в том виде, в каком его видит панель бухгалтера. */
 export interface FinancePayment {

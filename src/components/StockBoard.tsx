@@ -25,7 +25,7 @@ import type { StorageStatus } from "@/lib/shelfLife";
 const REFRESH_MS = 45_000;
 
 /** Порядок колонок на витрине: роза, хризантема, эустома. */
-const COLUMN_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const COLUMN_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 // Статус — это состояние, а не категория, поэтому цвет резервный и всегда
 // сопровождается словами: на печати и при дальтонизме цвет не читается.

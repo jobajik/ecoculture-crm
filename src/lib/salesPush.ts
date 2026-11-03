@@ -1,4 +1,4 @@
-import { FLOWER_TYPE_LABELS, formatGrade } from "./constants";
+import { FLOWER_TYPE_LABELS, formatGrade, isChrysanthemum } from "./constants";
 
 /**
  * «Распродаём в первую очередь» (13.10.2026, владелец: «надо, чтобы ты усиленно распродал 4 категорию по хризантеме,
@@ -82,7 +82,7 @@ export function pushLines(
     return {
       flowerType: p.flowerType,
       grade: p.grade,
-      label: `${FLOWER_TYPE_LABELS[p.flowerType] ?? p.flowerType}, ${p.flowerType === "chrysanthemum" ? `${p.grade.toLowerCase()} категория` : formatGrade(p.grade)}`,
+      label: `${FLOWER_TYPE_LABELS[p.flowerType] ?? p.flowerType}, ${isChrysanthemum(p.flowerType) ? `${p.grade.toLowerCase()} категория` : formatGrade(p.grade)}`,
       qty: rows.reduce((s, r) => s + r.qty, 0),
       varieties,
       bulkFrom: p.bulkFrom,

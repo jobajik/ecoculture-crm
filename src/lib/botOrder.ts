@@ -1,4 +1,4 @@
-import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor } from "./constants";
+import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor, isChrysanthemum } from "./constants";
 import { prettyKaspiPhone } from "./kaspiInvoice";
 import { plainTyping } from "./humanStyle";
 import { packFor, roundUpToPack } from "./packing";
@@ -49,7 +49,7 @@ export const BOT_ORDER_SCHEMA = {
         additionalProperties: false,
         required: ["flowerType", "variety", "grade", "quantity"],
         properties: {
-          flowerType: { type: "string", description: "rose, chrysanthemum или eustoma" },
+          flowerType: { type: "string", description: "rose, chrysanthemum, chrysanthemum_rf (хризантема Rose Farm) или eustoma" },
           variety: { type: "string", description: "Сорт точно как в складе" },
           grade: { type: "string", description: "Категория или длина точно как в складе" },
           quantity: { type: "integer", description: "Сколько стеблей" },
@@ -98,7 +98,7 @@ export function normalizeGrade(flowerType: string, raw: string): string {
   const t = norm(raw).replace(/\s*см\.?(?=\s|$)/, "").replace(/\s*категори[яи](?=\s|$)/, "").trim();
   const exact = grades.find((g) => norm(g) === t);
   if (exact) return exact;
-  if (flowerType === "chrysanthemum") {
+  if (isChrysanthemum(flowerType)) {
     const byNumber: Record<string, string> = { "1": "Первая", "2": "Вторая", "3": "Третья", "4": "Четвёртая", "высш": "Высшая" };
     const key = Object.keys(byNumber).find((k) => t === k || t.startsWith(k));
     if (key && grades.includes(byNumber[key])) return byNumber[key];
@@ -135,6 +135,33 @@ const itemName = (flowerType: string, variety: string, grade: string) =>
   `${FLOWER_TYPE_LABELS[flowerType] ?? flowerType}${variety ? ` ${variety}` : ""}${grade ? `, ${formatGrade(grade)}` : ""}`;
 
 /**
+ * Хризантема бывает двух хозяйств — отдельными товарами (`chrysanthemum` — Есентай, `chrysanthemum_rf` — Rose Farm).
+ * Клиенту бота это всё равно: он просит «хризантему Altaj, третья». Берём склад того хозяйства, что назвала модель, если
+ * там хватает; не хватает, а у другого хватает — другого; нет нигде — названного (дальше обычный вопрос про остаток).
+ */
+function chrysanthemumFarmFor(
+  it: { flowerType: string; variety: string; grade: string; quantity: number },
+  stock: StockRow[],
+  merged: Map<string, PlannedItem>
+): string {
+  if (!isChrysanthemum(it.flowerType)) return it.flowerType;
+  const other = it.flowerType === "chrysanthemum" ? "chrysanthemum_rf" : "chrysanthemum";
+  const grade = normalizeGrade(it.flowerType, it.grade);
+  const free = (ft: string) => {
+    const row = stock.find((s) => s.flower === ft && norm(s.variety) === norm(it.variety) && s.grade === grade);
+    if (!row) return -1;
+    return row.qty - (merged.get(`${ft}|${row.variety}|${grade}`)?.quantity ?? 0);
+  };
+  const mine = free(it.flowerType);
+  if (mine >= it.quantity) return it.flowerType;
+  const theirs = free(other);
+  if (theirs >= it.quantity) return other;
+  if (mine < 0 && theirs >= 0) return other;
+  if (mine < 0 && !stock.some((s) => s.flower === it.flowerType) && stock.some((s) => s.flower === other)) return other;
+  return it.flowerType;
+}
+
+/**
  * Можно ли оформить заявку по тому, что прислала модель. Нельзя — вопрос
  * клиенту, который это исправит: бот спросит, а не оформит неправильно.
  */
@@ -154,39 +181,40 @@ export function planBotOrder(input: {
   }
   const merged = new Map<string, PlannedItem>();
   for (const it of draft.items) {
-    if (!FLOWER_TYPE_LABELS[it.flowerType]) return { ok: false, question: "Уточните, пожалуйста, какой цветок: роза, хризантема или эустома?" };
+    const ft = chrysanthemumFarmFor(it, stock, merged);
+    if (!FLOWER_TYPE_LABELS[ft]) return { ok: false, question: "Уточните, пожалуйста, какой цветок: роза, хризантема или эустома?" };
     if (!Number.isFinite(it.quantity) || it.quantity <= 0 || it.quantity > 100000) {
-      return { ok: false, question: `Сколько штук «${itemName(it.flowerType, it.variety, it.grade)}» поставить?` };
+      return { ok: false, question: `Сколько штук «${itemName(ft, it.variety, it.grade)}» поставить?` };
     }
-    const grade = normalizeGrade(it.flowerType, it.grade);
-    const rows = stock.filter((s) => s.flower === it.flowerType && norm(s.variety) === norm(it.variety));
+    const grade = normalizeGrade(ft, it.grade);
+    const rows = stock.filter((s) => s.flower === ft && norm(s.variety) === norm(it.variety));
     if (!it.variety || rows.length === 0) {
-      const kinds = Array.from(new Set(stock.filter((s) => s.flower === it.flowerType).map((s) => s.variety))).slice(0, 6);
+      const kinds = Array.from(new Set(stock.filter((s) => s.flower === ft).map((s) => s.variety))).slice(0, 6);
       return {
         ok: false,
         question: kinds.length
-          ? `Какой сорт ${(FLOWER_TYPE_LABELS[it.flowerType] ?? "").toLowerCase()} поставить? Сейчас есть: ${kinds.join(", ")}.`
-          : `${FLOWER_TYPE_LABELS[it.flowerType]} сейчас нет на складе. Предложить другой цветок?`,
+          ? `Какой сорт ${(FLOWER_TYPE_LABELS[ft] ?? "").toLowerCase()} поставить? Сейчас есть: ${kinds.join(", ")}.`
+          : `${FLOWER_TYPE_LABELS[ft]} сейчас нет на складе. Предложить другой цветок?`,
       };
     }
     const variety = rows[0].variety;
     const row = rows.find((s) => s.grade === grade);
     if (!grade || !row) {
       const have = rows.map((s) => formatGrade(s.grade)).join(", ");
-      return { ok: false, question: `${itemName(it.flowerType, variety, "")}: какую ${it.flowerType === "chrysanthemum" ? "категорию" : "длину"} поставить? Есть: ${have}.` };
+      return { ok: false, question: `${itemName(ft, variety, "")}: какую ${isChrysanthemum(ft) ? "категорию" : "длину"} поставить? Есть: ${have}.` };
     }
-    const key = `${it.flowerType}|${variety}|${grade}`;
+    const key = `${ft}|${variety}|${grade}`;
     const quantity = (merged.get(key)?.quantity ?? 0) + it.quantity;
     // Пачки не разбиваем (владелец, 22.10.2026): не кратно пачке — вопрос с ближайшим большим числом, а не заявка.
-    const pack = packFor(it.flowerType, variety, grade);
+    const pack = packFor(ft, variety, grade);
     if (pack && quantity % pack !== 0) {
       const up = roundUpToPack(quantity, pack);
       const fits = up <= row.qty ? up : Math.floor(row.qty / pack) * pack;
       return {
         ok: false,
         question: fits > 0
-          ? `${itemName(it.flowerType, variety, grade)} идёт пачками по ${pack} шт. Сделать ${fits} шт. (${fits / pack} ${packWord(fits / pack)})?`
-          : `${itemName(it.flowerType, variety, grade)} идёт пачками по ${pack} шт., а сейчас столько нет. Предложить похожую позицию?`,
+          ? `${itemName(ft, variety, grade)} идёт пачками по ${pack} шт. Сделать ${fits} шт. (${fits / pack} ${packWord(fits / pack)})?`
+          : `${itemName(ft, variety, grade)} идёт пачками по ${pack} шт., а сейчас столько нет. Предложить похожую позицию?`,
       };
     }
     if (quantity > row.qty) {
@@ -194,14 +222,14 @@ export function planBotOrder(input: {
       return {
         ok: false,
         question: can > 0
-          ? `${itemName(it.flowerType, variety, grade)} сейчас есть около ${can} шт. Поставить ${can}?`
-          : `${itemName(it.flowerType, variety, grade)} сейчас закончилась. Предложить похожую позицию?`,
+          ? `${itemName(ft, variety, grade)} сейчас есть около ${can} шт. Поставить ${can}?`
+          : `${itemName(ft, variety, grade)} сейчас закончилась. Предложить похожую позицию?`,
       };
     }
-    const listPrice = input.priceOf(it.flowerType, variety, grade);
-    const unitPrice = listPrice > 0 && input.volumePrice ? input.volumePrice(it.flowerType, grade, quantity, listPrice) : listPrice;
-    if (!(unitPrice > 0)) return { ok: false, question: `На ${itemName(it.flowerType, variety, grade)} уточняю цену. Взять пока другую позицию?` };
-    merged.set(key, { flowerType: it.flowerType, variety, grade, quantity, unitPrice });
+    const listPrice = input.priceOf(ft, variety, grade);
+    const unitPrice = listPrice > 0 && input.volumePrice ? input.volumePrice(ft, grade, quantity, listPrice) : listPrice;
+    if (!(unitPrice > 0)) return { ok: false, question: `На ${itemName(ft, variety, grade)} уточняю цену. Взять пока другую позицию?` };
+    merged.set(key, { flowerType: ft, variety, grade, quantity, unitPrice });
   }
   return { ok: true, items: Array.from(merged.values()), deliveryDate: date };
 }

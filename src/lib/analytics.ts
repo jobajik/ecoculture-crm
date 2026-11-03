@@ -331,7 +331,7 @@ function share(part: number, total: number): number {
 }
 
 /** Порядок цветков одинаковый везде — тот же, что на главной. */
-const FLOWER_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const FLOWER_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 function flowerRank(flowerType: string): number {
   const i = FLOWER_ORDER.indexOf(flowerType);
   return i === -1 ? FLOWER_ORDER.length : i;

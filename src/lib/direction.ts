@@ -429,7 +429,7 @@ export function buildDirectionFact(input: {
 
   // Все три цветка показываем всегда, даже пустые: пустая строка здесь значит
   // «плана по этому цветку в регионы нет», и её надо видеть, а не искать.
-  const flowerOrder = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+  const flowerOrder = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
   const byFlower: FlowerFactRow[] = flowerOrder
     .filter((flowerType) => mineFlower(flowerType))
     .map((flowerType) => {

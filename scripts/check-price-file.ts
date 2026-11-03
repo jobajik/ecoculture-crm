@@ -50,7 +50,7 @@ async function main() {
   check(
     "лист на каждый цветок плюс подсказка",
     wb.worksheets.map((s) => s.name),
-    ["Розы", "Хризантемы", "Эустома", "Как заполнять"]
+    ["Розы", "Хризантемы Есентай", "Хризантемы Rose Farm", "Эустома", "Как заполнять"]
   );
 
   // --- Круг: прочитали свой же файл ----------------------------------------
@@ -108,7 +108,7 @@ async function main() {
   // обязана остаться как была.
   const cleared = new ExcelJS.Workbook();
   await cleared.xlsx.load(buffer as unknown as ArrayBuffer);
-  const chrys = cleared.getWorksheet("Хризантемы")!;
+  const chrys = cleared.getWorksheet("Хризантемы Есентай")!;
   chrys.getRow(2).eachCell((cell, col) => {
     if (col > 1) cell.value = null;
   });

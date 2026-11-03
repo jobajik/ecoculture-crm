@@ -227,7 +227,7 @@ export async function getLeaderboard(
       orders: rows.reduce((s, r) => s + r.orders, 0),
       targetAmount: rows.reduce((s, r) => s + r.targetAmount, 0),
     },
-    rates: Object.entries({ rose: 0, eustoma: 0, chrysanthemum: 0 }).map(([flowerType]) => ({
+    rates: Object.entries({ rose: 0, eustoma: 0, chrysanthemum: 0, chrysanthemum_rf: 0 }).map(([flowerType]) => ({
       flowerType,
       percent: bonusRateFor(flowerType) * 100,
     })),

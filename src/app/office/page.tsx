@@ -39,7 +39,7 @@ export default async function OfficePage({ searchParams }: { searchParams?: { vi
     }
     rows.set(k, r);
   }
-  const ORDER = ["rose", "chrysanthemum", "eustoma"];
+  const ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
   const list = Array.from(rows.values()).sort(
     (a, b) => ORDER.indexOf(a.flowerType) - ORDER.indexOf(b.flowerType) || a.variety.localeCompare(b.variety, "ru")
   );

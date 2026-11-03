@@ -534,7 +534,7 @@ export default function AnalyticsReport({
 
   const flowersOf = (key: string) =>
     key === "all"
-      ? ["rose", "chrysanthemum", "eustoma"]
+      ? ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"]
       : FLOWER_TYPES_BY_FARM[key] ?? [];
 
   type TabKey = "flower" | "main" | `s${number}`;
@@ -873,7 +873,7 @@ function DetailView({
 }) {
   const flowers = onlyFarm
     ? FLOWER_TYPES_BY_FARM[onlyFarm] ?? []
-    : ["rose", "chrysanthemum", "eustoma"];
+    : ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
   const gradeColumn = gradeColumnLabelFor(flowers);
   const gradeWord = (n: number) => gradeNounFor(flowers, n);
   const single = flowers.length === 1;

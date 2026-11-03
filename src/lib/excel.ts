@@ -69,8 +69,11 @@ function detectFlowerType(raw: string): FlowerType | null {
   const value = raw.trim().toLowerCase();
   if (!value) return null;
   if (value.startsWith("роз") || value === "rose") return FLOWER_TYPES.ROSE;
-  if (value.startsWith("хриз") || value === "chrysanthemum" || value.startsWith("chrys")) {
-    return FLOWER_TYPES.CHRYSANTHEMUM;
+  if (value.startsWith("хриз") || value.startsWith("chrys")) {
+    // «Хризантема Rose Farm» — отдельный товар Rose Farm; просто «хризантема» — Есентай.
+    return /rose|роуз|роз|\brf\b|_rf$/.test(value.replace(/^хриз\S*/, "").replace(/^chrys\S*?(?=_rf|\s|$)/, "")) || value === "chrysanthemum_rf"
+      ? FLOWER_TYPES.CHRYSANTHEMUM_RF
+      : FLOWER_TYPES.CHRYSANTHEMUM;
   }
   if (value.startsWith("эустом") || value.startsWith("евстом") || value.startsWith("лизиант") ||
       value === "eustoma" || value.startsWith("lisianth")) {
@@ -293,6 +296,7 @@ export async function buildBatchesTemplate(
   const allowedTypes = (farm ? flowerTypesForFarm(farm) : [
     FLOWER_TYPES.ROSE,
     FLOWER_TYPES.CHRYSANTHEMUM,
+    FLOWER_TYPES.CHRYSANTHEMUM_RF,
     FLOWER_TYPES.EUSTOMA,
   ]) as FlowerType[];
 
@@ -657,7 +661,7 @@ export async function buildPicklistWorkbook(picklist: {
     (picklist.shortageStems > 0 ? ` · не хватает на складе ${picklist.shortageStems} шт.` : "");
   collect.getCell("A3").font = { color: { argb: "FF666666" } };
 
-  const typeOrder = ["rose", "chrysanthemum", "eustoma"];
+  const typeOrder = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
   for (const type of typeOrder) {
     const lines = picklist.lines.filter((l) => l.flowerType === type);
     if (lines.length === 0) continue;
@@ -825,7 +829,7 @@ function weekNumberFromHeader(header: string): number | null {
 function flowerTypeFromSheetName(name: string): FlowerType | null {
   const value = name.trim().toLowerCase();
   if (value.startsWith("роз")) return FLOWER_TYPES.ROSE;
-  if (value.startsWith("хриз")) return FLOWER_TYPES.CHRYSANTHEMUM;
+  if (value.startsWith("хриз")) return /rose|роуз/.test(value) ? FLOWER_TYPES.CHRYSANTHEMUM_RF : FLOWER_TYPES.CHRYSANTHEMUM;
   if (value.startsWith("эустом") || value.startsWith("евстом")) return FLOWER_TYPES.EUSTOMA;
   return null;
 }
@@ -1024,7 +1028,7 @@ export async function buildForecastTemplate(
 ): Promise<Buffer> {
   const allowedTypes = (farm
     ? flowerTypesForFarm(farm)
-    : [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA]) as FlowerType[];
+    : [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA]) as FlowerType[];
 
   const weeks = weeksOfMonth(month);
   const weekColumns = weeks.map((w) => ({
@@ -1284,7 +1288,7 @@ export async function buildShipmentPlanTemplate(month: string): Promise<Buffer> 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Ecoculture-CRM";
 
-  const types = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+  const types = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
   for (const type of types) {
     const plural = FLOWER_TYPE_LABELS_PLURAL[type] ?? FLOWER_TYPE_LABELS[type];
     const sheet = workbook.addWorksheet(plural);
@@ -1544,7 +1548,7 @@ export async function buildPriceTemplate(
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Ecoculture-CRM";
 
-  const types = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+  const types = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
   for (const type of types) {
     const grades = getGradesFor(type);
     const plural = FLOWER_TYPE_LABELS_PLURAL[type] ?? FLOWER_TYPE_LABELS[type];

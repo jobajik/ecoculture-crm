@@ -24,6 +24,10 @@ export async function listVarietiesByType(): Promise<Record<string, string[]>> {
       if (!result[flowerType].includes(variety)) result[flowerType].push(variety);
     }
 
+    // Хризантема Rose Farm без своих строк — сорта хризантемы из таблицы: сорт, добавленный владельцем к хризантеме,
+    // сразу доступен и складу Rose Farm.
+    if (!result.chrysanthemum_rf?.length && result.chrysanthemum?.length) result.chrysanthemum_rf = [...result.chrysanthemum];
+
     // Для типов, которых нет в таблице, подставляем значения по умолчанию.
     for (const [flowerType, defaults] of Object.entries(DEFAULT_VARIETIES)) {
       if (!result[flowerType] || result[flowerType].length === 0) {

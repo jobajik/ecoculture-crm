@@ -34,12 +34,17 @@ import Hint from "./Hint";
  * перестаёт предупреждать.
  */
 
-const FLOWER_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const FLOWER_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 /** Классы держим строками целиком: Tailwind собирает css по тексту файлов. */
 const FLOWER_ACCENT: Record<string, { bar: string; dot: string; head: string }> = {
   rose: { bar: "bg-flower-rose", dot: "bg-flower-rose", head: "bg-flower-rose/[0.05]" },
   chrysanthemum: {
+    bar: "bg-flower-chrysanthemum",
+    dot: "bg-flower-chrysanthemum",
+    head: "bg-flower-chrysanthemum/[0.05]",
+  },
+  chrysanthemum_rf: {
     bar: "bg-flower-chrysanthemum",
     dot: "bg-flower-chrysanthemum",
     head: "bg-flower-chrysanthemum/[0.05]",

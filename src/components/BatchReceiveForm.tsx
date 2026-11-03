@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createBatchAction } from "@/app/warehouse/actions";
-import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor, gradeColumnLabel } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor, gradeColumnLabel, flowerPickLabel } from "@/lib/constants";
 import type { FlowerType } from "@/lib/constants";
 import { unwrapValue } from "@/lib/actionResult";
 
@@ -75,7 +75,7 @@ export default function BatchReceiveForm({
           >
             {allowedTypes.map((value) => (
               <option key={value} value={value}>
-                {FLOWER_TYPE_LABELS[value] ?? value}
+                {flowerPickLabel(value)}
               </option>
             ))}
           </select>

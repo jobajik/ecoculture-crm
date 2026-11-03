@@ -12,7 +12,7 @@ import type { Batch, Settings } from "./types";
 // `check-broadcasts`.
 // ---------------------------------------------------------------------------
 
-const FLOWER_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const FLOWER_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 /** Сколько стеблей сказать модели: вниз до сотен, меньше сотни — «мало». */
 export function roughStems(n: number): string {

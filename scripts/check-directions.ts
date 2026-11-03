@@ -318,7 +318,7 @@ check(
 check(
   "в сводке все три цветка, даже пустые",
   fact.byFlower.map((f) => f.flowerType),
-  ["rose", "chrysanthemum", "eustoma"]
+  ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"]
 );
 
 const rose = fact.byFlower.find((f) => f.flowerType === "rose");

@@ -112,7 +112,7 @@ check(
   4_500_000
 );
 check("а показывается отдельной цифрой", unsplitPlanAmount(plans.values()), 3_000_000);
-check("порядок цветков", PLAN_FLOWERS, ["rose", "chrysanthemum", "eustoma"]);
+check("порядок цветков", PLAN_FLOWERS, ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"]);
 
 // --- План-факт: разрез по цветку считается по ПОЗИЦИЯМ ----------------------
 

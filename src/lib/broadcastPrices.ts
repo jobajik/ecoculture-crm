@@ -148,7 +148,7 @@ const TAG_WORD: Record<string, string> = { chrysanthemum: "хризантема"
  */
 export function priceTagOptions(prices: Record<string, number>): { flower: string; label: string; tag: string }[] {
   const out: { flower: string; label: string; tag: string }[] = [];
-  for (const flower of ["chrysanthemum", "rose", "eustoma"]) {
+  for (const flower of ["chrysanthemum", "chrysanthemum_rf", "rose", "eustoma"]) {
     if (!priceBlock(flower, prices)) continue;
     const name = FLOWER_TYPE_LABELS[flower] ?? flower;
     out.push({ flower, label: `${name} — все сорта`, tag: `{цены ${TAG_WORD[flower]}}` });

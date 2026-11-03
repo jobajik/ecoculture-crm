@@ -24,7 +24,7 @@ import { plansTabsFor } from "../plans/tabs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+const FLOWER_ORDER = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
 
 export default async function ForecastPage({
   searchParams,

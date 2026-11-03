@@ -106,7 +106,7 @@ export interface WarehouseDayInput {
   now: Date;
 }
 
-const FLOWER_ORDER: string[] = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA];
+const FLOWER_ORDER: string[] = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA];
 
 /** Склад, который видит роль: офис — «office», остальные — основной. */
 export function dayStoreOf(role: string): StoreCode {

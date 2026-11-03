@@ -48,7 +48,7 @@ export default async function AstanaPage() {
     }
     rows.set(k, r);
   }
-  const ORDER = ["chrysanthemum", "rose", "eustoma"];
+  const ORDER = ["chrysanthemum", "chrysanthemum_rf", "rose", "eustoma"];
   const list = Array.from(rows.values()).sort(
     (a, b) => ORDER.indexOf(a.flowerType) - ORDER.indexOf(b.flowerType) || a.variety.localeCompare(b.variety, "ru")
   );

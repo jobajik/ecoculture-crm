@@ -224,7 +224,7 @@ export function buildStockAnalytics(input: {
     shippedInPeriod > 0 && days > 0 ? stock / (shippedInPeriod / days) : null;
 
   // --- Разрезы ----------------------------------------------------------------
-  const FLOWER_SORT: Record<string, number> = { rose: 1, chrysanthemum: 2, eustoma: 3 };
+  const FLOWER_SORT: Record<string, number> = { rose: 1, chrysanthemum: 2, chrysanthemum_rf: 2.5, eustoma: 3 };
   const fs = (f: string) => FLOWER_SORT[f] ?? 9;
   const flower = (f: string) => FLOWER_TYPE_LABELS[f] ?? f;
 

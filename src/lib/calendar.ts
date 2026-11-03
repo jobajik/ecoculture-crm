@@ -131,7 +131,7 @@ function isoOf(raw: string): string {
 }
 
 /** Порядок цветков — тот же, что на главной и в отчёте: роза, хризантема, эустома. */
-const FLOWER_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const FLOWER_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 function flowerRank(flowerType: string): number {
   const i = FLOWER_ORDER.indexOf(flowerType);
   return i === -1 ? FLOWER_ORDER.length : i;

@@ -9,6 +9,7 @@ import {
   formatGrade,
   getGradesFor,
   type FlowerType,
+  flowerPickLabel,
 } from "@/lib/constants";
 import { unwrapValue } from "@/lib/actionResult";
 
@@ -191,7 +192,7 @@ export default function RegionOrderForm({
                 >
                   {flowerChoices.map((t) => (
                     <option key={t} value={t}>
-                      {FLOWER_TYPE_LABELS[t] ?? t}
+                      {flowerPickLabel(t)}
                     </option>
                   ))}
                 </select>

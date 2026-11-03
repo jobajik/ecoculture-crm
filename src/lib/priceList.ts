@@ -63,6 +63,8 @@ export interface PriceRow {
    * иначе одно и то же правило подстановки пришлось бы держать в двух копиях.
    */
   kind?: string;
+  /** Цена взята у другого цветка, своей ещё нет (`PRICE_BORROW`). */
+  borrowedFrom?: string;
 }
 
 export function priceKey(flowerType: string, variety: string, grade: string): string {
@@ -80,6 +82,29 @@ export function currentPrices(rows: PriceRow[], asOf: string): Map<string, Price
     const key = priceKey(row.flowerType, row.variety, row.grade);
     const found = best.get(key);
     if (!found || row.date >= found.date) best.set(key, row);
+  }
+  return withBorrowedPrices(best);
+}
+
+/**
+ * Цветок без СВОЕЙ цены на категорию берёт цену другого: хризантема Rose Farm — цены хризантемы Есентая (03.11.2026,
+ * владелец: «свой прайс; пока цен нет — цены Есентая»). Правило по КАТЕГОРИИ: поставлена своя общая цена «Все сорта ·
+ * Первая» — первая категория целиком своя, цены сортов Есентая на неё не берутся (иначе сорт Altaj у Есентая перебивал
+ * бы общую цену Rose Farm); не поставлена — берутся и общая, и цены сортов Есентая, кроме сортов со своей ценой. Так
+ * РОП может ставить прайс Rose Farm по одной строке, и остальное не обнуляется. Взятые строки помечены `borrowedFrom`.
+ */
+export const PRICE_BORROW: Record<string, string> = { chrysanthemum_rf: "chrysanthemum" };
+
+function withBorrowedPrices(best: Map<string, PriceRow>): Map<string, PriceRow> {
+  for (const [flowerType, from] of Object.entries(PRICE_BORROW)) {
+    const ownBase = new Set<string>();
+    for (const r of Array.from(best.values())) if (r.flowerType === flowerType && r.variety === BASE_VARIETY && r.price > 0) ownBase.add(r.grade);
+    for (const row of Array.from(best.values())) {
+      if (row.flowerType !== from || row.borrowedFrom || ownBase.has(row.grade)) continue;
+      const key = priceKey(flowerType, row.variety, row.grade);
+      if ((best.get(key)?.price ?? 0) > 0) continue;
+      best.set(key, { ...row, flowerType, borrowedFrom: from });
+    }
   }
   return best;
 }

@@ -13,7 +13,7 @@ import Pager, { pageSlice } from "./Pager";
 
 type View = "grade" | "variety" | "manager" | "flower" | "matrix";
 
-const FLOWERS = ["rose", "chrysanthemum", "eustoma"];
+const FLOWERS = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const money = (n: number) => `${nf(n)} ₸`;

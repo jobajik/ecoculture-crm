@@ -42,7 +42,7 @@ export interface StockPosition {
   stock: number;
 }
 
-const FLOWER_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const FLOWER_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 
 export function positionKey(p: { flowerType: string; variety: string; grade: string }): string {
   return `${p.flowerType}|${p.variety.trim().toLowerCase()}|${p.grade.trim().toLowerCase()}`;

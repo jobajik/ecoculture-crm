@@ -1,6 +1,6 @@
 import { FLOWER_TYPES, ROLES, SHEET_TABS } from "./constants";
 
-const FLOWER_ORDER: string[] = [FLOWER_TYPES.ROSE, FLOWER_TYPES.EUSTOMA, FLOWER_TYPES.CHRYSANTHEMUM];
+const FLOWER_ORDER: string[] = [FLOWER_TYPES.ROSE, FLOWER_TYPES.EUSTOMA, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF];
 import { prefetchTables } from "./sheets";
 import { localDayKey } from "./timezone";
 import { listOrdersWithItems } from "./repo/orders";

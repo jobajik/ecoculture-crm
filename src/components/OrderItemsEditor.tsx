@@ -9,6 +9,7 @@ import {
   gradeForVariety,
   isMiniMixVariety,
   type FlowerType,
+  flowerPickLabel,
 } from "@/lib/constants";
 import { priceFromMap } from "@/lib/priceList";
 
@@ -205,9 +206,9 @@ export default function OrderItemsEditor({
                   value={it.flowerType}
                   onChange={(e) => changeFlowerType(idx, e.target.value as FlowerType)}
                 >
-                  {Object.entries(FLOWER_TYPE_LABELS).map(([value, label]) => (
+                  {Object.keys(FLOWER_TYPE_LABELS).map((value) => (
                     <option key={value} value={value}>
-                      {label}
+                      {flowerPickLabel(value)}
                     </option>
                   ))}
                 </select>

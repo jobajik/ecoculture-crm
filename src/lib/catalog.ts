@@ -1,4 +1,4 @@
-import { compareGrades, formatGrade, FLOWER_TYPE_LABELS } from "./constants";
+import { baseFlowerType, compareGrades, formatGrade, FLOWER_TYPE_LABELS } from "./constants";
 import { priceKey, type PriceRow } from "./priceList";
 
 // ---------------------------------------------------------------------------
@@ -43,7 +43,8 @@ export function catalogPage(input: {
   const { flowerType: f, prices } = input;
   const rows = Array.from(prices.values()).filter((r) => r.flowerType === f && r.price > 0);
   if (rows.length === 0) return null;
-  const stock = input.stock.filter((s) => s.flower === f && s.qty > 0);
+  // Каталог — по цветку для клиента: хризантема Rose Farm на складе тоже «в наличии» на странице хризантемы.
+  const stock = input.stock.filter((s) => baseFlowerType(s.flower) === f && s.qty > 0);
   const grades = Array.from(new Set(rows.map((r) => r.grade))).sort((a, b) => compareGrades(f, a, b));
   const own = Array.from(new Set(rows.filter((r) => r.variety).map((r) => r.variety)));
   const stocked = Array.from(new Set(stock.map((s) => s.variety).filter(Boolean)));

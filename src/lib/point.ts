@@ -75,7 +75,7 @@ export interface TransferOrder {
   items: { flowerType: string; quantity: number; unitPrice: number; shippedQuantity: number }[];
 }
 
-const FLOWERS = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.EUSTOMA] as string[];
+const FLOWERS = [FLOWER_TYPES.ROSE, FLOWER_TYPES.CHRYSANTHEMUM, FLOWER_TYPES.CHRYSANTHEMUM_RF, FLOWER_TYPES.EUSTOMA] as string[];
 const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 const dayOf = (iso: string) => (iso || "").slice(0, 10);
 

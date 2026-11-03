@@ -64,7 +64,7 @@ type Line = {
   amount: number;
 };
 
-const FLOWER_ORDER = ["rose", "chrysanthemum", "eustoma"];
+const FLOWER_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
 const flowerRank = (t: string) => {
   const i = FLOWER_ORDER.indexOf(t);
   return i === -1 ? FLOWER_ORDER.length : i;

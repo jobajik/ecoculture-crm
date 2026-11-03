@@ -89,6 +89,7 @@ export default async function RegionSalesPage({
   const FLOWER_ORDER: string[] = [
     FLOWER_TYPES.ROSE,
     FLOWER_TYPES.CHRYSANTHEMUM,
+    FLOWER_TYPES.CHRYSANTHEMUM_RF,
     FLOWER_TYPES.EUSTOMA,
   ];
   const flower = FLOWER_ORDER.includes(searchParams?.flower ?? "") ? searchParams!.flower! : "";

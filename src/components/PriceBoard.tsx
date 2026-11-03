@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { savePricesAction } from "@/app/prices/actions";
-import { FLOWER_TYPE_LABELS_PLURAL, formatGrade, getGradesFor } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS_PLURAL, formatGrade, getGradesFor, flowerPickLabelPlural } from "@/lib/constants";
 import { BASE_VARIETY, priceKey } from "@/lib/priceList";
 import { groupVarietiesByPrice, type PriceGroup } from "@/lib/priceGroups";
 import { formatNumber, parseNumber } from "./NumberCell";
@@ -38,6 +38,7 @@ export default function PriceBoard({
   canEdit,
   kind = "",
   history,
+  notes = {},
 }: {
   flowerTypes: string[];
   varieties: Record<string, string[]>;
@@ -48,6 +49,8 @@ export default function PriceBoard({
   kind?: string;
   /** Последняя вкладка карточки — «История изменений». */
   history?: ReactNode;
+  /** Строка над прайсом цветка, например «пока цены Есентая». */
+  notes?: Record<string, string>;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<string>(flowerTypes[0] ?? "history");
@@ -110,7 +113,7 @@ export default function PriceBoard({
         <CardTabs
           tone="plans"
           items={[
-            ...flowerTypes.map((f) => ({ key: f, label: FLOWER_TYPE_LABELS_PLURAL[f] ?? f })),
+            ...flowerTypes.map((f) => ({ key: f, label: flowerPickLabelPlural(f) })),
             ...(history ? [{ key: "history", label: "История изменений" }] : []),
           ]}
           value={tab}
@@ -125,6 +128,7 @@ export default function PriceBoard({
               initial={initial}
               setMany={setMany}
               canEdit={canEdit}
+              note={notes[flowerType]}
             />
           </div>
         ))}
@@ -158,6 +162,7 @@ function FlowerPrices({
   initial,
   setMany,
   canEdit,
+  note,
 }: {
   flowerType: string;
   varieties: string[];
@@ -165,6 +170,7 @@ function FlowerPrices({
   initial: Record<string, number>;
   setMany: (entries: [string, number][]) => void;
   canEdit: boolean;
+  note?: string;
 }) {
   const allGrades = getGradesFor(flowerType);
   // Группы считаются один раз при открытии: перестраивать их на каждое
@@ -223,6 +229,7 @@ function FlowerPrices({
 
   return (
     <section>
+      {note && <div className="mx-4 sm:mx-5 mt-3 text-sm text-ink-secondary bg-surface-plane rounded-lg px-3 py-2">{note}</div>}
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 sm:px-5 py-2.5">
         <h2 className="sr-only">{FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType}</h2>
         <span className="text-xs text-ink-muted">

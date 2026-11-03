@@ -12,7 +12,7 @@
  * ИИ только ПРЕДЛАГАЕТ: черновик — не заявка, он не попадает ни в продажи, ни
  * в лист сборки, пока менеджер не сохранит форму сам.
  */
-import { FLOWER_TYPE_LABELS, getGradesFor } from "./constants";
+import { FLOWER_TYPE_LABELS, getGradesFor, isChrysanthemum } from "./constants";
 import { phoneKey } from "./leads";
 import { priceFromMap } from "./priceList";
 
@@ -97,7 +97,7 @@ export function waOrderSystemPrompt(catalog: WaCatalog, todayKey: string): strin
     .map(
       (t) =>
         `- ${t} (${FLOWER_TYPE_LABELS[t]}): сорта — ${catalog[t].join(", ") || "—"}; ` +
-        `${t === "chrysanthemum" ? "категории" : "длины/градации"} — ${getGradesFor(t).join(", ")}`
+        `${isChrysanthemum(t) ? "категории" : "длины/градации"} — ${getGradesFor(t).join(", ")}`
     );
   return [
     "Ты помогаешь менеджеру цветочного оптового хозяйства в Казахстане. Клиент написал в WhatsApp.",

@@ -27,6 +27,9 @@ export async function getSettings(): Promise<Settings> {
     }
   }
 
+  // Хризантема Rose Farm хранится как хризантема, пока срок не задан отдельно (`ShelfLifeDays_chrysanthemum_rf`).
+  if (!map["ShelfLifeDays_chrysanthemum_rf"] && shelfLifeDays.chrysanthemum) shelfLifeDays.chrysanthemum_rf = shelfLifeDays.chrysanthemum;
+
   const thresholdRaw = Number(map["WarningThresholdPercent"]);
   const warningThreshold =
     !Number.isNaN(thresholdRaw) && thresholdRaw > 0 && thresholdRaw <= 100
