@@ -148,12 +148,19 @@ export default function OrderItemsEditor({
     );
   }
 
-  /** При смене типа цветка списки сортов и градаций другие — подставляем первые доступные. */
+  /**
+   * При смене типа цветка сорт и градация остаются, если они есть и у нового цветка (хризантема Есентай ⇄ Rose Farm —
+   * те же сорта и категории), иначе — первые доступные. 04.11.2026 №QY5XT: менеджер переключил цветок, и «Altaj Вторая»
+   * молча стала «Altaj Высшая» по 630 ₸ вместо 400 — клиент оплатил вторую.
+   */
   function changeFlowerType(idx: number, flowerType: FlowerType) {
+    const cur = items[idx];
+    const grades = getGradesFor(flowerType);
+    const list = varieties[flowerType] ?? [];
     updatePosition(idx, {
       flowerType,
-      grade: getGradesFor(flowerType)[0] ?? "",
-      variety: varieties[flowerType]?.[0] ?? "",
+      grade: cur && grades.includes(cur.grade) ? cur.grade : grades[0] ?? "",
+      variety: cur && list.includes(cur.variety) ? cur.variety : list[0] ?? "",
     });
   }
 
