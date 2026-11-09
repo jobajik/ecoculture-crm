@@ -214,7 +214,7 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
 
   // Сначала тем, кто уже писал нам (и, после разогрева, покупал); остальным — не больше N в день (`warmthRules`).
   // С номера Земфиры пишем только её собеседникам — «холодных» там нет.
-  const rules = warmthRules(settings.BroadcastWarmupFrom, today);
+  const rules = warmthRules(settings.BroadcastWarmupFrom, today, settings.BroadcastColdDailyLimit);
   const wrote = isLeads
     ? new Set<string>()
     : isManager

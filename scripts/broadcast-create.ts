@@ -37,6 +37,13 @@ interface Spec {
   email: string;
   /** Куда записать номер рассылки — его читает `broadcast-run.ts --id-file`. */
   idFile?: string;
+  /**
+   * Вместо клиентов — лиды этой кампании (09.11.2026, SkyGroup: номера оптовой группы загружены
+   * `leads-import-numbers.ts`). Порядок — как в кампании; «тёплых» среди них нет, идут по пределу холодным
+   * (`BroadcastColdDailyLimit`, его можно задать здесь — `coldDailyLimit`).
+   */
+  campaign?: string;
+  coldDailyLimit?: number;
 }
 
 async function main() {
@@ -55,20 +62,24 @@ async function main() {
     return;
   }
 
-  const audience = (await loadAudience({ withOrders: true })).filter((a) => a.kind === "client");
+  const audience = spec.campaign
+    ? (await loadAudience()).filter((a) => a.kind === "lead" && a.campaign === spec.campaign)
+    : (await loadAudience({ withOrders: true })).filter((a) => a.kind === "client");
   const excluded = new Map<string, number>();
   for (const a of audience) if (a.excluded) excluded.set(a.excluded, (excluded.get(a.excluded) ?? 0) + 1);
   const fresh = audience.filter((a) => !a.excluded && a.daysSinceOrder !== null && a.daysSinceOrder < skip);
-  const chosen = audience
-    .filter((a) => !a.excluded && !(a.daysSinceOrder !== null && a.daysSinceOrder < skip))
-    .sort((a, b) => (b.daysSinceOrder ?? -1) - (a.daysSinceOrder ?? -1));
+  const chosen = spec.campaign
+    ? audience.filter((a) => !a.excluded)
+    : audience
+        .filter((a) => !a.excluded && !(a.daysSinceOrder !== null && a.daysSinceOrder < skip))
+        .sort((a, b) => (b.daysSinceOrder ?? -1) - (a.daysSinceOrder ?? -1));
   const buyers = chosen.filter((a) => a.daysSinceOrder !== null).length;
 
   const raw = (await withPrices(spec.text.replace(/\r/g, ""))).trim();
   const text = /стоп/i.test(raw) ? raw : `${raw}\n\n${OPT_OUT_LINE}`;
   const recipients = chosen.map((a) => ({
     phone: a.waPhone,
-    name: greetingName(a.contactPerson, a.name),
+    name: spec.campaign ? "" : greetingName(a.contactPerson, a.name),
     kind: a.kind,
     refId: a.refId,
     managerEmail: a.managerEmail,
@@ -76,7 +87,8 @@ async function main() {
 
   const map = await settingsMap(true);
   const limitNow = effectiveDailyLimit(String(spec.dailyLimit ?? map.BroadcastDailyLimit ?? ""), map.BroadcastWarmupFrom, localDayKey());
-  console.log(`Клиентов в базе: ${audience.length}`);
+  console.log(spec.campaign ? `Лидов кампании «${spec.campaign}»: ${audience.length}` : `Клиентов в базе: ${audience.length}`);
+  if (spec.coldDailyLimit) console.log(`Холодным в день (основной номер): ${spec.coldDailyLimit}`);
   for (const [why, n] of excluded) console.log(`  не пойдёт — ${why}: ${n}`);
   console.log(`  заказывали за последние ${skip} дн. — пропускаем: ${fresh.length}`);
   console.log(`Получат: ${recipients.length} (покупали: ${buyers}, без заказов: ${recipients.length - buyers})`);
@@ -89,13 +101,14 @@ async function main() {
   if (!apply) return console.log("\nТолько показ. Запустить: --yes");
   if (recipients.length === 0) return console.log("Получателей нет — не завожу.");
   if (spec.dailyLimit) await saveSettings({ BroadcastDailyLimit: String(spec.dailyLimit) });
+  if (spec.coldDailyLimit) await saveSettings({ BroadcastColdDailyLimit: String(spec.coldDailyLimit) });
   const id = await createBroadcast({
     createdByEmail: spec.email,
     title: spec.title,
     text,
     fileId: spec.fileId || "",
     fileName: spec.fileName || "",
-    audience: `Клиенты базы, кроме заказавших за ${skip} дн. (скрипт)`,
+    audience: spec.campaign ? `Лиды кампании «${spec.campaign}» (скрипт)` : `Клиенты базы, кроме заказавших за ${skip} дн. (скрипт)`,
     recipients,
   });
   const found = await findBroadcastRow(id, true);

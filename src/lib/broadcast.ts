@@ -271,12 +271,19 @@ export function effectiveDailyLimit(raw: string | null | undefined, warmupFrom: 
 }
 
 /** Кого считать «тёплым» сегодня и сколько остальным в день: в разогрев строже (`WARMUP_COLD_DAILY_LIMIT`). */
-export function warmthRules(warmupFrom: string | null | undefined, today: string): { buyersAreWarm: boolean; coldLimit: number; inWarmup: boolean } {
+export function warmthRules(
+  warmupFrom: string | null | undefined,
+  today: string,
+  /** Настройка `BroadcastColdDailyLimit`: владелец поднял предел холодным на основном номере (09.11.2026, SkyGroup — «с основного по 30 в день»). В разогрев не действует. */
+  coldLimitSetting?: string | null
+): { buyersAreWarm: boolean; coldLimit: number; inWarmup: boolean } {
   const day = warmupDay(warmupFrom, today);
   const inWarmup = day > 0 && day <= WARMUP_STEPS[WARMUP_STEPS.length - 1].untilDay;
+  const own = Math.floor(Number(String(coldLimitSetting ?? "").trim()));
+  const coldLimit = Number.isFinite(own) && own > 0 ? Math.min(own, MAX_DAILY_LIMIT) : COLD_DAILY_LIMIT;
   return inWarmup
     ? { buyersAreWarm: false, coldLimit: WARMUP_COLD_DAILY_LIMIT, inWarmup }
-    : { buyersAreWarm: true, coldLimit: COLD_DAILY_LIMIT, inWarmup };
+    : { buyersAreWarm: true, coldLimit, inWarmup };
 }
 
 /**

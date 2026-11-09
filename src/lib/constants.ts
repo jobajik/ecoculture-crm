@@ -69,6 +69,8 @@ export const SHEET_TABS = {
   WA_LINES: "WaLines",
   // Что сделал ИИ-помощник и что ушло из CRM на номерах менеджеров; записки «нужен менеджер».
   ASSISTANT_LOG: "AssistantLog",
+  // Привычки постоянных клиентов менеджеров и когда им писали (09.11.2026, `clientHabits.ts`).
+  CLIENT_HABITS: "ClientHabits",
   // Модуль «Зарплата» (28.10.2026, владелец: «программа, которая ведёт табель учёта зп и считает её»; вместо
   // гугл-книги расчётной ведомости Rose Farm). Справочники постоянные, помесячное — отдельными вкладками;
   // все вкладки с приставкой Payroll, чтобы в таблице их было видно одним блоком. Ставки хранятся с датой начала:
@@ -702,6 +704,24 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Note",
     "ByEmail",
     "DoneAt",
+  ],
+  // Постоянники менеджера: пересчитывается `clientHabitsRunner` по заявкам за 90 дней; LastSentAt — когда писали
+  // от имени менеджера; Active = FALSE — владелец выключил клиента из таких рассылок (пересчёт это не трогает).
+  [SHEET_TABS.CLIENT_HABITS]: [
+    "ClientID",
+    "ManagerEmail",
+    "Name",
+    "Phone",
+    "Orders",
+    "MedianDays",
+    "Weekday",
+    "UsualItems",
+    "AvgAmount",
+    "LastOrderAt",
+    "NextExpectedAt",
+    "LastSentAt",
+    "UpdatedAt",
+    "Active",
   ],
   [SHEET_TABS.STOCK_MOVES]: [
     "MoveID",
