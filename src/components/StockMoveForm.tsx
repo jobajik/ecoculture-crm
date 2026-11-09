@@ -17,7 +17,7 @@ import Pager, { pageSlice } from "./Pager";
  * «Проверить»: сервер раскладывает по партиям от старых срезок к свежим →
  * «Переместить». До второго нажатия ничего не пишется.
  */
-export default function StockMoveForm({ main, office }: { main: StockPosition[]; office: StockPosition[] }) {
+export default function StockMoveForm({ main, office, onlyToOffice = false }: { main: StockPosition[]; office: StockPosition[]; /** Зав. складом: только «Склад → Офис», без переключателя. */ onlyToOffice?: boolean }) {
   const router = useRouter();
   const [direction, setDirection] = useState<MoveDirection>("to_office");
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -95,14 +95,18 @@ export default function StockMoveForm({ main, office }: { main: StockPosition[];
     <div className="grid lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0">
         <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-3 border-b border-line-hairline">
-          <Chips
-            value={direction}
-            onChange={(v) => switchDirection(v as MoveDirection)}
-            items={[
-              { value: "to_office", label: "Склад → Офис", count: main.length },
-              { value: "to_main", label: "Офис → Склад", count: office.length },
-            ]}
-          />
+          {onlyToOffice ? (
+            <div className="text-sm text-ink-secondary">Склад → Офис · позиций {main.length}</div>
+          ) : (
+            <Chips
+              value={direction}
+              onChange={(v) => switchDirection(v as MoveDirection)}
+              items={[
+                { value: "to_office", label: "Склад → Офис", count: main.length },
+                { value: "to_main", label: "Офис → Склад", count: office.length },
+              ]}
+            />
+          )}
           <div className="flex gap-2 xl:ml-auto min-w-0">
             {flowers.length > 1 && (
               <select className="input !w-36" value={flower} onChange={(e) => setFlower(e.target.value)}>

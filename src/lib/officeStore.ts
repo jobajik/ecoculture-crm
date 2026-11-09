@@ -95,6 +95,30 @@ export function stockStoreOfRole(role: string | null | undefined, regionStore: S
 /** Перемещает между складами РОП (решение владельца) и админ. */
 export const canMoveStock = (role: string | null | undefined) => role === "sales_head" || role === "admin";
 
+/**
+ * Зав. складом тоже может ОТДАТЬ цветок в офис, но только свой и только туда (09.11.2026, Разия: «субботу күні склад
+ * офисқа эустома пен хризантема жібердім, CRM-де Офис склад деген жоқ» — отправила в офис по факту, а записать было
+ * некуда, и владелец переносил руками). Обратно — по-прежнему РОП или админ: в офисе лежит общий цветок.
+ * Пусто — можно; иначе — почему нельзя.
+ */
+export function moveRefusal(
+  role: string | null | undefined,
+  farm: string | null | undefined,
+  direction: MoveDirection,
+  lines: { flowerType: string }[],
+  farmFlowers: (farm: string | null | undefined) => string[]
+): string {
+  if (canMoveStock(role)) return "";
+  if (role !== "warehouse") return "Перемещает цветок между складами РОП или администратор";
+  if (direction !== "to_office") return "Зав. складом отдаёт цветок в офис; вернуть обратно может РОП или администратор";
+  if (!farm) return "У вас не указано производство — перемещать нельзя";
+  const own = new Set(farmFlowers(farm));
+  const alien = lines.find((l) => !own.has(l.flowerType));
+  if (alien) return "В офис можно отдать только цветок своего производства";
+  return "";
+}
+export const canMoveToOffice = (role: string | null | undefined) => canMoveStock(role) || role === "warehouse";
+
 /** Раздел «Офис» видят склад офиса, РОП и админ. */
 export const canSeeOffice = (role: string | null | undefined) =>
   isOfficeRole(role) || role === "sales_head" || role === "admin";

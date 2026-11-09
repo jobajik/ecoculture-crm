@@ -5,7 +5,7 @@ import { appendKaspiInvoice, listKaspiInvoices } from "./repo/kaspiInvoices";
 import { farmPayments } from "./orderMoney";
 import { isNotASale } from "./orderKind";
 import { orderCode } from "./paymentStage";
-import { ApiPayError, apiPayConfig, createInvoice } from "./apipay";
+import { ApiPayError, apiPayConfig, createInvoice, unwrapInvoice } from "./apipay";
 import { isKaspiSessionError } from "./kaspiHealth";
 import { noteKaspiSessionLost } from "./kaspiHealthCheck";
 import { kaspiDescription, kaspiPhone, kaspiSendRefusal } from "./kaspiInvoice";
@@ -44,22 +44,37 @@ export async function issueKaspiInvoice(input: {
   if (refusal || !cfg) throw new Error(refusal || "Касса не подключена");
 
   const code = orderCode(order.orderId);
+  const attempt = existing.filter((i) => i.farm === input.farm).length + 1;
+  const make = (idempotencyKey: string) =>
+    createInvoice(cfg, { phone, amount, description: kaspiDescription(input.farm, code), externalOrderId: `${order.orderId}:${input.farm}`, idempotencyKey });
   let inv;
+  let adopted = false;
   try {
-    inv = await createInvoice(cfg, {
-      phone,
-      amount,
-      description: kaspiDescription(input.farm, code),
-      externalOrderId: `${order.orderId}:${input.farm}`,
-      // Повтор нажатия с тем же номером попытки ApiPay не создаст второй раз (409).
-      idempotencyKey: `${order.orderId}:${input.farm}:${existing.filter((i) => i.farm === input.farm).length + 1}`,
-    });
+    // Повтор нажатия с тем же номером попытки ApiPay не создаст второй раз (409).
+    inv = await make(`${order.orderId}:${input.farm}:${attempt}`);
   } catch (err) {
-    if (err instanceof ApiPayError) {
+    if (err instanceof ApiPayError && err.status === 409) {
+      // 09.11.2026, Юлия: «почему пишет, что такой счёт уже создан» (№WQ67P). Счёт в ApiPay есть, а у нас строки нет:
+      // запись не удалась (например, когда таблица упёрлась в предел ячеек — грабли 1.21), и номер попытки тот же.
+      // Если ApiPay в ответе назвал тот счёт — берём его себе; иначе выставляем заново с неповторимым ключом.
+      const known = unwrapInvoice(err.body);
+      if (known) {
+        inv = known;
+        adopted = true;
+      } else {
+        try {
+          inv = await make(`${order.orderId}:${input.farm}:${attempt}:${Date.now()}`);
+        } catch (again) {
+          if (again instanceof ApiPayError) throw new Error(again.message);
+          throw new Error("Не удалось связаться с ApiPay — попробуйте ещё раз");
+        }
+      }
+    } else if (err instanceof ApiPayError) {
       if (isKaspiSessionError(err.code)) noteKaspiSessionLost(input.farm);
       throw new Error(err.message);
+    } else {
+      throw new Error("Не удалось связаться с ApiPay — попробуйте ещё раз");
     }
-    throw new Error("Не удалось связаться с ApiPay — попробуйте ещё раз");
   }
 
   if (isKaspiSessionError(inv.error_code)) noteKaspiSessionLost(input.farm);
@@ -87,7 +102,7 @@ export async function issueKaspiInvoice(input: {
     actorEmail: email,
     orderId: order.orderId,
     action: MONEY_LOG_ACTIONS.INVOICE_SENT,
-    details: `Счёт Kaspi №${inv.id} на ${amount.toLocaleString("ru-RU")} ₸ · ${FARM_LABELS[input.farm] ?? input.farm} · ${phone}${inv.is_sandbox ? " · тестовый режим" : ""}`,
+    details: `Счёт Kaspi №${inv.id} на ${amount.toLocaleString("ru-RU")} ₸ · ${FARM_LABELS[input.farm] ?? input.farm} · ${phone}${inv.is_sandbox ? " · тестовый режим" : ""}${adopted ? " · уже был в ApiPay, записан в CRM" : ""}`,
     amountBefore: order.paidAmount,
     amountAfter: order.paidAmount,
   });

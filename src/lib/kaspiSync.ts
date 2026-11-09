@@ -1,8 +1,9 @@
 import type { ApiPayInvoice } from "./apipay";
-import { findKaspiInvoice, updateKaspiInvoiceRow } from "./repo/kaspiInvoices";
+import type { KaspiInvoice } from "./types";
+import { appendKaspiInvoice, findKaspiInvoice, updateKaspiInvoiceRow } from "./repo/kaspiInvoices";
 import { getOrderById } from "./repo/orders";
 import { recordPayment } from "./paymentWrite";
-import { isPaidKaspiStatus, kaspiStatusPlan, recordedPaymentId, noteHasInvoice } from "./kaspiInvoice";
+import { isPaidKaspiStatus, kaspiPhone, kaspiStatusPlan, recordedPaymentId, noteHasInvoice } from "./kaspiInvoice";
 import { listPayments } from "./repo/payments";
 import { ORDER_STATUSES } from "./constants";
 import { localDayKey } from "./timezone";
@@ -13,6 +14,34 @@ import { onBotInvoiceUpdate } from "./botFollowUp";
 /** Кем подписан платёж, проведённый по оплате счёта Kaspi. */
 export const KASPI_ACTOR = "kaspi-pay@apipay";
 
+const OUR_EXTERNAL_ID = /^([A-Z0-9]{4,8}):(rose_farm|esentai)$/;
+
+async function adoptUnknownInvoice(inv: ApiPayInvoice): Promise<{ invoice: KaspiInvoice; rowNumber: number } | null> {
+  const m = OUR_EXTERNAL_ID.exec(String(inv.external_order_id || ""));
+  if (!m) return null;
+  const order = await getOrderById(m[1]);
+  if (!order) return null;
+  const now = new Date().toISOString();
+  await appendKaspiInvoice({
+    invoiceId: String(inv.id),
+    createdAt: now,
+    orderId: order.orderId,
+    farm: m[2],
+    amount: Math.round(Number(inv.amount) || 0),
+    phone: kaspiPhone(String(inv.client_phone || order.clientPhone || "")),
+    status: "processing",
+    kaspiInvoiceId: String(inv.kaspi_invoice_id || ""),
+    errorCode: "",
+    errorMessage: "Счёт был в ApiPay без записи в CRM — записан по уведомлению",
+    paidAt: "",
+    paymentId: "",
+    createdByEmail: "apipay",
+    sandbox: !!inv.is_sandbox,
+    updatedAt: now,
+  });
+  return findKaspiInvoice(String(inv.id));
+}
+
 /**
  * Новый статус счёта от ApiPay (вебхук или «Обновить статус») — в нашу
  * таблицу. Оплаченный счёт проводится платежом ОДИН раз: перед записью платежа
@@ -22,8 +51,14 @@ export const KASPI_ACTOR = "kaspi-pay@apipay";
  * Возвращает, что сделано, — для ответа вебхуку и для журнала.
  */
 export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" | "same" | "updated" | "paid"> {
-  const found = await findKaspiInvoice(String(inv.id));
-  if (!found) return "unknown";
+  let found = await findKaspiInvoice(String(inv.id));
+  if (!found) {
+    // Счёт наш (external_order_id = «<заявка>:<компания>»), а строки нет — запись при выставлении не удалась
+    // (09.11.2026, №WQ67P). Заводим строку и проводим как обычно: иначе оплата клиента повисла бы «неизвестной».
+    const adopted = await adoptUnknownInvoice(inv);
+    if (!adopted) return "unknown";
+    found = adopted;
+  }
   const { invoice: row, rowNumber } = found;
   const status = String(inv.status || "").trim();
   const plan = kaspiStatusPlan(row, { status });

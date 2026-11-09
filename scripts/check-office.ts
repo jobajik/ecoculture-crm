@@ -11,6 +11,7 @@ import {
   botStoreNote,
   canChooseOrderStore,
   canMoveStock,
+  moveRefusal,
   canSeeOffice,
   inStore,
   moveWrites,
@@ -44,6 +45,13 @@ async function main() {
   check("чей склад", ["office", "warehouse", "admin", "manager"].map((r) => storeOfRole(r)), ["office", "", "any", null]);
   check("на главной склад видит своё, остальные — всё", ["office", "warehouse", "admin", "sales_head"].map((r) => stockStoreOfRole(r)), ["office", "", undefined, undefined]);
   check("перемещает РОП и админ", ["sales_head", "admin", "office", "warehouse", "manager"].map(canMoveStock), [true, true, false, false, false]);
+  const farmFlowers = (f: string | null | undefined) => (f === "rose_farm" ? ["rose", "eustoma", "chrysanthemum_rf"] : f === "esentai" ? ["chrysanthemum"] : []);
+  check("склад Rose Farm отдаёт свою эустому в офис", moveRefusal("warehouse", "rose_farm", "to_office", [{ flowerType: "eustoma" }], farmFlowers), "");
+  check("склад Rose Farm чужую хризантему — нет", moveRefusal("warehouse", "rose_farm", "to_office", [{ flowerType: "chrysanthemum" }], farmFlowers) !== "", true);
+  check("склад обратно из офиса — нет", moveRefusal("warehouse", "rose_farm", "to_main", [{ flowerType: "rose" }], farmFlowers) !== "", true);
+  check("склад без производства — нет", moveRefusal("warehouse", null, "to_office", [{ flowerType: "rose" }], farmFlowers) !== "", true);
+  check("РОП — любое направление", moveRefusal("sales_head", null, "to_main", [{ flowerType: "chrysanthemum" }], farmFlowers), "");
+  check("менеджер — нет", moveRefusal("manager", null, "to_office", [{ flowerType: "rose" }], farmFlowers) !== "", true);
   check("раздел «Офис» видят", ["office", "sales_head", "admin", "warehouse", "manager"].map(canSeeOffice), [true, true, true, false, false]);
   check("склад в заявке выбирают", ["manager", "sales_head", "admin", "retail_almaty", "warehouse"].map(canChooseOrderStore), [true, true, true, false, false]);
   check("адреса: склад офиса — офис и страница отгрузки, не основной склад", [

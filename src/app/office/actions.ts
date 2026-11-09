@@ -4,17 +4,20 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { guard } from "@/lib/actionResult";
-import { canMoveStock, type MoveDirection, type MoveLine } from "@/lib/officeStore";
+import { canMoveToOffice, moveRefusal, type MoveDirection, type MoveLine } from "@/lib/officeStore";
+import { flowerTypesForFarm } from "@/lib/constants";
 import { moveStock, previewStockMove } from "@/lib/repo/stockMoves";
 import type { WriteoffPlan } from "@/lib/writeoffPlan";
 
-// Перемещение основной склад ⇄ офис (`officeStore.ts`). Перемещает РОП и админ —
-// решение владельца; склад офиса только видит, что к нему пришло.
+// Перемещение основной склад ⇄ офис (`officeStore.ts`). Перемещает РОП и админ — решение владельца; склад офиса только
+// видит, что к нему пришло; зав. складом производства отдаёт свой цветок в офис (09.11.2026, `moveRefusal`).
 
-async function requireMover() {
+async function requireMover(direction: MoveDirection, lines: MoveLine[]) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
-  if (!canMoveStock(session.user.role)) throw new Error("Перемещает цветок между складами РОП или администратор");
+  if (!canMoveToOffice(session.user.role)) throw new Error("Перемещает цветок между складами РОП или администратор");
+  const why = moveRefusal(session.user.role, session.user.farm ?? null, direction, lines, flowerTypesForFarm);
+  if (why) throw new Error(why);
   return { email: session.user.email };
 }
 
@@ -35,17 +38,22 @@ function cleanLines(lines: MoveLine[]): MoveLine[] {
 }
 
 async function previewMoveActionInner(direction: MoveDirection, lines: MoveLine[]): Promise<WriteoffPlan> {
-  await requireMover();
-  return previewStockMove(cleanDirection(direction), cleanLines(lines));
+  const dir = cleanDirection(direction);
+  const clean = cleanLines(lines);
+  await requireMover(dir, clean);
+  return previewStockMove(dir, clean);
 }
 
 async function moveStockActionInner(direction: MoveDirection, lines: MoveLine[], note: string) {
-  const { email } = await requireMover();
-  const result = await moveStock({ direction: cleanDirection(direction), lines: cleanLines(lines), byEmail: email, note });
+  const dir = cleanDirection(direction);
+  const clean = cleanLines(lines);
+  const { email } = await requireMover(dir, clean);
+  const result = await moveStock({ direction: dir, lines: clean, byEmail: email, note });
   revalidatePath("/office");
   revalidatePath("/office/moves");
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
+  revalidatePath("/warehouse/to-office");
   revalidatePath("/");
   return result;
 }
