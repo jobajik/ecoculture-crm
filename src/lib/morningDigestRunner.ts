@@ -8,13 +8,15 @@ import { listPayments } from "./repo/payments";
 import { listPointDays } from "./repo/point";
 import { listBatches } from "./repo/batches";
 import { getSettings } from "./repo/settings";
-import { settingsMap } from "./repo/broadcasts";
+import { listBroadcasts, listRecipients, listWaStatuses, settingsMap } from "./repo/broadcasts";
+import { listWaMessages } from "./repo/talks";
+import { habitsAnalytics, habitsDigestLine } from "./habitsAnalytics";
 import { saveSettings } from "./repo/settings";
 import { listUsers } from "./repo/users";
 import { computeBatchStorageInfo } from "./shelfLife";
 import { homeFocus } from "./homeFocus";
 import { nameIndex } from "./personName";
-import { waPhone } from "./broadcast";
+import { deliveryByMessage, waPhone } from "./broadcast";
 import { sendText } from "./greenApi";
 import { checkGreenChannel } from "./greenChannel";
 import { DIGEST_SETTING, digestParts, digestPhones } from "./morningDigest";
@@ -79,7 +81,7 @@ export async function buildMorningDigestParts(now: Date = new Date()): Promise<s
       (l) => `${pushLineText(l)} · вчера продали ${pushSold(l, orders, y, y, (iso) => localDayKey(new Date(iso)), (o) => !isNotASale(o)).toLocaleString("ru-RU")} шт.`
     );
   }
-  return digestParts({
+  const parts = digestParts({
     push: pushText,
     today,
     orders,
@@ -91,6 +93,18 @@ export async function buildMorningDigestParts(now: Date = new Date()): Promise<s
     dayOf: (iso) => localDayKey(new Date(iso)),
     site: SITE(),
   });
+  // Рассылки постоянникам от имени менеджеров за неделю (09.11.2026, владелец: «вести аналитику по таким рассылкам»).
+  try {
+    await prefetchTables([SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS, SHEET_TABS.WA_STATUSES, SHEET_TABS.WA_MESSAGES]);
+    const [broadcasts, recipients, statuses, messages] = await Promise.all([listBroadcasts(), listRecipients(), listWaStatuses(), listWaMessages({ lines: "all" })]);
+    const names = nameIndex(users);
+    const stats = habitsAnalytics({ broadcasts, recipients, statuses: deliveryByMessage(statuses), messages, orders, nameOf: (e: string) => (names[e] || e || "").split(/\s+/)[0] || e, today, days: 7 });
+    const line = habitsDigestLine(stats);
+    if (line) parts.push(`${line.replace(/^Постоянникам:/, "Постоянникам за 7 дней:")}\n${SITE()}/clients/habits`);
+  } catch {
+    /* сводка важнее строки аналитики */
+  }
+  return parts;
 }
 
 /** Вся сводка одним текстом — для предпросмотра («Как выглядит», diag-digest). */

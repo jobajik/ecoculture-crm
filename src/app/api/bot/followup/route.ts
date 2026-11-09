@@ -5,6 +5,7 @@ import { settingsMap } from "@/lib/repo/broadcasts";
 import { saveSettings } from "@/lib/repo/settings";
 import { FOLLOWUP_LAST_RUN, followupRunDue, followupRunText } from "@/lib/botFollowUpRun";
 import { sendDueStaffReminders } from "@/lib/staffCommandRunner";
+import { kickHabits } from "@/lib/habitsKick";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
   if (!fromWebhook) await kickAssistant((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
   // И автопилот рассылок (17.10.2026): план, запуск в 10:00 и отправка — на случай тишины в вебхуках.
   if (!fromWebhook) await kickBroadcast((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
+  // И постоянников, которые молчат дольше обычного (09.11.2026): своей функцией `/api/habits?mode=overdue`, 10–18.
+  if (!fromWebhook) await kickHabits((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""), "overdue");
   // Отметка ДО работы: второй вебхук через секунду увидит её и не задвоит касания.
   await saveSettings({ [FOLLOWUP_LAST_RUN]: followupRunText(now, source, "идёт") }).catch(() => undefined);
   // Напоминания сотрудникам («напомни мне в 15:00 …», `staffCommand.ts`) — чей час настал.

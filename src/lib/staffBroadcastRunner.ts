@@ -26,6 +26,7 @@ import { MANAGER_PROFILES_SETTING, nextShipDay, parseManagerProfiles, profileOf,
 import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade, ORDER_STATUSES, ROLES } from "./constants";
 import {
   broadcastCount,
+  STAFF_BROADCAST_MAX,
   pickBroadcastContacts,
   pickListedContacts,
   type ListedCandidate,
@@ -36,6 +37,9 @@ import {
 } from "./staffBroadcast";
 import type { StaffCommand, StaffItem } from "./staffCommand";
 import type { AppUser } from "./types";
+import { HABIT_AUTO, habitRecipientsFor, habitTitle, loadHabitContext, lastOrderDay, computeHabits, type HabitRow } from "./clientHabitsRunner";
+import { MIN_SEND_GAP_DAYS, type HabitOffer } from "./clientHabits";
+import { updateRows, SHEET_TABS as TABS } from "./sheets";
 
 // Рассылка по просьбе менеджера — правила в `staffBroadcast.ts`.
 
@@ -75,6 +79,7 @@ export async function planStaffBroadcast(
   listedPhones: string[] = []
 ): Promise<{ reply: string; plan: StaffBroadcastPlan | null }> {
   if (!staff) return { reply: "Не узнал вас как сотрудника: ваш номер не записан в карточке («Настройки → Сотрудники»). Попросите владельца записать — и рассылка заработает.", plan: null };
+  if (command.regulars) return planHabitsBroadcast(command, staff, ctx);
   await prefetchTables([SHEET_TABS.WA_MESSAGES, SHEET_TABS.CLIENTS, SHEET_TABS.LEADS, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.BROADCASTS, SHEET_TABS.BROADCAST_RECIPIENTS, SHEET_TABS.BOT_CHATS, SHEET_TABS.SETTINGS]).catch(() => undefined);
   const [lines, messages, clients, leads, orders, broadcasts, recipients, optedOut, map] = await Promise.all([
     listWaLines().catch(() => []),
@@ -226,6 +231,105 @@ export async function planStaffBroadcast(
   return { reply: staffBroadcastPlanText({ plan, asked, skipped, withPhoto: command.photo }), plan };
 }
 
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
+/**
+ * «Напомни постоянникам …» (09.11.2026): получатели — постоянники менеджера из `ClientHabits` (кроме тех, кто заказал за
+ * 3 дня, сам написал последним, отписался, отказался в переписке или получал напоминание на этой неделе), текст — каждому
+ * свой, словами менеджера (`habitRecipientsFor`, режим «по просьбе»), позиции упора — со склада с ценой. Только с
+ * номера самого менеджера: напоминание «как обычно» с чужого номера выглядело бы странно.
+ */
+async function planHabitsBroadcast(
+  command: StaffCommand,
+  staff: AppUser,
+  ctx: { prices: Map<string, PriceRow>; stock: { flower: string; variety: string; grade: string; qty: number }[] }
+): Promise<{ reply: string; plan: StaffBroadcastPlan | null }> {
+  const email = staff.email.toLowerCase();
+  const hctx = await loadHabitContext();
+  const mine = hctx.habits.filter((h) => h.regular && h.active && h.managerEmail.toLowerCase() === email);
+  if (!mine.length) return { reply: "У вас пока нет постоянников в CRM: ими считаются клиенты с 3 и больше заявками за 90 дней с промежутком до 3 недель.", plan: null };
+  const line = hctx.lines.find((l) => l.active && l.assistant !== "off" && l.managerEmail.toLowerCase() === email)?.code ?? "";
+  if (!line) return { reply: "Постоянникам пишу только с вашего номера WhatsApp, а он в CRM не подключён. Попросите владельца подключить («Настройки → WhatsApp менеджеров»).", plan: null };
+  const priceOf = (f: string, v: string, g: string) => priceFor(ctx.prices, f, v, g);
+  const focusNudge = focusOffers(command.items, ctx.stock, priceOf);
+  if (command.items.length && !focusNudge.length) {
+    return { reply: `Сейчас на складе нет (или нет цены): ${command.items.map(itemTitle).join(", ")} — напоминание не собираю. Назовите другую позицию.`, plan: null };
+  }
+  const skipped: Record<string, number> = {};
+  const skip = (why: string) => (skipped[why] = (skipped[why] ?? 0) + 1);
+  const recentFrom = localDayKey(new Date(Date.now() - ORDERED_RECENTLY_DAYS * 86400000));
+  const take: HabitRow[] = [];
+  for (const h of mine) {
+    const key = phoneKey(h.phone);
+    if (hctx.optout.has(key)) {
+      skip("отписался");
+      continue;
+    }
+    const last = lastOrderDay(hctx, h) || h.lastAt;
+    if (last >= recentFrom) {
+      skip(`заказывал за ${ORDERED_RECENTLY_DAYS} дня`);
+      continue;
+    }
+    const f = hctx.facts.get(key);
+    if (f?.lastDirection === "in") {
+      skip("сам написал, ждёт вашего ответа");
+      continue;
+    }
+    if (looksLikeRefusal(f?.lastInText)) {
+      skip("отказался в переписке");
+      continue;
+    }
+    if (h.lastSentAt && daysBetween(h.lastSentAt.slice(0, 10), hctx.today) < MIN_SEND_GAP_DAYS + 1) {
+      skip("напоминали на этой неделе");
+      continue;
+    }
+    take.push(h);
+  }
+  // Самые ценные первыми; «кому» ограничено числом из поручения или пределом рассылки с номера.
+  take.sort((a, b) => b.avgAmount / Math.max(1, b.medianGapDays) - a.avgAmount / Math.max(1, a.medianGapDays));
+  const asked = command.count > 0 ? Math.min(command.count, STAFF_BROADCAST_MAX) : Math.min(take.length, STAFF_BROADCAST_MAX);
+  const list = take.slice(0, asked);
+  if (!list.length) {
+    const why = Object.entries(skipped).map(([w, k]) => `${w} — ${k}`).join("; ");
+    return { reply: `Некому: из ваших ${mine.length} постоянников сейчас никто не подходит${why ? ` (${why})` : ""}.`, plan: null };
+  }
+  const focusTitle = command.items.length ? command.items.map(itemTitle).join(", ") : "их обычные позиции";
+  const focus: HabitOffer[] = focusNudge.map((o) => ({ item: { flowerType: o.flowerType, variety: o.variety, grade: o.grade, qty: 100, times: 0 }, price: o.price, stock: o.qty }));
+  const built = await habitRecipientsFor(hctx, staff.email, list, "command", { focus: command.items.length ? focusTitle : undefined, focusOffers: focus, budgetMs: 35000 });
+  for (const s of built.skipped) skip(s.why);
+  if (!built.recipients.length) return { reply: "Некому: у подходящих постоянников нет мобильного номера.", plan: null };
+  const plan: StaffBroadcastPlan = {
+    at: new Date().toISOString(),
+    habits: true,
+    line,
+    via: "вашего номера",
+    title: habitTitle(firstName(staff.name), "command", hctx.today),
+    fileId: command.photo ? ROTATION_FILE : "",
+    fileName: command.photo ? "Фото из ротации" : "",
+    focus: focusTitle,
+    recipients: built.recipients.map((r) => ({ phone: r.phone, name: r.name, kind: r.kind, refId: r.refId, managerEmail: r.managerEmail, text: r.text })),
+  };
+  return { reply: staffBroadcastPlanText({ plan, asked: command.count > 0 ? command.count : plan.recipients.length, skipped, withPhoto: command.photo }), plan };
+}
+
+/** После запуска напоминания постоянникам — отметить LastSentAt у получателей (чтобы неделю их не трогать). */
+async function markHabitsSent(clientIds: string[]): Promise<void> {
+  if (!clientIds.length) return;
+  const rows = await computeHabits();
+  const now = new Date().toISOString();
+  const ids = new Set(clientIds);
+  const upd = rows
+    .filter((h) => h.rowNumber && ids.has(h.clientId))
+    .map((h) => ({
+      rowNumber: h.rowNumber!,
+      record: {
+        ClientID: h.clientId, ManagerEmail: h.managerEmail, Name: h.name, Phone: h.phone, Orders: h.orders, MedianDays: h.medianGapDays, Weekday: h.weekday,
+        UsualItems: JSON.stringify(h.usual), AvgAmount: h.avgAmount, LastOrderAt: h.lastAt, NextExpectedAt: h.nextExpectedAt, LastSentAt: now, UpdatedAt: now, Active: h.active ? "TRUE" : "FALSE",
+      },
+    }));
+  if (upd.length) await updateRows(TABS.CLIENT_HABITS, upd).catch(() => undefined);
+}
+
 /** «ДА» на план: рассылка «идёт», дальше её ведёт цепочка рассылок (темп и пределы номера). */
 export async function runStaffBroadcastPlan(plan: StaffBroadcastPlan, staff: AppUser | null): Promise<string> {
   // За время ожидания с кем-то уже заговорили — им не шлём.
@@ -238,11 +342,13 @@ export async function runStaffBroadcastPlan(plan: StaffBroadcastPlan, staff: App
     text: list[0].text,
     fileId: plan.fileId,
     fileName: plan.fileName,
-    audience: `По просьбе ${firstName(staff?.name || "") || "сотрудника"} в WhatsApp: ${plan.listed ? "номера из его сообщения" : "тёплые контакты"} (${list.length})`,
+    audience: `По просьбе ${firstName(staff?.name || "") || "сотрудника"} в WhatsApp: ${plan.habits ? "его постоянники" : plan.listed ? "номера из его сообщения" : "тёплые контакты"} (${list.length})`,
     recipients: list,
     line: plan.line,
     status: BROADCAST_STATUSES.SENDING,
+    ...(plan.habits ? { auto: HABIT_AUTO, plannedFor: localDayKey() } : {}),
   });
+  if (plan.habits) await markHabitsSent(list.map((r) => r.refId).filter(Boolean));
   await kickBroadcast(SITE()).catch(() => undefined);
   const late = almatyHourOf(new Date()) >= 19;
   const dropped = plan.recipients.length - list.length;

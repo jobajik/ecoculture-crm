@@ -31,6 +31,8 @@ export interface StaffBroadcastPlan {
   at: string;
   /** Номера назвал сам сотрудник — шлём ровно им. */
   listed?: boolean;
+  /** Постоянникам менеджера (`ClientHabits`): личные тексты его словами, рассылка помечается для аналитики постоянников. */
+  habits?: boolean;
   line: string;
   /** «вашего номера», «основного номера». */
   via: string;
@@ -200,13 +202,15 @@ export function staffBroadcastPlanText(input: { plan: StaffBroadcastPlan; asked:
     .join("; ");
   const sample = (plan.recipients[0]?.text || "").replace("{имя}", plan.recipients[0]?.name || "");
   return [
-    plan.listed
+    plan.habits
+      ? `Постоянникам с ${plan.via}: *${n}*${n < input.asked ? ` (просили ${input.asked}, подходящих меньше)` : ""} — ${plan.focus}. Каждому свой текст, вашими словами.`
+      : plan.listed
       ? `Рассылка с ${plan.via}: *${n}* по вашему списку${n < input.asked ? ` (номеров было ${input.asked})` : ""} — ${plan.focus}.`
       : `Рассылка с ${plan.via}: *${n}* ${n < input.asked ? `(просили ${input.asked}, подходящих меньше) ` : ""}— ${plan.focus}.`,
     `Кому: ${names}${n > show ? ` и ещё ${n - show}` : ""}.`,
     ...(skippedText ? [`Не беру: ${skippedText}.`] : []),
     "",
-    `Текст${input.withPhoto ? " (с фото позиции)" : ""}:`,
+    `Текст${plan.habits ? ` ${plan.recipients[0]?.name || ""}${input.withPhoto ? ", с фото" : ""}` : input.withPhoto ? " (с фото позиции)" : ""}:`,
     sample,
     "",
     "Ответьте *ДА* — запущу, *НЕТ* — не запускаю. План ждёт 3 часа.",

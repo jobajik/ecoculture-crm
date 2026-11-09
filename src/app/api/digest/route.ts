@@ -2,7 +2,7 @@ import { digestResultText, recordDigestRun, sendMorningDigest } from "@/lib/morn
 import { remindBotInvoices } from "@/lib/botFollowUp";
 import { kickBroadcast } from "@/lib/autoBroadcastRunner";
 import { lineMorningPlans } from "@/lib/lineMorningPlan";
-import { runClientHabits } from "@/lib/clientHabitsRunner";
+import { kickHabits } from "@/lib/habitsKick";
 import { sendDueStaffReminders } from "@/lib/staffCommandRunner";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +31,10 @@ export async function GET(request: Request) {
     await kickBroadcast((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
     // И утренний план менеджерам с продающим помощником (19.10.2026, «утренний план Ильясу»).
     const plans = await lineMorningPlans({ send: true }).catch((e) => [{ line: "", text: String(e), sent: false }]);
-    // Постоянникам менеджеров — в их день недели, от имени менеджера (09.11.2026, `clientHabitsRunner`).
-    const habits = await runClientHabits({ send: true })
-      .then((r) => r.results.map((x) => ({ manager: x.manager, sent: x.sent.length, broadcastId: x.broadcastId })))
-      .catch((e) => [{ manager: "", sent: 0, broadcastId: `ошибка: ${String(e)}` }]);
+    // Постоянникам менеджеров — в их день недели, от имени и словами менеджера (09.11.2026): своей функцией
+    // `/api/habits`, модель пишет тексты 20–30 с, сводке эта минута нужна самой.
+    await kickHabits((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""), "weekly");
+    const habits = "запущено отдельной функцией (/api/habits?mode=weekly)";
     return Response.json({ ok: true, sent: result.sent.length, failed: result.failed.length, note: result.note, reminders, staffReminders, plans: plans.map((p) => ({ line: p.line, sent: p.sent })), habits });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

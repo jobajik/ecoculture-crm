@@ -30,6 +30,8 @@ export function clientsTabsFor(period?: string, role?: string | null) {
     { href: "/clients/leads", label: "Лиды" },
     ...ai,
     ...ads,
+    // Постоянники (09.11.2026): кто заказывает регулярно и как идут напоминания от имени менеджеров; менеджер — своих.
+    ...(manage || role === "manager" ? [{ href: "/clients/habits", label: "Постоянники" }] : []),
     // Обзвон базы: менеджер звонит по очереди и ставит итог одним нажатием, РОП видит итоги.
     { href: "/clients/leads/calls", label: "Обзвон" },
     // Разбор переписки WhatsApp с лидами: оценка менеджеров, возражения, кто ждёт ответа.

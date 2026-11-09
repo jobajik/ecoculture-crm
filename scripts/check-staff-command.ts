@@ -280,8 +280,9 @@ check("регион — фура, не «завтра»", staffBroadcastText({ m
 console.log("\n— Заказ клиента");
 check("intent send_order", parseStaffCommand({ intent: "send_order", client: "Сабина Междуреченск" }).intent, "send_order");
 check("intent remind с временем и текстом", parseStaffCommand({ intent: "remind", remindAt: "2026-10-29T09:00", remindText: "внести заявку Баглана" }), {
-  intent: "remind", client: "", phone: "", items: [], text: "", count: 0, photo: true, remindAt: "2026-10-29T09:00", remindText: "внести заявку Баглана",
+  intent: "remind", client: "", phone: "", items: [], text: "", count: 0, photo: true, regulars: false, remindAt: "2026-10-29T09:00", remindText: "внести заявку Баглана",
 });
+check("постоянникам: regulars", [parseStaffCommand({ intent: "broadcast", regulars: true }).regulars, parseStaffCommand({ intent: "broadcast" }).regulars], [true, false]);
 check("intent mute / unmute", [parseStaffCommand({ intent: "mute", client: "Лешка Оранж" }).intent, parseStaffCommand({ intent: "unmute" }).intent], ["mute", "unmute"]);
 check("подсказка «пока умею» называет новые поручения", [STAFF_OTHER_TEXT.includes("его заказ"), STAFF_OTHER_TEXT.includes("напомнить"), STAFF_OTHER_TEXT.includes("не писать")], [true, true, true]);
 
