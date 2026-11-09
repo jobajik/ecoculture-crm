@@ -2,7 +2,7 @@
  * Привычки постоянников (`src/lib/clientHabits.ts`): периодичность, день недели, обычные позиции, когда писать и текст.
  *   npx tsx scripts/check-client-habits.ts
  */
-import { buildHabits, habitDue, habitText, weekdayOf, type HabitOrder } from "../src/lib/clientHabits";
+import { buildHabits, habitDue, habitGreetingName, habitText, weekdayOf, type HabitOrder } from "../src/lib/clientHabits";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -72,6 +72,17 @@ check("ничего нет на складе — короткий текст", t
 const t3 = habitText({ ...a, name: "ТОО Цветочный мир Караганда" }, "Эмиль", [{ item: a.usual[0], price: 270, stock: 300 }]);
 check("ТОО — без обращения по имени", t3.startsWith("Здравствуйте! Это Эмиль"), true);
 check("количество не больше остатка", t3.includes("200 шт."), true);
+check("обращение: «Асем Каскелен» → Асем", habitGreetingName("Асем Каскелен"), "Асем");
+check("обращение: «Мира новый» → Мира", habitGreetingName("Мира новый"), "Мира");
+check("обращение: «Лена Фабричный» → Лена", habitGreetingName("Лена Фабричный"), "Лена");
+check("обращение: одно имя", habitGreetingName("Флорентина"), "Флорентина");
+check("обращение: «Цветы 24» — без имени", habitGreetingName("Цветы 24"), "");
+check("обращение: «Магазин Роза» — без имени", habitGreetingName("Магазин Роза"), "");
+check("обращение: «ТОО Ромашка» — без имени", habitGreetingName("ТОО Ромашка"), "");
+check("обращение: «Клиент WhatsApp 1234» — без имени", habitGreetingName("Клиент WhatsApp 1234"), "");
+check("обращение: «Центр цветов Романтик» — без имени", habitGreetingName("Центр цветов Романтик"), "");
+check("обращение: латиница — без имени", habitGreetingName("Flowers Almaty"), "");
+check("обращение: пусто", habitGreetingName(""), "");
 
 console.log(failed ? `\nПровалено проверок: ${failed}` : "\nВсе проверки прошли.");
 process.exit(failed ? 1 : 0);

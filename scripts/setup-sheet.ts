@@ -20,6 +20,7 @@ import {
   DEFAULT_WARNING_THRESHOLD,
   DEFAULT_VARIETIES,
 } from "../src/lib/constants";
+import { isPayrollTab } from "../src/lib/sheets";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config(); // на случай .env без .local
@@ -85,9 +86,10 @@ async function main() {
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
   const existingTitles = new Set((meta.data.sheets ?? []).map((s) => s.properties?.title));
 
-  // Вкладки зарплаты (Payroll*) живут в отдельной таблице — их здесь не заводим. Их создаёт администратор
-  // со страницы /api/payroll/setup (src/lib/payrollSheet.ts).
-  const tabNames = Object.values(SHEET_TABS).filter((name) => !name.startsWith("Payroll"));
+  // Вкладки зарплаты (Payroll*) и теплицы (Gh*) живут во второй таблице — их здесь не заводим (`isPayrollTab`). Их создаёт
+  // администратор со страницы /api/payroll/setup (src/lib/payrollSheet.ts). 09.11.2026 фильтр был только по «Payroll», и
+  // в общей таблице появились пустые GhCycles, GhHarvest, GhCuttings, GhWaste, GhIntake — программа их не читает.
+  const tabNames = Object.values(SHEET_TABS).filter((name) => !isPayrollTab(name));
   const toCreate = tabNames.filter((name) => !existingTitles.has(name));
 
   if (toCreate.length > 0) {
