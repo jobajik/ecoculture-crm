@@ -28,6 +28,7 @@ import { phoneKey, stageLabel } from "../src/lib/leads";
 import { ORDER_STATUSES } from "../src/lib/constants";
 import { isNotASale } from "../src/lib/orderKind";
 import { mergeMessages } from "../src/lib/whatsapp";
+import { isAckOnly } from "../src/lib/broadcast";
 import type { WaMessage } from "../src/lib/types";
 
 const firstName = (n: string) => (n || "").trim().split(/\s+/)[0] || n;
@@ -46,6 +47,15 @@ const count = (xs: string[]) => {
   return Array.from(m)
     .map(([name, n]) => ({ name, count: n }))
     .sort((a, b) => b.count - a.count);
+};
+/** Кивок, смайлик, чек или файл без слов — ответа не ждёт, в скорость ответа не считается. */
+const needsReply = (m: WaMessage) => {
+  const t = (m.text || "").trim();
+  if (!t) return m.type === "text" || m.type === "voice";
+  if (isAckOnly(t)) return false;
+  if (/^[\p{Emoji}\p{Emoji_Presentation}\s\u200d\ufe0f]+$/u.test(t)) return false;
+  if (/^receipt_|^\[image\]|^\[document\]/i.test(t)) return false;
+  return true;
 };
 const BUCKETS: [string, number][] = [["до 5 мин", 5], ["5–30 мин", 30], ["30–60 мин", 60], ["1–3 ч", 180], ["3–12 ч", 720], ["12–24 ч", 1440], ["дольше суток", Infinity]];
 const bucketOf = (min: number) => BUCKETS.find(([, lim]) => min <= lim)![0];
@@ -133,7 +143,7 @@ async function main() {
     for (const m of sorted) {
       if (m.direction === "in") {
         inc++;
-        if (!pending) pending = m;
+        if (!pending && needsReply(m)) pending = m;
         if (looksLikeRefusal(m.text)) refusals.push({ line, key, name: who.name, kind: who.kind, at: m.at, text: m.text.replace(/\s+/g, " ").slice(0, 140), refusalKind: refusalKind(m.text) });
       } else {
         outg++;
