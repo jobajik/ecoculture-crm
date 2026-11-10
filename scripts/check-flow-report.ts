@@ -3,7 +3,7 @@
  * продано без склада Астаны, отгружено с основного и офиса, списано любым складом, остаток на начало и конец,
  * возраст при списании, план против факта, границы периода из адреса.
  */
-import { buildFlowReport, cleanRange, presetRange, shiftDay, daysBetween } from "../src/lib/flowReport";
+import { buildFlowReport, cleanRange, cleanReason, presetRange, shiftDay, daysBetween } from "../src/lib/flowReport";
 import { avgPrice } from "../src/lib/monthReport";
 import type { Batch, OrderWithItems, Shipment, Writeoff } from "../src/lib/types";
 
@@ -106,6 +106,7 @@ check("пустые данные не роняют", [r2.total.cut, r2.balance.e
 check("границы из адреса", [cleanRange("2026-10-05", "2026-10-01", "2026-11-10"), cleanRange("мусор", "", "2026-11-10"), cleanRange("2026-10-01", "2027-01-01", "2026-11-10")], [{ from: "2026-10-01", to: "2026-10-05" }, { from: "2026-10-12", to: "2026-11-10" }, { from: "2026-10-01", to: "2026-11-10" }]);
 check("готовые периоды", [presetRange("week", "2026-11-10"), presetRange("prev-month", "2026-11-10"), presetRange("month", "2026-11-10"), presetRange("7", "2026-11-10")], [{ from: "2026-11-09", to: "2026-11-10" }, { from: "2026-10-01", to: "2026-10-31" }, { from: "2026-11-01", to: "2026-11-10" }, { from: "2026-11-04", to: "2026-11-10" }]);
 check("дни", [shiftDay("2026-03-01", -1), daysBetween("2026-10-01", "2026-10-31")], ["2026-02-28", 30]);
+check("причина списания без дописок", [cleanReason("«Порча / истёк срок хранения»."), cleanReason("Порча / истёк срок хранения · С 17.10по 24.10."), cleanReason("  Брак "), cleanReason("")], ["Порча / истёк срок хранения", "Порча / истёк срок хранения", "Брак", "—"]);
 
 if (failed) {
   console.log(`\n${failed} проверок не прошло`);

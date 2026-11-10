@@ -112,6 +112,16 @@ const median = (xs: number[]): number | null => {
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
+/**
+ * Причина списания для группировки: зав. складом дописывает к выбранной причине даты и кавычки («Порча / истёк срок
+ * хранения · С 17.10 по 24.10», «„Порча / истёк срок хранения“.») — всё это одна причина. Берётся часть до « · »,
+ * кавычки и точки по краям снимаются.
+ */
+export function cleanReason(raw: string | null | undefined): string {
+  const first = String(raw ?? "").split(" · ")[0].split("·")[0];
+  const v = first.replace(/[«»"„“”']/g, "").replace(/^[\s.,;:!-]+|[\s.,;:!-]+$/g, "").replace(/\s+/g, " ").trim();
+  return v || "—";
+}
 const ageBucket = (days: number) => (days <= 3 ? 0 : days <= 7 ? 1 : days <= 14 ? 2 : 3);
 
 /** Готовые периоды для страницы. */
@@ -278,7 +288,8 @@ export function buildFlowReport(input: FlowInput): FlowReport {
     if (inPrev(d)) for (const r of rowsFor(b.flowerType, b.grade, b.variety)) r.prev.writeoff += w.quantity;
     if (!inCur(d)) continue;
     for (const r of rowsFor(b.flowerType, b.grade, b.variety)) r.writeoff += w.quantity;
-    reasons.set(w.reason || "—", (reasons.get(w.reason || "—") ?? 0) + w.quantity);
+    const reason = cleanReason(w.reason);
+    reasons.set(reason, (reasons.get(reason) ?? 0) + w.quantity);
     const who = input.names.get((w.warehouseEmail || "").toLowerCase()) || w.warehouseEmail || "—";
     people.set(who, (people.get(who) ?? 0) + w.quantity);
     const root = rootOf(b);
