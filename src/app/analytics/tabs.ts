@@ -23,11 +23,13 @@ export function analyticsTabsFor(role: string | null | undefined) {
     return [
       { href: "/analytics", label: "Аналитика хозяйства" },
       { href: "/analytics/month", label: "Итоги месяца" },
+      { href: "/analytics/flow", label: "Срез · продажи · списания" },
     ];
   }
   if (role !== ROLES.ADMIN) return [];
   return [
     { href: "/analytics/month", label: "Итоги месяца" },
+    { href: "/analytics/flow", label: "Срез · продажи · списания" },
     { href: "/analytics/calendar", label: "Календарь" },
     { href: "/analytics", label: "Отчёт" },
   ];

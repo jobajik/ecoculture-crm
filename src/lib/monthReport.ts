@@ -33,8 +33,8 @@ export interface Money {
   /** Штук с ценой (у которых считается средняя). */
   priced: number;
 }
-const m0 = (): Money => ({ qty: 0, sum: 0, priced: 0 });
-const madd = (a: Money, qty: number, price: number) => {
+export const m0 = (): Money => ({ qty: 0, sum: 0, priced: 0 });
+export const madd = (a: Money, qty: number, price: number) => {
   a.qty += qty;
   if (price > 0) {
     a.sum += qty * price;
@@ -122,7 +122,7 @@ export function cleanMonth(raw: string | null | undefined, today: string): strin
 export const MONTH_NAMES = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
 export const monthTitle = (ym: string) => `${MONTH_NAMES[Number(ym.slice(5, 7)) - 1] ?? ym} ${ym.slice(0, 4)}`;
 
-function channelOf(o: OrderWithItems): Channel {
+export function channelOf(o: OrderWithItems): Channel {
   if ((o.retail || "").trim()) return "shops";
   if (isRegionOrder(o)) return "region";
   if (isConsignment(o)) return "point";
