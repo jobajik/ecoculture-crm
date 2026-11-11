@@ -48,7 +48,11 @@ async function main() {
   const farmFlowers = (f: string | null | undefined) => (f === "rose_farm" ? ["rose", "eustoma", "chrysanthemum_rf"] : f === "esentai" ? ["chrysanthemum"] : []);
   check("склад Rose Farm отдаёт свою эустому в офис", moveRefusal("warehouse", "rose_farm", "to_office", [{ flowerType: "eustoma" }], farmFlowers), "");
   check("склад Rose Farm чужую хризантему — нет", moveRefusal("warehouse", "rose_farm", "to_office", [{ flowerType: "chrysanthemum" }], farmFlowers) !== "", true);
-  check("склад обратно из офиса — нет", moveRefusal("warehouse", "rose_farm", "to_main", [{ flowerType: "rose" }], farmFlowers) !== "", true);
+  // 11.11.2026: РОП ушёл — зав. складом сама возвращает СВОЙ цветок из офиса.
+  check("склад возвращает свою розу из офиса", moveRefusal("warehouse", "rose_farm", "to_main", [{ flowerType: "rose" }], farmFlowers), "");
+  check("склад чужую хризантему из офиса — нет", moveRefusal("warehouse", "rose_farm", "to_main", [{ flowerType: "chrysanthemum" }], farmFlowers) !== "", true);
+  check("склад Есентая возвращает свою хризантему", moveRefusal("warehouse", "esentai", "to_main", [{ flowerType: "chrysanthemum" }], farmFlowers), "");
+  check("склад в регион перемещением — нет (это отгрузка объёма)", moveRefusal("warehouse", "rose_farm", "to_region", [{ flowerType: "rose" }], farmFlowers) !== "", true);
   check("склад без производства — нет", moveRefusal("warehouse", null, "to_office", [{ flowerType: "rose" }], farmFlowers) !== "", true);
   check("РОП — любое направление", moveRefusal("sales_head", null, "to_main", [{ flowerType: "chrysanthemum" }], farmFlowers), "");
   check("менеджер — нет", moveRefusal("manager", null, "to_office", [{ flowerType: "rose" }], farmFlowers) !== "", true);

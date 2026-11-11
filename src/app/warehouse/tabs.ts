@@ -21,7 +21,7 @@ export const WAREHOUSE_TABS: SectionTab[] = [
   ...tabOfViews("Выдачи", [
     { href: "/warehouse/takeouts", label: "Сотрудникам" },
     { href: "/warehouse/company", label: "На нужды компании" },
-    { href: "/warehouse/to-office", label: "В офис" },
+    { href: "/warehouse/to-office", label: "В офис и обратно" },
   ]),
   // Приход, отгрузки, списания и остаток за месяц — «как у клиентов» (просьба владельца).
   { href: "/warehouse/analytics", label: "Аналитика" },
