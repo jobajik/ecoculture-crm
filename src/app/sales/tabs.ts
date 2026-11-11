@@ -1,3 +1,5 @@
+import { analyticsTabsFor } from "../analytics/tabs";
+
 /** Вкладки раздела «Продажи» — верхнее меню держим коротким. */
 export const SALES_TABS = [
   { href: "/sales", label: "Рейтинг и бонусы" },
@@ -15,9 +17,9 @@ export const SALES_TABS = [
  * Менеджеру прайс нужен на просмотр — он по нему продаёт, — и для него вкладка
  * остаётся тут. Остальные вкладки одинаковы у всех.
  */
-export function salesTabsFor(role: string | null | undefined) {
-  if (role === "sales_head" || role === "admin") {
-    return SALES_TABS.filter((t) => t.href !== "/prices");
-  }
+export function salesTabsFor(role: string | null | undefined): { href: string; label: string; match?: string[] }[] {
+  // У владельца и РОПа «Продажи» — часть «Планов и цифр»: вкладки цифр общие (`analyticsTabsFor`), а «План и факт»,
+  // «По цветам» и «Продажи за день» лежат в архиве отчётов (12.11.2026).
+  if (role === "sales_head" || role === "admin") return analyticsTabsFor(role);
   return SALES_TABS;
 }

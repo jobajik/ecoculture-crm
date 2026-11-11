@@ -10,7 +10,9 @@ import { listPrices } from "./prices";
 import { listUsers } from "./users";
 import { nameIndex } from "../personName";
 import { localDayKey } from "../timezone";
-import { buildFlowReport, type FlowReport } from "../flowReport";
+import { buildFlowReport, planMonthOf, type FlowReport } from "../flowReport";
+import { listPlans } from "./plans";
+import { aggregateManagerPlans } from "../managerPlans";
 
 /** «Срез · продажи · списания»: всё нужное читается одним `batchGet` (грабли 1.17) и считается `buildFlowReport`. */
 export async function loadFlowReport(from: string, to: string, farm: string, flower: string): Promise<FlowReport> {
@@ -25,8 +27,10 @@ export async function loadFlowReport(from: string, to: string, farm: string, flo
     SHEET_TABS.STOCK_MOVES,
     SHEET_TABS.HARVEST_FORECAST,
     SHEET_TABS.PRICE_HISTORY,
+    SHEET_TABS.PLANS,
   ]).catch(() => undefined);
-  const [batches, orders, shipments, writeoffs, takeouts, moves, forecast, priceRows, users] = await Promise.all([
+  const planMonth = planMonthOf(from, to);
+  const [batches, orders, shipments, writeoffs, takeouts, moves, forecast, priceRows, users, planRows] = await Promise.all([
     listBatches(),
     listOrdersWithItems(),
     listShipments(),
@@ -36,7 +40,8 @@ export async function loadFlowReport(from: string, to: string, farm: string, flo
     listHarvestForecast().catch(() => []),
     listPrices().catch(() => []),
     listUsers().catch(() => []),
+    planMonth ? listPlans().catch(() => []) : Promise.resolve([]),
   ]);
   const names = new Map<string, string>(Object.entries(nameIndex(users)));
-  return buildFlowReport({ from, to, farm, flower, today: localDayKey(), batches, orders, shipments, writeoffs, takeouts, moves, forecast, priceRows, names });
+  return buildFlowReport({ from, to, farm, flower, today: localDayKey(), batches, orders, shipments, writeoffs, takeouts, moves, forecast, priceRows, names, plans: planMonth ? aggregateManagerPlans(planRows, planMonth) : undefined });
 }

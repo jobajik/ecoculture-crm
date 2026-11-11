@@ -20,11 +20,12 @@ export function plansTabsFor(role: string | null | undefined, period?: string) {
     { href: `/plans${q}`, label: "Обзор", match: ["/plans"] },
     { href: `/plans/sales${q}`, label: "Продажи", match: ["/plans/sales"] },
     { href: `/plans/shipments${q}`, label: "Отгрузки", match: ["/plans/shipments", "/plans/regions"] },
-    { href: `/plans/balance${q}`, label: "Срезка", match: ["/plans/balance"] },
+    // «Прогноз срезки» (ввод агронома) открывается кнопкой со «Срезки»: это одна тема, и отдельная вкладка у владельца
+    // только удлиняла меню (12.11.2026).
+    { href: `/plans/balance${q}`, label: "Срезка", match: ["/plans/balance", "/forecast"] },
     // Прайс-лист живёт здесь, а не в «Продажах»: цену задаёт РОП, а менеджеры
     // по ней продают. Так решил владелец.
     { href: "/prices", label: "Прайс", match: ["/prices"] },
   ];
-  if (role === ROLES.ADMIN) tabs.push({ href: "/forecast", label: "Прогноз срезки", match: ["/forecast"] });
   return tabs;
 }

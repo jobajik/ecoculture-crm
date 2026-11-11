@@ -96,7 +96,7 @@ const G_STOCK = (p: string) =>
         : "Работа склада";
 const G_MONEY = (p: string) =>
   ["/finance/point", "/finance/claims", "/finance/takeouts"].includes(p) ? "Учёт" : ["/finance/log", "/finance/analytics", "/finance/report"].includes(p) ? "Отчёты" : "Оплаты";
-const G_NUMBERS = (p: string) => (p.startsWith("/analytics") ? "Аналитика" : p.startsWith("/sales") ? "Продажи" : "Планы");
+const G_NUMBERS = (p: string) => (p.startsWith("/analytics") || p.startsWith("/sales") ? "Цифры" : "Планы");
 
 const DAY: NavLink = { href: "/", label: "Мой день", match: ["/"], subs: [] };
 const ORDERS: NavLink = { href: "/orders", label: "Заявки", match: ["/orders"], subs: [] };
@@ -202,7 +202,7 @@ function baseLinksFor(role: string): NavLink[] {
         section(
           "/plans",
           "Планы и цифры",
-          grouped([...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)], G_NUMBERS),
+          grouped([...plansTabsFor(role), ...analyticsTabsFor(role)], G_NUMBERS),
           ["/sales", "/prices", "/analytics", "/forecast"]
         ),
       ];
@@ -224,7 +224,7 @@ function baseLinksFor(role: string): NavLink[] {
         section(
           "/plans",
           "Планы и цифры",
-          grouped([...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)], G_NUMBERS),
+          grouped([...plansTabsFor(role), ...analyticsTabsFor(role)], G_NUMBERS),
           ["/sales", "/prices", "/analytics", "/forecast"]
         ),
         { href: "/admin", label: "Настройки", match: ["/admin"], subs: [], other: true },

@@ -117,7 +117,6 @@ export async function flowReportWorkbook(r: FlowReport): Promise<Buffer> {
 
   // --- Продажи и списания ---
   const wsl = sheet(wb, "Каналы и списания", `Каналы продаж и списания — ${period} · ${scope}`, [34, 11, 12, 14, 13, 10]);
-  ws.getCell(3, 1);
   wsl.getCell(3, 1).value = "Продажи по каналам";
   wsl.getCell(3, 1).font = { ...FONT, bold: true };
   header(wsl, 4, ["Канал", "Заявок", "Шт.", "Сумма, ₸", "Средняя, ₸/шт", "Доля шт."]);
@@ -144,6 +143,34 @@ export async function flowReportWorkbook(r: FlowReport): Promise<Buffer> {
   header(wsl, row + 1, ["Сотрудник", "Шт."]);
   row += 2;
   for (const x of r.writeoffPeople) put(wsl, row++, [x.name, x.qty]);
+
+  // --- Продажи клиентам: менеджеры, направления, клиенты ---
+  const wm = sheet(wb, "Продажи клиентам", `Продажи клиентам — ${period} · ${scope}`, [34, 11, 11, 12, 14, 13, 14, 14, 12]);
+  wm.getCell(3, 1).value = "Менеджеры" + (r.sales.planMonth ? ` (план — ${r.sales.planMonth})` : "");
+  wm.getCell(3, 1).font = { ...FONT, bold: true };
+  header(wm, 4, ["Менеджер", "Заявок", "Клиентов", "Шт.", "Сумма, ₸", "Средняя, ₸/шт", "Прошлый период, ₸", "План, ₸", "Выполнение"]);
+  row = 5;
+  const MF = [undefined, NUM, NUM, NUM, NUM, NUM, NUM, NUM, PCT];
+  for (const m of r.sales.managers) put(wm, row++, [m.name, m.orders, m.clients, m.money.qty, Math.round(m.money.sum), Math.round(avgPrice(m.money)), Math.round(m.prev.sum), m.plan || null, m.plan ? m.money.sum / m.plan : null], { fmt: MF });
+  put(wm, row++, ["Итого", r.sales.orders, r.sales.clientCount, r.sales.money.qty, Math.round(r.sales.money.sum), Math.round(avgPrice(r.sales.money)), Math.round(r.sales.prev.sum), r.sales.planTotal || null, r.sales.planTotal ? r.sales.money.sum / r.sales.planTotal : null], { total: true, fmt: MF });
+  row += 1;
+  wm.getCell(row, 1).value = "Направления";
+  wm.getCell(row, 1).font = { ...FONT, bold: true };
+  header(wm, row + 1, ["Направление", "Шт.", "Сумма, ₸", "Средняя, ₸/шт", "Доля ₸", "Прошлый период, ₸"]);
+  row += 2;
+  for (const d of r.sales.directions) put(wm, row++, [d.name, d.money.qty, Math.round(d.money.sum), Math.round(avgPrice(d.money)), share(d.money.sum, r.sales.money.sum), Math.round(d.prev.sum)], { fmt: [undefined, NUM, NUM, NUM, PCT, NUM] });
+  row += 1;
+  wm.getCell(row, 1).value = "Крупнейшие клиенты";
+  wm.getCell(row, 1).font = { ...FONT, bold: true };
+  header(wm, row + 1, ["Клиент", "Заявок", "Шт.", "Сумма, ₸", "Средняя, ₸/шт", "Доля ₸", "Прошлый период, ₸"]);
+  row += 2;
+  for (const c of r.sales.clients) put(wm, row++, [c.name, c.orders, c.money.qty, Math.round(c.money.sum), Math.round(avgPrice(c.money)), share(c.money.sum, r.sales.money.sum), Math.round(c.prev.sum)], { fmt: [undefined, NUM, NUM, NUM, NUM, PCT, NUM] });
+  row += 1;
+  wm.getCell(row, 1).value = "Цены сделок";
+  wm.getCell(row, 1).font = { ...FONT, bold: true };
+  header(wm, row + 1, ["Цветок · категория", "Цена, ₸", "Шт."]);
+  row += 2;
+  for (const b of r.sales.priceBands) put(wm, row++, [b.label, b.price, b.qty]);
 
   // --- Склад и план ---
   const wst = sheet(wb, "Склад и план", `Свежесть склада на сегодня и план срезки — ${period} · ${scope}`, [34, 11, 11, 11, 11, 11, 14]);

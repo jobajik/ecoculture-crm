@@ -1,7 +1,8 @@
 import { localDayKey } from "./timezone";
 import { isRegionOrder } from "./orderKind";
 import { currentPrices, priceFor, type PriceRow } from "./priceList";
-import { isRegionStore, normalizeStore } from "./officeStore";
+import { isRegionStore, normalizeStore, storeLabel } from "./officeStore";
+import type { ManagerPlanTotal } from "./managerPlans";
 import { avgPrice, channelOf, m0, madd, CHANNEL_LABELS, type Channel, type Money } from "./monthReport";
 import { compareGrades, FARM_LABELS, flowerTypesForFarm, formatGrade, FLOWER_TYPE_LABELS, getFarmFor, ORDER_STATUSES, weeksOfMonth } from "./constants";
 import type { Batch, OrderWithItems, Shipment, StaffTakeout, Writeoff } from "./types";
@@ -42,6 +43,36 @@ export interface FlowInput {
   forecast: HarvestForecastRow[];
   priceRows: PriceRow[];
   names: Map<string, string>;
+  /** Планы менеджеров месяца `planMonthOf(from, to)`; период не с первого числа месяца — планов нет. */
+  plans?: Map<string, ManagerPlanTotal>;
+}
+
+/**
+ * Месяц, с планом которого можно сравнивать продажи периода: период начинается с первого числа и не выходит за свой
+ * месяц («этот месяц», «прошлый месяц», любой отрезок с 1-го). Для «7 дней» или квартала плана нет — сравнивать
+ * кусок месяца с планом всего месяца нечестно.
+ */
+export function planMonthOf(from: string, to: string): string | null {
+  return from.slice(8, 10) === "01" && from.slice(0, 7) === to.slice(0, 7) ? from.slice(0, 7) : null;
+}
+
+/** Разрез продаж клиентам (вид «Продажи»): менеджеры, направления, склады, клиенты, цены сделок. */
+export interface FlowSales {
+  money: Money;
+  prev: Money;
+  orders: number;
+  prevOrders: number;
+  clientCount: number;
+  prevClientCount: number;
+  newClients: number;
+  planMonth: string | null;
+  planTotal: number;
+  managers: { email: string; name: string; money: Money; prev: Money; orders: number; clients: number; plan: number }[];
+  directions: { name: string; money: Money; prev: Money }[];
+  stores: { name: string; money: Money }[];
+  clients: { name: string; money: Money; orders: number; prev: Money }[];
+  priceBands: { label: string; price: number; qty: number }[];
+  insights: { level: "good" | "warn" | "bad" | "info"; text: string }[];
 }
 
 export interface FlowRow {
@@ -96,6 +127,7 @@ export interface FlowReport {
   stockAge: { flowerType: string; label: string; buckets: number[]; total: number }[];
   forecast: { flowerType: string; label: string; plan: number; fact: number }[];
   forecastVarieties: { label: string; plan: number; fact: number }[];
+  sales: FlowSales;
   insights: { level: "good" | "warn" | "bad" | "info"; text: string }[];
 }
 
@@ -214,6 +246,21 @@ export function buildFlowReport(input: FlowInput): FlowReport {
   };
   const channels = new Map<Channel, { money: Money; byList: number; orders: Set<string> }>();
   let regionSold = 0;
+  // Вид «Продажи»: только канал «клиенты» (как в плане и факте менеджеров — регионы, наши магазины и Пожарка не в счёт),
+  // сумма — по цене позиции.
+  const sale = { money: m0(), prev: m0(), orders: new Set<string>(), prevOrders: new Set<string>(), clients: new Set<string>(), prevClients: new Set<string>() };
+  const mgrs = new Map<string, { money: Money; prev: Money; orders: Set<string>; clients: Set<string> }>();
+  const dirs = new Map<string, { money: Money; prev: Money }>();
+  const strs = new Map<string, Money>();
+  const cls = new Map<string, { name: string; money: Money; prev: Money; orders: Set<string> }>();
+  const bands = new Map<string, { label: string; price: number; qty: number }>();
+  const firstOrderDay = new Map<string, string>();
+  for (const o of input.orders) {
+    if (o.status === ORDER_STATUSES.CANCELLED || isRegionStore(o.store) || channelOf(o) !== "clients") continue;
+    const key = o.clientId || o.clientName;
+    const d = dayOf(o.createdAt);
+    if (key && d && (!firstOrderDay.has(key) || d < firstOrderDay.get(key)!)) firstOrderDay.set(key, d);
+  }
   for (const o of input.orders) {
     if (o.status === ORDER_STATUSES.CANCELLED) continue;
     const day = dayOf(o.createdAt);
@@ -245,7 +292,105 @@ export function buildFlowReport(input: FlowInput): FlowReport {
         madd(chAcc.money, i.quantity, price);
         if (byList) chAcc.byList += i.quantity;
       }
+      if (ch !== "clients") continue;
+      const cKey = o.clientId || o.clientName || "—";
+      const mKey = (o.managerEmail || "").toLowerCase() || "—";
+      if (!mgrs.has(mKey)) mgrs.set(mKey, { money: m0(), prev: m0(), orders: new Set(), clients: new Set() });
+      const mg = mgrs.get(mKey)!;
+      const dir = (o.direction || "").trim() || "Алматы";
+      if (!dirs.has(dir)) dirs.set(dir, { money: m0(), prev: m0() });
+      if (!cls.has(cKey)) cls.set(cKey, { name: o.clientName || "—", money: m0(), prev: m0(), orders: new Set() });
+      const cl = cls.get(cKey)!;
+      if (cur) {
+        madd(sale.money, i.quantity, i.unitPrice);
+        sale.orders.add(o.orderId);
+        sale.clients.add(cKey);
+        madd(mg.money, i.quantity, i.unitPrice);
+        mg.orders.add(o.orderId);
+        mg.clients.add(cKey);
+        madd(dirs.get(dir)!.money, i.quantity, i.unitPrice);
+        const st = storeLabel(o.store);
+        if (!strs.has(st)) strs.set(st, m0());
+        madd(strs.get(st)!, i.quantity, i.unitPrice);
+        cl.name = o.clientName || cl.name;
+        madd(cl.money, i.quantity, i.unitPrice);
+        cl.orders.add(o.orderId);
+        if (i.unitPrice > 0) {
+          const bk = `${i.flowerType}|${i.grade}|${i.unitPrice}`;
+          const b = bands.get(bk) ?? { label: `${flowerLabel(i.flowerType)} · ${formatGrade(i.grade)}`, price: i.unitPrice, qty: 0 };
+          b.qty += i.quantity;
+          bands.set(bk, b);
+        }
+      } else {
+        madd(sale.prev, i.quantity, i.unitPrice);
+        sale.prevOrders.add(o.orderId);
+        sale.prevClients.add(cKey);
+        madd(mg.prev, i.quantity, i.unitPrice);
+        madd(dirs.get(dir)!.prev, i.quantity, i.unitPrice);
+        madd(cl.prev, i.quantity, i.unitPrice);
+      }
     }
+  }
+  // План менеджера на выбранные цветы: без отбора — весь его план (с «планом без разбивки»), с отбором — сумма по цветкам.
+  const planMonth = input.plans ? planMonthOf(from, to) : null;
+  const wholeFarm = !farm && !flower;
+  const planOf = (email: string): number => {
+    const p = planMonth ? input.plans?.get(email) : undefined;
+    if (!p) return 0;
+    if (wholeFarm) return p.targetAmount;
+    return Object.entries(p.byFlower).filter(([f]) => flowerSet.has(f)).reduce((s2, [, v]) => s2 + v.targetAmount, 0);
+  };
+  if (planMonth && input.plans) for (const email of Array.from(input.plans.keys())) if (planOf(email) > 0 && !mgrs.has(email)) mgrs.set(email, { money: m0(), prev: m0(), orders: new Set(), clients: new Set() });
+  const managers = Array.from(mgrs.entries())
+    .map(([email, x]) => ({ email, name: input.names.get(email) || email, money: x.money, prev: x.prev, orders: x.orders.size, clients: x.clients.size, plan: planOf(email) }))
+    .filter((m) => m.money.qty || m.prev.qty || m.plan)
+    .sort((a, b) => b.money.sum - a.money.sum || b.plan - a.plan);
+  const sales: FlowSales = {
+    money: sale.money,
+    prev: sale.prev,
+    orders: sale.orders.size,
+    prevOrders: sale.prevOrders.size,
+    clientCount: sale.clients.size,
+    prevClientCount: sale.prevClients.size,
+    newClients: Array.from(sale.clients).filter((k) => inCur(firstOrderDay.get(k) ?? "")).length,
+    planMonth,
+    planTotal: managers.reduce((s2, m) => s2 + m.plan, 0),
+    managers,
+    directions: Array.from(dirs.entries()).map(([name, x]) => ({ name, money: x.money, prev: x.prev })).filter((d) => d.money.qty || d.prev.qty).sort((a, b) => b.money.sum - a.money.sum),
+    stores: Array.from(strs.entries()).map(([name, money]) => ({ name, money })).sort((a, b) => b.money.sum - a.money.sum),
+    clients: Array.from(cls.values()).filter((c) => c.money.qty > 0).sort((a, b) => b.money.sum - a.money.sum).slice(0, 20).map((c) => ({ name: c.name, money: c.money, orders: c.orders.size, prev: c.prev })),
+    priceBands: Array.from(bands.values()).sort((a, b) => b.qty - a.qty).slice(0, 20),
+    insights: [],
+  };
+  // Выводы вида «Продажи»: темп к плану, динамика, зависимость от двух клиентов, просевшие менеджеры.
+  {
+    const pc = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
+    const sg = (n: number) => `${n >= 0 ? "+" : ""}${n}%`;
+    if (sales.planMonth && sales.planTotal > 0) {
+      const [py, pm] = sales.planMonth.split("-").map(Number);
+      const monthDays = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+      const pace = pc(Number(to.slice(8, 10)), monthDays);
+      const done = pc(sales.money.sum, sales.planTotal);
+      sales.insights.push({ level: done >= pace ? "good" : done >= pace - 10 ? "warn" : "bad", text: `План месяца выполнен на ${done}% (${nf(sales.money.sum)} из ${nf(sales.planTotal)} ₸); по календарю прошло ${pace}% месяца${done < pace ? ` — отставание ${pace - done} п. п` : ""}.` });
+      for (const m of managers) {
+        if (m.plan > 0 && pc(m.money.sum, m.plan) < pace - 15) sales.insights.push({ level: "warn", text: `${m.name}: ${pc(m.money.sum, m.plan)}% своего плана при ${pace}% прошедшего месяца.` });
+      }
+    }
+    if (sales.prev.sum > 0) {
+      const d = pc(sales.money.sum - sales.prev.sum, sales.prev.sum);
+      sales.insights.push({ level: d >= 0 ? "good" : "warn", text: `Клиентам продано на ${nf(sales.money.sum)} ₸ — ${sg(d)} к прошлому периоду; клиентов ${sales.clientCount} (было ${sales.prevClientCount}), новых ${sales.newClients}.` });
+    }
+    if (!sales.planMonth) {
+      for (const m of managers) {
+        if (m.prev.sum >= 500_000 && m.money.sum < m.prev.sum * 0.7) sales.insights.push({ level: "warn", text: `${m.name}: ${nf(m.money.sum)} ₸ против ${nf(m.prev.sum)} ₸ в прошлом периоде (${sg(pc(m.money.sum - m.prev.sum, m.prev.sum))}).` });
+      }
+    }
+    if (sales.clients.length >= 2 && sales.money.sum > 0) {
+      const two = sales.clients[0].money.sum + sales.clients[1].money.sum;
+      if (two > sales.money.sum * 0.4) sales.insights.push({ level: "warn", text: `Два крупнейших клиента дают ${pc(two, sales.money.sum)}% выручки (${sales.clients[0].name}, ${sales.clients[1].name}).` });
+    }
+    const lostBig = Array.from(cls.values()).filter((c) => c.money.qty === 0 && c.prev.sum >= 300_000).sort((a, b) => b.prev.sum - a.prev.sum);
+    if (lostBig.length) sales.insights.push({ level: "warn", text: `Покупали в прошлом периоде и не заказали в этом: ${lostBig.slice(0, 4).map((c) => `${c.name} (${nf(c.prev.sum)} ₸)`).join(", ")}${lostBig.length > 4 ? ` и ещё ${lostBig.length - 4}` : ""}.` });
   }
 
   // --- Отгружено, возраст при отгрузке ---
@@ -464,6 +609,7 @@ export function buildFlowReport(input: FlowInput): FlowReport {
     stockAge: Array.from(stockAge.entries()).map(([f, buckets]) => ({ flowerType: f, label: flowerLabel(f), buckets, total: buckets.reduce((s, x) => s + x, 0) })).sort((a, b) => b.total - a.total),
     forecast: forecast.sort((a, b) => b.plan - a.plan),
     forecastVarieties: Array.from(planByVariety.values()).sort((a, b) => b.plan - a.plan).slice(0, 15),
+    sales,
     insights,
   };
 }

@@ -127,6 +127,11 @@ export default async function BalancePage({
         tabs={plansTabsFor(role, month)}
         actions={
           <div className="flex items-center gap-2">
+            {role === "admin" && (
+              <Link href={`/forecast?period=${month}`} className="btn-secondary">
+                Прогноз агронома
+              </Link>
+            )}
             <PeriodPicker period={month} />
             <Hint>
               Хватит ли срезки на план отгрузок. Срезка — прогноз агронома по сортам (если сорта не заполнены — по

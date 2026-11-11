@@ -3,7 +3,8 @@
  * продано без склада Астаны, отгружено с основного и офиса, списано любым складом, остаток на начало и конец,
  * возраст при списании, план против факта, границы периода из адреса.
  */
-import { buildFlowReport, cleanRange, cleanReason, presetRange, shiftDay, daysBetween } from "../src/lib/flowReport";
+import { buildFlowReport, cleanRange, cleanReason, planMonthOf, presetRange, shiftDay, daysBetween, type FlowInput } from "../src/lib/flowReport";
+import { aggregateManagerPlans } from "../src/lib/managerPlans";
 import { avgPrice } from "../src/lib/monthReport";
 import type { Batch, OrderWithItems, Shipment, Writeoff } from "../src/lib/types";
 
@@ -28,7 +29,16 @@ const O = (id: string, created: string, p: Partial<OrderWithItems>, items: [stri
 const S = (id: string, day: string, orderId: string, batchId: string, quantity: number): Shipment => ({ shipmentId: id, createdAt: `${day}T06:00:00Z`, orderId, itemId: `${orderId}-0`, batchId, quantity, warehouseEmail: "w@x", notes: "" });
 const W = (id: string, day: string, batchId: string, quantity: number, reason = "Порча"): Writeoff => ({ writeoffId: id, createdAt: `${day}T06:00:00Z`, batchId, quantity, reason, warehouseEmail: "w@x" });
 
-const r = buildFlowReport({
+const PLANS = aggregateManagerPlans(
+  [
+    { period: "2026-10", managerEmail: "m@x", flowerType: "chrysanthemum", targetAmount: 200000, targetStems: 0 },
+    { period: "2026-10", managerEmail: "m@x", flowerType: "rose", targetAmount: 100000, targetStems: 0 },
+    { period: "2026-10", managerEmail: "idle@x", flowerType: "rose", targetAmount: 50000, targetStems: 0 },
+    { period: "2026-09", managerEmail: "m@x", flowerType: "rose", targetAmount: 999, targetStems: 0 },
+  ],
+  "2026-10"
+);
+const INPUT: FlowInput = {
   from: "2026-10-01",
   to: "2026-10-31",
   farm: "",
@@ -75,8 +85,10 @@ const r = buildFlowReport({
     { period: "2026-09-W5", flowerType: "chrysanthemum", variety: "Altaj", targetStems: 9999, updatedAt: "", updatedByEmail: "" },
   ],
   priceRows: [{ date: "2026-10-01", flowerType: "chrysanthemum", variety: "", grade: "Третья", price: 270, kind: "" } as never],
-  names: new Map([["w@x", "Разия"]]),
-});
+  names: new Map([["w@x", "Разия"], ["m@x", "Ильяс"]]),
+  plans: PLANS,
+};
+const r = buildFlowReport(INPUT);
 
 check("период и прошлый период", [r.days, r.prevFrom, r.prevTo], [31, "2026-08-31", "2026-09-30"]);
 check("срезано: основной склад, без после и до", [r.total.cut, r.total.prev.cut], [2300, 400]);
@@ -105,6 +117,19 @@ check("пустые данные не роняют", [r2.total.cut, r2.balance.e
 
 check("границы из адреса", [cleanRange("2026-10-05", "2026-10-01", "2026-11-10"), cleanRange("мусор", "", "2026-11-10"), cleanRange("2026-10-01", "2027-01-01", "2026-11-10")], [{ from: "2026-10-01", to: "2026-10-05" }, { from: "2026-10-12", to: "2026-11-10" }, { from: "2026-10-01", to: "2026-11-10" }]);
 check("готовые периоды", [presetRange("week", "2026-11-10"), presetRange("prev-month", "2026-11-10"), presetRange("month", "2026-11-10"), presetRange("7", "2026-11-10")], [{ from: "2026-11-09", to: "2026-11-10" }, { from: "2026-10-01", to: "2026-10-31" }, { from: "2026-11-01", to: "2026-11-10" }, { from: "2026-11-04", to: "2026-11-10" }]);
+// --- Вид «Продажи и клиенты»: только заявки клиентам, по цене позиции ---
+const s = r.sales;
+check("продажи клиентам: ₸, шт., заявок, клиентов, новых; прошлый период", [s.money.sum, s.money.qty, s.orders, s.clientCount, s.newClients, s.prev.sum, s.prevClientCount], [187000, 700, 3, 3, 2, 30000, 1]);
+check("менеджеры: имя, ₸, заявок, клиентов, план; без продаж, но с планом — тоже в списке", s.managers.map((m) => [m.name, m.money.sum, m.orders, m.clients, m.plan]), [["Ильяс", 187000, 3, 3, 300000], ["idle@x", 0, 0, 0, 50000]]);
+check("план месяца — только период с 1-го числа внутри месяца", [s.planMonth, s.planTotal, planMonthOf("2026-10-01", "2026-10-31"), planMonthOf("2026-10-05", "2026-10-31"), planMonthOf("2026-10-01", "2026-11-10")], ["2026-10", 350000, "2026-10", null, null]);
+check("направления и клиенты по выручке", [s.directions.map((d) => [d.name, d.money.sum]), s.clients.map((c) => [c.money.sum, c.orders, c.prev.sum])], [[["Алматы", 187000]], [[92000, 1, 0], [50000, 1, 30000], [45000, 1, 0]]]);
+check("цены сделок", s.priceBands.map((b) => [b.label, b.price, b.qty]), [["Роза · 60 см", 230, 400], ["Хризантема · Третья", 250, 200], ["Хризантема · Первая", 450, 100]]);
+check("вывод про план: 53 % при 100 % месяца — отставание", [s.insights[0].level, s.insights[0].text.startsWith("План месяца выполнен на 53%")], ["bad", true]);
+const rE = buildFlowReport({ ...INPUT, farm: "esentai" });
+check("отбор по компании: продажи и план только её цветов", [rE.sales.money.sum, rE.sales.managers.map((m) => [m.name, m.plan]), rE.sales.planTotal], [95000, [["Ильяс", 200000]], 200000]);
+const rW = buildFlowReport({ ...INPUT, from: "2026-10-05", plans: undefined });
+check("период не с 1-го числа — плана нет, менеджер без продаж не показан", [rW.sales.planMonth, rW.sales.managers.map((m) => m.name)], [null, ["Ильяс"]]);
+
 check("дни", [shiftDay("2026-03-01", -1), daysBetween("2026-10-01", "2026-10-31")], ["2026-02-28", 30]);
 check("причина списания без дописок", [cleanReason("«Порча / истёк срок хранения»."), cleanReason("Порча / истёк срок хранения · С 17.10по 24.10."), cleanReason("  Брак "), cleanReason("")], ["Порча / истёк срок хранения", "Порча / истёк срок хранения", "Брак", "—"]);
 

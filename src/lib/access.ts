@@ -73,6 +73,8 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   { prefix: "/analytics/month", roles: ["sales_head", "admin"] },
   // «Срез · продажи · списания» (10.11.2026) — владельцу и РОПу, как «Итоги месяца».
   { prefix: "/analytics/flow", roles: ["sales_head", "admin"] },
+  // «Архив отчётов» (12.11.2026) — список убранных из меню отчётов, там же, где сами цифры.
+  { prefix: "/analytics/archive", roles: ["sales_head", "admin"] },
   { prefix: "/analytics", roles: ["manager", "warehouse", "accountant", "sales_head", "admin"] },
   // «Лиды с рекламы» (Земфира) — только лиды и отчёт «С рекламы»; обзвон, разговоры,
   // карточки клиентов и всё остальное ей закрыты. Узкие адреса — выше общего «/clients/leads».

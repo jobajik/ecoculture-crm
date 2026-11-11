@@ -66,7 +66,13 @@ check("РОП на рейтинге — «Планы и цифры»", activeLab
 
 const adminPlans = navLinksFor("admin").find((l) => l.label === "Планы и цифры")!;
 check("вкладка: календарь, а не отчёт", activeSub(adminPlans.subs, "/analytics/calendar")?.label, "Календарь");
-check("вкладка: отчёт", activeSub(adminPlans.subs, "/analytics")?.label, "Отчёт");
+// 12.11.2026: «Отчёт», «Итоги месяца», «План и факт», «По цветам» и «Продажи за день» — в архиве отчётов.
+check("вкладка: отчёт за 30 дней — в архиве", activeSub(adminPlans.subs, "/analytics")?.label, "Архив отчётов");
+check("вкладка: итоги месяца и план-факт — в архиве", [activeSub(adminPlans.subs, "/analytics/month")?.label, activeSub(adminPlans.subs, "/sales/plan")?.label, activeSub(adminPlans.subs, "/sales/day")?.label], ["Архив отчётов", "Архив отчётов", "Архив отчётов"]);
+check("вкладка: цифры за период и рейтинг", [activeSub(adminPlans.subs, "/analytics/flow")?.label, activeSub(adminPlans.subs, "/sales")?.label], ["Цифры за период", "Рейтинг и бонусы"]);
+check("вкладка: прогноз агронома горит на «Срезке»", activeSub(adminPlans.subs, "/forecast")?.label, "Срезка");
+check("в «Планах и цифрах» у владельца 9 вкладок вместо 14, у РОПа — 8", [adminPlans.subs.length, navLinksFor("sales_head").find((l) => l.href === "/plans")?.subs.length], [9, 8]);
+check("группы: Планы и Цифры", Array.from(new Set(adminPlans.subs.map((x) => x.group))), ["Планы", "Цифры"]);
 const managerClients = navLinksFor("manager").find((l) => l.label === "Клиенты")!;
 check("вкладка на карточке лида — «Лиды»", activeSub(managerClients.subs, "/clients/leads/L1")?.label, "Лиды");
 check("вкладка на карточке клиента — «Список»", activeSub(managerClients.subs, "/clients/C1")?.label, "Список");
