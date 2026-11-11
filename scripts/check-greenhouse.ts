@@ -237,9 +237,12 @@ check("менеджер без роли модуля — закрыто", manage
 check("бригадир (роль модуля «начальник») — журналы и выработка", head && [head.editsLogs, head.editsWork, head.seesMoney], [true, true, false]);
 check("кадровику теплица ни к чему", hr, null);
 check("бухгалтер — смотрит", accountant && [accountant.editsLogs, accountant.editsWork], [false, false]);
-check("вкладки по делу — обзор, внести день, записи, аналитика, отчёты", greenhouseTabsFor(admin, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика", "Отчёты"]);
-check("вкладки агронома — тоже «Внести день»", greenhouseTabsFor(agro, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика", "Отчёты"]);
-check("бухгалтер CRM без роли модуля — без «Внести день»", accountant && greenhouseTabsFor(accountant, "esentai").map((t) => t.label), ["Обзор", "Записи", "Аналитика", "Отчёты"]);
+// С 12.11.2026 «Аналитика» и «Отчёты» — два вида одной вкладки: сравниваем страницы, число вкладок — отдельно.
+const pages = (tabs: { label: string; views?: { label: string }[] }[]) => tabs.flatMap((t) => (t.views ? t.views.map((v) => v.label) : [t.label]));
+check("вкладок у Есентая четыре, «Отчёты» — вид «Аналитики»", greenhouseTabsFor(admin, "esentai").map((t) => t.label), ["Обзор", "Внести день", "Записи", "Аналитика"]);
+check("вкладки по делу — обзор, внести день, записи, аналитика, отчёты", pages(greenhouseTabsFor(admin, "esentai")), ["Обзор", "Внести день", "Записи", "Аналитика", "Отчёты"]);
+check("вкладки агронома — тоже «Внести день»", pages(greenhouseTabsFor(agro, "esentai")), ["Обзор", "Внести день", "Записи", "Аналитика", "Отчёты"]);
+check("бухгалтер CRM без роли модуля — без «Внести день»", accountant && pages(greenhouseTabsFor(accountant, "esentai")), ["Обзор", "Записи", "Аналитика", "Отчёты"]);
 check("вкладка горит без компании в адресе", greenhouseTabsFor(admin, "esentai").find((t) => t.label === "Записи")?.match, ["/greenhouse/records"]);
 check("меню: страница блока — во вкладке «Обзор»", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица Есентай")!.subs, "/greenhouse/cycles/11/4")?.label, "Обзор");
 check("меню: «Внести день» горит на своей странице", activeSub(navLinksFor("admin").find((l) => l.label === "Теплица Есентай")!.subs, "/greenhouse/day")?.label, "Внести день");

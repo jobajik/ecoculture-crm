@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import PageHeader from "@/components/PageHeader";
+import { canOpen } from "@/lib/access";
 import { analyticsTabsFor, ARCHIVED_REPORTS } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function ReportsArchivePage() {
     <div>
       <PageHeader area="analytics" title="Архив отчётов" subtitle="Отчёты, собранные в «Цифры за период». Они работают как раньше — просто не занимают меню." icon="list" tabs={analyticsTabsFor(role)} />
       <div className="card !p-0 overflow-hidden max-w-[980px]">
-        {ARCHIVED_REPORTS.map((r) => (
+        {ARCHIVED_REPORTS.filter((r) => canOpen(role, r.href)).map((r) => (
           <Link key={r.href} href={r.href} className="flex items-start gap-4 px-4 sm:px-5 py-4 border-b border-line-hairline last:border-0 hover:bg-surface-plane/60">
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-semibold">{r.label}</div>

@@ -80,22 +80,8 @@ function grouped(subs: NavSub[], groupOf: (p: string) => string): NavSub[] {
   return order.flatMap((g) => byGroup.get(g)!);
 }
 
-const G_CLIENTS = (p: string) =>
-  p.startsWith("/clients/chats") || p.startsWith("/clients/leads/talks") || p.startsWith("/clients/broadcasts")
-    ? "Общение"
-    : p.startsWith("/clients/leads")
-      ? "Лиды"
-      : "База";
-const G_STOCK = (p: string) =>
-  ["/warehouse/to-office", "/warehouse/takeouts", "/warehouse/company"].includes(p)
-    ? "Выдачи"
-    : p === "/warehouse/analytics"
-      ? "Отчёты"
-      : p.startsWith("/office") || p.startsWith("/astana")
-        ? "Другие склады"
-        : "Работа склада";
-const G_MONEY = (p: string) =>
-  ["/finance/point", "/finance/claims", "/finance/takeouts"].includes(p) ? "Учёт" : ["/finance/log", "/finance/analytics", "/finance/report"].includes(p) ? "Отчёты" : "Оплаты";
+// «Клиенты» и «Деньги» с 12.11.2026 — без групп: вкладок стало пять-шесть, взгляды переехали в переключатели страниц.
+const G_STOCK = (p: string) => (p.startsWith("/office") || p.startsWith("/astana") ? "Другие склады" : p === "/warehouse/analytics" ? "Отчёты" : "Работа склада");
 const G_NUMBERS = (p: string) => (p.startsWith("/analytics") || p.startsWith("/sales") ? "Цифры" : "Планы");
 
 const DAY: NavLink = { href: "/", label: "Мой день", match: ["/"], subs: [] };
@@ -160,15 +146,15 @@ function baseLinksFor(role: string): NavLink[] {
       return [
         DAY,
         ORDERS,
-        section("/clients", "Клиенты", grouped(clientsTabsFor(undefined, role), G_CLIENTS)),
-        section("/sales", "Продажи", [...salesTabsFor(role), ...ANALYTICS(role)], ["/analytics", "/prices"]),
+        section("/clients", "Клиенты", clientsTabsFor(undefined, role)),
+        section("/sales", "Продажи", [...salesTabsFor(role), ...ANALYTICS(role), { href: "/warehouse/stock", label: "Сорта и ростовки" }], ["/analytics", "/prices", "/warehouse/stock"]),
       ];
     case "accountant":
       return [
         DAY,
-        section("/finance", "Оплаты", grouped(financeTabsFor(role), G_MONEY)),
+        section("/finance", "Оплаты", financeTabsFor(role)),
         ORDERS,
-        section("/clients", "Клиенты", grouped(clientsTabsFor(undefined, role), G_CLIENTS)),
+        section("/clients", "Клиенты", clientsTabsFor(undefined, role)),
         section("/analytics", "Аналитика", ANALYTICS(role), ["/sales"]),
       ];
     case "warehouse":
@@ -196,9 +182,9 @@ function baseLinksFor(role: string): NavLink[] {
       return [
         DAY,
         ORDERS,
-        section("/clients", "Клиенты", grouped([...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], G_CLIENTS), ["/retail"]),
-        section("/office", "Склад", [...officeTabsFor(role), { href: "/astana", label: "Астана" }], ["/warehouse", "/astana"]),
-        section("/finance", "Деньги", grouped(financeTabsFor(role), G_MONEY)),
+        section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
+        section("/office", "Склад", [{ href: "/warehouse/stock", label: "Сорта и ростовки" }, ...officeTabsFor(role), { href: "/astana", label: "Астана" }], ["/warehouse", "/astana"]),
+        section("/finance", "Деньги", financeTabsFor(role)),
         section(
           "/plans",
           "Планы и цифры",
@@ -218,9 +204,9 @@ function baseLinksFor(role: string): NavLink[] {
       return [
         DAY,
         ORDERS,
-        section("/clients", "Клиенты", grouped([...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], G_CLIENTS), ["/retail"]),
-        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS, { href: "/office", label: "Офис" }, { href: "/astana", label: "Астана" }], G_STOCK), ["/office", "/astana"]),
-        section("/finance", "Деньги", grouped(financeTabsFor(role), G_MONEY)),
+        section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
+        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS.filter((t) => t.href !== "/warehouse/analytics"), { href: "/office", label: "Офис" }, { href: "/astana", label: "Астана" }], G_STOCK), ["/office", "/astana"]),
+        section("/finance", "Деньги", financeTabsFor(role)),
         section(
           "/plans",
           "Планы и цифры",

@@ -2,6 +2,8 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import type { IconName } from "./Icon";
 import SectionTabs from "./SectionTabs";
+import SectionViews from "./SectionViews";
+import type { SectionTab } from "@/lib/sectionViews";
 import Crumbs from "./Crumbs";
 import type { AreaKey } from "@/lib/areas";
 
@@ -35,7 +37,8 @@ export default function PageHeader({
   icon?: IconName;
   /** Кнопки справа: «+ Заявка», выгрузка, период. */
   actions?: ReactNode;
-  tabs?: { href: string; label: string; match?: string[] }[];
+  /** Вкладки раздела; у вкладки могут быть виды (`views`) — их переключатель рисуется под шапкой. */
+  tabs?: SectionTab[];
   children?: ReactNode;
   className?: string;
 }) {
@@ -66,6 +69,8 @@ export default function PageHeader({
           </div>
         )}
       </header>
+      {/* Виды открытой вкладки («Оплаты»: заявки / статус счетов) — переключателем под шапкой, на любом экране. */}
+      {tabs && <SectionViews tabs={tabs} />}
       {children && <div className="no-print mb-5 rounded-xl border border-line-hairline bg-surface px-4 sm:px-5 py-3">{children}</div>}
     </>
   );

@@ -1,13 +1,14 @@
 import type { PayrollScope } from "@/lib/payroll/access";
+import { tabOfViews, type SectionTab } from "@/lib/sectionViews";
 
 /**
  * Вкладки раздела «Зарплата» — по тому, что человеку можно. Начальник подразделения видит только своих людей
  * и их табель; доступ к модулю раздаёт один администратор. Файл без "use client": его читают
  * страницы и меню (грабли 1.8).
  */
-export function payrollTabsFor(scope: PayrollScope | null, farm = ""): { href: string; label: string; match?: string[] }[] {
+export function payrollTabsFor(scope: PayrollScope | null, farm = ""): SectionTab[] {
   if (!scope) return [];
-  const tabs: { href: string; label: string; match?: string[] }[] = [];
+  const tabs: SectionTab[] = [];
   // Компания едет по вкладкам (`farmScope.ts`): раздел всегда открыт на одной из двух. `match` — адрес без параметра,
   // иначе вкладка с `?farm=` не горела бы (SectionTabs сравнивает с pathname).
   const push = (href: string, label: string) => tabs.push({ href: farm ? `${href}?farm=${farm}` : href, label, match: [href] });
@@ -16,11 +17,11 @@ export function payrollTabsFor(scope: PayrollScope | null, farm = ""): { href: s
   push("/payroll/timesheet", "Табель");
   // Выработка цветоводов (этап 7) переехала в раздел «Теплица» (29.10.2026) — к циклам и блокам, где её и смотрят.
   if (scope.seesMoney) push("/payroll/payslip", "Ведомость");
-  push("/payroll/employees", "Сотрудники");
-  if (scope.kind !== "head") {
-    push("/payroll/departments", "Подразделения");
-    push("/payroll/balance", "Календарь и нормы");
-  }
-  if (scope.editsAccess) push("/payroll/access", "Доступ");
+  // С 12.11.2026 — пять вкладок вместо семи: «Сотрудники» и «Подразделения» — два вида одной вкладки («кто у нас
+  // работает»), «Календарь и нормы» и «Доступ» — одной («Настройки»: туда заходят раз в месяц).
+  const view = (href: string, label: string) => ({ href: farm ? `${href}?farm=${farm}` : href, label, match: [href] });
+  const full = scope.kind !== "head";
+  tabs.push(...tabOfViews("Сотрудники", [view("/payroll/employees", "Сотрудники"), full && view("/payroll/departments", "Подразделения")]));
+  tabs.push(...tabOfViews("Настройки", [full && view("/payroll/balance", "Календарь и нормы"), scope.editsAccess && view("/payroll/access", "Доступ")]));
   return tabs;
 }

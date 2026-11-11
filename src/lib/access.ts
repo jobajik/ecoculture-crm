@@ -33,6 +33,8 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // Склад региона (Астана, 02.11.2026) ведёт менеджер региона — роль manager; пускает сама страница
   // (`regionStoreOfEmail`), остальным менеджерам она отвечает «не ваш склад», а отгрузку не даст `shipStoreRefusal`.
   { prefix: "/warehouse/ship", roles: ["warehouse", "admin", "office", "office_retail", "manager"] },
+  // «Сорта и ростовки на складе» (12.11.2026) — смотрят и те, кто продаёт: что есть и какой срезки.
+  { prefix: "/warehouse/stock", roles: ["warehouse", "admin", "sales_head", "manager"] },
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
   { prefix: "/office", roles: ["office", "office_retail", "sales_head", "admin"] },
   { prefix: "/astana", roles: ["manager", "sales_head", "admin", "warehouse"] },

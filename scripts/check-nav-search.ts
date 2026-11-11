@@ -6,6 +6,8 @@
  * Поиск: телефон находится в любом написании, короткий номер находит заявку, чужой лид менеджеру не показывается,
  * зав. складом клиентов не видит, короткий запрос — пусто.
  */
+import { tabOfViews, viewsFor, type SectionTab } from "../src/lib/sectionViews";
+import { clientsTabsFor } from "../src/app/clients/tabs";
 import { navLinksFor, isActive, activeSub } from "../src/components/navLinks";
 import { canOpen } from "../src/lib/access";
 import { searchEverything } from "../src/lib/globalSearch";
@@ -75,7 +77,22 @@ check("в «Планах и цифрах» у владельца 9 вкладо�
 check("группы: Планы и Цифры", Array.from(new Set(adminPlans.subs.map((x) => x.group))), ["Планы", "Цифры"]);
 const managerClients = navLinksFor("manager").find((l) => l.label === "Клиенты")!;
 check("вкладка на карточке лида — «Лиды»", activeSub(managerClients.subs, "/clients/leads/L1")?.label, "Лиды");
-check("вкладка на карточке клиента — «Список»", activeSub(managerClients.subs, "/clients/C1")?.label, "Список");
+check("вкладка на карточке клиента — «Клиенты»", activeSub(managerClients.subs, "/clients/C1")?.label, "Клиенты");
+// --- Виды внутри вкладок (12.11.2026): меню короче, страницы и права прежние ---
+const hrefsOf = (role: string, section: string) => (navLinksFor(role).find((l) => l.label === section)?.subs ?? []).flatMap((x) => ((x as SectionTab).views ? (x as SectionTab).views!.map((v) => v.href.split("?")[0]) : [x.href.split("?")[0]]));
+const labelsOf = (role: string, section: string) => (navLinksFor(role).find((l) => l.label === section)?.subs ?? []).map((x) => x.label);
+check("владелец · Клиенты: 6 вкладок вместо 11", labelsOf("admin", "Клиенты"), ["Клиенты", "Постоянники", "Лиды", "Переписки", "Рассылки", "Наши магазины"]);
+check("владелец · Клиенты: все одиннадцать страниц на месте", hrefsOf("admin", "Клиенты").sort(), ["/clients", "/clients/analytics", "/clients/broadcasts", "/clients/chats", "/clients/habits", "/clients/leads", "/clients/leads/ads", "/clients/leads/calls", "/clients/leads/decide", "/clients/leads/talks", "/retail"]);
+check("менеджер · Клиенты: 4 вкладки, «С рекламы» и «Рассылок» нет", [labelsOf("manager", "Клиенты"), hrefsOf("manager", "Клиенты").includes("/clients/leads/ads"), hrefsOf("manager", "Клиенты").includes("/clients/broadcasts")], [["Клиенты", "Постоянники", "Лиды", "Переписки"], false, false]);
+check("бухгалтер · Клиенты: без чатов вкладка называется «Разговоры»", labelsOf("accountant", "Клиенты"), ["Клиенты", "Лиды", "Разговоры"]);
+check("Земфира: Лиды (три вида) и Переписки", [navLinksFor("leadgen")[0].subs.map((x) => x.label), (navLinksFor("leadgen")[0].subs[0] as SectionTab).views?.map((v) => v.label)], [["Лиды", "Переписки"], ["Лиды", "Решения ИИ", "С рекламы"]]);
+check("вкладка горит на своих видах", [activeSub(managerClients.subs, "/clients/leads/decide")?.label, activeSub(managerClients.subs, "/clients/leads/talks")?.label, activeSub(managerClients.subs, "/clients/analytics")?.label], ["Лиды", "Переписки", "Клиенты"]);
+check("владелец · Деньги: 6 вкладок вместо 10, страниц десять", [labelsOf("admin", "Деньги"), hrefsOf("admin", "Деньги").length], [["Оплаты", "Долги", "Точка на базаре", "Рекламации", "Цветы в счёт зп", "Отчёты"], 10]);
+check("владелец · Склад: 9 вкладок вместо 11, аналитика — в архиве", [labelsOf("admin", "Склад"), hrefsOf("admin", "Склад").includes("/warehouse/analytics")], [["Очередь на отгрузку", "Лист сборки", "Приёмка", "Сорта и ростовки", "Партии", "Списание", "Выдачи", "Офис", "Астана"], false]);
+check("зав. складом: «Выдачи» одной вкладкой, аналитика на месте", [labelsOf("warehouse", "Склад"), hrefsOf("warehouse", "Склад").includes("/warehouse/analytics")], [["Очередь на отгрузку", "Лист сборки", "Приёмка", "Сорта и ростовки", "Партии", "Списание", "Выдачи", "Аналитика", "Астана"], true]);
+check("виды: переключатель только на своём адресе; один вид — обычная вкладка", [viewsFor(clientsTabsFor(undefined, "admin"), "/clients/leads").map((v) => v.label), viewsFor(clientsTabsFor(undefined, "admin"), "/clients/leads/L1").length, tabOfViews("Отчёты", [{ href: "/a", label: "Один" }, false]).map((t) => [t.label, !!t.views])], [["Доска лидов", "Решения ИИ", "С рекламы", "Обзвон"], 0, [["Один", false]]]);
+const total = (role: string) => navLinksFor(role).reduce((n, l) => n + Math.max(1, l.subs.length), 0);
+check("всего пунктов меню: владелец 65 → 46, РОП 44 → 32 (с «Сортами и ростовками»)", [total("admin"), total("sales_head")], [46, 32]);
 
 // --- Поиск --------------------------------------------------------------------
 const client = (p: Partial<Client> & { clientId: string; name: string }): Client =>

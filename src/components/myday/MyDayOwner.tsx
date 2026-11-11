@@ -145,7 +145,8 @@ export default async function MyDayOwner({ user }: { user: DayUser }) {
     toDay: (iso) => localDayKey(new Date(iso)),
   });
 
-  const stockHref = admin ? "/warehouse/analytics" : "/office";
+  // «Аналитика склада» с 12.11.2026 в архиве отчётов: со склада на главной — сразу в партии, где видно, что и сколько лежит.
+  const stockHref = admin ? "/warehouse/batches" : "/office";
   const shipHref = admin ? "/warehouse" : "/office/ship";
   const pct = day.sales.percent;
 
@@ -162,12 +163,18 @@ export default async function MyDayOwner({ user }: { user: DayUser }) {
         <span className={day.summary.attentionCount ? "text-status-critical font-semibold" : ""}>
           {day.summary.attentionCount ? `${num(day.summary.attentionCount)} требуют внимания` : "ничего не требует внимания"}
         </span>
+        {/* Все цифры хозяйства — одна страница (12.11.2026): с главной туда один шаг. */}
+        <Link href="/analytics/flow" className="sm:ml-auto text-accent font-medium hover:underline">
+          Цифры за период →
+        </Link>
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card !p-4">
           <div className="flex items-center justify-between text-xs text-ink-muted">
-            <span>Продажи {sales.periodLabel.toLowerCase()}</span>
+            <Link href="/analytics/flow?preset=month&view=sales" className="hover:text-accent" title="Цифры за период: продажи и клиенты">
+              Продажи {sales.periodLabel.toLowerCase()} →
+            </Link>
             {day.sales.target > 0 && <span>план {shortMoney(day.sales.target)}</span>}
           </div>
           <div className="font-display font-extrabold text-[22px] sm:text-[24px] tabular-nums mt-1.5 leading-none">{shortMoney(day.sales.amount)}</div>

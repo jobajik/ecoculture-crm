@@ -126,7 +126,7 @@ export default async function BalancePage({
         icon="leaf"
         tabs={plansTabsFor(role, month)}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {role === "admin" && (
               <Link href={`/forecast?period=${month}`} className="btn-secondary">
                 Прогноз агронома

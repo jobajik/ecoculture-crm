@@ -65,12 +65,15 @@ for (const role of Object.values(ROLES)) {
 check("удержания и журнал — не для РОПа", canSeeFinanceInternals(ROLES.SALES_HEAD), false);
 check("бухгалтеру — да", canSeeFinanceInternals(ROLES.ACCOUNTANT), true);
 
-const ropTabs = financeTabsFor(ROLES.SALES_HEAD).map((t) => t.href);
-check("вкладки РОПа", ropTabs, ["/finance", "/finance/status", "/finance/debts", "/finance/reminders", "/finance/point", "/finance/claims", "/finance/analytics", "/finance/report"]);
+// С 12.11.2026 парные вкладки — виды одной вкладки (`sectionViews.ts`): считаем и вкладки, и адреса всех видов.
+const allHrefs = (role: string) => financeTabsFor(role).flatMap((t) => (t.views ? t.views.map((v) => v.href) : [t.href]));
+const ropTabs = allHrefs(ROLES.SALES_HEAD);
+check("страницы РОПа", ropTabs, ["/finance", "/finance/status", "/finance/debts", "/finance/reminders", "/finance/point", "/finance/claims", "/finance/analytics", "/finance/report"]);
 check("у РОПа нет «Цветы в счёт зп»", ropTabs.includes("/finance/takeouts"), false);
 check("и нет «Журнала»", ropTabs.includes("/finance/log"), false);
-check("у бухгалтера все десять", financeTabsFor(ROLES.ACCOUNTANT).length, 10);
-check("у администратора тоже", financeTabsFor(ROLES.ADMIN).length, 10);
+check("у бухгалтера все десять страниц в шести вкладках", [allHrefs(ROLES.ACCOUNTANT).length, financeTabsFor(ROLES.ACCOUNTANT).length], [10, 6]);
+check("у администратора тоже", [allHrefs(ROLES.ADMIN).length, financeTabsFor(ROLES.ADMIN).map((t) => t.label)], [10, ["Оплаты", "Долги", "Точка на базаре", "Рекламации", "Цветы в счёт зп", "Отчёты"]]);
+check("у РОПа пять вкладок, в «Отчётах» два вида", [financeTabsFor(ROLES.SALES_HEAD).length, financeTabsFor(ROLES.SALES_HEAD).find((t) => t.label === "Отчёты")?.views?.map((v) => v.label)], [5, ["Аналитика", "Отчёт"]]);
 
 console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
 process.exit(fails === 0 ? 0 : 1);

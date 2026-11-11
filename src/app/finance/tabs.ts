@@ -1,4 +1,5 @@
 import { ROLES } from "@/lib/constants";
+import { tabOfViews, type SectionTab } from "@/lib/sectionViews";
 
 /**
  * Вкладки раздела «Оплаты» — и кто какие видит.
@@ -21,40 +22,41 @@ import { ROLES } from "@/lib/constants";
  * - **«Журнал»** — служебный след действий бухгалтера; смотреть в него ходят,
  *   когда разбирают спор, и это работа владельца, а не РОПа.
  */
-const ALL_TABS = [
-  { href: "/finance", label: "Оплаты" },
-  // Где сейчас каждый неоплаченный счёт: Kaspi ждёт, не дошёл, нет отметки.
-  // Владелец: «дашборд, чтобы видеть статус по оплатам». Рядом с «Оплатами» —
-  // это то же ежедневное рабочее место, только с другой стороны.
-  { href: "/finance/status", label: "Статус оплат" },
-  { href: "/finance/debts", label: "Долги и звонки" },
-  // Напоминания в WhatsApp тем, у кого наступил срок оплаты: бухгалтер
-  // проверяет список и отправляет одной кнопкой, звонит — только оставшимся.
-  { href: "/finance/reminders", label: "Напоминания" },
-  // Наша точка на базаре («Пожарка»): товар туда перемещается заявками, выручку
-  // бухгалтер вносит отчётом за день. Каждый день — рядом с долгами.
-  { href: "/finance/point", label: "Точка на базаре" },
-  { href: "/finance/claims", label: "Рекламации" },
-  // Цветы в счёт зарплаты — тоже деньги, но с другой стороны: не «нам должны»,
-  // а «удержим с сотрудника». Заходят сюда раз в месяц, к расчёту зарплаты,
-  // поэтому стоит после ежедневного и перед журналом.
-  { href: "/finance/takeouts", label: "Цветы в счёт зп" },
-  { href: "/finance/log", label: "Журнал" },
-  // Аналитика месяца: выставлено, поступило, собрано, возраст долга, разрезы.
-  // Смотрят её владелец и РОП, бухгалтер — к концу месяца, поэтому в конце.
-  { href: "/finance/analytics", label: "Аналитика" },
-  { href: "/finance/report", label: "Отчёт" },
-];
+/**
+ * С 12.11.2026 вкладок шесть вместо десяти: «Оплаты» и «Статус оплат» — два вида одной вкладки, «Долги и звонки» и
+ * «Напоминания» — одной, «Аналитика», «Отчёт» и «Журнал» — одной («Отчёты»). Виды — переключатель вверху страницы
+ * (`sectionViews.ts`); адреса и права прежние.
+ */
+function tabsFor(salesHead: boolean): SectionTab[] {
+  return [
+    ...tabOfViews("Оплаты", [
+      { href: "/finance", label: "Заявки и оплаты" },
+      // Где сейчас каждый неоплаченный счёт: Kaspi ждёт, не дошёл, нет отметки.
+      { href: "/finance/status", label: "Статус счетов" },
+    ]),
+    ...tabOfViews("Долги", [
+      { href: "/finance/debts", label: "Долги и звонки" },
+      // Напоминания в WhatsApp тем, у кого наступил срок оплаты: проверить список и отправить одной кнопкой.
+      { href: "/finance/reminders", label: "Напоминания в WhatsApp" },
+    ]),
+    // Наша точка на базаре («Пожарка»): товар туда перемещается заявками, выручку бухгалтер вносит отчётом за день.
+    { href: "/finance/point", label: "Точка на базаре" },
+    { href: "/finance/claims", label: "Рекламации" },
+    // Цветы в счёт зарплаты — удержания с сотрудников, кадровая история: РОПу не показываются.
+    ...(salesHead ? [] : [{ href: "/finance/takeouts", label: "Цветы в счёт зп" }]),
+    ...tabOfViews("Отчёты", [
+      // Аналитика месяца: выставлено, поступило, собрано, возраст долга, разрезы.
+      { href: "/finance/analytics", label: "Аналитика" },
+      { href: "/finance/report", label: "Отчёт" },
+      // Журнал — служебный след действий бухгалтера; разбирать спор — работа владельца, а не РОПа.
+      !salesHead && { href: "/finance/log", label: "Журнал" },
+    ]),
+  ];
+}
 
-/** Вкладки, закрытые от РОПа: кадровое и служебное. */
-const HIDDEN_FROM_SALES_HEAD = ["/finance/takeouts", "/finance/log"];
-
-export function financeTabsFor(role: string | null | undefined) {
-  if (role === ROLES.SALES_HEAD) {
-    return ALL_TABS.filter((t) => !HIDDEN_FROM_SALES_HEAD.includes(t.href));
-  }
-  return ALL_TABS;
+export function financeTabsFor(role: string | null | undefined): SectionTab[] {
+  return tabsFor(role === ROLES.SALES_HEAD);
 }
 
 /** Оставлено для мест, где роль ещё не прокинута. Новый код зовёт financeTabsFor. */
-export const FINANCE_TABS = ALL_TABS;
+export const FINANCE_TABS = tabsFor(false);
