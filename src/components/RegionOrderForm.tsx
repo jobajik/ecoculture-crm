@@ -124,7 +124,7 @@ export default function RegionOrderForm({
     return (
       <div className="max-w-3xl">
         <h2 className="font-medium mb-3">В какой регион?</h2>
-        <div className="grid sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
           {directions.map((d) => (
             <button
               key={d}
@@ -182,7 +182,7 @@ export default function RegionOrderForm({
 
         <div className="space-y-3">
           {rows.map((row, idx) => (
-            <div key={idx} className="grid sm:grid-cols-[1fr_1.4fr_1fr_0.8fr_auto] gap-2 items-end">
+            <div key={idx} className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_1.4fr_1fr_0.8fr_auto] gap-2 items-end">
               <label className="text-sm">
                 <span className="label">Цветок</span>
                 <select

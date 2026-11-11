@@ -176,7 +176,7 @@ export default function StaffTakeoutForm({
 
   return (
     <form onSubmit={handleSubmit} className="card space-y-4">
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
         <label className="text-sm">
           <span className="label">{company ? "На что ушли" : "Кому выдали"}</span>
           <input
@@ -217,7 +217,7 @@ export default function StaffTakeoutForm({
         </label>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
         <label className="text-sm">
           <span className="label">Цветок</span>
           <select className="input" value={flowerType} onChange={(e) => pickFlower(e.target.value)}>
@@ -272,7 +272,7 @@ export default function StaffTakeoutForm({
         </label>
       )}
 
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
         <label className="text-sm">
           <span className="label">
             Количество

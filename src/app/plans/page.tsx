@@ -148,7 +148,7 @@ export default async function PlansOverviewPage({ searchParams }: { searchParams
 
       <Checklist ov={ov} />
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 items-start mb-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 md:grid-cols-2 xl:grid-cols-3 items-start mb-5">
         <SalesCard ov={ov} href={`/plans/sales${q}`} />
         <ShipmentsCard ov={ov} href={`/plans/shipments${q}`} />
         <HarvestCard ov={ov} href={`/plans/balance${q}`} />
@@ -184,7 +184,7 @@ function MonthPace({ ov }: { ov: PlanOverview }) {
 function Checklist({ ov }: { ov: PlanOverview }) {
   if (ov.checklist.every((c) => c.done)) return null;
   return (
-    <div className="grid gap-3 sm:grid-cols-3 mb-5">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-3 mb-5">
       {ov.checklist.map((c) => (
         <Link
           key={c.key}

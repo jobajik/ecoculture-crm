@@ -5,8 +5,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import clsx from "clsx";
-import Icon from "./Icon";
 import SidebarMenu from "./SidebarMenu";
 import { areaForPath } from "@/lib/areas";
 import { navLinksFor, isActive, activeSub } from "./navLinks";
@@ -51,13 +49,13 @@ export default function MobileNav() {
   return (
     <>
       <div className="no-print lg:hidden sticky top-0 z-30 border-b border-line-hairline bg-surface/95 backdrop-blur">
-        <div className="h-14 px-3 sm:px-5 flex items-center gap-3">
+        <div className="h-14 px-3 sm:px-5 flex items-center gap-2">
           <button
             type="button"
             onClick={() => setOpen(true)}
             aria-label="Открыть меню"
             aria-expanded={open}
-            className="w-10 h-10 rounded-xl border border-line-hairline grid place-items-center text-ink-primary active:bg-surface-plane"
+            className="w-10 h-10 -ml-1 rounded-lg grid place-items-center text-ink-primary active:bg-surface-sunk"
           >
             <span className="flex flex-col gap-[4px]">
               <span className="block w-[18px] h-[2px] rounded bg-current" />
@@ -65,14 +63,9 @@ export default function MobileNav() {
               <span className="block w-[18px] h-[2px] rounded bg-current" />
             </span>
           </button>
-          <div className="min-w-0 flex items-center gap-2">
-            <span className={clsx("w-7 h-7 rounded-lg grid place-items-center text-white flex-none", area.solid)}>
-              <Icon name={area.icon} className="w-4 h-4" />
-            </span>
-            <div className="min-w-0 leading-tight">
-              <div className="text-[14px] font-semibold font-display truncate">{title}</div>
-              {tab && <div className="text-[11.5px] text-ink-muted truncate">{tab.label}</div>}
-            </div>
+          <div className="min-w-0 leading-tight">
+            <div className="text-[15px] font-semibold truncate">{title}</div>
+            {tab && <div className="text-[12px] text-ink-muted truncate">{tab.label}</div>}
           </div>
           <SearchTrigger compact className="ml-auto flex-none" />
           <Link href="/" className="flex-none" aria-label="Мой день">
@@ -87,14 +80,14 @@ export default function MobileNav() {
             type="button"
             aria-label="Закрыть меню"
             onClick={() => setOpen(false)}
-            className="absolute inset-0 bg-ink-primary/40"
+            className="absolute inset-0 bg-ink-primary/30"
           />
-          <div className="absolute inset-y-0 left-0 w-[300px] max-w-[86vw] bg-surface shadow-card-hover overflow-hidden px-3.5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col">
+          <div className="absolute inset-y-0 left-0 w-[300px] max-w-[86vw] bg-surface shadow-pop overflow-hidden px-3 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col">
             <button
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Закрыть"
-              className="absolute right-3 top-4 w-9 h-9 rounded-xl border border-line-hairline grid place-items-center text-ink-secondary text-lg leading-none"
+              className="absolute right-2.5 top-3 w-9 h-9 rounded-lg grid place-items-center text-ink-secondary hover:bg-surface-plane text-xl leading-none"
             >
               ×
             </button>

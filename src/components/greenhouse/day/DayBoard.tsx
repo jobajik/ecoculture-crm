@@ -268,7 +268,7 @@ export default function DayBoard({
           </button>
         </div>
         {isToday ? (
-          <span className="text-xs rounded-full px-2.5 py-1 bg-section-greenhouse-soft text-section-greenhouse font-medium">сегодня</span>
+          <span className="text-xs rounded-lg px-2.5 py-1 bg-section-greenhouse-soft text-section-greenhouse font-medium">сегодня</span>
         ) : (
           <button type="button" className="text-sm underline text-ink-secondary" onClick={() => go(today)}>
             к сегодня
@@ -330,7 +330,7 @@ export default function DayBoard({
                 >
                   <div className="flex items-baseline gap-1">
                     <span className="font-display font-extrabold text-[17px] leading-tight">{/^\d+$/.test(b.block) ? b.block : b.block === "—" ? "—" : b.block}</span>
-                    {n > 0 && <span className={clsx("text-[11px] tabular-nums rounded-full px-1.5", on ? "bg-white/20" : "bg-section-greenhouse-soft text-section-greenhouse")}>{n}</span>}
+                    {n > 0 && <span className={clsx("text-[11px] tabular-nums rounded-md px-1.5", on ? "bg-white/20" : "bg-section-greenhouse-soft text-section-greenhouse")}>{n}</span>}
                   </div>
                   <div className={clsx("text-[10.5px] whitespace-nowrap", on ? "text-white/80" : b.status === "harvest" ? "text-[#1f6b3a] font-medium" : "text-ink-muted")}>
                     {b.statusLabel || (b.cycle ? `ц. ${b.cycle}` : " ")}
@@ -392,12 +392,12 @@ export default function DayBoard({
                   type="button"
                   onClick={() => setArea(a)}
                   className={clsx(
-                    "relative h-9 px-3.5 rounded-full text-sm whitespace-nowrap inline-flex items-center gap-2 transition-colors",
-                    on ? "bg-section-greenhouse text-white font-medium" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane",
+                    "relative h-9 px-3.5 rounded-lg text-sm whitespace-nowrap inline-flex items-center gap-2 transition-colors",
+                    on ? "border border-accent/25 bg-accent-soft text-accent font-medium" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane",
                   )}
                 >
                   {work.areaLabels[a]}
-                  <span className={clsx("text-xs tabular-nums", on ? "text-white/75" : n ? "text-section-greenhouse font-semibold" : "text-ink-muted")}>{n || "—"}</span>
+                  <span className={clsx("text-xs tabular-nums", on ? "text-accent/75" : n ? "text-section-greenhouse font-semibold" : "text-ink-muted")}>{n || "—"}</span>
                   {changed && <span className="w-1.5 h-1.5 rounded-full bg-[#d9902b]" />}
                 </button>
               );

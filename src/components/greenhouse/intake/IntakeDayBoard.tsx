@@ -319,7 +319,7 @@ export default function IntakeDayBoard({
           </button>
         </div>
         {isToday ? (
-          <span className="text-xs rounded-full px-2.5 py-1 bg-section-greenhouse-soft text-section-greenhouse font-medium">сегодня</span>
+          <span className="text-xs rounded-lg px-2.5 py-1 bg-section-greenhouse-soft text-section-greenhouse font-medium">сегодня</span>
         ) : (
           <button type="button" className="text-sm underline text-ink-secondary" onClick={() => go(today)}>
             к сегодня
@@ -542,12 +542,12 @@ export default function IntakeDayBoard({
             {(varietyChips.length > 0 || lastDay) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {lastDay && lastDay.lines.some((x) => !myLines.some((l) => l.block === x.block && vkey(l.variety) === vkey(x.variety))) && (
-                  <button type="button" className="text-xs px-3 py-1.5 rounded-full bg-section-greenhouse text-white" onClick={() => addLines(lastDay.lines)}>
+                  <button type="button" className="text-xs px-3 py-1.5 rounded-lg bg-section-greenhouse text-white" onClick={() => addLines(lastDay.lines)}>
                     Как {lastDay.date.split("-").reverse().slice(0, 2).join(".")}: {lastSorts} {plural(lastSorts, "сорт", "сорта", "сортов")}
                   </button>
                 )}
                 {varietyChips.map((c) => (
-                  <button key={`${c.block}|${c.variety}`} type="button" className="text-xs px-2.5 py-1.5 rounded-full border border-line-hairline bg-surface hover:border-section-greenhouse/50" onClick={() => addLines([c])}>
+                  <button key={`${c.block}|${c.variety}`} type="button" className="text-xs px-2.5 py-1.5 rounded-lg border border-line-hairline bg-surface hover:border-section-greenhouse/50" onClick={() => addLines([c])}>
                     + {c.variety}
                     {c.block ? <span className="text-ink-muted"> · {c.block}</span> : null}
                   </button>
@@ -571,7 +571,7 @@ export default function IntakeDayBoard({
         {myRejects.length > 0 && (
           <div className="divide-y divide-line-hairline/70">
             {myRejects.map((r) => (
-              <div key={r.uid} className="grid grid-cols-[1fr_5.5rem_2rem] sm:grid-cols-[minmax(8rem,12rem)_minmax(10rem,1fr)_5.5rem_minmax(6rem,1fr)_2rem] gap-1.5 px-3 sm:px-4 py-2 items-center">
+              <div key={r.uid} className="grid grid-cols-[minmax(0,1fr)_5.5rem_2rem] sm:grid-cols-[minmax(8rem,12rem)_minmax(10rem,1fr)_5.5rem_minmax(6rem,1fr)_2rem] gap-1.5 px-3 sm:px-4 py-2 items-center">
                 <input
                   className="input !h-9 order-1 sm:order-none"
                   list={listId}

@@ -35,7 +35,7 @@ function Card({ title, hint, children, right }: { title: string; hint?: string; 
   return (
     <div className="card !p-0 overflow-hidden">
       <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-line-hairline">
-        <h2 className="font-display text-[15px] font-bold">{title}</h2>
+        <h2 className="text-[14px] leading-5 font-semibold">{title}</h2>
         {hint && <Hint>{hint}</Hint>}
         {right && <span className="ml-auto text-xs text-ink-muted">{right}</span>}
       </div>
@@ -123,7 +123,7 @@ export default async function MonthAnalyticsPage({ searchParams }: { searchParam
             <Link
               key={f.code}
               href={q({ farm: f.code })}
-              className={f.code === farm ? "rounded-full px-3 py-1.5 text-sm bg-section-analytics text-white" : "rounded-full px-3 py-1.5 text-sm bg-surface-plane text-ink-secondary hover:text-ink-primary"}
+              className={f.code === farm ? "rounded-lg px-3 py-1.5 text-sm bg-accent-soft text-accent" : "rounded-lg px-3 py-1.5 text-sm bg-surface-plane text-ink-secondary hover:text-ink-primary"}
             >
               {f.label}
             </Link>
@@ -165,7 +165,7 @@ export default async function MonthAnalyticsPage({ searchParams }: { searchParam
           </div>
         </Card>
 
-        <div className="grid gap-5 xl:grid-cols-2 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 items-start">
           <Card title="Продажи по каналам" hint="Регионы и наши магазины — без цены в заявке: сумма по клиентскому прайсу на день заявки.">
             <div className="table-scroll">
               <table className="w-full text-sm min-w-[520px]">
@@ -271,7 +271,7 @@ export default async function MonthAnalyticsPage({ searchParams }: { searchParam
           </div>
         </Card>
 
-        <div className="grid gap-5 xl:grid-cols-2 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 items-start">
           <Card title="Менеджеры" hint="Только продажи клиентам, по менеджеру заявки.">
             <div className="table-scroll">
               <table className="w-full text-sm min-w-[520px]">
@@ -331,7 +331,7 @@ export default async function MonthAnalyticsPage({ searchParams }: { searchParam
           </Card>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-2 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 items-start">
           <Card title="Крупнейшие клиенты" right={`топ ${r.topClients.length}`}>
             <div className="table-scroll">
               <table className="w-full text-sm min-w-[560px]">
@@ -391,7 +391,7 @@ export default async function MonthAnalyticsPage({ searchParams }: { searchParam
           </Card>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-2 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 items-start">
           <Card title="По каким ценам продавали" hint="Продажи клиентам: категория и цена за стебель, крупнейшие объёмы.">
             <table className="w-full text-sm">
               <tbody>

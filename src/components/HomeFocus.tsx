@@ -99,18 +99,18 @@ export function HomeStats({ focus }: { focus: Focus }) {
         const body = (
           <>
             <div className="text-xs text-ink-muted mb-1.5">{s.label}</div>
-            <div className={clsx("font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums", TONE[s.tone ?? "default"])}>
+            <div className={clsx("font-display text-[22px] sm:text-[24px] leading-none font-extrabold tabular-nums", TONE[s.tone ?? "default"])}>
               {s.value}
             </div>
             {s.hint && <div className="text-xs text-ink-secondary mt-2">{s.hint}</div>}
           </>
         );
         return s.href ? (
-          <Link key={s.label} href={s.href} className="card !p-4 sm:!p-5 hover:shadow-card-hover transition-shadow">
+          <Link key={s.label} href={s.href} className="card !p-4 hover:shadow-card-hover transition-shadow">
             {body}
           </Link>
         ) : (
-          <div key={s.label} className="card !p-4 sm:!p-5">
+          <div key={s.label} className="card !p-4">
             {body}
           </div>
         );
@@ -125,7 +125,7 @@ export function HomeAttention({ focus }: { focus: Focus }) {
   return (
     <div className="card !p-0 overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-line-hairline">
-        <h2 className="font-display text-[15px] font-bold">{focus.title}</h2>
+        <h2 className="text-[14px] leading-5 font-semibold">{focus.title}</h2>
         {focus.subtitle && <Hint>{focus.subtitle}</Hint>}
       </div>
       {attention.length === 0 ? (
@@ -165,7 +165,7 @@ export function HomeFocusStrip({ focus }: { focus: Focus }) {
       )}
     >
       <span>{focus.strip.text}</span>
-      <span className="text-series-1 whitespace-nowrap">Очередь →</span>
+      <span className="text-accent whitespace-nowrap">Очередь →</span>
     </Link>
   );
 }

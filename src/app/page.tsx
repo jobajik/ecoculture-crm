@@ -187,7 +187,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
     <div className="card !p-0 overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-line-hairline">
         <span className="w-2 h-2 rounded-full bg-status-warning" aria-hidden />
-        <h2 className="font-display text-[15px] font-bold">Распродаём в первую очередь</h2>
+        <h2 className="text-[14px] leading-5 font-semibold">Распродаём в первую очередь</h2>
       </div>
       <div className="px-5 py-3 space-y-1.5">
         {pushRows.map((r) => (
@@ -240,7 +240,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { erro
         {focus && <HomeStats focus={focus} />}
 
         {showStock ? (
-          <div className={side ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start" : ""}>
+          <div className={side ? "grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start" : ""}>
             <StockBoard initial={snapshot} allowedTypes={flowerTypesForFarm(farm)} />
             {side}
           </div>

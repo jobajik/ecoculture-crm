@@ -36,13 +36,13 @@ export default function DeptTabs({ tabs, active, showFarm }: { tabs: DeptTab[]; 
             href={t.href}
             title={`${t.name} · табель: ${TIMESHEET_STATUS_LABELS[t.status]}`}
             className={clsx(
-              "flex items-center gap-2 h-9 px-3.5 rounded-full text-sm whitespace-nowrap transition-colors",
-              on ? "bg-ink-primary text-white" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane",
+              "flex items-center gap-2 h-9 px-3.5 rounded-lg text-sm whitespace-nowrap transition-colors",
+              on ? "border border-accent/25 bg-accent-soft text-accent font-medium" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane",
             )}
           >
             <span className={clsx("h-2 w-2 rounded-full shrink-0", DOT[t.status], on && "ring-2 ring-white/40")} />
             <span className={clsx(on && "font-medium")}>{t.name}</span>
-            <span className={clsx("text-xs tabular-nums", on ? "text-white/70" : "text-ink-muted")}>
+            <span className={clsx("text-xs tabular-nums", on ? "text-accent/70" : "text-ink-muted")}>
               {t.people}
               {showFarm && t.farm ? ` · ${FARM_LABELS[t.farm] ?? t.farm}` : ""}
             </span>

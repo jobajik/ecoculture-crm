@@ -54,7 +54,7 @@ export default function WorkAnalytics({
   const thisMonth = monthRange(today.slice(0, 7));
   const prevMonth = monthRange(shiftDay(thisMonth.from, -1).slice(0, 7));
   const quick = (label: string, f: string, t: string) => (
-    <button type="button" className={clsx("text-xs px-2.5 py-1 rounded-full border", f === from && t === to ? "bg-ink-primary text-white border-ink-primary" : "border-line-hairline hover:bg-surface-plane")} onClick={() => go({ from: f, to: t })}>
+    <button type="button" className={clsx("text-xs px-2.5 py-1 rounded-lg border", f === from && t === to ? "bg-accent-soft text-accent border-accent/25 font-medium" : "border-line-hairline hover:bg-surface-plane")} onClick={() => go({ from: f, to: t })}>
       {label}
     </button>
   );

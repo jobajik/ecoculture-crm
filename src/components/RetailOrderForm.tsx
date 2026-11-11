@@ -123,7 +123,7 @@ export default function RetailOrderForm({
         {shops.length === 0 && (
           <p className="text-sm text-ink-secondary mb-3">Магазинов пока нет — их заводит РОП.</p>
         )}
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
           {shops.map((s) => (
             <button
               key={s.clientId}

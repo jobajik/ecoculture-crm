@@ -166,7 +166,7 @@ export default async function RetailRegionsPage({
             Города «{city}» ещё нет в базе — его заводит РОП или администратор.
           </p>
         ) : (
-          <div className="grid xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="min-w-0 table-scroll table-cards">
               <table className="w-full text-sm">
                 <thead>
@@ -219,7 +219,7 @@ export default async function RetailRegionsPage({
             </div>
 
             <div className="border-t xl:border-t-0 xl:border-l border-line-hairline min-w-0">
-              <div className="px-4 sm:px-5 py-3 border-b border-line-hairline font-display text-[15px] font-bold">
+              <div className="px-4 sm:px-5 py-3 border-b border-line-hairline text-[14px] leading-5 font-semibold">
                 Последние отправки в {city}
               </div>
               {history.length === 0 ? (

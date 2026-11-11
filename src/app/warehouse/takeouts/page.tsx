@@ -154,7 +154,7 @@ export default async function StaffTakeoutsPage({
         />
       </div>
 
-      <div className={canFill ? "grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start" : ""}>
+      <div className={canFill ? "grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start" : ""}>
         {canFill && (
           <Section tone="stock" icon="client" title="Записать выдачу" className="!mb-0 [&_.card]:!shadow-none [&_.card]:!border-0 [&_.card]:!p-0">
             <StaffTakeoutForm

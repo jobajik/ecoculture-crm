@@ -118,7 +118,7 @@ export default async function ClientAnalyticsPage({ searchParams }: { searchPara
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 min-[1700px]:grid-cols-[minmax(0,1fr)_360px] items-start">
         <ClientBreakdown
           rows={{ manager: a.byManager, city: a.byCity, type: a.byType, flower: a.byFlower }}
           prevLabel="прошлому"

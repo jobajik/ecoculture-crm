@@ -83,7 +83,7 @@ export default function EmployeeCard({
       ) : (
         <div className="card">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+            <dl className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
               <Row k="Подразделение" v={departmentName} />
               <Row k="Должность" v={employee.position} />
               <Row k="Вид занятости" v={EMPLOYMENT_LABELS[employee.employment]} />
@@ -253,7 +253,7 @@ function RateForm({
 
   return (
     <form onSubmit={submit} className="rounded-xl border border-line-hairline bg-surface-plane/60 p-4 space-y-3">
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
         <div>
           <label className="label">Действует с *</label>
           <input className="input" type="date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} />

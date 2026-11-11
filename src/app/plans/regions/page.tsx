@@ -268,7 +268,7 @@ export default async function RegionSalesPage({
             </>
           }
         >
-          <div className="grid gap-2 lg:grid-cols-2">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-2 lg:grid-cols-2">
             {missing.map((m) => (
               <DirectionFixRow
                 key={m.orderId}

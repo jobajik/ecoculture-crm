@@ -111,7 +111,7 @@ export default function FinanceReport({
         <Tile label="Средний чек" value={t.orders > 0 ? money(t.avgOrder) : "—"} sub={`собираемость ${t.collectPercent.toFixed(0)}%`} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_340px] items-start">
         <div className="min-w-0">
         <ChartCard
           title="Выручка по дням"
@@ -317,9 +317,9 @@ export default function FinanceReport({
 
 function Tile({ label, value, sub, bar }: { label: string; value: string; sub?: string; bar?: number }) {
   return (
-    <div className="card !p-4 sm:!p-5">
+    <div className="card !p-4">
       <div className="text-xs text-ink-muted mb-1.5">{label}</div>
-      <div className="font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums">{value}</div>
+      <div className="font-display text-[22px] sm:text-[24px] leading-none font-extrabold tabular-nums">{value}</div>
       {bar !== undefined && (
         <div className="mt-2 h-1.5 rounded-full bg-surface-sunk overflow-hidden">
           <div className="h-full rounded-full bg-section-money" style={{ width: `${Math.max(0, Math.min(100, bar))}%` }} />

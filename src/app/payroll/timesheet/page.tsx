@@ -100,7 +100,7 @@ export default async function TimesheetListPage({ searchParams }: { searchParams
                     {filled} из {people}
                   </td>
                   <td data-label="Состояние" className="px-4 py-2.5">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${tone(status)}`}>{TIMESHEET_STATUS_LABELS[status]}</span>
+                    <span className={`rounded-md px-2.5 py-0.5 text-xs font-medium ${tone(status)}`}>{TIMESHEET_STATUS_LABELS[status]}</span>
                     {status === "returned" && comment && <div className="text-xs text-ink-muted mt-1 truncate max-w-[18rem]">{comment}</div>}
                   </td>
                   <td className="px-4 py-2.5 text-right">

@@ -74,7 +74,7 @@ export default function HarvestWeeks({ rows, currentWeek }: { rows: HarvestFlowe
   return (
     <div className="card !p-0 overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 sm:px-5 py-3 border-b border-line-hairline text-xs text-ink-secondary">
-        <span className="font-display text-[15px] font-bold text-ink-primary mr-auto">По неделям месяца</span>
+        <span className="text-[14px] leading-5 font-semibold text-ink-primary mr-auto">По неделям месяца</span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-5 rounded-full bg-accent" /> срезка (прогноз агронома)
         </span>

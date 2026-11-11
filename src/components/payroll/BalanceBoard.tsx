@@ -154,7 +154,7 @@ export default function BalanceBoard({
   const transfers6 = off6.filter((d) => d.kind === "transfer");
 
   return (
-    <div className="grid lg:grid-cols-[1fr_340px] gap-5 items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_340px] gap-5 items-start">
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           {years.map((y) => (
@@ -162,8 +162,8 @@ export default function BalanceBoard({
               key={y}
               href={`/payroll/balance?year=${y}`}
               className={clsx(
-                "h-9 px-4 rounded-full text-sm inline-flex items-center",
-                y === year ? "bg-ink-primary text-white" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane"
+                "h-9 px-4 rounded-lg text-sm inline-flex items-center",
+                y === year ? "border border-accent/25 bg-accent-soft text-accent font-medium" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane"
               )}
             >
               {y}

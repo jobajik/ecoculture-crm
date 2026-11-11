@@ -67,7 +67,7 @@ export default function CallReport({
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
         <div className="card !p-0 overflow-hidden min-w-0">
           <div className="flex gap-x-5 overflow-x-auto scroll-x-hidden border-b border-line-hairline px-4">
             {tabs.map((t) => (
@@ -261,7 +261,7 @@ function DistributeForm({ report, managers }: { report: Report; managers: { emai
                   type="button"
                   onClick={() => setTo(on ? to.filter((x) => x !== m.email) : [...to, m.email])}
                   className={clsx(
-                    "rounded-full border px-3 py-1",
+                    "rounded-lg border px-3 py-1",
                     on ? "border-section-leads bg-section-leads-soft text-section-leads font-medium" : "border-line-hairline text-ink-secondary"
                   )}
                 >

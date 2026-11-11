@@ -109,7 +109,7 @@ export default function StaffingImportForm({
           закрыть
         </button>
       </div>
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
         <div className="sm:col-span-1">
           <label className="label">Файл</label>
           <input

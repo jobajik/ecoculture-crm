@@ -188,14 +188,14 @@ export default function LeadsBoard({
               onClick={() => pickView(t.key)}
               aria-pressed={active}
               className={clsx(
-                "card !p-4 sm:!p-5 text-left transition-shadow min-w-0 hover:shadow-card-hover",
+                "card !p-4 text-left transition-shadow min-w-0 hover:shadow-card-hover",
                 active && "!border-section-leads ring-2 ring-section-leads/20"
               )}
             >
               <div className="text-xs text-ink-muted truncate">{t.label}</div>
               <div
                 className={clsx(
-                  "font-display text-[22px] sm:text-[26px] font-extrabold tabular-nums leading-none mt-1.5",
+                  "font-display text-[22px] sm:text-[24px] font-extrabold tabular-nums leading-none mt-1.5",
                   hot && (t.tone === "critical" ? "text-status-critical" : "text-[#8a5a00]")
                 )}
               >

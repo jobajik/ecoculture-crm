@@ -118,12 +118,12 @@ function CampaignChip({ href, active, label, count }: { href: string; active: bo
     <Link
       href={href}
       className={clsx(
-        "flex-none h-8 px-3 rounded-full border text-[13px] inline-flex items-center gap-1.5 whitespace-nowrap transition-colors",
-        active ? "bg-ink-primary border-ink-primary text-white font-semibold" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
+        "flex-none h-8 px-3 rounded-lg border text-[13px] inline-flex items-center gap-1.5 whitespace-nowrap transition-colors",
+        active ? "bg-accent-soft border-accent/25 text-accent font-medium" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
       )}
     >
       {label}
-      {count !== undefined && <span className={clsx("tabular-nums", active ? "text-white/70" : "text-ink-muted")}>{count}</span>}
+      {count !== undefined && <span className={clsx("tabular-nums", active ? "text-accent/70" : "text-ink-muted")}>{count}</span>}
     </Link>
   );
 }

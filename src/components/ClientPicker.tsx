@@ -195,7 +195,7 @@ export default function ClientPicker({
 
     return (
       <div className="space-y-3 border border-line-hairline rounded-xl p-3">
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
           {field("Название клиента", "name", "Например: ТОО «Флора Плюс»", true)}
           {field("Город", "city", "Алматы", true)}
           {field("Магазин / точка", "shopName", "Если отличается от названия")}
@@ -219,7 +219,7 @@ export default function ClientPicker({
           />
         )}
 
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
           {select("Как нашли", "source", CLIENT_SOURCES)}
           {field("Заметка", "note", "Что берёт, когда звонить")}
         </div>
@@ -325,7 +325,7 @@ export function KaspiFields({
   return (
     <div className="rounded-xl border border-line-hairline p-3 space-y-2">
       <div className="text-sm font-medium">Kaspi Pay клиента</div>
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
         <label className="text-sm block">
           <span className="label">Каспи Pay №1</span>
           <PhoneInput value={pay1} onChange={(v) => onChange({ kaspiPay1: v })} />

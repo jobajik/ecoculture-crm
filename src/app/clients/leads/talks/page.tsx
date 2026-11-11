@@ -136,7 +136,7 @@ export default async function TalksPage() {
         <KpiTile icon="arrow" label="Горячие" value={report.hot.length} hint="готовы заказать" tone={report.hot.length > 0 ? "good" : undefined} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
         <PaneTabs
           boxed
           initial={report.waiting.length > 0 ? "waiting" : "hot"}

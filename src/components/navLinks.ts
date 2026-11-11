@@ -30,6 +30,11 @@ export interface NavSub {
   label: string;
   /** Адреса, на которых вкладка горит (без него — её `href` и всё, что начинается с него). */
   match?: string[];
+  /**
+   * Подзаголовок группы в боковом меню (11.11.2026). У «Клиентов» одиннадцать вкладок, у «Склада» и «Денег» — по
+   * десять: сплошным столбиком они не читаются. Группа — только подпись в меню: адреса, права и сами вкладки те же.
+   */
+  group?: string;
 }
 
 export interface NavLink {
@@ -59,6 +64,39 @@ function section(href: string, label: string, subs: NavSub[], extraMatch: string
   const match = Array.from(new Set([path(href), ...subs.map((s) => path(s.href)), ...extraMatch]));
   return { href, label, match, subs: subs.length > 1 ? subs : [], other };
 }
+
+/** Расставляет вкладкам группы меню: порядок групп — по первой вкладке каждой, внутри группы — прежний. */
+function grouped(subs: NavSub[], groupOf: (p: string) => string): NavSub[] {
+  const order: string[] = [];
+  const byGroup = new Map<string, NavSub[]>();
+  for (const s of subs) {
+    const g = groupOf(path(s.href));
+    if (!byGroup.has(g)) {
+      byGroup.set(g, []);
+      order.push(g);
+    }
+    byGroup.get(g)!.push({ ...s, group: g });
+  }
+  return order.flatMap((g) => byGroup.get(g)!);
+}
+
+const G_CLIENTS = (p: string) =>
+  p.startsWith("/clients/chats") || p.startsWith("/clients/leads/talks") || p.startsWith("/clients/broadcasts")
+    ? "Общение"
+    : p.startsWith("/clients/leads")
+      ? "Лиды"
+      : "База";
+const G_STOCK = (p: string) =>
+  ["/warehouse/to-office", "/warehouse/takeouts", "/warehouse/company"].includes(p)
+    ? "Выдачи"
+    : p === "/warehouse/analytics"
+      ? "Отчёты"
+      : p.startsWith("/office") || p.startsWith("/astana")
+        ? "Другие склады"
+        : "Работа склада";
+const G_MONEY = (p: string) =>
+  ["/finance/point", "/finance/claims", "/finance/takeouts"].includes(p) ? "Учёт" : ["/finance/log", "/finance/analytics", "/finance/report"].includes(p) ? "Отчёты" : "Оплаты";
+const G_NUMBERS = (p: string) => (p.startsWith("/analytics") ? "Аналитика" : p.startsWith("/sales") ? "Продажи" : "Планы");
 
 const DAY: NavLink = { href: "/", label: "Мой день", match: ["/"], subs: [] };
 const ORDERS: NavLink = { href: "/orders", label: "Заявки", match: ["/orders"], subs: [] };
@@ -122,21 +160,21 @@ function baseLinksFor(role: string): NavLink[] {
       return [
         DAY,
         ORDERS,
-        section("/clients", "Клиенты", clientsTabsFor(undefined, role)),
+        section("/clients", "Клиенты", grouped(clientsTabsFor(undefined, role), G_CLIENTS)),
         section("/sales", "Продажи", [...salesTabsFor(role), ...ANALYTICS(role)], ["/analytics", "/prices"]),
       ];
     case "accountant":
       return [
         DAY,
-        section("/finance", "Оплаты", financeTabsFor(role)),
+        section("/finance", "Оплаты", grouped(financeTabsFor(role), G_MONEY)),
         ORDERS,
-        section("/clients", "Клиенты", clientsTabsFor(undefined, role)),
+        section("/clients", "Клиенты", grouped(clientsTabsFor(undefined, role), G_CLIENTS)),
         section("/analytics", "Аналитика", ANALYTICS(role), ["/sales"]),
       ];
     case "warehouse":
       return [
         DAY,
-        section("/warehouse", "Склад", [...WAREHOUSE_TABS, { href: "/astana", label: "Астана" }], ["/astana"]),
+        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS, { href: "/astana", label: "Астана" }], G_STOCK), ["/astana"]),
         ORDERS,
         // Зав. складом производства в «Рознице» ведёт только регионы — пункт ведёт сразу туда.
         section("/retail/regions", "Розница", retailTabsFor(role), ["/retail"]),
@@ -158,13 +196,13 @@ function baseLinksFor(role: string): NavLink[] {
       return [
         DAY,
         ORDERS,
-        section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
+        section("/clients", "Клиенты", grouped([...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], G_CLIENTS), ["/retail"]),
         section("/office", "Склад", [...officeTabsFor(role), { href: "/astana", label: "Астана" }], ["/warehouse", "/astana"]),
-        section("/finance", "Деньги", financeTabsFor(role)),
+        section("/finance", "Деньги", grouped(financeTabsFor(role), G_MONEY)),
         section(
           "/plans",
           "Планы и цифры",
-          [...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)],
+          grouped([...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)], G_NUMBERS),
           ["/sales", "/prices", "/analytics", "/forecast"]
         ),
       ];
@@ -180,13 +218,13 @@ function baseLinksFor(role: string): NavLink[] {
       return [
         DAY,
         ORDERS,
-        section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
-        section("/warehouse", "Склад", [...WAREHOUSE_TABS, { href: "/office", label: "Офис" }, { href: "/astana", label: "Астана" }], ["/office", "/astana"]),
-        section("/finance", "Деньги", financeTabsFor(role)),
+        section("/clients", "Клиенты", grouped([...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], G_CLIENTS), ["/retail"]),
+        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS, { href: "/office", label: "Офис" }, { href: "/astana", label: "Астана" }], G_STOCK), ["/office", "/astana"]),
+        section("/finance", "Деньги", grouped(financeTabsFor(role), G_MONEY)),
         section(
           "/plans",
           "Планы и цифры",
-          [...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)],
+          grouped([...plansTabsFor(role), ...salesTabsFor(role), ...ANALYTICS(role)], G_NUMBERS),
           ["/sales", "/prices", "/analytics", "/forecast"]
         ),
         { href: "/admin", label: "Настройки", match: ["/admin"], subs: [], other: true },

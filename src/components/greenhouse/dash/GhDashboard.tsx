@@ -200,7 +200,7 @@ export function ForecastCard({ forecast, accuracy, farm, blockHref }: { forecast
       {blocks.length > 0 && (
         <div>
           <div className="text-[11px] text-ink-muted mb-1">Откуда возьмётся</div>
-          <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+          <ul className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
             {blocks.map((b) => (
               <li key={`${b.cycle}-${b.block}`} className="flex items-baseline gap-2 min-w-0">
                 <Link href={blockHref(b.cycle, b.block)} className="hover:underline truncate">

@@ -187,7 +187,7 @@ export default async function BalancePage({
       {shortWeeks.length > 0 && (
         <div className="card border-status-critical/40 bg-status-critical/5 text-sm mb-5">
           <div className="font-medium text-status-critical">Срезки не хватит на план</div>
-          <ul className="mt-1.5 grid gap-x-6 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3 text-ink-secondary">
+          <ul className="mt-1.5 grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3 text-ink-secondary">
             {shortWeeks.map((s) => (
               <li key={`${s.label}-${s.week}`}>
                 {s.label}, неделя {s.week}: не хватит {nf(s.missing)} шт

@@ -35,13 +35,13 @@ export default function Chips({
             type="button"
             onClick={() => onChange(c.value)}
             className={clsx(
-              "h-8 px-3 rounded-full border text-[13px] whitespace-nowrap flex items-center gap-1.5 transition-colors flex-none",
-              on ? "bg-ink-primary text-white border-ink-primary" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
+              "h-9 sm:h-8 px-3 rounded-lg border text-[13px] whitespace-nowrap flex items-center gap-1.5 transition-colors flex-none",
+              on ? "bg-accent-soft text-accent border-accent/25 font-medium" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary hover:border-line-strong"
             )}
           >
             {c.label}
             {c.count !== undefined && (
-              <b className={clsx("font-semibold tabular-nums", !on && c.alarm && c.count > 0 && "text-status-critical")}>
+              <b className={clsx("font-medium tabular-nums", on ? "" : c.alarm && c.count > 0 ? "text-status-critical" : "text-ink-muted")}>
                 {c.count.toLocaleString("ru-RU")}
               </b>
             )}

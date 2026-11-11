@@ -153,7 +153,7 @@ export default async function GreenhouseRecordsPage({ searchParams }: { searchPa
     <Link
       key={key}
       href={ghHref("/greenhouse/records", farm, { ...keep, type: key === "all" ? undefined : key })}
-      className={clsx("text-xs px-3 py-1.5 rounded-full border whitespace-nowrap inline-flex items-center gap-1.5", key === type ? "bg-section-greenhouse text-white border-section-greenhouse" : "border-line-hairline bg-surface hover:bg-surface-plane")}
+      className={clsx("text-xs px-3 py-1.5 rounded-lg border whitespace-nowrap inline-flex items-center gap-1.5", key === type ? "bg-accent-soft text-accent border-accent/25" : "border-line-hairline bg-surface hover:bg-surface-plane")}
     >
       {key !== "all" && <span className="w-1.5 h-1.5 rounded-full" style={{ background: key === type ? "#fff" : TONE[key as RecordKind] }} />}
       {label}

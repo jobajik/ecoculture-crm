@@ -97,7 +97,7 @@ export default async function MyDayManager({ user }: { user: DayUser }) {
     <div className="space-y-5">
       <p className="text-sm text-ink-secondary">{day.summary}</p>
 
-      <div className="grid gap-5 xl:grid-cols-3 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-3 items-start">
         <div className="xl:col-span-2 space-y-5 min-w-0">
           <DayCard
             tone="leads"
@@ -248,7 +248,7 @@ export default async function MyDayManager({ user }: { user: DayUser }) {
 
           {day.assistant.hasLine && (
             <section className="rounded-2xl border border-accent/20 bg-accent-soft px-5 py-4">
-              <h2 className="font-display text-[15px] font-bold text-accent-hover">ИИ-помощник за сутки</h2>
+              <h2 className="text-[14px] leading-5 font-semibold text-accent-hover">ИИ-помощник за сутки</h2>
               <p className="text-sm mt-1.5 leading-relaxed">
                 Ответил клиентам: <strong>{day.assistant.replies}</strong>.
                 {day.assistant.orders.length > 0 ? (

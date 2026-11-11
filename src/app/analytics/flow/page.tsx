@@ -17,12 +17,13 @@ import { analyticsTabsFor } from "../tabs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const TD = "px-3 sm:px-4 py-2";
-const TDN = "px-3 sm:px-4 py-2 text-right tabular-nums whitespace-nowrap";
-const TH = "px-3 sm:px-4 py-2 font-medium text-left";
-const THN = "px-3 sm:px-4 py-2 font-medium text-right";
+const TD = "px-2.5 sm:px-3 py-2";
+const TDN = "px-2 sm:px-2.5 py-2 text-right tabular-nums whitespace-nowrap";
+const TH = "px-2.5 sm:px-3 py-2 font-medium text-left";
+const THN = "px-2 sm:px-2.5 py-2 font-medium text-right";
 const TROW = "border-b border-line-hairline last:border-0";
 const TTOT = "border-t border-line-hairline bg-surface-plane/60 font-semibold";
+const WIDE = "hidden xl:table-cell";
 const THEAD = "border-b border-line-hairline bg-surface-plane/60 text-xs text-ink-muted";
 
 const nf = (n: number) => Math.round(n).toLocaleString("ru-RU");
@@ -39,7 +40,7 @@ function Card({ title, hint, children, right }: { title: string; hint?: string; 
   return (
     <div className="card !p-0 overflow-hidden">
       <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-line-hairline">
-        <h2 className="font-display text-[15px] font-bold">{title}</h2>
+        <h2 className="text-[14px] leading-5 font-semibold">{title}</h2>
         {hint && <Hint>{hint}</Hint>}
         {right && <span className="ml-auto text-xs text-ink-muted">{right}</span>}
       </div>
@@ -48,10 +49,11 @@ function Card({ title, hint, children, right }: { title: string; hint?: string; 
   );
 }
 
+/** Изменение к прошлому периоду. На экране уже 1280 px прячется: четырнадцать колонок туда не помещаются, а главное — сами цифры. */
 function DeltaCell({ now, prev }: { now: number; prev: number }) {
-  if (!prev) return <td className={`${TDN} text-ink-muted`}>—</td>;
+  if (!prev) return <td className={`${TDN} ${WIDE} text-ink-muted`}>—</td>;
   const d = Math.round(((now - prev) / prev) * 100);
-  return <td className={`${TDN} ${d < -10 ? "text-status-critical" : d > 10 ? "text-status-good" : "text-ink-muted"}`}>{`${d >= 0 ? "+" : ""}${d}%`}</td>;
+  return <td className={`${TDN} ${WIDE} ${d < -10 ? "text-status-critical" : d > 10 ? "text-status-good" : "text-ink-muted"}`}>{`${d >= 0 ? "+" : ""}${d}%`}</td>;
 }
 
 /** Общая таблица «срезано · продано · отгружено · списано · выдано · остаток» по строкам одного разреза. */
@@ -73,39 +75,39 @@ function FlowTable({ rows, total, first, showPrice = true, showPrev = true }: { 
       <td className={TDN}>{nf(r.shipped)}</td>
       <td className={`${TDN} ${r.cut && r.writeoff > r.cut * 0.15 ? "text-status-critical" : ""}`}>{nf(r.writeoff)}</td>
       <td className={`${TDN} ${r.cut && r.writeoff > r.cut * 0.15 ? "text-status-critical" : ""}`}>{pct(r.writeoff, r.cut)}</td>
-      <td className={TDN}>{r.takeouts ? nf(r.takeouts) : "—"}</td>
+      <td className={`${TDN} ${WIDE}`}>{r.takeouts ? nf(r.takeouts) : "—"}</td>
       <td className={TDN}>{nf(r.remaining)}</td>
     </>
   );
   return (
     <div className="table-scroll">
-      <table className="w-full text-sm min-w-[920px]">
+      <table className="w-full text-[13px] min-w-[720px]">
         <thead>
           <tr className={THEAD}>
             <th className={TH}>{first}</th>
             <th className={THN}>Срезано</th>
-            {showPrev && <th className={THN}>Δ</th>}
+            {showPrev && <th className={`${THN} ${WIDE}`}>Δ</th>}
             <th className={THN}>Продано</th>
             <th className={THN}>от срезки</th>
-            {showPrev && <th className={THN}>Δ</th>}
+            {showPrev && <th className={`${THN} ${WIDE}`}>Δ</th>}
             {showPrice && (
               <>
                 <th className={THN}>Выручка</th>
                 <th className={THN}>Средняя</th>
-                {showPrev && <th className={THN}>Δ</th>}
+                {showPrev && <th className={`${THN} ${WIDE}`}>Δ</th>}
               </>
             )}
             <th className={THN}>Отгружено</th>
             <th className={THN}>Списано</th>
             <th className={THN}>от срезки</th>
-            <th className={THN}>Выдано</th>
-            <th className={THN}>Остаток сейчас</th>
+            <th className={`${THN} ${WIDE}`}>Выдано</th>
+            <th className={THN}>Остаток</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.key} className={TROW}>
-              <td className={TD}>{r.label}</td>
+              <td className={`${TD} min-w-[150px]`}>{r.label}</td>
               {cells(r)}
             </tr>
           ))}
@@ -172,7 +174,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
     if (fl && (f ? flowerTypesForFarm(f).includes(fl) : true)) sp.set("flower", fl);
     return `/analytics/flow?${sp.toString()}`;
   };
-  const pill = (active: boolean) => (active ? "rounded-full px-3 py-1.5 text-sm bg-section-analytics text-white" : "rounded-full px-3 py-1.5 text-sm bg-surface-plane text-ink-secondary hover:text-ink-primary");
+  const pill = (active: boolean) => (active ? "rounded-lg px-3 py-1.5 text-sm bg-accent-soft text-accent" : "rounded-lg px-3 py-1.5 text-sm bg-surface-plane text-ink-secondary hover:text-ink-primary");
   const farmTabs = [
     { code: "", label: "Всё хозяйство" },
     { code: FARMS.ESENTAI, label: FARM_LABELS[FARMS.ESENTAI] ?? "Есентай" },
@@ -237,7 +239,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3 sm:gap-4 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
         <KpiTile icon="leaf" label="Срезано" value={nf(t.cut)} hint={deltaHint(t.cut, t.prev.cut) || "приёмка основного склада"} />
         <KpiTile icon="order" label="Продано по заявкам" value={nf(t.sold.qty)} hint={`${pct(t.sold.qty, t.cut)} от срезанного${t.prev.sold.qty ? ` · ${delta(t.sold.qty, t.prev.sold.qty)}` : ""}`} />
         <KpiTile icon="wallet" label="Выручка" value={mln(t.sold.sum)} hint={deltaHint(t.sold.sum, t.prev.sold.sum) || "по заявкам периода"} />
@@ -285,7 +287,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
           <FlowTable rows={r.byVariety} first="Цветок · сорт" showPrev={false} />
         </Card>
 
-        <div className="grid gap-5 xl:grid-cols-2 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 items-start">
           <Card title="Продажи по каналам" hint="Регионы и наши магазины — без цены в заявке: сумма по клиентскому прайсу на день заявки. Заявки со склада Астаны не считаются: этот цветок уже ушёл объёмом на город.">
             <div className="table-scroll">
               <table className="w-full text-sm min-w-[520px]">
@@ -322,7 +324,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
           </Card>
 
           <Card title="Списания" hint="Причины — как их выбрал зав. складом. Возраст — сколько дней прошло от срезки до списания: если списывают на 1–3 день, это брак срезки или приёмки, а не старение." right={r.writeoffAgeMedian !== null ? `медиана возраста ${Math.round(r.writeoffAgeMedian)} дн.` : undefined}>
-            <div className="grid sm:grid-cols-2">
+            <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2">
               <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
@@ -379,7 +381,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
           </Card>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-2 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 items-start">
           <Card title="Свежесть склада сейчас" hint="Остаток основного и офисного складов по возрасту срезки на сегодня. Старше недели — продавать первым или списывать.">
             <div className="table-scroll">
               <table className="w-full text-sm min-w-[480px]">

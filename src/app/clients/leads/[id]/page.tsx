@@ -144,7 +144,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
                 : i < current
                   ? "bg-section-leads-soft text-section-leads"
                   : i === current
-                    ? "bg-section-leads text-white font-semibold"
+                    ? "bg-accent-soft text-accent font-semibold"
                     : "bg-surface-sunk text-ink-muted"
             }`}
             title={`${s.label}: ${s.hint}`}
@@ -154,7 +154,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
         ))}
       </ol>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
         <div className="space-y-4 min-w-0">
         <LeadInfoForm
           lead={lead}

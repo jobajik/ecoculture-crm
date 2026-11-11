@@ -258,7 +258,7 @@ export default function PlanBalanceBoard({
         }}
       />
 
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
         <div className="card !py-3">
           <div className="label !mb-0.5">Прогноз срезки · {weekLabel(activeWeek)}</div>
           <div className="text-lg font-semibold tabular-nums">

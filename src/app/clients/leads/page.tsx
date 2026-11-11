@@ -135,7 +135,7 @@ export default async function LeadsPage({
       </div>
 
       {/* Новый вид (19.10.2026): лиды слева, справа — кто написал в WhatsApp и как работают менеджеры. */}
-      <div className={inbox.length > 0 || (manage && summary.byManager.length > 0) ? "grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px] items-start" : ""}>
+      <div className={inbox.length > 0 || (manage && summary.byManager.length > 0) ? "grid grid-cols-[minmax(0,1fr)] gap-5 2xl:grid-cols-[minmax(0,1fr)_340px] items-start" : ""}>
         <LeadsBoard
           rows={rows}
           myEmail={email}
@@ -155,7 +155,7 @@ export default async function LeadsPage({
             {manage && summary.byManager.length > 0 && (
               <div className="card !p-0 overflow-hidden">
                 <div className="flex items-center gap-2 px-5 py-3.5 border-b border-line-hairline">
-                  <h2 className="font-display text-[15px] font-bold">Как работают менеджеры</h2>
+                  <h2 className="text-[14px] leading-5 font-semibold">Как работают менеджеры</h2>
                   <Hint>«Дошли до заказа» и «отказ» — за 30 дней. Просрочено у всех: {summary.overdue}.</Hint>
                 </div>
                 <table className="w-full text-[13px]">

@@ -34,7 +34,7 @@ export function grams(n: number | null | undefined): string {
 
 export function StatusChip({ status, label, className }: { status: BlockStatus; label: string; className?: string }) {
   return (
-    <span className={clsx("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap", STATUS_TONE[status], className)}>
+    <span className={clsx("inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap", STATUS_TONE[status], className)}>
       {status === "harvest" && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
       {label}
     </span>

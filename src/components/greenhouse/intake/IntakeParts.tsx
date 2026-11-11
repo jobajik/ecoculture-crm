@@ -278,7 +278,7 @@ export function ReasonRows({ reasons }: { reasons: ReasonStats[] }) {
   return (
     <div className="space-y-1">
       {reasons.map((r) => (
-        <div key={r.reason} className="grid grid-cols-[1fr_5rem_4rem_2.75rem] sm:grid-cols-[14rem_1fr_5rem_3rem] items-center gap-2 text-sm">
+        <div key={r.reason} className="grid grid-cols-[minmax(0,1fr)_5rem_4rem_2.75rem] sm:grid-cols-[14rem_1fr_5rem_3rem] items-center gap-2 text-sm">
           <span className="truncate text-ink-secondary col-span-4 sm:col-span-1">{r.label}</span>
           <div className="h-2 rounded-full bg-surface-sunk overflow-hidden col-span-2 sm:col-span-1">
             <div className="h-full rounded-full bg-[#d9776b]" style={{ width: `${(r.qty * 100) / max}%` }} />
@@ -292,7 +292,7 @@ export function ReasonRows({ reasons }: { reasons: ReasonStats[] }) {
 }
 
 export function FlowerChips({ value, hrefFor, flowers }: { value: IntakeFlower | ""; hrefFor: (f: IntakeFlower | "") => string; flowers: IntakeFlower[] }) {
-  const chip = (on: boolean) => clsx("text-xs px-3 py-1.5 rounded-full border whitespace-nowrap", on ? "bg-section-greenhouse text-white border-section-greenhouse" : "border-line-hairline bg-surface hover:bg-surface-plane");
+  const chip = (on: boolean) => clsx("text-xs px-3 py-1.5 rounded-lg border whitespace-nowrap", on ? "bg-accent-soft text-accent border-accent/25" : "border-line-hairline bg-surface hover:bg-surface-plane");
   return (
     <>
       <Link href={hrefFor("")} className={chip(!value)}>

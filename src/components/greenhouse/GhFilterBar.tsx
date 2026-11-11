@@ -60,7 +60,7 @@ export default function GhFilterBar({
     else p.date = anchor;
     return ghHref(path, farm, { ...p, ...patch });
   };
-  const chip = (on: boolean) => clsx("text-xs px-3 py-1.5 rounded-full border whitespace-nowrap", on ? "bg-ink-primary text-white border-ink-primary" : "border-line-hairline bg-surface hover:bg-surface-plane");
+  const chip = (on: boolean) => clsx("text-xs px-3 py-1.5 rounded-lg border whitespace-nowrap", on ? "bg-accent-soft text-accent border-accent/25 font-medium" : "border-line-hairline bg-surface hover:bg-surface-plane");
   const arrow = "inline-flex items-center justify-center w-8 h-8 rounded-lg border border-line-hairline bg-surface hover:bg-surface-plane text-ink-secondary";
 
   return (
@@ -81,7 +81,7 @@ export default function GhFilterBar({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {cycleNote ? (
-          <span className="inline-flex items-center gap-2 rounded-full bg-section-greenhouse-soft px-3 py-1.5 text-sm">
+          <span className="inline-flex items-center gap-2 rounded-lg bg-section-greenhouse-soft px-3 py-1.5 text-sm">
             <b>{cycleNote.label}</b>
             <span className="text-xs text-ink-secondary tabular-nums">
               {from.split("-").reverse().join(".")} — {to.split("-").reverse().join(".")}

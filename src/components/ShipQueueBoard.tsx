@@ -120,7 +120,7 @@ export default function ShipQueueBoard({
                 </span>
                 <span
                   className={clsx(
-                    "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap",
+                    "shrink-0 rounded-md px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap",
                     a.critical ? "bg-status-critical/10 text-status-critical" : "bg-status-warning/15 text-[#8a5a00]"
                   )}
                 >
@@ -192,7 +192,7 @@ export default function ShipQueueBoard({
                       <OrderStageBadge stage={{ ...r.stage, lateDays: 0 }} compact showActor={view === "waiting"} />
                       {r.credit && <div className="text-xs text-[#8a5a00] mt-1 whitespace-nowrap">{r.credit}</div>}
                       {view === "waiting" && r.unpaidShip && (
-                        <Link href={`/warehouse/ship/${r.orderId}`} className="block mt-1 text-xs text-series-1 hover:underline">
+                        <Link href={`/warehouse/ship/${r.orderId}`} className="block mt-1 text-xs text-accent hover:underline">
                           Уже уехал? Отгрузить без оплаты →
                         </Link>
                       )}

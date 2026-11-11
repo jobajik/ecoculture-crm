@@ -112,7 +112,7 @@ export default function PointDayForm({
         <span className="block text-ink-secondary mb-1">День</span>
         <input type="date" className="input !w-auto" value={date} max={today} onChange={(e) => pickDate(e.target.value)} />
       </label>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 xl:grid-cols-1">
         {farms.map((f) => {
           const sum = (values[f.farm]?.kaspi ?? 0) + (values[f.farm]?.cash ?? 0);
           return (

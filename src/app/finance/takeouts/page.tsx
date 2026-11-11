@@ -65,7 +65,7 @@ export default async function FinanceTakeoutsPage({
                 href={`/finance/takeouts?month=${m}`}
                 className={
                   m === month
-                    ? "px-3 py-1.5 rounded-lg text-sm bg-ink-primary text-white"
+                    ? "px-3 py-1.5 rounded-lg text-sm border border-accent/25 bg-accent-soft text-accent font-medium"
                     : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline bg-surface text-ink-secondary hover:text-ink-primary"
                 }
               >
@@ -77,7 +77,7 @@ export default async function FinanceTakeoutsPage({
       />
 
       {/* Две колонки: к удержанию — слева, нужды компании (не удерживается) — справа. */}
-      <div className="grid gap-5 xl:grid-cols-2 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 min-[1700px]:grid-cols-2 items-start">
         <div className="min-w-0">
           <StaffTakeoutMonth
             month={data}

@@ -145,7 +145,7 @@ export default function StaffForm({
                 <td className="px-4 py-2.5 text-right">
                   <button
                     type="button"
-                    className="text-series-1 hover:underline"
+                    className="text-accent hover:underline"
                     onClick={() => edit(u)}
                   >
                     изменить
@@ -163,7 +163,7 @@ export default function StaffForm({
             {existing ? `Изменить: ${existing.name || existing.email}` : "Новый сотрудник"}
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Рабочая почта Google *</label>
               <input
@@ -192,7 +192,7 @@ export default function StaffForm({
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Роль *</label>
               <select

@@ -183,7 +183,7 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
         )}
 
         {view === "weeks" && (
-          <div className="grid lg:grid-cols-2 lg:divide-x divide-line-hairline">
+          <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 lg:divide-x divide-line-hairline">
             <div className="p-4 sm:p-5 space-y-3 min-w-0">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-secondary">
                 <span className="font-semibold text-ink-primary text-sm mr-2">
@@ -296,10 +296,10 @@ function Stat({
   bar?: number;
 }) {
   return (
-    <div className="card !p-4 sm:!p-5 min-w-0">
+    <div className="card !p-4 min-w-0">
       <div className="text-xs text-ink-muted mb-1.5">{title}</div>
       <div
-        className={`font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}
+        className={`font-display text-[22px] sm:text-[24px] leading-none font-extrabold tabular-nums ${danger ? "text-status-critical" : warn ? "text-[#8a5a00]" : ""}`}
       >
         {value}
       </div>

@@ -89,7 +89,7 @@ export default function Leaderboard({
           другом — весь отдел виден на одном экране. */}
       <div className="card !p-0 overflow-hidden">
         <div className="flex items-center gap-2 px-4 sm:px-5 py-3.5 border-b border-line-hairline">
-          <h2 className="font-display text-[15px] font-bold">Рейтинг менеджеров</h2>
+          <h2 className="text-[14px] leading-5 font-semibold">Рейтинг менеджеров</h2>
           <span className="text-sm text-ink-muted">· по оплаченным заявкам</span>
           {!snapshot.hasPlans && <span className="ml-auto text-xs text-ink-muted">план виден на периоде «месяц»</span>}
         </div>
@@ -199,9 +199,9 @@ export default function Leaderboard({
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="card !p-4 sm:!p-5">
+    <div className="card !p-4">
       <div className="text-xs text-ink-muted mb-1.5">{label}</div>
-      <div className="font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums">{value}</div>
+      <div className="font-display text-[22px] sm:text-[24px] leading-none font-extrabold tabular-nums">{value}</div>
       {sub && <div className="text-xs text-ink-secondary mt-2">{sub}</div>}
     </div>
   );

@@ -75,7 +75,7 @@ export default async function PayrollPage({ searchParams }: { searchParams?: { m
         }
       />
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-3">
         <Step
           n={1}
           title="Сотрудники и ставки"
@@ -122,7 +122,7 @@ export default async function PayrollPage({ searchParams }: { searchParams?: { m
                       {warn > 0 && <span className="text-[#8a5a00]"> · ⚠ {warn}</span>}
                     </div>
                   </div>
-                  <span className={clsx("rounded-full px-2.5 py-0.5 text-xs font-medium", TONE[d.timesheetStatus])}>табель: {TIMESHEET_STATUS_LABELS[d.timesheetStatus]}</span>
+                  <span className={clsx("rounded-md px-2.5 py-0.5 text-xs font-medium", TONE[d.timesheetStatus])}>табель: {TIMESHEET_STATUS_LABELS[d.timesheetStatus]}</span>
                   <span className="tabular-nums text-ink-secondary w-[9rem] text-right hidden sm:inline">{d.totals.factHours.toLocaleString("ru-RU")} ч</span>
                   <span className="tabular-nums w-[9rem] text-right font-medium">{money(d.totals.toPay)}</span>
                   <span className="flex gap-3">

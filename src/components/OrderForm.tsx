@@ -173,7 +173,7 @@ export default function OrderForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
-      <div className="card grid sm:grid-cols-2 gap-4">
+      <div className="card grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
           <label className="label">Клиент *</label>
           <ClientPicker
@@ -234,8 +234,8 @@ export default function OrderForm({
                   onClick={() => setDeliveryDate(shipDay)}
                   className={
                     deliveryDate === shipDay
-                      ? "rounded-full px-3 py-1 text-xs border border-accent bg-accent-soft text-accent font-medium"
-                      : "rounded-full px-3 py-1 text-xs border border-line-hairline text-ink-secondary hover:bg-surface-plane"
+                      ? "rounded-lg px-3 py-1 text-xs border border-accent bg-accent-soft text-accent font-medium"
+                      : "rounded-lg px-3 py-1 text-xs border border-line-hairline text-ink-secondary hover:bg-surface-plane"
                   }
                 >
                   Фура · {shipDay.slice(8, 10)}.{shipDay.slice(5, 7)}
@@ -250,8 +250,8 @@ export default function OrderForm({
                     onClick={() => setDeliveryDate(day)}
                     className={
                       deliveryDate === day
-                        ? "rounded-full px-3 py-1 text-xs border border-accent bg-accent-soft text-accent font-medium"
-                        : "rounded-full px-3 py-1 text-xs border border-line-hairline text-ink-secondary hover:bg-surface-plane"
+                        ? "rounded-lg px-3 py-1 text-xs border border-accent bg-accent-soft text-accent font-medium"
+                        : "rounded-lg px-3 py-1 text-xs border border-line-hairline text-ink-secondary hover:bg-surface-plane"
                     }
                   >
                     {label}

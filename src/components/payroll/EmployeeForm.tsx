@@ -78,7 +78,7 @@ export default function EmployeeForm({
     <form onSubmit={submit} className="card space-y-4">
       <div className="font-medium">{isNew ? "Новый сотрудник" : `Карточка: ${initial.fullName}`}</div>
 
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
         <div className="sm:col-span-2">
           <label className="label">ФИО *</label>
           <input className="input" value={draft.fullName} placeholder="Фамилия Имя Отчество" onChange={(e) => set({ fullName: e.target.value })} />
@@ -152,7 +152,7 @@ export default function EmployeeForm({
       {isNew && canRate && (
         <div className="rounded-xl border border-line-hairline bg-surface-plane/60 p-4 space-y-3">
           <div className="text-sm font-medium">Ставка с первого дня {hourly ? "(тариф в час)" : ""}</div>
-          <div className="grid sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
             <div>
               <label className="label">Действует с</label>
               <input className="input" type="date" value={rate.from} onChange={(e) => setRate({ ...rate, from: e.target.value })} />

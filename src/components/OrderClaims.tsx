@@ -131,7 +131,7 @@ export default function OrderClaims({
                 <span className="font-medium">{c.reason}</span>
                 <span
                   className={clsx(
-                    "text-xs px-2 py-0.5 rounded-full",
+                    "text-xs px-2 py-0.5 rounded-md",
                     c.status === CLAIM_STATUSES.ACCEPTED
                       ? "bg-status-good/15 text-status-good"
                       : c.status === CLAIM_STATUSES.REJECTED

@@ -121,8 +121,8 @@ export default function DailySalesDashboard({ initial }: { initial: DailySalesSn
         <KpiTile icon="wallet" label="Средний чек" value={t.orders > 0 ? money(t.avgOrder) : "—"} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-3 items-start">
-        <div className="card !p-0 overflow-hidden xl:col-span-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 2xl:grid-cols-3 items-start">
+        <div className="card !p-0 overflow-hidden 2xl:col-span-2">
           <CardTabs
             tone="sales"
             items={[
@@ -206,8 +206,8 @@ export default function DailySalesDashboard({ initial }: { initial: DailySalesSn
           )}
         </div>
 
-        <div className="card !p-4 sm:!p-5">
-          <h3 className="font-display text-[15px] font-bold mb-3">Что продавали</h3>
+        <div className="card !p-4">
+          <h3 className="text-[14px] leading-5 font-semibold mb-3">Что продавали</h3>
           {t.orders === 0 ? (
             <p className="text-sm text-ink-muted">Пока нечего показать.</p>
           ) : (

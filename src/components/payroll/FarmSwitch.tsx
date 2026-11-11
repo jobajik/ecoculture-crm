@@ -12,7 +12,7 @@ export default function FarmSwitch({ farm, href }: { farm: string; href: (farm: 
     <div className="flex rounded-lg border border-line-hairline overflow-hidden text-sm">
       <RememberFarm farm={farm} />
       {FARM_ORDER.map((f) => (
-        <Link key={f} href={href(f)} className={clsx("px-3 py-1.5 whitespace-nowrap", f === farm ? "bg-ink-primary text-white" : "hover:bg-surface-sunk")}>
+        <Link key={f} href={href(f)} className={clsx("px-3 py-1.5 whitespace-nowrap", f === farm ? "bg-accent-soft text-accent font-medium" : "hover:bg-surface-sunk")}>
           {FARM_LABELS[f] ?? f}
         </Link>
       ))}

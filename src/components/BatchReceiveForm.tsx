@@ -60,7 +60,7 @@ export default function BatchReceiveForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-4">
         <div>
           <label className="label">Тип цветка</label>
           <select

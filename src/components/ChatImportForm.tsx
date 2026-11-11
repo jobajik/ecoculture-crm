@@ -150,7 +150,7 @@ export default function ChatImportForm({
                     type="button"
                     onClick={() => setOurs(on ? ours.filter((x) => x !== a.name) : [...ours, a.name])}
                     className={clsx(
-                      "rounded-full border px-3 py-1",
+                      "rounded-lg border px-3 py-1",
                       on ? "border-accent bg-accent/10 font-medium" : "border-line-hairline text-ink-secondary"
                     )}
                   >

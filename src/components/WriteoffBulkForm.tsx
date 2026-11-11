@@ -206,7 +206,7 @@ export default function WriteoffBulkForm({
   // Новый вид (19.10.2026): слева — позиции склада одной карточкой с вкладками, фильтром и страницами, справа —
   // причина, раскладка по партиям и кнопка. Раньше это были четыре карточки друг под другом.
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start pb-20 sm:pb-0">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start pb-20 sm:pb-0">
       <div className="card !p-0 overflow-hidden min-w-0">
         <div className="flex flex-wrap items-center gap-x-5 px-4 sm:px-5 border-b border-line-hairline" role="tablist">
           {(
@@ -337,7 +337,7 @@ export default function WriteoffBulkForm({
 
       <div ref={resultRef} className="card space-y-4 scroll-mt-4 xl:sticky xl:top-4">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="font-display text-[15px] font-bold">{recount ? "Итог пересчёта" : "Итог списания"}</h2>
+          <h2 className="text-[14px] leading-5 font-semibold">{recount ? "Итог пересчёта" : "Итог списания"}</h2>
           <span className="text-sm text-ink-secondary tabular-nums">
             {lines.length > 0 ? `${lines.length} поз. · ${nf(linesTotal)} шт.` : "ничего не вписано"}
           </span>

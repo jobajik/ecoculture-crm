@@ -17,7 +17,7 @@ const gShort = (g: string) => GRADE_SHORT[g] ?? g;
 
 function Chip({ tone, children }: { tone: string; children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-line-hairline bg-surface px-2.5 py-0.5 text-xs whitespace-nowrap">
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-line-hairline bg-surface px-2.5 py-0.5 text-xs whitespace-nowrap">
       <span className="w-2 h-2 rounded-full flex-none" style={{ background: tone }} />
       {children}
     </span>
@@ -79,7 +79,7 @@ export default function DayCard({ day, farm, today, canEdit, open, issues, maxHa
               Выработка <b className="tabular-nums">{day.workPeople}</b> чел.
             </Chip>
           )}
-          {issues.length > 0 && <span className="inline-flex items-center rounded-full bg-[#fdf1e3] text-[#8a5a00] px-2.5 py-0.5 text-xs">⚠ {issues.length}</span>}
+          {issues.length > 0 && <span className="inline-flex items-center rounded-md bg-[#fdf1e3] text-[#8a5a00] px-2.5 py-0.5 text-xs">⚠ {issues.length}</span>}
         </div>
         {maxHarvest > 0 && (
           <span className="hidden md:block w-28 h-1.5 rounded-full bg-surface-sunk overflow-hidden flex-none" title="срезка дня к самому большому дню периода">

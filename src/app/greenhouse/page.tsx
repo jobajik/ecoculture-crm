@@ -114,12 +114,12 @@ export default async function GreenhousePage({ searchParams }: { searchParams?: 
 
       <DashboardKpis dash={dash} forecast={forecast} accuracy={accuracy} farm={farm} />
 
-      <div className="grid lg:grid-cols-[1.5fr_1fr] gap-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[1.5fr_1fr] gap-5 items-start">
         <DailyHarvestCard dash={dash} />
         <AlertsCard alerts={alerts} farm={farm} />
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 gap-5 items-start">
         <ForecastCard forecast={forecast} accuracy={accuracy} farm={farm} blockHref={(cycle, block) => blockHref({ cycle, block })} />
         <AskGreenhouse farm={farm} ask={askGreenhouseAction} />
       </div>
@@ -130,7 +130,7 @@ export default async function GreenhousePage({ searchParams }: { searchParams?: 
       <section className="card !p-5 space-y-5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="font-display font-extrabold text-[20px]">Цикл {c.cycle}</h2>
-          <span className={clsx("text-xs rounded-full px-2.5 py-0.5 border", phase === "harvest" ? "bg-[#e6f4ea] text-[#1f6b3a] border-[#1f6b3a]/20" : "bg-surface-sunk text-ink-secondary border-line-hairline")}>
+          <span className={clsx("text-xs rounded-md px-2.5 py-0.5 border", phase === "harvest" ? "bg-[#e6f4ea] text-[#1f6b3a] border-[#1f6b3a]/20" : "bg-surface-sunk text-ink-secondary border-line-hairline")}>
             {CYCLE_PHASE_LABELS[phase]}
             {isCurrent ? " · текущий" : ""}
           </span>
@@ -140,7 +140,7 @@ export default async function GreenhousePage({ searchParams }: { searchParams?: 
         </div>
 
         {c.harvested > 0 ? (
-          <div className="grid lg:grid-cols-[1.4fr_1fr] gap-5 items-end">
+          <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[1.4fr_1fr] gap-5 items-end">
             <div>
               <div className="text-sm text-ink-secondary">
                 Срезано <b className="text-ink-primary">{num(c.harvested)}</b> из <b className="text-ink-primary">{num(c.planted)}</b> посаженных
@@ -172,7 +172,7 @@ export default async function GreenhousePage({ searchParams }: { searchParams?: 
       </section>
 
       {c.harvested > 0 && (
-        <div className="grid lg:grid-cols-[1fr_1.3fr] gap-5 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_1.3fr] gap-5 items-start">
           <section className="card !p-5 space-y-4">
             <h3 className="font-display font-bold text-[16px]">Качество срезки</h3>
             <QualityRows split={quality} prev={phase === "done" ? prevQuality : null} total={c.harvested} />

@@ -13,8 +13,8 @@ export default function Nav() {
   const { data: session } = useSession();
   if (!session) return null;
   return (
-    <aside className="no-print hidden lg:block w-[248px] flex-none">
-      <div className="sticky top-0 h-screen overflow-hidden border-r border-line-hairline bg-surface px-3.5 py-4">
+    <aside className="no-print hidden lg:block w-[236px] flex-none">
+      <div className="sticky top-0 h-screen overflow-hidden border-r border-line-hairline bg-surface px-3 py-4">
         <SidebarMenu />
       </div>
     </aside>

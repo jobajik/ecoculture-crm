@@ -58,7 +58,7 @@ export default function Pager({
                   onClick={() => onPage(n)}
                   className={clsx(
                     btn,
-                    n === page ? "bg-accent-soft border-accent/30 text-accent font-bold" : "border-line-hairline hover:bg-surface-plane"
+                    n === page ? "bg-accent-soft border-accent/25 text-accent font-semibold" : "border-line-hairline hover:bg-surface-plane"
                   )}
                 >
                   {n + 1}
@@ -66,14 +66,14 @@ export default function Pager({
               )
             )}
           </div>
-          <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} className={clsx(btn, "border-line-hairline font-semibold text-ink-primary disabled:opacity-40")}>
+          <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} className={clsx(btn, "border-line-strong font-medium text-ink-primary hover:bg-surface-plane disabled:opacity-40 disabled:hover:bg-transparent")}>
             Назад
           </button>
           <button
             type="button"
             disabled={page >= pages - 1}
             onClick={() => onPage(page + 1)}
-            className={clsx(btn, "border-line-hairline font-semibold text-ink-primary disabled:opacity-40")}
+            className={clsx(btn, "border-line-strong font-medium text-ink-primary hover:bg-surface-plane disabled:opacity-40 disabled:hover:bg-transparent")}
           >
             Дальше
           </button>

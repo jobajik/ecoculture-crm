@@ -82,7 +82,7 @@ export default function StockAgeCard({
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 xl:grid-cols-4 mt-4 border-t border-line-hairline">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 lg:grid-cols-4 mt-4 border-t border-line-hairline">
         {buckets.map((b, i) => (
           <BucketColumn key={b.key} bucket={b} index={i} />
         ))}

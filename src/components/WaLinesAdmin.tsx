@@ -98,7 +98,7 @@ export default function WaLinesAdmin({ lines, managers, leads }: { lines: WaLine
           <li>Скопируйте из карточки инстанса idInstance, apiTokenInstance и apiUrl и вставьте ниже.</li>
           <li>Нажмите «Подключить», потом «QR-код» — менеджер сканирует его в WhatsApp: Настройки → Связанные устройства.</li>
         </ol>
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
           <label className="text-sm">
             <span className="block text-ink-secondary mb-1">Менеджер</span>
             <select className="input w-full" value={form.managerEmail} onChange={(e) => setForm({ ...form, managerEmail: e.target.value })}>

@@ -39,17 +39,17 @@ export default function OrderStoreSwitch({
   }
 
   return (
-    <div>
-      <div className="text-xs text-ink-muted">Склад</div>
-      <div className="flex flex-wrap items-baseline gap-x-3">
-        <span className="font-medium">{LABELS[store] ?? store}</span>
+    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 items-baseline min-w-0">
+      <div className="text-[13px] leading-5 text-ink-muted">Склад</div>
+      <div className="flex flex-wrap items-baseline gap-x-3 min-w-0">
+        <span className="text-[14px] leading-5 font-medium">{LABELS[store] ?? store}</span>
         {targets.map((t) => (
-          <button key={t.code} type="button" className="text-sm text-series-1 hover:underline" disabled={busy} onClick={() => move(t.code)}>
+          <button key={t.code} type="button" className="text-xs text-accent hover:underline" disabled={busy} onClick={() => move(t.code)}>
             {busy ? "Меняю…" : ACTION[t.code] ?? t.label}
           </button>
         ))}
       </div>
-      {error && <div className="text-xs text-status-critical mt-1">{error}</div>}
+      {error && <div className="col-span-2 text-xs text-status-critical mt-1">{error}</div>}
     </div>
   );
 }

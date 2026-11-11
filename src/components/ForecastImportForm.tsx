@@ -86,10 +86,10 @@ export default function ForecastImportForm({
   }
 
   return (
-    <div className="card !p-4 sm:!p-5 space-y-4">
+    <div className="card !p-4 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-[15px] font-bold">Загрузка из Excel</h2>
+          <h2 className="text-[14px] leading-5 font-semibold">Загрузка из Excel</h2>
           {status && <p className="text-sm text-ink-muted mt-0.5">{status}</p>}
           <p className="text-sm text-ink-secondary mt-0.5">
             Файл <b>заменит</b> <span className="capitalize">{periodLabel(month)}</span>{" "}

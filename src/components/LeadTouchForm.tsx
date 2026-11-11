@@ -97,7 +97,7 @@ export default function LeadTouchForm({
             type="button"
             onClick={() => setChannel(c)}
             className={clsx(
-              "rounded-full border px-3 py-1 text-sm",
+              "rounded-lg border px-3 py-1 text-sm",
               channel === c ? "border-accent bg-accent/10 font-medium" : "border-line-hairline text-ink-secondary"
             )}
           >
@@ -115,7 +115,7 @@ export default function LeadTouchForm({
           maxLength={3000}
         />
       </label>
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
         <label className="block">
           <span className="text-sm text-ink-secondary">Стадия</span>
           <select className="input" value={nextStage} onChange={(e) => setNextStage(e.target.value)}>

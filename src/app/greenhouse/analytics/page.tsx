@@ -132,7 +132,7 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
     );
 
   const chip = (on: boolean, href: string, label: string) => (
-    <Link key={label} href={href} className={clsx("text-xs px-3 py-1.5 rounded-full border whitespace-nowrap", on ? "bg-ink-primary text-white border-ink-primary" : "border-line-hairline bg-surface hover:bg-surface-plane")}>
+    <Link key={label} href={href} className={clsx("text-xs px-3 py-1.5 rounded-lg border whitespace-nowrap", on ? "bg-accent-soft text-accent border-accent/25 font-medium" : "border-line-hairline bg-surface hover:bg-surface-plane")}>
       {label}
     </Link>
   );
@@ -238,7 +238,7 @@ export default async function GreenhouseAnalyticsPage({ searchParams }: { search
           <div className="text-xs text-ink-muted">Только завершённые циклы — у тех, что ещё режутся, итог неполный. Сейчас: {spanLabel}.</div>
           <Insights lines={[...blockInsights(rankedBlocks), ...varietyInsights(rankedVarieties)].slice(0, 4)} />
         </div>
-        <div className="grid lg:grid-cols-2 gap-5 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 gap-5 items-start">
           <section className="card !p-4 space-y-3">
             <div className="flex items-baseline gap-2">
               <h3 className="font-display font-bold text-[15px]">Блоки</h3>

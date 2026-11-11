@@ -137,7 +137,7 @@ export default function OrderEditForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
-      <div className="card grid sm:grid-cols-2 gap-4">
+      <div className="card grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
           <div className="label">
             {counterpartyLabel}

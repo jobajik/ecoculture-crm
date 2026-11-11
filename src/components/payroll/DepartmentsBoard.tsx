@@ -90,7 +90,7 @@ export default function DepartmentsBoard({
       {open && (
         <form onSubmit={submit} className="card space-y-3">
           <div className="font-medium">{editing ? `Изменить: ${draft.name}` : "Новое подразделение"}</div>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Название *</label>
               <input

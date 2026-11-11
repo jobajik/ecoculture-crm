@@ -32,7 +32,7 @@ export default async function AnalyticsPage() {
 
   const extra =
     all.headline.length > 0 || all.attention.length > 0 ? (
-      <div className="grid gap-5 lg:grid-cols-2 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2 items-start">
         {all.headline.length > 0 && (
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-2">Коротко</div>

@@ -40,7 +40,7 @@ export default function ItemsCell({
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-xs text-series-1 hover:underline mt-1"
+          className="text-xs text-accent hover:underline mt-1"
         >
           свернуть
         </button>
@@ -61,7 +61,7 @@ export default function ItemsCell({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="text-xs text-series-1 hover:underline whitespace-nowrap shrink-0"
+          className="text-xs text-accent hover:underline whitespace-nowrap shrink-0"
         >
           ещё {rest}
         </button>

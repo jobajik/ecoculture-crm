@@ -333,7 +333,7 @@ export default function TimesheetGrid({
       {/* Шапка: состояние, итоги, ход табеля */}
       <div className="card space-y-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className={clsx("rounded-full px-2.5 py-0.5 text-xs font-medium", statusTone)}>{TIMESHEET_STATUS_LABELS[status]}</span>
+          <span className={clsx("rounded-md px-2.5 py-0.5 text-xs font-medium", statusTone)}>{TIMESHEET_STATUS_LABELS[status]}</span>
           <span className="text-sm text-ink-secondary tabular-nums">
             {people.filter((p) => p.shift === "").length} чел. · <b className="text-ink-primary">{totalHours.toLocaleString("ru-RU")}</b> ч за месяц
           </span>
@@ -890,7 +890,7 @@ function CellMenu({
         type="button"
         title={hint}
         onClick={() => setEndC(c)}
-        className={clsx("h-7 px-1.5 rounded-md text-[11px] font-medium whitespace-nowrap", endC === c ? "bg-ink-primary text-white" : "bg-surface-sunk text-ink-secondary hover:bg-surface-plane")}
+        className={clsx("h-7 px-1.5 rounded-md text-[11px] font-medium whitespace-nowrap", endC === c ? "bg-accent-soft text-accent font-medium" : "bg-surface-sunk text-ink-secondary hover:bg-surface-plane")}
       >
         {label}
       </button>
@@ -935,7 +935,7 @@ function CellMenu({
               onChange={(e) => setCustom(e.target.value)}
             />
             {custom.trim() && (
-              <button type="submit" className="h-9 w-9 rounded-lg bg-ink-primary text-white text-sm font-semibold" aria-label="Поставить">
+              <button type="submit" className="h-9 w-9 rounded-lg bg-accent text-white text-sm font-semibold" aria-label="Поставить">
                 ✓
               </button>
             )}
@@ -950,7 +950,7 @@ function CellMenu({
           {weekEnd > t.c && periodBtn("неделя", weekEnd, `До конца недели — по ${dayLabel(weekEnd)}`)}
           {monthEnd > t.c && periodBtn("месяц", monthEnd, `До конца месяца — по ${dayLabel(monthEnd)}`)}
           {monthEnd > t.c && (
-            <label className={clsx("h-7 flex items-center gap-0.5 rounded-md pl-1.5 pr-0.5 text-[11px] font-medium cursor-pointer", customSelected ? "bg-ink-primary text-white" : "bg-surface-sunk text-ink-secondary")}>
+            <label className={clsx("h-7 flex items-center gap-0.5 rounded-md pl-1.5 pr-0.5 text-[11px] font-medium cursor-pointer", customSelected ? "bg-accent-soft text-accent font-medium" : "bg-surface-sunk text-ink-secondary")}>
               по
               <select className="bg-transparent text-[11px] font-medium outline-none cursor-pointer max-w-[4.5rem]" value={endC} onChange={(e) => setEndC(Number(e.target.value))} aria-label="По какое число">
                 {days.map((dd, c) => (

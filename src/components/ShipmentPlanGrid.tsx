@@ -322,7 +322,7 @@ export default function ShipmentPlanGrid({
       <div className="card !p-0">
       {/* --- Шапка карточки: цветок вкладками · цена · действия ---------------- */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 sm:px-5 border-b border-line-hairline">
-        <div className="flex gap-x-5" role="tablist">
+        <div className="flex gap-x-5 max-w-full overflow-x-auto scroll-x-hidden" role="tablist">
           {flowerTypes.map((flowerType) => {
             const active = flowerType === activeFlower;
             const sum = filledByFlower[flowerType] ?? 0;

@@ -156,7 +156,7 @@ export function PlanView({
             <li key={w.code} className={clsx("grid grid-cols-[6.5rem_1fr_auto] sm:grid-cols-[8rem_1fr_7rem_7rem_4rem] items-center gap-x-3 gap-y-1 text-sm", w.when === "future" && "opacity-60")}>
               <span className="text-ink-secondary">
                 {w.label}
-                {w.when === "current" && <span className="ml-1 text-[10px] rounded-full bg-section-greenhouse-soft px-1.5">идёт</span>}
+                {w.when === "current" && <span className="ml-1 text-[10px] rounded-md bg-section-greenhouse-soft px-1.5">идёт</span>}
               </span>
               <Bar value={w.fact} max={maxWeek} marker={w.plan} color={w.when === "past" && w.pct !== null && w.pct < 90 ? "bg-[#e0a526]" : "bg-section-greenhouse/70"} />
               <span className="hidden sm:block text-right tabular-nums">{num(w.fact)}</span>
@@ -270,7 +270,7 @@ export function LossView({
         )}
       </section>
 
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 gap-5 items-start">
         <section className="card !p-5 space-y-3">
           <h3 className="font-display font-bold text-[15px]">Причины</h3>
           {growReasons.length ? (
@@ -317,7 +317,7 @@ export function LossView({
         </section>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 gap-5 items-start">
         <LossTable title="По блокам" rows={loss.byBlock} />
         <LossTable title="По сортам" rows={loss.byVariety} />
       </div>

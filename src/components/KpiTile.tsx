@@ -25,16 +25,16 @@ export default function KpiTile({
 }) {
   const body = (
     <>
-      <div className="flex items-center gap-1.5 text-xs text-ink-muted">
-        {icon && <Icon name={icon} className="w-3.5 h-3.5" />}
+      <div className="flex items-center gap-1.5 text-[12.5px] leading-4 text-ink-secondary">
+        {icon && <Icon name={icon} className="w-3.5 h-3.5 text-ink-muted" />}
         {label}
       </div>
-      <div className="font-display font-extrabold text-[22px] sm:text-[26px] tabular-nums mt-1.5 leading-none break-words">{value}</div>
+      <div className="font-display font-semibold text-[22px] sm:text-[24px] tabular-nums mt-2 leading-none break-words">{value}</div>
       {hint && (
         <div
           className={clsx(
-            "text-xs mt-2",
-            tone === "bad" ? "text-status-critical font-semibold" : tone === "warn" ? "text-[#8a5a00] font-semibold" : tone === "good" ? "text-status-good font-semibold" : "text-ink-secondary"
+            "text-xs leading-4 mt-2",
+            tone === "bad" ? "text-status-critical font-medium" : tone === "warn" ? "text-[#8a5a00] font-medium" : tone === "good" ? "text-status-good font-medium" : "text-ink-muted"
           )}
         >
           {hint}
@@ -43,10 +43,10 @@ export default function KpiTile({
     </>
   );
   return href ? (
-    <Link href={href} className="card !p-4 sm:!p-5 block hover:shadow-card-hover transition-shadow">
+    <Link href={href} className="card !p-4 block hover:border-line-strong transition-colors">
       {body}
     </Link>
   ) : (
-    <div className="card !p-4 sm:!p-5">{body}</div>
+    <div className="card !p-4">{body}</div>
   );
 }

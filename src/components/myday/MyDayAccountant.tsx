@@ -90,7 +90,7 @@ export default async function MyDayAccountant({ user }: { user: DayUser }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <KpiTile
           icon="wallet"
           label="Пришло сегодня"
@@ -122,7 +122,7 @@ export default async function MyDayAccountant({ user }: { user: DayUser }) {
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-5 items-start">
         <div className="xl:col-span-3 min-w-0">
           <DayCard
             tone="money"

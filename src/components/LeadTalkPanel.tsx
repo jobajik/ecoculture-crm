@@ -117,7 +117,7 @@ export default function LeadTalkPanel({
           <p className="text-[15px] leading-relaxed">{analysis.summary}</p>
           {analysis.temperatureWhy && <p className="text-sm text-ink-secondary -mt-2">{analysis.temperatureWhy}</p>}
 
-          <dl className="grid sm:grid-cols-3 gap-3">
+          <dl className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
             {[
               { label: "Что нужно клиенту", value: analysis.needs },
               { label: "Договорились", value: analysis.agreed },
@@ -163,7 +163,7 @@ export default function LeadTalkPanel({
 
           <div>
             <div className="text-xs text-ink-muted mb-1">Как отработал менеджер</div>
-            <ul className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+            <ul className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-x-4 gap-y-1.5">
               {CHECKLIST.map((c) => {
                 const m = analysis.checklist.find((x) => x.key === c.key);
                 const mark = MARK[m?.mark ?? "na"];

@@ -164,7 +164,7 @@ export default function FinanceBoard({
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 min-[1700px]:grid-cols-[minmax(0,1fr)_320px] items-start">
         <div className="card !p-0 overflow-hidden min-w-0">
           <div className="flex flex-wrap items-center gap-x-5 px-4 sm:px-5 border-b border-line-hairline">
             {(
@@ -316,14 +316,14 @@ export default function FinanceBoard({
                               >
                                 {r.managerConfirmed ? "✓" : "○"}
                               </span>
-                              <Link href={`/orders/${r.orderId}`} className="font-semibold hover:text-accent truncate max-w-[260px]">
+                              <Link href={`/orders/${r.orderId}`} className="font-semibold hover:text-accent truncate max-w-[180px] xl:max-w-[260px]">
                                 {r.clientName}
                               </Link>
                               {r.readyToCollect && (
                                 <span className="text-[11px] font-semibold text-status-good whitespace-nowrap">· можно собирать</span>
                               )}
                             </span>
-                            <div className="text-xs text-ink-muted truncate max-w-[200px] sm:max-w-[440px] pl-5" title={r.positions}>
+                            <div className="text-xs text-ink-muted truncate max-w-[200px] sm:max-w-[300px] xl:max-w-[440px] pl-5" title={r.positions}>
                               <span className="text-ink-secondary">{r.managerName}</span>
                               {r.consignment && <span className="text-[#8a5a00]"> · на реализации</span>}
                               {r.paymentMethod && !r.paid && <span> · {r.paymentMethod}</span>}
@@ -502,15 +502,15 @@ function Tile({
       : "text-ink-primary";
 
   return (
-    <div className="card !p-4 sm:!p-5">
-      <div className="text-xs text-ink-muted mb-1.5">{label}</div>
-      <div className={clsx("font-display text-[22px] sm:text-[26px] leading-none font-extrabold tabular-nums", toneClass)}>{value}</div>
+    <div className="card !p-4">
+      <div className="text-[12.5px] leading-4 text-ink-secondary mb-2">{label}</div>
+      <div className="font-display text-[22px] sm:text-[24px] leading-none font-extrabold tabular-nums">{value}</div>
       {bar !== undefined && (
         <div className="h-1.5 rounded-full bg-surface-sunk overflow-hidden mt-2.5">
           <div className="h-full rounded-full bg-status-good" style={{ width: `${Math.min(100, Math.max(0, bar))}%` }} />
         </div>
       )}
-      {sub && <div className="text-xs text-ink-secondary mt-2">{sub}</div>}
+      {sub && <div className={clsx("text-xs mt-2", tone === "default" || tone === undefined ? "text-ink-muted" : clsx(toneClass, "font-medium"))}>{sub}</div>}
     </div>
   );
 }

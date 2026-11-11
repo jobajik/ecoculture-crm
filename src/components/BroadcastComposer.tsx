@@ -240,7 +240,7 @@ export default function BroadcastComposer({
   const select = "input !w-auto !py-1.5 text-sm";
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px] items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_440px] items-start">
       <section className="card !p-0 overflow-hidden min-w-0">
         <div className="p-4 sm:p-5 space-y-4 border-b border-line-hairline">
         <h2 className="font-display text-lg font-bold">1. Кому</h2>
@@ -451,7 +451,7 @@ export default function BroadcastComposer({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className={clsx("rounded-full border px-3 py-1", file?.id === ROTATION_FILE ? "border-accent bg-accent-soft text-accent" : "border-line-strong")}
+                  className={clsx("rounded-lg border px-3 py-1", file?.id === ROTATION_FILE ? "border-accent bg-accent-soft text-accent" : "border-line-strong")}
                   disabled={photoCount === 0}
                   title={photoCount === 0 ? "Сначала загрузите фото в «Фото и каталог»" : ""}
                   onClick={() => setFile({ id: ROTATION_FILE, name: "", mime: "image/jpeg" })}
@@ -460,7 +460,7 @@ export default function BroadcastComposer({
                 </button>
                 <button
                   type="button"
-                  className={clsx("rounded-full border px-3 py-1", file?.id === CATALOG_FILE ? "border-accent bg-accent-soft text-accent" : "border-line-strong")}
+                  className={clsx("rounded-lg border px-3 py-1", file?.id === CATALOG_FILE ? "border-accent bg-accent-soft text-accent" : "border-line-strong")}
                   onClick={() => setFile({ id: CATALOG_FILE, name: "", mime: "image/jpeg" })}
                 >
                   Каталог JPEG

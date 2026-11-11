@@ -128,9 +128,9 @@ export default function PhotoLibrary({ photos, flowers, aiReady }: { photos: Pho
   const shown = pageSlice(photos, Math.min(page, pageCount - 1), PHOTOS_PAGE);
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
       <Section tone="leads" icon="upload" title="Добавить фото" className="!mb-0 xl:order-2 min-w-0">
-        <div className="grid gap-4 sm:grid-cols-[200px_1fr] xl:grid-cols-1">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-[200px_1fr] xl:grid-cols-1">
           <div>
             {file ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -224,7 +224,7 @@ export default function PhotoLibrary({ photos, flowers, aiReady }: { photos: Pho
           <p className="px-4 sm:px-5 pb-4 text-sm text-ink-muted">Пока ни одного фото. Пока их нет, бот дожимает текстом, а в каталоге — плашка с названием цветка.</p>
         ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 px-4 sm:px-5 py-4">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-3 px-4 sm:px-5 py-4">
               {shown.map((p) => (
                 <PhotoCard key={p.photoId} photo={p} />
               ))}

@@ -103,7 +103,7 @@ export default async function AutoBroadcastsPage() {
         {lock.note && <div className="text-xs text-ink-muted mt-1">Отправка: {lock.note.replace(/^\S+ · /, "")}</div>}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_380px] items-start">
         <PaneTabs
           boxed
           tabs={[

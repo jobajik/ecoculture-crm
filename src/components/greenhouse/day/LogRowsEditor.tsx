@@ -154,7 +154,7 @@ export default function LogRowsEditor({
                 key={v}
                 type="button"
                 onClick={() => addFor(v)}
-                className={clsx("h-8 px-3 rounded-full text-sm border inline-flex items-center gap-1.5", n ? "border-section-greenhouse/40 bg-section-greenhouse-soft text-section-greenhouse" : "border-line-hairline bg-surface hover:bg-surface-plane")}
+                className={clsx("h-8 px-3 rounded-lg text-sm border inline-flex items-center gap-1.5", n ? "border-section-greenhouse/40 bg-section-greenhouse-soft text-section-greenhouse" : "border-line-hairline bg-surface hover:bg-surface-plane")}
               >
                 <span className="text-base leading-none">+</span>
                 {v}

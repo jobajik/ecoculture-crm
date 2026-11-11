@@ -50,7 +50,7 @@ export default async function ReceivePage() {
       />
 
       {/* Форма слева, «Принято сегодня» справа (новый вид, 19.10.2026): видно, что уже приняли, не уходя от формы. */}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start">
         <div className="space-y-4 min-w-0">
           <Section tone="stock" icon="upload" title="Одна партия" className="!mb-0">
             <BatchReceiveForm varieties={varieties} allowedTypes={allowedTypes} today={today} />

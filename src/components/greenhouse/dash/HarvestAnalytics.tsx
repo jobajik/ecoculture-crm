@@ -77,7 +77,7 @@ export function CompareTable({ title, first, rows, sort, sortHref, rowHref, tota
         <span className="text-xs text-ink-muted">нажмите строку — экран сузится до неё; зелёная точка — лучший, жёлтая — отстаёт</span>
         <div className="sm:hidden flex flex-wrap gap-1.5 w-full mt-2">
           {SORTS.map((s) => (
-            <Link key={s.key} href={sortHref(s.key)} className={clsx("text-[11px] px-2 py-1 rounded-full border", sort === s.key ? "bg-ink-primary text-white border-ink-primary" : "border-line-hairline")}>
+            <Link key={s.key} href={sortHref(s.key)} className={clsx("text-[11px] px-2 py-1 rounded-md border", sort === s.key ? "bg-accent-soft text-accent border-accent/25 font-medium" : "border-line-hairline")}>
               {s.label}
             </Link>
           ))}

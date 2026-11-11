@@ -39,16 +39,12 @@ export default function DayCard({
   return (
     <section className={clsx("card !p-0 overflow-hidden", className)}>
       <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3 border-b border-line-hairline">
-        {icon && (
-          <span className={clsx("w-8 h-8 rounded-lg grid place-items-center flex-none", t.chip)}>
-            <Icon name={icon} className="w-4 h-4" />
-          </span>
-        )}
-        <h2 className="font-display text-[15px] font-bold min-w-0 truncate">{title}</h2>
+        {icon && <Icon name={icon} className={clsx("w-4 h-4 flex-none", tone === "good" || tone === "warn" || tone === "bad" ? t.title : "text-ink-muted")} />}
+        <h2 className="text-[14px] leading-5 font-semibold min-w-0 truncate">{title}</h2>
         {count !== undefined && count !== 0 && count !== "" && <Pill tone={countTone ?? "muted"} dot={false}>{count}</Pill>}
         {hint && <span className="text-xs text-ink-muted hidden sm:inline min-w-0 truncate">{hint}</span>}
         {link && (
-          <Link href={link.href} className="ml-auto text-[13px] font-semibold text-accent hover:text-accent-hover whitespace-nowrap">
+          <Link href={link.href} className="ml-auto text-[13px] font-medium text-accent hover:text-accent-hover whitespace-nowrap">
             {link.label}
           </Link>
         )}

@@ -60,7 +60,7 @@ export default async function FinancePage({
                 href={`/finance?period=${p.key}${anchor ? `&date=${anchor}` : ""}`}
                 className={
                   period === p.key
-                    ? "px-3 py-1.5 rounded-lg text-sm bg-ink-primary text-white"
+                    ? "px-3 py-1.5 rounded-lg text-sm border border-accent/25 bg-accent-soft text-accent font-medium"
                     : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline bg-surface text-ink-secondary hover:text-ink-primary"
                 }
               >

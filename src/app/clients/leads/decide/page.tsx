@@ -87,8 +87,8 @@ export default async function LeadDecisionsPage({ searchParams }: { searchParams
               key={o.email || "all"}
               href={o.email ? `/clients/leads/decide?m=${encodeURIComponent(o.email)}` : "/clients/leads/decide"}
               className={
-                "flex-none h-8 px-3 rounded-full border text-[13px] whitespace-nowrap inline-flex items-center transition-colors " +
-                (o.email === managerFilter ? "bg-ink-primary border-ink-primary text-white" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary")
+                "flex-none h-8 px-3 rounded-lg border text-[13px] whitespace-nowrap inline-flex items-center transition-colors " +
+                (o.email === managerFilter ? "bg-accent-soft border-accent/25 text-accent font-medium" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary")
               }
             >
               {o.name}

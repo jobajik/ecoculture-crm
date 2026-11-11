@@ -156,7 +156,7 @@ export default async function BlockPage({ params, searchParams }: { params: { cy
       {/* Главное число */}
       <section className="card !p-5">
         {t.harvested > 0 ? (
-          <div className="grid lg:grid-cols-[1.3fr_1fr] gap-5 items-end">
+          <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[1.3fr_1fr] gap-5 items-end">
             <div>
               <div className="text-sm text-ink-secondary">
                 Срезано <b className="text-ink-primary">{num(t.harvested)}</b> из <b className="text-ink-primary">{num(t.planted)}</b> посаженных
@@ -192,7 +192,7 @@ export default async function BlockPage({ params, searchParams }: { params: { cy
       </section>
 
       {t.harvested > 0 && (
-        <div className="grid lg:grid-cols-[1fr_1.4fr] gap-5 items-start">
+        <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_1.4fr] gap-5 items-start">
           <section className="card !p-5 space-y-4">
             <h3 className="font-display font-bold text-[16px]">Качество срезки</h3>
             <QualityRows split={quality} total={t.harvested} />

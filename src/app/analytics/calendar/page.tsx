@@ -70,8 +70,8 @@ export default async function CalendarPage({
       </div>
 
       {data.headline.length > 0 && (
-        <div className="card !p-4 sm:!p-5 mb-5">
-          <ul className="grid gap-x-6 gap-y-1.5 text-sm text-ink-secondary lg:grid-cols-2">
+        <div className="card !p-4 mb-5">
+          <ul className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm text-ink-secondary lg:grid-cols-2">
             {data.headline.map((line, i) => (
               <li key={i} className="flex gap-2">
                 <span className="mt-2 w-1.5 h-1.5 rounded-full bg-section-analytics flex-none" />

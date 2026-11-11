@@ -471,7 +471,7 @@ function History({ invoices, farms }: { invoices: KaspiInvoice[]; farms: KaspiPa
             <span className="tabular-nums font-medium">{money(i.amount)}</span>
             <span
               className={clsx(
-                "text-xs rounded-full px-2 py-0.5",
+                "text-xs rounded-md px-2 py-0.5",
                 isPaidKaspiStatus(i.status)
                   ? "bg-status-good/15 text-status-good"
                   : i.status === "error"

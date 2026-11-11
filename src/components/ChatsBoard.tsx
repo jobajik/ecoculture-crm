@@ -154,8 +154,8 @@ export default function ChatsBoard({
               key={l.code || "main"}
               href={`/clients/chats?line=${encodeURIComponent(l.code)}`}
               className={clsx(
-                "flex-none h-8 px-3 rounded-full border text-[13px] whitespace-nowrap inline-flex items-center gap-1.5 transition-colors",
-                l.code === line ? "bg-ink-primary border-ink-primary text-white" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
+                "flex-none h-8 px-3 rounded-lg border text-[13px] whitespace-nowrap inline-flex items-center gap-1.5 transition-colors",
+                l.code === line ? "bg-accent-soft border-accent/25 text-accent font-medium" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
               )}
             >
               {l.label}
@@ -166,7 +166,7 @@ export default function ChatsBoard({
       )}
       {!lineConnected && <p className="text-sm text-status-critical mb-4">У этого номера нет ключа — подключите его в «Настройках → WhatsApp менеджеров».</p>}
 
-      <div className="grid lg:grid-cols-[360px_minmax(0,1fr)] gap-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)] gap-5 items-start">
         <div className={clsx("card !p-0 overflow-hidden min-w-0", selected && "hidden lg:block")}>
           <div className="px-4 py-3 space-y-2.5 border-b border-line-hairline">
             <input className="input w-full" placeholder="Поиск: имя, номер, текст" value={q} onChange={(e) => setQ(e.target.value)} />

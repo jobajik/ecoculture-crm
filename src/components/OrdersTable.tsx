@@ -256,9 +256,9 @@ export default function OrdersTable({
                     type="button"
                     onClick={() => setStatus(c.value)}
                     className={clsx(
-                      "h-8 px-3 rounded-full border text-[13px] whitespace-nowrap flex items-center gap-1.5 transition-colors flex-none",
+                      "h-8 px-3 rounded-lg border text-[13px] whitespace-nowrap flex items-center gap-1.5 transition-colors flex-none",
                       on
-                        ? "bg-ink-primary text-white border-ink-primary"
+                        ? "bg-accent-soft text-accent border-accent/25 font-medium"
                         : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
                     )}
                   >
@@ -362,12 +362,14 @@ export default function OrdersTable({
                     </span>
                   </td>
                   <td className="px-3 py-2.5" data-label="Клиент">
-                    <div className="flex items-baseline gap-1.5 min-w-0">
+                    {/* На ноутбуке менеджер встаёт второй строкой под клиентом: в одну строку семь колонок не помещались. */}
+                    <div className="flex items-baseline gap-1.5 min-w-0 sm:flex-col sm:gap-0 xl:flex-row xl:gap-1.5">
                       <Link href={`/orders/${o.orderId}`} className="truncate max-w-[200px] font-semibold hover:text-accent" title={o.clientName}>
                         {o.clientName || "—"}
                       </Link>
-                      <span className="text-xs text-ink-muted truncate max-w-[120px]" title={`Менеджер: ${mName}`}>
-                        · {mName}
+                      <span className="text-xs text-ink-muted truncate max-w-[160px] xl:max-w-[120px]" title={`Менеджер: ${mName}`}>
+                        <span className="sm:hidden xl:inline">· </span>
+                        {mName}
                       </span>
                     </div>
                   </td>

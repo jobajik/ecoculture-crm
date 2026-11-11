@@ -142,7 +142,7 @@ export default async function MyDayWarehouse({ user }: { user: DayUser }) {
       {/* «Сколько дней лежит» — сразу под плитками (21.10.2026). */}
       <StockAgeCard buckets={stock.ageBuckets} total={stock.totalStems} href={batchesHref} shelfNote={shelfNoteOf(settings, flowerTypesForFarm(user.farm))} />
 
-      <div className="grid gap-5 xl:grid-cols-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-5 items-start">
         <div className="xl:col-span-3 min-w-0">
           <DayCard
             tone="stock"

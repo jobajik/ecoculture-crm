@@ -118,7 +118,7 @@ const VISIBLE_GRADES = 3;
 /** Плашка «сколько дней лежит»: один вид на телефоне и на компьютере. */
 function ageChipClass(status: StorageStatus): string {
   return clsx(
-    "rounded-full px-2 py-0.5 text-xs font-medium tabular-nums whitespace-nowrap",
+    "rounded-md px-2 py-0.5 text-xs font-medium tabular-nums whitespace-nowrap",
     STATUS_CHIP[status],
     STATUS_TEXT[status]
   );

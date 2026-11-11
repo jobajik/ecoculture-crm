@@ -60,7 +60,7 @@ export default function AskGreenhouse({ farm, ask }: { farm: string; ask: Ask })
       {!answer && !busy && (
         <div className="flex flex-wrap gap-1.5">
           {PRESETS.map((p) => (
-            <button key={p} type="button" className="text-xs rounded-full border border-line-hairline px-2.5 py-1 hover:bg-surface-sunk text-ink-secondary" onClick={() => run(p)}>
+            <button key={p} type="button" className="text-xs rounded-lg border border-line-hairline px-2.5 py-1 hover:bg-surface-sunk text-ink-secondary" onClick={() => run(p)}>
               {p}
             </button>
           ))}

@@ -190,7 +190,7 @@ export default function StockBoard({
     // Новый вид (19.10.2026, «одностраничный»): склад — одна карточка с вкладками вместо ленты из пяти блоков.
     <section className="card !p-0 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-line-hairline">
-        <h2 className="font-display text-[15px] font-bold flex items-center gap-2">
+        <h2 className="text-[14px] leading-5 font-semibold flex items-center gap-2">
           Остатки на складе
           <span className="relative flex h-2 w-2" title="Обновляется автоматически">
             <span className="absolute inline-flex h-full w-full rounded-full bg-status-good opacity-60 animate-ping" />
@@ -234,7 +234,7 @@ export default function StockBoard({
         {snapshot.warningStems > 0 && (
           <span
             className={clsx(
-              "rounded-full px-2.5 py-1 bg-status-warning/15 font-medium",
+              "rounded-lg px-2.5 py-1 bg-status-warning/15 font-medium",
               STATUS_TEXT.warning
             )}
           >
@@ -245,7 +245,7 @@ export default function StockBoard({
         {snapshot.criticalStems > 0 && (
           <span
             className={clsx(
-              "rounded-full px-2.5 py-1 bg-status-critical/15 font-medium",
+              "rounded-lg px-2.5 py-1 bg-status-critical/15 font-medium",
               STATUS_TEXT.critical
             )}
           >
@@ -321,7 +321,7 @@ export default function StockBoard({
           </h3>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {snapshot.ageBuckets.map((bucket) => (
             <AgeBucketCard key={bucket.key} bucket={bucket} total={snapshot.totalStems} />
           ))}

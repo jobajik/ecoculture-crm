@@ -125,7 +125,7 @@ export default function ClientCard({
         }
       >
       <div className="space-y-3">
-        <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+        <dl className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
           {rows.map(([label, value]) => (
             <div key={label}>
               <dt className="label">{label}</dt>
@@ -138,7 +138,7 @@ export default function ClientCard({
         {kaspi.length > 0 && (
           <div className="border-t border-line-hairline pt-3">
             <div className="text-sm font-medium mb-2">Kaspi Pay клиента</div>
-            <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
               {kaspi.map(([label, value]) => (
                 <div key={label}>
                   <dt className="label">{label}</dt>
@@ -191,7 +191,7 @@ export default function ClientCard({
   return (
     <Section tone="client" icon="client" title="Анкета · правка" className="!mb-0">
     <div className="space-y-3">
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
         {field("Название клиента", "name")}
         {field("Город", "city")}
         {field("Магазин / точка", "shopName")}

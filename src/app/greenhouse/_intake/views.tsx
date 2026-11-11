@@ -152,7 +152,7 @@ export async function IntakeOverviewPage({ s }: { s: IntakeSession }) {
             Подробно →
           </Link>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-3">
           {flowersIn(dayRows).map((f) => (
             <FlowerCard key={f} flower={f} now={intakeStats(dayRows, f)} prev={prevDayRows.length ? intakeStats(prevDayRows, f) : null} href={ghHref("/greenhouse/records", s.farm, { period: "day", date: shown, flower: f })} />
           ))}
@@ -195,7 +195,7 @@ function WeekTable({ now, prev, flowers }: { now: IntakeRow[]; prev: IntakeRow[]
         const c = ch(a.accepted, b.accepted);
         const quality = f === "rose" ? (a.avgLength ? `${Math.round(a.avgLength)} см в среднем` : "") : a.topPct !== null ? `${f === "chrysanthemum" ? "высшая" : "стандарт"} ${Math.round(a.topPct)} %` : "";
         return (
-          <div key={f} className="py-2 grid grid-cols-[1fr_auto] sm:grid-cols-[9rem_8rem_1fr_7rem_8rem] gap-x-3 gap-y-1 items-center text-sm">
+          <div key={f} className="py-2 grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[9rem_8rem_1fr_7rem_8rem] gap-x-3 gap-y-1 items-center text-sm">
             <span className="inline-flex items-center gap-2 font-medium">
               <span className="w-2.5 h-2.5 rounded-full" style={{ background: FLOWER_HEX[f] }} />
               {INTAKE_FLOWER_LABELS[f]}
@@ -569,7 +569,7 @@ export async function IntakeAnalyticsPage({ s, sp }: { s: IntakeSession; sp: Sp 
           )}
 
           {flowers.length > 1 && (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2 xl:grid-cols-3">
               {flowers.map((f) => (
                 <div key={f} className="card space-y-3">
                   <h2 className="font-display font-extrabold text-[16px] inline-flex items-center gap-2">

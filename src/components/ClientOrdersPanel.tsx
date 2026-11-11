@@ -159,10 +159,8 @@ export default function ClientOrdersPanel({
   return (
     <div className="card !p-0 overflow-hidden">
       <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5">
-        <span className="w-8 h-8 rounded-lg grid place-items-center bg-accent-soft text-accent flex-none">
-          <Icon name="order" className="w-4 h-4" />
-        </span>
-        <h2 className="font-display text-[15px] font-bold">Заявки и деньги клиента</h2>
+        <Icon name="order" className="w-4 h-4 text-ink-muted flex-none" />
+        <h2 className="text-[14px] leading-5 font-semibold">Заявки и деньги клиента</h2>
         <button type="button" onClick={exportTab} className="btn-secondary !py-1.5 ml-auto" disabled={total === 0}>
           Выгрузить
         </button>

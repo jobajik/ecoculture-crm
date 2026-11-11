@@ -141,7 +141,7 @@ export default function PaymentStatusView({
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_340px] items-start">
         <div className="card !p-0 overflow-hidden">
           <div className="px-4 py-3 border-b border-line-hairline flex flex-col lg:flex-row lg:items-center gap-2">
             <Chips

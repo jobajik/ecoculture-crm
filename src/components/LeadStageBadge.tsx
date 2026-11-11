@@ -14,7 +14,7 @@ const TONE: Record<string, string> = {
 
 export default function LeadStageBadge({ stage }: { stage: string }) {
   return (
-    <span className={clsx("inline-block rounded-full px-2 py-0.5 text-xs", TONE[stage] ?? "bg-accent/10 text-accent")}>
+    <span className={clsx("inline-block rounded-md px-2 py-0.5 text-xs", TONE[stage] ?? "bg-accent/10 text-accent")}>
       {stageLabel(stage)}
     </span>
   );

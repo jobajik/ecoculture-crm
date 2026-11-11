@@ -69,7 +69,7 @@ export default function NewLeadForm({
   return (
     <form onSubmit={save} className="card space-y-3 basis-full">
       <h2 className="font-semibold">Новый лид</h2>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <label className="block">
           <span className="text-sm text-ink-secondary">Название *</span>
           <input className="input" value={form.name} onChange={set("name")} required maxLength={200} />

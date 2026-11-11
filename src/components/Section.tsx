@@ -81,51 +81,37 @@ export default function Section({
   const t = SECTION_TONE[tone];
   return (
     <section className={clsx("card !p-0 relative overflow-hidden mb-5", className)}>
-      {/* Новый вид (19.10.2026): заголовок карточки отделён линией, цвет раздела — у значка. */}
+      {/* Заголовок карточки: значок спокойным серым (цвет — только у состояний good / warn / bad), название, справа — действие. */}
       <header
         className={clsx(
-          "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 sm:px-5 py-3.5",
-          // Таблица во всю ширину (flush) почти всегда сама начинается с линии — вторая была бы лишней.
+          "flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 sm:px-5 py-3",
           !flush && "border-b border-line-hairline"
         )}
       >
-        <span className={clsx("w-8 h-8 rounded-lg grid place-items-center flex-none", t.chip)}>
-          <Icon name={icon} className="w-4 h-4" />
-        </span>
-        <h2 className="font-display text-[15px] font-bold text-ink-primary">{title}</h2>
-        {aside && <div className="ml-auto text-sm">{aside}</div>}
+        <Icon name={icon} className={clsx("w-4 h-4 flex-none", tone === "good" || tone === "warn" || tone === "bad" ? t.title : "text-ink-muted")} />
+        <h2 className="text-[14px] leading-5 font-semibold text-ink-primary">{title}</h2>
+        {aside && <div className="ml-auto text-[13px]">{aside}</div>}
       </header>
       <div className={flush ? "" : "px-4 sm:px-5 py-4"}>{children}</div>
     </section>
   );
 }
 
-/** Строка «значок · подпись · значение» внутри раздела. */
 export function Fact({
-  icon,
   label,
   children,
   tone,
 }: {
-  icon: IconName;
+  /** Значок оставлен в свойствах для прежних вызовов; с 11.11.2026 не рисуется — строка читается по подписи. */
+  icon?: IconName;
   label: string;
   children: ReactNode;
   tone?: "warn";
 }) {
   return (
-    <div className="flex gap-3 min-w-0">
-      <span
-        className={clsx(
-          "mt-0.5 w-8 h-8 rounded-full grid place-items-center flex-none",
-          tone === "warn" ? "bg-status-warning/15 text-[#8a5a00]" : "bg-surface-plane text-ink-muted"
-        )}
-      >
-        <Icon name={icon} className="w-4 h-4" />
-      </span>
-      <div className="min-w-0">
-        <div className="text-xs text-ink-muted">{label}</div>
-        <div className="text-[15px] break-words">{children}</div>
-      </div>
+    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 items-baseline min-w-0">
+      <div className={clsx("text-[13px] leading-5", tone === "warn" ? "text-[#8a5a00]" : "text-ink-muted")}>{label}</div>
+      <div className="text-[14px] leading-5 break-words min-w-0">{children}</div>
     </div>
   );
 }

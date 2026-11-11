@@ -9,59 +9,166 @@
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
+/*
+ * Дизайн-система (11.11.2026): нейтральный светлый холст, белые рабочие поверхности, графитовый текст, один акцент.
+ * Токены — tailwind.config.ts; здесь — базовые элементы, из которых собраны все страницы.
+ */
 body {
-  /* Серый холст под белыми карточками (новый вид, 19.10.2026). */
-  background: #f2f3ef;
+  background: theme("colors.surface.plane");
   color: theme("colors.ink.primary");
-  letter-spacing: -0.005em;
+  /* Inter: цифры одной ширины в таблицах включаются классом tabular-nums; здесь — единица с засечкой и
+     открытые формы цифр, чтобы 1, l и I не путались в номерах заявок и суммах. */
+  font-feature-settings: "cv11", "ss01", "calt";
+  letter-spacing: -0.006em;
 }
 
 h1,
 h2,
 h3 {
+  letter-spacing: -0.016em;
+}
+
+/* Крупные цифры и заголовки (бывший Manrope): тот же шрифт, плотнее. */
+.font-display {
+  letter-spacing: -0.02em;
+  font-feature-settings: "cv11", "ss01", "tnum";
+}
+
+/* Лист сборки свёрстан под Arimo и Manrope в точных пикселях печатной области — его шрифты не трогаем ни на экране,
+   ни на бумаге (грабли 1.5). Ведомость — то же, но только на печати (см. @media print ниже). */
+.doc {
+  font-family: Arimo, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: normal;
+  letter-spacing: -0.005em;
+}
+.doc .font-display {
+  font-family: Manrope, Arimo, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: normal;
   letter-spacing: -0.018em;
+}
+.doc .font-bold {
+  font-weight: 700;
+}
+.doc .font-extrabold {
+  font-weight: 800;
+}
+
+::selection {
+  background: theme("colors.accent.soft");
 }
 
 @layer components {
+  /* Рабочая поверхность: белая, тонкая граница, без тени. */
   .card {
-    @apply bg-surface rounded-2xl border border-line-hairline shadow-card p-5;
+    @apply bg-surface rounded-xl border border-line-hairline p-5;
   }
 
   /* На телефоне кнопка выше: 32 px по гайдлайнам мало, палец промахивается. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 sm:py-2 text-sm
-      font-medium min-h-[44px] sm:min-h-0
-      transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 sm:py-[7px] text-sm sm:text-[13px]
+      font-medium leading-5 sm:whitespace-nowrap min-h-[44px] sm:min-h-0
+      transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35
       focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
+  /* Главное действие страницы — одно, акцентом. */
   .btn-primary {
-    @apply btn bg-accent text-white hover:bg-accent-hover;
+    @apply btn bg-accent text-white hover:bg-accent-hover border border-transparent;
   }
 
+  /* Второстепенное: белая кнопка с тонкой границей — не спорит с главной. */
   .btn-secondary {
-    @apply btn bg-surface text-ink-primary border border-line-hairline hover:bg-surface-plane;
+    @apply btn bg-surface text-ink-primary border border-line-strong hover:bg-surface-plane;
+  }
+
+  /* Тихое действие в строке таблицы или карточке: без рамки. */
+  .btn-ghost {
+    @apply btn text-ink-secondary hover:bg-surface-sunk hover:text-ink-primary;
+  }
+
+  /* Опасное действие (удалить, отменить): красное только при наведении — чтобы не кричало в покое. */
+  .btn-danger {
+    @apply btn bg-surface text-status-critical border border-line-strong hover:bg-status-critical/[0.06] hover:border-status-critical/40;
   }
 
   /* text-base на телефоне обязателен: при шрифте мельче 16 px Safari на iPhone
      сам увеличивает страницу, как только палец попадает в поле, и обратно она
      уже не возвращается. На компьютере оставляем прежний мелкий шрифт. */
   .input {
-    @apply w-full rounded-lg border border-line-hairline bg-surface px-3 py-2.5 sm:py-2
-      text-base sm:text-sm text-ink-primary min-h-[44px] sm:min-h-0
+    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 sm:py-[7px]
+      text-base sm:text-[13px] sm:leading-5 text-ink-primary min-h-[44px] sm:min-h-0
       transition-shadow placeholder:text-ink-muted
-      focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15;
+      hover:border-ink-muted/60
+      focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/15
+      disabled:bg-surface-plane disabled:text-ink-muted;
   }
 
   .label {
-    @apply block text-xs font-medium text-ink-secondary mb-1;
+    @apply block text-xs font-medium text-ink-secondary mb-1.5;
   }
 
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium;
   }
+}
+
+/*
+ * Таблицы: единый вид без правки каждой страницы. Заголовок — мелкий, спокойный; строка подсвечивается под курсором,
+ * чтобы глаз не терял её в широкой таблице; цифры — одной ширины.
+ */
+.table-scroll thead th,
+.table-cards thead th {
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.table-scroll tbody tr,
+.table-cards tbody tr {
+  transition: background-color 0.08s;
+}
+@media (hover: hover) {
+  .table-scroll tbody tr:hover,
+  .table-cards tbody tr:hover {
+    background-color: #fafafb;
+  }
+}
+.tabular-nums {
+  font-feature-settings: "cv11", "ss01", "tnum";
+}
+
+/*
+ * Ноутбук и обычный монитор (до 1920 px): таблицы обязаны помещаться в карточку целиком — колонка, уехавшая за край, не видна вовсе,
+ * и человек решает по тому, что попало на экран. Поэтому на таких экранах поля ячеек уже; крайние колонки держат
+ * отступ карточки, чтобы текст не прилипал к рамке. Проверка — обход всех страниц на 1280, 1366, 1440 и 1536 px.
+ */
+@media (min-width: 640px) and (max-width: 1919px) {
+  .table-scroll th,
+  .table-scroll td,
+  .table-cards th,
+  .table-cards td {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+  .table-scroll th:first-child,
+  .table-scroll td:first-child,
+  .table-cards th:first-child,
+  .table-cards td:first-child {
+    padding-left: 1rem !important;
+  }
+  .table-scroll th:last-child,
+  .table-scroll td:last-child,
+  .table-cards th:last-child,
+  .table-cards td:last-child {
+    padding-right: 1rem !important;
+  }
+}
+
+/* Полоса прокрутки — тонкая и нейтральная (меню, доска лидов, длинные списки). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d5d6da transparent;
 }
 
 /* Горизонтальная прокрутка без видимой полосы — для вкладок раздела на
@@ -161,7 +268,7 @@ h3 {
     content: attr(data-label);
     float: left;
     margin-right: 0.75rem;
-    color: #8b918a;
+    color: #8a8e96;
     font-size: 0.8125rem;
     text-align: left;
   }
@@ -226,8 +333,19 @@ h3 {
    * на узком экране (`hidden sm:table-cell`), на бумаге обязаны быть — браузер считает страницу узким экраном.
    */
   .payslip {
+    font-family: Arimo, "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: normal;
     font-size: 10px;
     line-height: 1.25;
+  }
+  .payslip .font-display {
+    font-family: Manrope, Arimo, "Helvetica Neue", Arial, sans-serif;
+  }
+  .payslip .font-bold {
+    font-weight: 700;
+  }
+  .payslip .font-extrabold {
+    font-weight: 800;
   }
   .payslip table {
     font-size: 10px;

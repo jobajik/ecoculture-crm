@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 export type PillTone = "good" | "wait" | "bad" | "muted";
 
 const TONE: Record<PillTone, string> = {
-  good: "bg-status-good/10 text-[#157a4b]",
+  good: "bg-status-good/10 text-[#12733a]",
   wait: "bg-status-warning/15 text-[#8a5a00]",
   bad: "bg-status-critical/10 text-status-critical",
   muted: "bg-surface-sunk text-ink-secondary",
@@ -16,7 +16,7 @@ const TONE: Record<PillTone, string> = {
 
 export default function Pill({ tone, children, dot = true }: { tone: PillTone; children: ReactNode; dot?: boolean }) {
   return (
-    <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap", TONE[tone])}>
+    <span className={clsx("inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap", TONE[tone])}>
       {dot && tone !== "muted" && <span className="w-1.5 h-1.5 rounded-full bg-current" aria-hidden="true" />}
       {children}
     </span>

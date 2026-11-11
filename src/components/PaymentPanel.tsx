@@ -950,7 +950,7 @@ function SplitPayment({
 
   return (
     <div className="space-y-3">
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
         {farms.map((f) => {
           const left = Math.max(0, f.amount - (values[f.farm] ?? 0));
           return (

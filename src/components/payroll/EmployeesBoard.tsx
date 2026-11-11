@@ -94,8 +94,8 @@ export default function EmployeesBoard({
 
   const pill = (active: boolean) =>
     clsx(
-      "h-9 px-4 rounded-full text-sm whitespace-nowrap transition-colors",
-      active ? "bg-ink-primary text-white" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane"
+      "h-9 px-4 rounded-lg text-sm whitespace-nowrap transition-colors",
+      active ? "border border-accent/25 bg-accent-soft text-accent font-medium" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane"
     );
 
   return (
@@ -122,8 +122,8 @@ export default function EmployeesBoard({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 ml-auto">
-          <input className="input !w-56" placeholder="Поиск по ФИО, должности" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto min-w-0">
+          <input className="input sm:!w-56" placeholder="Поиск по ФИО, должности" value={q} onChange={(e) => setQ(e.target.value)} />
           <label className="flex items-center gap-2 text-sm text-ink-secondary whitespace-nowrap">
             <input type="checkbox" checked={showFired} onChange={(e) => setShowFired(e.target.checked)} /> уволенные
           </label>

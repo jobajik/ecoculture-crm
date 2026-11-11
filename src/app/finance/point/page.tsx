@@ -123,7 +123,7 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
                 href={hrefFor({ month: m })}
                 className={
                   m === month
-                    ? "px-3 py-1.5 rounded-lg text-sm bg-ink-primary text-white"
+                    ? "px-3 py-1.5 rounded-lg text-sm border border-accent/25 bg-accent-soft text-accent font-medium"
                     : "px-3 py-1.5 rounded-lg text-sm border border-line-hairline bg-surface text-ink-secondary hover:text-ink-primary"
                 }
               >
@@ -146,7 +146,7 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
         <StatTile label="На точке сейчас, примерно" value={money(report.onPoint)} sub="отвезли − выручка − списания" />
       </div>
 
-      <div className={editable ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start" : ""}>
+      <div className={editable ? "grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_400px] items-start" : ""}>
         <div className="card !p-0 overflow-hidden min-w-0">
           <div className="flex gap-1 px-2 border-b border-line-hairline overflow-x-auto scroll-x-hidden">
             {VIEWS.map((v) => (
@@ -434,7 +434,7 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
                 const ordered = o.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
                 return (
                   <li key={o.orderId} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2.5">
-                    <Link href={`/orders/${o.orderId}`} className="text-series-1 hover:underline">
+                    <Link href={`/orders/${o.orderId}`} className="text-accent hover:underline">
                       {formatDay(transferDay(o))} · {o.clientName}
                     </Link>
                     <span className="tabular-nums text-ink-secondary">
@@ -472,7 +472,7 @@ export default async function PointPage({ searchParams }: { searchParams?: { mon
                 className="divide-y divide-line-hairline text-sm"
                 items={withMoney.map((o) => (
                   <li key={o.orderId} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2.5">
-                    <Link href={`/orders/${o.orderId}`} className="text-series-1 hover:underline">
+                    <Link href={`/orders/${o.orderId}`} className="text-accent hover:underline">
                       {formatDay(transferDay(o))} · {o.clientName}
                     </Link>
                     <span className="flex flex-wrap items-baseline gap-3">

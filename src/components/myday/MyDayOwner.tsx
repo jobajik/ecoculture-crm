@@ -164,13 +164,13 @@ export default async function MyDayOwner({ user }: { user: DayUser }) {
         </span>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="card !p-4 sm:!p-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="card !p-4">
           <div className="flex items-center justify-between text-xs text-ink-muted">
             <span>Продажи {sales.periodLabel.toLowerCase()}</span>
             {day.sales.target > 0 && <span>план {shortMoney(day.sales.target)}</span>}
           </div>
-          <div className="font-display font-extrabold text-[22px] sm:text-[26px] tabular-nums mt-1.5 leading-none">{shortMoney(day.sales.amount)}</div>
+          <div className="font-display font-extrabold text-[22px] sm:text-[24px] tabular-nums mt-1.5 leading-none">{shortMoney(day.sales.amount)}</div>
           {pct !== null ? (
             <>
               <div className="relative h-2 rounded-full bg-surface-sunk overflow-hidden mt-3">
@@ -221,7 +221,7 @@ export default async function MyDayOwner({ user }: { user: DayUser }) {
       {/* «Сколько дней лежит» — сразу под плитками (21.10.2026, владелец: «двинь эти данные наверх»). */}
       <StockAgeCard buckets={stock.ageBuckets} total={stock.totalStems} href={stockHref} shelfNote={shelfNoteOf(settings)} />
 
-      <div className="grid gap-5 xl:grid-cols-5 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-5 items-start">
         <div className="xl:col-span-3 space-y-5 min-w-0">
           <DayCard tone="bad" icon="alert" title="Требует внимания" count={day.attention.length} countTone={day.attention.length ? "bad" : "muted"} hint="по важности · каждая строка ведёт в готовый список">
             {day.attention.length === 0 ? (

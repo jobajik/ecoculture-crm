@@ -133,7 +133,7 @@ export default async function CompanyUsePage({
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 2xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
         <Section tone="stock" icon="tag" title="Записать расход" className="!mb-0 [&_.card]:!shadow-none [&_.card]:!border-0 [&_.card]:!p-0">
           <StaffTakeoutForm batches={options} knownNames={purposes} today={today} defaultDate={today} company />
         </Section>

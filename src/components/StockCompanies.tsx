@@ -88,7 +88,7 @@ export function StockCompanies({ companies, total }: { companies: StockCompanyRo
           делённый на отгрузки последних 7 дней.
         </Hint>
       </h3>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2">
         {companies.map((c) => (
           <CompanyCard key={c.farm} row={c} total={total} />
         ))}

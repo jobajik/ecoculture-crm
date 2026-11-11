@@ -81,7 +81,7 @@ export default async function GreenhouseReportPage({ searchParams }: { searchPar
             <Link
               key={x.key}
               href={ghHref("/greenhouse/report", farm, x.key === "custom" ? { period: "custom", from: range.from, to: range.to } : { period: x.key, date: range.anchor })}
-              className={clsx("text-xs px-3 py-1.5 rounded-full border whitespace-nowrap", x.key === range.period ? "bg-ink-primary text-white border-ink-primary" : "border-line-hairline bg-surface hover:bg-surface-plane")}
+              className={clsx("text-xs px-3 py-1.5 rounded-lg border whitespace-nowrap", x.key === range.period ? "bg-accent-soft text-accent border-accent/25 font-medium" : "border-line-hairline bg-surface hover:bg-surface-plane")}
             >
               {x.label}
             </Link>

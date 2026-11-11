@@ -54,7 +54,7 @@ export default function CycleDatesForm({
   );
   return (
     <div className="card !p-4 space-y-3 w-full">
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3 gap-3">
         {field("cuttingsAt", "Черенкование")}
         {field("plantedAt", "Посадка")}
         {field("plannedHarvestAt", "План срезки")}

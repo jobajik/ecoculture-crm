@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-// Шрифт Arimo подключён локально (пакет @fontsource/arimo), а не с Google Fonts:
-// так интерфейс не зависит от внешней сети ни при сборке, ни у пользователя.
+// Шрифты подключены локально (пакеты @fontsource), а не с Google Fonts: так интерфейс не зависит от внешней сети
+// ни при сборке, ни у пользователя. Inter — весь интерфейс (11.11.2026); Arimo и Manrope остались для печатных
+// документов (лист сборки, заявка, ведомость), свёрстанных под них в точных размерах.
+import "@fontsource-variable/inter/index.css";
 import "@fontsource/arimo/400.css";
 import "@fontsource/arimo/500.css";
 import "@fontsource/arimo/600.css";
 import "@fontsource/arimo/700.css";
-// Manrope — только для «лица» документа (номер заявки, клиент, суммы): tailwind `font-display`.
+// Manrope — «лицо» печатных документов (номер заявки, клиент, суммы).
 import "@fontsource/manrope/600.css";
 import "@fontsource/manrope/700.css";
 import "@fontsource/manrope/800.css";

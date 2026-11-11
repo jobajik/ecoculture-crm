@@ -72,7 +72,7 @@ export default async function HabitsPage({ searchParams }: { searchParams?: { ma
     .map((h) => {
       const late = h.nextExpectedAt && h.nextExpectedAt < today;
       return (
-        <li key={h.clientId} className="px-4 py-3 grid gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_110px_90px_120px_130px_minmax(0,1.4fr)] lg:items-start text-sm">
+        <li key={h.clientId} className="px-4 py-3 grid grid-cols-[minmax(0,1fr)] gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_110px_90px_120px_130px_minmax(0,1.4fr)] lg:items-start text-sm">
           <div className="min-w-0">
             <Link href={`/clients/${h.clientId}`} className="font-medium hover:underline break-words">
               {h.name}
@@ -102,7 +102,7 @@ export default async function HabitsPage({ searchParams }: { searchParams?: { ma
     });
 
   const sendRows = rows.slice(0, 200).map((r) => (
-    <li key={`${r.broadcastId}-${r.phone}`} className="px-4 py-3 grid gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_120px_150px_110px_130px] lg:items-start text-sm">
+    <li key={`${r.broadcastId}-${r.phone}`} className="px-4 py-3 grid grid-cols-[minmax(0,1fr)] gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_120px_150px_110px_130px] lg:items-start text-sm">
       <div className="min-w-0">
         <div className="font-medium break-words">{r.name || `…${r.phone.slice(-4)}`}</div>
         <div className="text-xs text-ink-muted">
@@ -177,8 +177,8 @@ export default async function HabitsPage({ searchParams }: { searchParams?: { ma
               key={m || "all"}
               href={m ? `/clients/habits?manager=${encodeURIComponent(m)}` : "/clients/habits"}
               className={
-                "flex-none h-8 px-3 rounded-full border text-[13px] whitespace-nowrap inline-flex items-center transition-colors " +
-                (m.toLowerCase() === picked ? "bg-ink-primary border-ink-primary text-white" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary")
+                "flex-none h-8 px-3 rounded-lg border text-[13px] whitespace-nowrap inline-flex items-center transition-colors " +
+                (m.toLowerCase() === picked ? "bg-accent-soft border-accent/25 text-accent font-medium" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary")
               }
             >
               {m ? nameOf(m) : "Все менеджеры"}
@@ -195,7 +195,7 @@ export default async function HabitsPage({ searchParams }: { searchParams?: { ma
         <KpiTile icon="check" label="Заказали после" value={total?.ordered ?? 0} hint={total?.revenue ? money(total.revenue) : total?.sent ? `ответили ${total.replied}` : undefined} tone={total?.ordered ? "good" : undefined} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2 items-start mb-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 items-start mb-5">
         <Section tone="leads" icon="message" title={`Рассылки постоянникам за ${DAYS} дней`} aside={<span className="text-xs text-ink-muted">по менеджерам</span>} flush>
           <ol>
             {statHead}

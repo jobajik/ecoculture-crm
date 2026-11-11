@@ -139,9 +139,9 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
       </div>
 
       {hasPlan && (
-        <div className="card !p-4 sm:!p-5 mb-5">
+        <div className="card !p-4 mb-5">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2.5">
-            <span className="font-display text-[15px] font-bold">План месяца</span>
+            <span className="text-[14px] leading-5 font-semibold">План месяца</span>
             <span className="text-sm text-ink-secondary tabular-nums">
               <b className="text-ink-primary">{money(t.amountMonth)}</b> из {money(t.targetAmount)}
               {t.requiredPerDay > 0 && <span className="text-ink-muted"> · нужно {money(t.requiredPerDay)}/день</span>}
@@ -275,7 +275,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
         )}
 
         {shownView === "farms" && (
-          <div className="p-4 sm:p-5 grid gap-4 md:grid-cols-2">
+          <div className="p-4 sm:p-5 grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
             {snapshot.byFarm.map((f) => (
               <div key={f.farm} className="rounded-2xl border border-line-hairline p-4">
                 <div className="flex items-center gap-2 text-sm text-ink-secondary">
@@ -294,7 +294,7 @@ export default function SalesDashboard({ initial }: { initial: SalesSnapshot }) 
         )}
 
         {shownView === "charts" && (
-          <div className="p-4 sm:p-5 grid lg:grid-cols-2 gap-5">
+          <div className="p-4 sm:p-5 grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 gap-5">
             <div>
               <div className="text-sm font-semibold mb-0.5">Продажи по дням</div>
               <div className="text-xs text-ink-muted mb-3">Сумма оформленных заявок, {snapshot.periodLabel}</div>

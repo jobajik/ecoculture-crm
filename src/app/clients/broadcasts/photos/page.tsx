@@ -91,7 +91,7 @@ export default async function PhotosPage() {
               {catalog.length === 0 ? (
                 <p className="text-sm text-ink-muted">В прайсе нет цен — каталог появится, когда РОП заполнит прайс.</p>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {catalog.map((c) => (
                     <div key={c.flowerType} className="space-y-2">
                       <a href={c.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-line-hairline bg-surface-plane">

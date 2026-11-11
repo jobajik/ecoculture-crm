@@ -330,7 +330,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[380px_minmax(0,1fr)] items-start">
       <div className="min-w-0">
       <div className="card mb-5 relative overflow-hidden">
         <Watermark />
@@ -456,7 +456,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         icon={region ? "route" : "client"}
         title={region ? "Регион и доставка" : "Клиент и доставка"}
       >
-        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
+        <div className="grid gap-y-3">
           {/* У городской заявки контрагента нет по замыслу: показывать «Клиент —
               Астана» значило бы выдумать клиента, которого не существует. */}
           {region ? (
@@ -493,11 +493,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             )}
           </Fact>
           {!region && (order.direction || canSetOrderDirection) && (
-            <div className="flex gap-3 min-w-0">
-              <span className="mt-0.5 w-8 h-8 rounded-full grid place-items-center flex-none bg-surface-plane text-ink-muted">
-                <Icon name="route" className="w-4 h-4" />
-              </span>
-              <div className="min-w-0 flex-1">
+            <div className="min-w-0">
+              <div className="min-w-0">
                 <OrderDirection
                   orderId={order.orderId}
                   direction={order.direction}
@@ -509,17 +506,14 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             </div>
           )}
           {showStore && (loaded.store || canChangeStore) && (
-            <div className="flex gap-3 min-w-0">
-              <span className="mt-0.5 w-8 h-8 rounded-full grid place-items-center flex-none bg-surface-plane text-ink-muted">
-                <Icon name="store" className="w-4 h-4" />
-              </span>
-              <div className="min-w-0 flex-1">
+            <div className="min-w-0">
+              <div className="min-w-0">
                 <OrderStoreSwitch orderId={order.orderId} store={loaded.store} targets={storeTargets} />
               </div>
             </div>
           )}
           {!region && order.notes && (
-            <div className="sm:col-span-2">
+            <div>
               <Fact icon="note" label="Комментарий">
                 {order.notes}
               </Fact>
@@ -612,7 +606,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
       {!region && invoice.length > 0 && !canTakeMoney && (
         <Section tone={moneyTone} icon="wallet" title={invoice.length > 1 ? "Счета по компаниям" : "Счёт"}>
-          <div className="grid sm:grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3 text-sm">
             {invoice.map((f) => {
               const left = Math.max(0, f.amount - f.paidAmount);
               return (
@@ -700,7 +694,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           }
         >
           {invoice.length > 1 && (
-            <div className="grid sm:grid-cols-2 gap-3 text-sm mb-4">
+            <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3 text-sm mb-4">
               {invoice.map((f) => {
                 const left = Math.max(0, f.amount - f.paidAmount);
                 return (

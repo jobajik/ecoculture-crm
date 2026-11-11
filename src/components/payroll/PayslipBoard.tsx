@@ -139,7 +139,7 @@ export default function PayslipBoard({
     .filter((d) => d.rows.length > 0);
   const farmLabel = data.farm ? FARM_LABELS[data.farm] ?? data.farm : "обе компании";
   const pill = (active: boolean) =>
-    clsx("h-8 px-3 rounded-full text-sm whitespace-nowrap transition-colors", active ? "bg-ink-primary text-white" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane");
+    clsx("h-8 px-3 rounded-lg text-sm whitespace-nowrap transition-colors", active ? "border border-accent/25 bg-accent-soft text-accent font-medium" : "border border-line-hairline bg-surface text-ink-secondary hover:bg-surface-plane");
 
   return (
     <div className="space-y-4 payslip">
@@ -176,7 +176,7 @@ export default function PayslipBoard({
               {data.unmatchedFlowers.length > 0 && (
                 <div>
                   <div className="mb-1">Цветы со склада, которые не нашли сотрудника (впишите в строке руками):</div>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
                     {data.unmatchedFlowers.map((f) => (
                       <div key={f.name} className="flex justify-between gap-2 tabular-nums">
                         <span className="truncate">{f.name}</span>
@@ -249,7 +249,7 @@ export default function PayslipBoard({
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                     <span className="font-display font-bold">{d.department.name}</span>
                     <span className="text-xs text-ink-muted">{d.rows.length} чел.</span>
-                    <span className={clsx("no-print rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_TONE[d.timesheetStatus])}>табель: {TIMESHEET_STATUS_LABELS[d.timesheetStatus]}</span>
+                    <span className={clsx("no-print rounded-md px-2 py-0.5 text-[11px] font-medium", STATUS_TONE[d.timesheetStatus])}>табель: {TIMESHEET_STATUS_LABELS[d.timesheetStatus]}</span>
                   </div>
                 </td>
               </tr>
@@ -439,11 +439,11 @@ function CalcPanel({
             {days.length > 0 && ` · ${days.map(([l, n]) => `${l} ${n}`).join(", ")}`}
           </span>
           {r.warnings.map((w) => (
-            <span key={w} className="rounded-full bg-[#fdf3dc] px-2 py-0.5 text-[11px] font-medium text-[#6b4a00]">⚠ {w}</span>
+            <span key={w} className="rounded-md bg-[#fdf3dc] px-2 py-0.5 text-[11px] font-medium text-[#6b4a00]">⚠ {w}</span>
           ))}
         </div>
 
-        <div className="grid md:grid-cols-2 md:divide-x divide-line-hairline">
+        <div className="grid grid-cols-[minmax(0,1fr)] md:grid-cols-2 md:divide-x divide-line-hairline">
           <div className="px-4 py-3">
             <SheetTitle>Начисления</SheetTitle>
             <SheetLine

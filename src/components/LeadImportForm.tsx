@@ -190,7 +190,7 @@ export default function LeadImportForm({ managers }: { managers: { email: string
                           type="button"
                           onClick={() => setOffSegments(on ? [...offSegments, s.name] : offSegments.filter((x) => x !== s.name))}
                           className={clsx(
-                            "rounded-full border px-3 py-1 text-sm",
+                            "rounded-lg border px-3 py-1 text-sm",
                             on ? "border-accent bg-accent/10 font-medium" : "border-line-hairline text-ink-muted line-through"
                           )}
                         >
@@ -204,7 +204,7 @@ export default function LeadImportForm({ managers }: { managers: { email: string
                 </div>
               )}
 
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-4">
                 <label className="block text-sm">
                   <span className="text-xs text-ink-muted">Название обзвона</span>
                   <input className="input mt-1" value={campaign} maxLength={60} onChange={(e) => setCampaign(e.target.value)} />
@@ -240,7 +240,7 @@ export default function LeadImportForm({ managers }: { managers: { email: string
                           type="button"
                           onClick={() => setTeam(on ? team.filter((x) => x !== m.email) : [...team, m.email])}
                           className={clsx(
-                            "rounded-full border px-3 py-1 text-sm",
+                            "rounded-lg border px-3 py-1 text-sm",
                             on ? "border-section-leads bg-section-leads-soft text-section-leads font-medium" : "border-line-hairline text-ink-secondary"
                           )}
                         >

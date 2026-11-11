@@ -69,7 +69,7 @@ export default async function BroadcastPage({ params, searchParams }: { params: 
   const recipientRows = list.map((v) => {
     const kind = kindByPhone.get(phoneKey(v.phone));
     return (
-      <li key={`${v.phone}-${v.refId}`} className="px-4 py-2.5 grid gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_130px_150px_minmax(0,1.3fr)] text-sm items-start">
+      <li key={`${v.phone}-${v.refId}`} className="px-4 py-2.5 grid grid-cols-[minmax(0,1fr)] gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_130px_150px_minmax(0,1.3fr)] text-sm items-start">
         <div className="min-w-0">
           <Link href={v.kind === "lead" ? `/clients/leads/${v.refId}` : `/clients/${v.refId}`} className="font-medium hover:underline">
             {v.name || "Без имени"}
@@ -127,7 +127,7 @@ export default async function BroadcastPage({ params, searchParams }: { params: 
         <KpiTile icon="order" label={`Заявки за ${ORDER_WINDOW_DAYS} дн.`} value={r.count} hint={r.count > 0 ? `на ${shortMoney(r.amount)} · заказали ${r.buyers}` : "после сообщения"} tone={r.count > 0 ? "good" : undefined} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
         <PaneTabs
           boxed
           tabs={[
@@ -143,8 +143,8 @@ export default async function BroadcastPage({ params, searchParams }: { params: 
                         key={tile.label}
                         href={tile.key ? `?state=${tile.key}` : "?"}
                         className={clsx(
-                          "flex-none h-8 px-3 rounded-full border text-[13px] whitespace-nowrap inline-flex items-center gap-1.5 transition-colors",
-                          state === tile.key ? "bg-ink-primary border-ink-primary text-white" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
+                          "flex-none h-8 px-3 rounded-lg border text-[13px] whitespace-nowrap inline-flex items-center gap-1.5 transition-colors",
+                          state === tile.key ? "bg-accent-soft border-accent/25 text-accent font-medium" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
                         )}
                       >
                         {tile.label}
@@ -194,7 +194,7 @@ export default async function BroadcastPage({ params, searchParams }: { params: 
                           {a.analysis.summary && <p className="rounded-lg bg-surface-plane px-3 py-2 text-sm">{a.analysis.summary}</p>}
                           <div className="flex flex-wrap gap-2 text-xs">
                             {kindCounts(a.analysis).map((k) => (
-                              <span key={k.kind} className="rounded-full bg-surface-sunk px-2.5 py-1 text-ink-secondary">
+                              <span key={k.kind} className="rounded-lg bg-surface-sunk px-2.5 py-1 text-ink-secondary">
                                 {k.label}: <b className="text-ink-primary">{k.count}</b>
                               </span>
                             ))}
@@ -222,7 +222,7 @@ export default async function BroadcastPage({ params, searchParams }: { params: 
                               </ul>
                             </div>
                           )}
-                          <div className="grid gap-4 lg:grid-cols-3 text-sm">
+                          <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-3 text-sm">
                             {[
                               { title: "Частые вопросы", items: a.analysis.questions },
                               { title: "Возражения и отказы", items: a.analysis.objections },

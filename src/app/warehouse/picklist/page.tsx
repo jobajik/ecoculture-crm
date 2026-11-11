@@ -54,7 +54,7 @@ export default async function PicklistPage({
             </span>{" "}
             <span className="text-ink-secondary">Их нет в листе на этот день.</span>
           </span>
-          <span className="text-series-1 whitespace-nowrap">В очередь склада →</span>
+          <span className="text-accent whitespace-nowrap">В очередь склада →</span>
         </Link>
       )}
       <PicklistView picklist={picklist} canSwitchFarm={isAdmin} />

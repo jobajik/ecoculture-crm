@@ -199,7 +199,7 @@ export default function LeadInfoForm({
             });
           }}
         >
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
             {(
               [
                 ["name", "Название"],

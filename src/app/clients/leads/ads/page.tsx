@@ -58,7 +58,7 @@ export default async function AdsLeadsPage({ searchParams }: { searchParams?: { 
   for (let i = 3; i >= 0; i--) months.push(periodShift(current, -i));
   const pctWon = report.handed ? Math.round((report.won / report.handed) * 100) : 0;
   const leadRows = report.rows.map((r) => (
-    <li key={r.leadId} className="px-4 py-3 grid gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_150px_64px_160px_120px] lg:items-start text-sm">
+    <li key={r.leadId} className="px-4 py-3 grid grid-cols-[minmax(0,1fr)] gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_150px_64px_160px_120px] lg:items-start text-sm">
       <div className="min-w-0">
         <Link href={`/clients/leads/${r.leadId}`} className="font-medium hover:underline break-words">
           {r.name}
@@ -111,8 +111,8 @@ export default async function AdsLeadsPage({ searchParams }: { searchParams?: { 
             key={m}
             href={`/clients/leads/ads?month=${m}`}
             className={
-              "flex-none h-8 px-3 rounded-full border text-[13px] whitespace-nowrap inline-flex items-center transition-colors " +
-              (m === month ? "bg-ink-primary border-ink-primary text-white" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary")
+              "flex-none h-8 px-3 rounded-lg border text-[13px] whitespace-nowrap inline-flex items-center transition-colors " +
+              (m === month ? "bg-accent-soft border-accent/25 text-accent font-medium" : "bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary")
             }
           >
             {m === "all" ? "Всё время" : periodLabel(m)}
@@ -127,7 +127,7 @@ export default async function AdsLeadsPage({ searchParams }: { searchParams?: { 
         <KpiTile icon="chart" label="Заказали на" value={money(report.orderSum)} hint="заявки после передачи" />
       </div>
 
-      <div className={report.bySource.length > 1 ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start" : ""}>
+      <div className={report.bySource.length > 1 ? "grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start" : ""}>
         <PaneTabs
           boxed
           tabs={[

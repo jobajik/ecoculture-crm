@@ -72,12 +72,12 @@ export default function LeadDecisionsBoard({
             type="button"
             onClick={() => setView(t.key)}
             className={clsx(
-              "card !p-4 sm:!p-5 text-left transition-shadow hover:shadow-card-hover",
+              "card !p-4 text-left transition-shadow hover:shadow-card-hover",
               view === t.key && "!border-section-leads ring-2 ring-section-leads/20"
             )}
           >
             <div className="text-xs text-ink-muted">{t.label}</div>
-            <div className={clsx("font-display font-extrabold text-[22px] sm:text-[26px] tabular-nums mt-1.5 leading-none", t.tone)}>{t.value}</div>
+            <div className={clsx("font-display font-extrabold text-[22px] sm:text-[24px] tabular-nums mt-1.5 leading-none", t.tone)}>{t.value}</div>
             <div className="text-xs text-ink-secondary mt-2">{t.sub}</div>
           </button>
         ))}

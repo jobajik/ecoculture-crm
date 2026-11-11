@@ -288,7 +288,7 @@ export default function CallDesk({
                         key={r}
                         type="button"
                         onClick={() => setReason(r)}
-                        className={clsx("rounded-full border px-3 py-1", reason === r ? "border-accent bg-accent/10 font-medium" : "border-line-hairline")}
+                        className={clsx("rounded-lg border px-3 py-1", reason === r ? "border-accent bg-accent/10 font-medium" : "border-line-hairline")}
                       >
                         {r}
                       </button>

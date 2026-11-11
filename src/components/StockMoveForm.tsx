@@ -92,7 +92,7 @@ export default function StockMoveForm({ main, office, onlyToOffice = false }: { 
   // Новый вид (19.10.2026): форма живёт вкладкой внутри карточки «Офис» — слева позиции с отбором и страницами,
   // справа примечание, раскладка по партиям и кнопка. Без вложенных карточек.
   return (
-    <div className="grid lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0">
         <div className="flex flex-col xl:flex-row xl:items-center gap-3 px-4 py-3 border-b border-line-hairline">
           {onlyToOffice ? (
@@ -174,7 +174,7 @@ export default function StockMoveForm({ main, office, onlyToOffice = false }: { 
 
       <div className="space-y-3 px-4 sm:px-5 py-4 border-t lg:border-t-0 lg:border-l border-line-hairline">
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="font-display text-[15px] font-bold">{direction === "to_office" ? "В офис" : "Обратно на склад"}</h3>
+          <h3 className="text-[14px] leading-5 font-semibold">{direction === "to_office" ? "В офис" : "Обратно на склад"}</h3>
           <span className="text-sm text-ink-secondary tabular-nums">
             {lines.length > 0 ? `${lines.length} поз. · ${nf(total)} шт.` : "ничего не вписано"}
           </span>

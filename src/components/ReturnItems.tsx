@@ -227,7 +227,7 @@ export default function ReturnItems({
       </div>
 
       {moving && (
-        <div className="grid sm:grid-cols-2 gap-3 items-end">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3 items-end">
           <div>
             <label className="label">Какой магазин *</label>
             {shops.length > 0 ? (

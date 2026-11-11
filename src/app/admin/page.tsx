@@ -150,8 +150,8 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
             href={key === "staff" ? "/admin" : `/admin?tab=${key}`}
             className={
               tab === key
-                ? "h-9 px-4 rounded-full bg-ink-primary text-white text-sm font-medium grid place-items-center"
-                : "h-9 px-4 rounded-full border border-line-hairline bg-surface text-sm text-ink-secondary hover:text-ink-primary grid place-items-center"
+                ? "h-9 px-4 rounded-lg border border-accent/25 bg-accent-soft text-accent font-medium text-sm font-medium grid place-items-center"
+                : "h-9 px-4 rounded-lg border border-line-hairline bg-surface text-sm text-ink-secondary hover:text-ink-primary grid place-items-center"
             }
           >
             {label}
@@ -228,10 +228,10 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
       )}
 
       {tab === "farms" && (
-      <div className="grid gap-6 xl:grid-cols-2 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-2 items-start">
       <Section tone="admin" icon="leaf" title="Производства" className="!mb-0">
         <p className="text-sm text-ink-secondary mb-3">Зав. складом видит только свой цветок.</p>
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 gap-3">
           {FARM_ORDER.map((f) => (
             <div key={f} className="border border-line-hairline rounded-lg p-3">
               <div className="font-medium">{farmLabel(f)}</div>
@@ -272,7 +272,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
       )}
 
       {tab === "notify" && (
-      <div className="grid gap-6 xl:grid-cols-2 items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-2 items-start">
       <Section
         tone="admin"
         icon="message"

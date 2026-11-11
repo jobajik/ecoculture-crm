@@ -171,7 +171,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
         <aside className="space-y-4 xl:order-2 xl:sticky xl:top-4">
           <div className="card !p-0 overflow-hidden relative">
             <Watermark size="sm" />

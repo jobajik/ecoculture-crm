@@ -171,8 +171,8 @@ export default async function StockAnalyticsPage({
                 href={`${farmHref(f.key)}${view !== "move" ? `&view=${view}` : ""}`}
                 className={
                   (farm ?? "") === f.key
-                    ? "h-8 px-3 rounded-full border text-[13px] grid place-items-center bg-ink-primary text-white border-ink-primary"
-                    : "h-8 px-3 rounded-full border text-[13px] grid place-items-center bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
+                    ? "h-8 px-3 rounded-lg border text-[13px] grid place-items-center bg-accent-soft text-accent border-accent/25 font-medium"
+                    : "h-8 px-3 rounded-lg border text-[13px] grid place-items-center bg-surface border-line-hairline text-ink-secondary hover:text-ink-primary"
                 }
               >
                 {f.label}
@@ -254,10 +254,10 @@ export default async function StockAnalyticsPage({
         </div>
 
         {view === "move" && (
-          <div className="grid lg:grid-cols-2 lg:divide-x divide-line-hairline">
+          <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 lg:divide-x divide-line-hairline">
             {/* --- Движение за месяц -------------------------------------------- */}
             <div className="px-4 sm:px-5 py-4 min-w-0 space-y-3">
-              <h3 className="font-display text-[15px] font-bold">Движение за месяц</h3>
+              <h3 className="text-[14px] leading-5 font-semibold">Движение за месяц</h3>
               <dl className="text-sm divide-y divide-line-hairline/70">
                 <Line label={`Остаток на начало (${formatDay(`${period}-01`)})`} value={c.opening} />
                 <Line label="+ Приход" value={c.received} strong />
@@ -287,7 +287,7 @@ export default async function StockAnalyticsPage({
 
             {/* --- Куда ушёл цветок --------------------------------------------- */}
             <div className="px-4 sm:px-5 py-4 min-w-0 space-y-3 border-t lg:border-t-0 border-line-hairline">
-              <h3 className="font-display text-[15px] font-bold">Куда ушёл цветок</h3>
+              <h3 className="text-[14px] leading-5 font-semibold">Куда ушёл цветок</h3>
               {outTotal > 0 ? (
                 <>
                   <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Доли расхода">

@@ -85,7 +85,7 @@ export default function CalendarBoard({ data }: { data: CalendarMonth }) {
           : data.max.paid;
 
   return (
-    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 2xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] items-start">
       <div className="card !p-0 overflow-hidden">
         {/* Подсветка — вкладками карточки: по какой цифре красить дни. */}
         <CardTabs

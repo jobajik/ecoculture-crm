@@ -234,7 +234,7 @@ export default async function ClientDetailPage({
       />
 
       {row && !editing && !shop && (
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
           <KpiTile
             icon="wallet"
             label="За 30 дней"
@@ -314,10 +314,8 @@ export default async function ClientDetailPage({
               <div className="card !p-0 relative overflow-hidden">
                 <Watermark />
                 <div className="relative flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
-                  <span className="w-8 h-8 rounded-lg grid place-items-center bg-section-client-soft text-section-client flex-none">
-                    <Icon name="client" className="w-4 h-4" />
-                  </span>
-                  <h2 className="font-display text-[15px] font-bold">О клиенте</h2>
+                  <Icon name="client" className="w-4 h-4 text-ink-muted flex-none" />
+                  <h2 className="text-[14px] leading-5 font-semibold">О клиенте</h2>
                 </div>
                 <div className="p-4">
                   <details className="group relative mb-4">
@@ -353,7 +351,7 @@ export default async function ClientDetailPage({
                     </div>
                   </details>
                   <div className="flex items-center gap-3">
-                    <span className="w-12 h-12 rounded-xl bg-section-client-soft text-section-client grid place-items-center font-display font-extrabold text-lg flex-none">
+                    <span className="w-11 h-11 rounded-lg bg-surface-sunk text-ink-secondary grid place-items-center font-semibold text-base flex-none">
                       {client.name.trim().charAt(0).toUpperCase() || "?"}
                     </span>
                     <div className="min-w-0">
@@ -403,10 +401,8 @@ export default async function ClientDetailPage({
 
               <div className="card !p-0">
                 <div className="flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
-                  <span className="w-8 h-8 rounded-lg grid place-items-center bg-section-client-soft text-section-client flex-none">
-                    <Icon name="truck" className="w-4 h-4" />
-                  </span>
-                  <h2 className="font-display text-[15px] font-bold">Доставка</h2>
+                  <Icon name="truck" className="w-4 h-4 text-ink-muted flex-none" />
+                  <h2 className="text-[14px] leading-5 font-semibold">Доставка</h2>
                   {canEdit && (
                     <Link href={`/clients/${client.clientId}?edit=1`} className="ml-auto text-ink-muted hover:text-ink-primary text-lg leading-none" title="Изменить">
                       +
@@ -434,13 +430,13 @@ export default async function ClientDetailPage({
                 <div className="card !p-0">
                   <div className="flex items-center gap-3 px-4 py-3.5 border-b border-line-hairline">
                     <span className="rounded-md bg-kaspi-soft text-kaspi text-[11px] font-bold px-2 py-0.5">Kaspi</span>
-                    <h2 className="font-display text-[15px] font-bold">Номера для счёта</h2>
+                    <h2 className="text-[14px] leading-5 font-semibold">Номера для счёта</h2>
                   </div>
                   {kaspiNumbers.map((n, i) => (
                     <div key={n} className="flex items-center gap-3 px-4 py-2.5 border-b border-line-hairline last:border-0 text-sm">
                       <span className="text-ink-muted w-7">№{i + 1}</span>
                       <b>{n}</b>
-                      {i === 0 && <span className="ml-auto text-[11px] rounded-full bg-surface-sunk px-2 py-0.5 text-ink-secondary">основной</span>}
+                      {i === 0 && <span className="ml-auto text-[11px] rounded-md bg-surface-sunk px-2 py-0.5 text-ink-secondary">основной</span>}
                     </div>
                   ))}
                 </div>
@@ -454,7 +450,7 @@ export default async function ClientDetailPage({
           {row && (
             <div className="card">
               <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-                <h2 className="font-display text-[15px] font-bold mr-auto">Деньги по клиенту</h2>
+                <h2 className="text-[14px] leading-5 font-semibold mr-auto">Деньги по клиенту</h2>
                 <span className="text-sm text-ink-secondary">
                   Заявок на <b className="font-display font-extrabold text-ink-primary">{money(row.revenue)}</b>
                 </span>
