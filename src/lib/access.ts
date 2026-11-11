@@ -55,6 +55,8 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // и middleware разворачивал его с собственного раздела.
   { prefix: "/sales", roles: ["manager", "sales_head", "admin", "accountant"] },
   { prefix: "/prices", roles: ["manager", "sales_head", "admin"] },
+  // «План с ИИ» ставит планы всему отделу — только администраторы. Правило стоит ВЫШЕ общего «/plans».
+  { prefix: "/plans/ai", roles: ["admin"] },
   { prefix: "/plans", roles: ["sales_head", "admin"] },
   { prefix: "/forecast", roles: ["agronomist", "admin"] },
   // Агроном отвечает за срезку, а не за деньги: заявки и аналитика хозяйства

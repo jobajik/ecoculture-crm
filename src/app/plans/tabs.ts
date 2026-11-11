@@ -27,5 +27,8 @@ export function plansTabsFor(role: string | null | undefined, period?: string) {
     // по ней продают. Так решил владелец.
     { href: "/prices", label: "Прайс", match: ["/prices"] },
   ];
+  // «План с ИИ» (11.11.2026) — раскладка плана по менеджерам, каналам и направлениям с советом модели. Только у
+  // администраторов (владелец и Данияр): по ней ставятся планы всему отделу.
+  if (role === ROLES.ADMIN) tabs.splice(1, 0, { href: `/plans/ai${period ? `?month=${period}` : ""}`, label: "План с ИИ", match: ["/plans/ai"] });
   return tabs;
 }

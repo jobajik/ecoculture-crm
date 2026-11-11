@@ -73,7 +73,7 @@ check("вкладка: отчёт за 30 дней — в архиве", activeS
 check("вкладка: итоги месяца и план-факт — в архиве", [activeSub(adminPlans.subs, "/analytics/month")?.label, activeSub(adminPlans.subs, "/sales/plan")?.label, activeSub(adminPlans.subs, "/sales/day")?.label], ["Архив отчётов", "Архив отчётов", "Архив отчётов"]);
 check("вкладка: цифры за период и рейтинг", [activeSub(adminPlans.subs, "/analytics/flow")?.label, activeSub(adminPlans.subs, "/sales")?.label], ["Цифры за период", "Рейтинг и бонусы"]);
 check("вкладка: прогноз агронома горит на «Срезке»", activeSub(adminPlans.subs, "/forecast")?.label, "Срезка");
-check("в «Планах и цифрах» у владельца 9 вкладок вместо 14, у РОПа — 8", [adminPlans.subs.length, navLinksFor("sales_head").find((l) => l.href === "/plans")?.subs.length], [9, 8]);
+check("в «Планах и цифрах» у владельца 10 вкладок вместо 14 (с «Планом с ИИ»), у РОПа — 8", [adminPlans.subs.length, navLinksFor("sales_head").find((l) => l.href === "/plans")?.subs.length], [10, 8]);
 check("группы: Планы и Цифры", Array.from(new Set(adminPlans.subs.map((x) => x.group))), ["Планы", "Цифры"]);
 const managerClients = navLinksFor("manager").find((l) => l.label === "Клиенты")!;
 check("вкладка на карточке лида — «Лиды»", activeSub(managerClients.subs, "/clients/leads/L1")?.label, "Лиды");
@@ -92,7 +92,7 @@ check("владелец · Склад: 9 вкладок вместо 11, ана�
 check("зав. складом: «Выдачи» одной вкладкой, аналитика на месте", [labelsOf("warehouse", "Склад"), hrefsOf("warehouse", "Склад").includes("/warehouse/analytics")], [["Очередь на отгрузку", "Лист сборки", "Приёмка", "Сорта и ростовки", "Партии", "Списание", "Выдачи", "Аналитика", "Астана"], true]);
 check("виды: переключатель только на своём адресе; один вид — обычная вкладка", [viewsFor(clientsTabsFor(undefined, "admin"), "/clients/leads").map((v) => v.label), viewsFor(clientsTabsFor(undefined, "admin"), "/clients/leads/L1").length, tabOfViews("Отчёты", [{ href: "/a", label: "Один" }, false]).map((t) => [t.label, !!t.views])], [["Доска лидов", "Решения ИИ", "С рекламы", "Обзвон"], 0, [["Один", false]]]);
 const total = (role: string) => navLinksFor(role).reduce((n, l) => n + Math.max(1, l.subs.length), 0);
-check("всего пунктов меню: владелец 65 → 46, РОП 44 → 32 (с «Сортами и ростовками»)", [total("admin"), total("sales_head")], [46, 32]);
+check("всего пунктов меню: владелец 65 → 47, РОП 44 → 32 (с «Сортами и ростовками» и «Планом с ИИ»)", [total("admin"), total("sales_head")], [47, 32]);
 
 // --- Поиск --------------------------------------------------------------------
 const client = (p: Partial<Client> & { clientId: string; name: string }): Client =>
