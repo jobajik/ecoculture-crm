@@ -127,7 +127,10 @@ export default function AiPlanBoard({
   }
 
   const shownAdvice = advice ?? null;
-  const histHead = plan.periods.map((p) => p.label);
+  // История в таблицах — от старых к свежим; неполный текущий месяц в неё не идёт: он стоит в «Уже продал».
+  const hist = plan.periods.map((p, i) => ({ p, i })).filter((x) => !(plan.isCurrent && x.p.partial)).reverse();
+  const factDays = plan.periods.find((p) => p.partial)?.days ?? 0;
+  const perDay = (value: number, days: number) => (days > 0 && value > 0 ? <div className="text-[11.5px] text-ink-muted">{nf(value / days)} в день</div> : null);
 
   return (
     <div className="space-y-4">
@@ -227,9 +230,9 @@ export default function AiPlanBoard({
             <thead>
               <tr className={THEAD}>
                 <th className={TH}>Менеджер</th>
-                {[...histHead].reverse().map((h) => (
-                  <th key={h} className={THN}>
-                    {h}
+                {hist.map((h) => (
+                  <th key={h.p.label} className={THN}>
+                    {h.p.label}
                   </th>
                 ))}
                 {plan.isCurrent && <th className={THN}>Уже продал</th>}
@@ -246,12 +249,18 @@ export default function AiPlanBoard({
                     <div className="font-medium text-ink-primary">{m.name}</div>
                     <div className="text-[11.5px] text-ink-muted">{m.virtual ? "в план менеджеров не пишется" : m.isNew ? "новый" : `клиентов ${m.clients}`}</div>
                   </td>
-                  {[...m.history].reverse().map((h, i) => (
-                    <td key={i} className={`${TDN} text-ink-secondary`}>
-                      {nf(h)}
+                  {hist.map((h) => (
+                    <td key={h.i} className={`${TDN} text-ink-secondary`}>
+                      {nf(m.history[h.i] ?? 0)}
+                      {perDay(m.history[h.i] ?? 0, h.p.days)}
                     </td>
                   ))}
-                  {plan.isCurrent && <td className={TDN}>{nf(m.fact.sum)}</td>}
+                  {plan.isCurrent && (
+                    <td className={TDN}>
+                      {nf(m.fact.sum)}
+                      {perDay(m.fact.sum, factDays)}
+                    </td>
+                  )}
                   <td className={TDN}>
                     {m.virtual ? (
                       nf(m.left.sum)
@@ -281,12 +290,18 @@ export default function AiPlanBoard({
               ))}
               <tr className={TTOT}>
                 <td className={TD}>Итого</td>
-                {[...plan.periods].reverse().map((p, i) => (
-                  <td key={p.label} className={TDN}>
-                    {nf(managers.reduce((a, m) => a + ([...m.history].reverse()[i] ?? 0), 0))}
+                {hist.map((h) => (
+                  <td key={h.i} className={TDN}>
+                    {nf(managers.reduce((a, m) => a + (m.history[h.i] ?? 0), 0))}
+                    {perDay(managers.reduce((a, m) => a + (m.history[h.i] ?? 0), 0), h.p.days)}
                   </td>
                 ))}
-                {plan.isCurrent && <td className={TDN}>{nf(plan.clientsFact)}</td>}
+                {plan.isCurrent && (
+                  <td className={TDN}>
+                    {nf(plan.clientsFact)}
+                    {perDay(plan.clientsFact, factDays)}
+                  </td>
+                )}
                 <td className={TDN}>{nf(leftSum)}</td>
                 <td className={TDN}>{plan.daysLeft > 0 ? nf(leftSum / plan.daysLeft) : "—"}</td>
                 <td className={TDN}>{nf(monthSum)}</td>
@@ -310,9 +325,9 @@ export default function AiPlanBoard({
             <thead>
               <tr className={THEAD}>
                 <th className={TH}>Канал</th>
-                {[...histHead].reverse().map((h) => (
-                  <th key={h} className={THN}>
-                    {h}
+                {hist.map((h) => (
+                  <th key={h.p.label} className={THN}>
+                    {h.p.label}
                   </th>
                 ))}
                 {plan.isCurrent && <th className={THN}>Уже ушло</th>}
@@ -325,13 +340,22 @@ export default function AiPlanBoard({
               {plan.channels.map((c) => (
                 <tr key={c.channel} className={TROW}>
                   <td className={`${TD} font-medium text-ink-primary`}>{c.label}</td>
-                  {[...c.history].reverse().map((h, i) => (
-                    <td key={i} className={`${TDN} text-ink-secondary`}>
-                      {nf(h)}
+                  {hist.map((h) => (
+                    <td key={h.i} className={`${TDN} text-ink-secondary`}>
+                      {nf(c.history[h.i] ?? 0)}
+                      {perDay(c.history[h.i] ?? 0, h.p.days)}
                     </td>
                   ))}
-                  {plan.isCurrent && <td className={TDN}>{nf(c.fact.stems)}</td>}
-                  <td className={`${TDN} font-semibold`}>{nf(c.target.stems)}</td>
+                  {plan.isCurrent && (
+                    <td className={TDN}>
+                      {nf(c.fact.stems)}
+                      {perDay(c.fact.stems, factDays)}
+                    </td>
+                  )}
+                  <td className={`${TDN} font-semibold`}>
+                    {nf(c.target.stems)}
+                    {perDay(c.target.stems, plan.daysLeft)}
+                  </td>
                   <td className={TDN}>{pct(c.target.stems, targetStems)}</td>
                   <td className={`${TD} text-ink-secondary min-w-[240px]`}>
                     <div>
@@ -358,9 +382,9 @@ export default function AiPlanBoard({
               <thead>
                 <tr className={THEAD}>
                   <th className={TH}>Направление</th>
-                  {[...histHead].reverse().map((h) => (
-                    <th key={h} className={THN}>
-                      {h}
+                  {hist.map((h) => (
+                    <th key={h.p.label} className={THN}>
+                      {h.p.label}
                     </th>
                   ))}
                   {plan.isCurrent && <th className={THN}>Уже ушло</th>}
@@ -372,12 +396,18 @@ export default function AiPlanBoard({
                 {directions.map((d) => (
                   <tr key={d.direction} className={TROW}>
                     <td className={`${TD} font-medium text-ink-primary`}>{d.direction}</td>
-                    {[...d.history].reverse().map((h, i) => (
-                      <td key={i} className={`${TDN} text-ink-secondary`}>
-                        {nf(h)}
+                    {hist.map((h) => (
+                      <td key={h.i} className={`${TDN} text-ink-secondary`}>
+                        {nf(d.history[h.i] ?? 0)}
+                        {perDay(d.history[h.i] ?? 0, h.p.days)}
                       </td>
                     ))}
-                    {plan.isCurrent && <td className={TDN}>{nf(d.fact)}</td>}
+                    {plan.isCurrent && (
+                      <td className={TDN}>
+                        {nf(d.fact)}
+                        {perDay(d.fact, factDays)}
+                      </td>
+                    )}
                     <td className={TDN}>
                       <input
                         className={`input !w-28 !py-1 !px-2 text-right tabular-nums ${d.edited ? "!border-accent" : ""}`}
