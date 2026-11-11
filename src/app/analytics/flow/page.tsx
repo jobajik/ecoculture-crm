@@ -250,6 +250,8 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
     { label: "Остаток склада", value: nf(r.balance.end), note: `на начало ${nf(r.balance.start)}${r.balance.region ? ` · Астана ${nf(r.balance.region)}` : ""}` },
   ];
   const planDone = s.planTotal ? Math.round((s.money.sum / s.planTotal) * 100) : 0;
+  // Колонки плана — только когда план на этот месяц поставлен: пустые «плана нет» в каждой строке — шум.
+  const showPlan = !!s.planMonth && s.planTotal > 0;
   const salesFacts: { label: string; value: string; note?: string }[] = [
     { label: "Заявок", value: nf(s.orders), note: delta(s.orders, s.prevOrders) || undefined },
     { label: "Средняя заявка", value: s.orders ? `${nf(s.money.sum / s.orders)} ₸` : "—", note: s.orders ? `${nf(s.money.qty / s.orders)} шт.` : undefined },
@@ -416,8 +418,8 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-3">
             <KpiTile icon="wallet" label="Продано клиентам" value={mln(s.money.sum)} hint={deltaHint(s.money.sum, s.prev.sum) || "по заявкам периода"} />
-            {s.planMonth && s.planTotal > 0 ? (
-              <KpiTile icon="trophy" label={`План · ${monthTitle(s.planMonth)}`} value={`${planDone}%`} hint={`из ${mln(s.planTotal)}`} tone={planDone >= 100 ? "good" : undefined} />
+            {showPlan ? (
+              <KpiTile icon="trophy" label={`План · ${monthTitle(s.planMonth!)}`} value={`${planDone}%`} hint={`из ${mln(s.planTotal)}`} tone={planDone >= 100 ? "good" : undefined} />
             ) : (
               <KpiTile icon="order" label="Заявок" value={nf(s.orders)} hint={deltaHint(s.orders, s.prevOrders) || "клиентам"} />
             )}
@@ -431,7 +433,17 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
             <Card
               title="Менеджеры"
               hint="Продажи клиентам по дню оформления заявки, без отменённых; регионы, наши магазины и Пожарка не в счёт — как в плане менеджеров. План виден, когда период начинается с первого числа и не выходит за свой месяц."
-              right={s.planMonth ? `план — ${monthTitle(s.planMonth)}` : "план виден за период с 1-го числа месяца"}
+              right={
+                showPlan ? (
+                  `план — ${monthTitle(s.planMonth!)}`
+                ) : s.planMonth ? (
+                  <Link href={`/plans/sales?period=${s.planMonth}`} className="text-accent hover:underline">
+                    план на {monthTitle(s.planMonth)} не поставлен — поставить
+                  </Link>
+                ) : (
+                  "план виден за период с 1-го числа месяца"
+                )
+              }
             >
               <div className="table-scroll">
                 <table className="w-full text-[13px] min-w-[620px]">
@@ -444,7 +456,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
                       <th className={THN}>₸</th>
                       <th className={`${THN} ${WIDE}`}>Δ</th>
                       <th className={THN}>Средняя</th>
-                      {s.planMonth && (
+                      {showPlan && (
                         <>
                           <th className={THN}>План</th>
                           <th className={`${TH} w-[140px]`}>Выполнение</th>
@@ -464,7 +476,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
                           <td className={TDN}>{nf(m.money.sum)}</td>
                           <DeltaCell now={m.money.sum} prev={m.prev.sum} />
                           <td className={TDN}>{m.money.priced ? nf(avgPrice(m.money)) : "—"}</td>
-                          {s.planMonth && (
+                          {showPlan && (
                             <>
                               <td className={TDN}>{m.plan ? nf(m.plan) : "—"}</td>
                               <td className={TD}>
@@ -500,7 +512,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
                         <td className={TDN}>{nf(s.money.sum)}</td>
                         <DeltaCell now={s.money.sum} prev={s.prev.sum} />
                         <td className={TDN}>{s.money.priced ? nf(avgPrice(s.money)) : "—"}</td>
-                        {s.planMonth && (
+                        {showPlan && (
                           <>
                             <td className={TDN}>{s.planTotal ? nf(s.planTotal) : "—"}</td>
                             <td className={`${TD} tabular-nums text-xs`}>{s.planTotal ? `${planDone}%` : ""}</td>
