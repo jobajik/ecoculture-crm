@@ -156,7 +156,7 @@ export default function AiPlanBoard({
                 <th className={THN}>Срежем</th>
                 <th className={THN}>Спишем</th>
                 <th className={THN}>Можно продать</th>
-                <th className={THN}>Обычно продаём</th>
+                <th className={THN}>По темпу продаж</th>
                 <th className={THN}>В плане</th>
                 <th className={THN}>Останется</th>
               </tr>
@@ -297,7 +297,7 @@ export default function AiPlanBoard({
         </div>
         {plan.departed.length > 0 && (
           <p className="px-3 sm:px-4 py-3 text-[12.5px] text-ink-muted border-t border-line-hairline">
-            В истории есть продажи тех, кого уже нет среди менеджеров ({plan.departed.map((d) => `${d.name} — ${mln(d.sum)}`).join(", ")}): их доля роздана действующим. «Уже продал» в итоге считает и их заявки этого месяца.
+            В истории есть клиентские продажи тех, кто не числится менеджером ({plan.departed.map((d) => `${d.name} — ${mln(d.sum)}`).join(", ")}): их доля роздана менеджерам. «Уже продал» в итоге считает и их заявки этого месяца.
           </p>
         )}
       </section>

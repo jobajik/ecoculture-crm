@@ -149,7 +149,7 @@ export async function chatJson(
    * `fast` — для бота-автоответчика: Green API ждёт ответа вебхука недолго,
    * поэтому быстрые модели и короткое ожидание.
    */
-  options: { fast?: boolean } = {}
+  options: { fast?: boolean; /** Сколько ждать модель; по умолчанию 20 с у быстрых и 50 с у остальных. */ timeoutMs?: number } = {}
 ): Promise<{ data: unknown; model: string }> {
   const key = openAiKey();
   if (!key) throw new Error("OpenAI не подключён — владелец вводит ключ в whatsapp-key.bat.");
@@ -171,7 +171,7 @@ export async function chatJson(
           ],
           response_format: { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } },
         }),
-        signal: AbortSignal.timeout(fast ? 20000 : 50000),
+        signal: AbortSignal.timeout(options.timeoutMs ?? (fast ? 20000 : 50000)),
       });
       if (!res.ok) throw await failure(res, "Разбор");
       const body = (await res.json()) as { choices?: { message?: { content?: string; refusal?: string } }[] };

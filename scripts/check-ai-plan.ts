@@ -68,7 +68,7 @@ check("склад — все склады вместе", rose.stock === 4500, ro
 check("срезка до конца месяца — из прогноза агронома, неделя режется по дням", rose.forecastSource === "agronomist" && rose.forecastLeft === 14000, rose.forecastLeft);
 check("доля списаний за 30 дней", Math.abs(rose.writeoffShare - 1100 / 11000) < 1e-9, rose.writeoffShare);
 check("факт месяца — по вчера, без отменённых", rose.fact.stems === 1500 && p.clientsFact === 450000, [rose.fact, p.clientsFact]);
-check("базовый сценарий: на 20% больше обычного (цветка хватает)", rose.targetLeft === Math.round(rose.demandLeft * 1.2) && rose.sellable > rose.targetLeft, rose);
+check("базовый сценарий: по темпу продаж (цветка хватает)", rose.targetLeft === rose.demandLeft && rose.sellable > rose.targetLeft, rose);
 check("излишек показан", rose.gap === rose.sellable - rose.targetLeft && rose.gap > 0);
 
 const sumCh = p.channels.reduce((s, c) => s + (c.byFlower.rose?.stems ?? 0), 0);
@@ -83,7 +83,7 @@ const nov = p.managers.find((m) => m.email === "novyi@x.kz")!;
 check("кто продаёт больше — тому больше план", anya.target.sum > borya.target.sum && borya.target.sum > 0);
 check("новый менеджер: не ноль и меньше остальных", nov.isNew && nov.target.sum > 0 && nov.target.sum < borya.target.sum, nov.target);
 check("план на месяц = уже сделано + остаток", anya.month.sum === anya.fact.sum + anya.target.sum && anya.fact.sum === 360000);
-check("ушедший РОП в менеджерах не стоит, о нём сказано", !p.managers.some((m) => m.email === "rop@x.kz") && p.departed[0]?.name === "Нина" && p.notes.some((x) => x.includes("Нина")));
+check("не-менеджер (ушедший РОП) в менеджерах не стоит, о нём сказано", !p.managers.some((m) => m.email === "rop@x.kz") && p.departed[0]?.name === "Нина" && p.notes.some((x) => x.includes("Нина")));
 check("отменённая заявка в историю не попала", anya.history[1] === 3400 * 300, anya.history);
 const astana = p.directions.find((d) => d.direction === "Астана");
 const kg = p.directions.find((d) => d.direction === "Киргизия");
@@ -93,7 +93,12 @@ const careful = buildAiPlan({ ...base, scenario: "careful" });
 const amb = buildAiPlan({ ...base, scenario: "ambitious" });
 const r1 = careful.flowers[0], r3 = amb.flowers[0];
 check("осторожный ≤ базовый ≤ амбициозный", r1.targetLeft <= rose.targetLeft && rose.targetLeft <= r3.targetLeft, [r1.targetLeft, rose.targetLeft, r3.targetLeft]);
-check("осторожный — обычные продажи, амбициозный — в полтора раза больше, но не больше наличия", r1.targetLeft === Math.min(r1.demandLeft, r1.sellable) && r3.targetLeft === Math.min(r3.sellable, Math.round(r3.demandLeft * 1.5)));
+check("амбициозный — на 20% быстрее темпа, но не больше наличия", r3.targetLeft === Math.min(r3.sellable, Math.round(r3.demandLeft * 1.2)));
+// Всплеск в первой декаде: осторожный берёт темп прошлого полного месяца, базовый — темп с весами.
+const spike = [...orders, order("2026-11-08", "anya@x.kz", [["rose", 9000, 300]])];
+const calmPlan = buildAiPlan({ ...base, orders: spike, scenario: "careful" }).flowers[0];
+const basePlan = buildAiPlan({ ...base, orders: spike }).flowers[0];
+check("осторожный не верит всплеску: темп прошлого полного месяца", calmPlan.targetLeft < basePlan.targetLeft && calmPlan.targetLeft === Math.round((7500 / 31) * 20), [calmPlan.targetLeft, basePlan.targetLeft]);
 const scarce = buildAiPlan({ ...base, batches: [batch("rose", "2026-11-09", 300, 300)], forecast: { rose: { "2026-11-W3": 700 } }, writeoffs: [] });
 check("цветка меньше обычных продаж — в план идёт только то, что есть", scarce.flowers[0].targetLeft === scarce.flowers[0].sellable && scarce.flowers[0].sellable < scarce.flowers[0].demandLeft && scarce.flowers[0].gap === 0, scarce.flowers[0]);
 

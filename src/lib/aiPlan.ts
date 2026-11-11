@@ -16,16 +16,18 @@ import type { Batch, OrderWithItems, Writeoff } from "./types";
 
 export type Scenario = "careful" | "base" | "ambitious";
 export const SCENARIOS: { code: Scenario; label: string; hint: string }[] = [
-  { code: "careful", label: "Осторожный", hint: "столько, сколько обычно продаём" },
-  { code: "base", label: "Базовый", hint: "на 20% больше обычного, если цветка хватает" },
-  { code: "ambitious", label: "Амбициозный", hint: "в полтора раза больше обычного, если цветка хватает" },
+  { code: "careful", label: "Осторожный", hint: "продаём в день, как в прошлом полном месяце (если сейчас идём быстрее)" },
+  { code: "base", label: "Базовый", hint: "продаём в день, как идём сейчас, с учётом последних месяцев" },
+  { code: "ambitious", label: "Амбициозный", hint: "на 20% быстрее, чем идём сейчас, если цветка хватает" },
 ];
 /**
- * Насколько план может быть выше обычных продаж. Ставить в план весь лишний цветок нельзя: в первой версии «базовый»
- * брал половину излишка, и при большой срезке планы менеджеров выходили вчетверо выше их истории — такой план не
- * выполняют и не читают. Излишек остаётся отдельной цифрой («останется»): это вопрос нового канала, а не плана людям.
+ * Насколько план выше «темпа продаж» (дневной темп с весами по истории). Ставить в план весь лишний цветок нельзя: в
+ * первой версии «базовый» брал половину излишка, и при большой срезке планы менеджеров выходили вчетверо выше их
+ * истории — такой план не выполняют и не читают. Излишек остаётся отдельной цифрой («останется»): это вопрос нового
+ * канала, а не плана людям. На живых данных 11.11.2026 первая декада ноября шла на 78 % быстрее октября (две крупные
+ * заявки) — поэтому «осторожный» не верит всплеску и берёт темп прошлого ПОЛНОГО месяца, если он ниже.
  */
-export const SCENARIO_STRETCH: Record<Scenario, number> = { careful: 1, base: 1.2, ambitious: 1.5 };
+export const SCENARIO_STRETCH: Record<Scenario, number> = { careful: 1, base: 1, ambitious: 1.2 };
 export const cleanScenario = (raw: unknown): Scenario => (raw === "careful" || raw === "ambitious" ? raw : "base");
 
 export const PLAN_CHANNELS: Channel[] = ["clients", "region", "shops", "point"];
@@ -55,6 +57,8 @@ const add = (a: Qty, stems: number, sum: number) => {
 };
 
 export interface PlanPeriod {
+  /** Неполный период — текущий месяц по вчера. */
+  partial?: boolean;
   label: string;
   from: string;
   to: string;
@@ -71,7 +75,7 @@ export interface FlowerSupply {
   writeoffShare: number;
   /** Сколько можно продать за оставшиеся дни: склад + срезка − ожидаемые списания. */
   sellable: number;
-  /** Сколько обычно продаём за столько дней (все каналы). */
+  /** Сколько продадим за столько дней по темпу продаж (дневной темп с весами по истории, все каналы). */
   demandLeft: number;
   fact: Qty;
   targetLeft: number;
@@ -142,7 +146,7 @@ export interface AiPlan {
   /** Клиентский канал целиком: уже сделано и план на месяц. */
   clientsFact: number;
   clientsMonth: number;
-  /** Продажи людей, которых уже нет в списке менеджеров (их доля роздана остальным). */
+  /** Клиентские продажи тех, кто не числится менеджером (ушёл или другая роль): их доля роздана менеджерам. */
   departed: { name: string; sum: number }[];
   notes: string[];
 }
@@ -205,7 +209,7 @@ export function historyPeriods(month: string, today: string): PlanPeriod[] {
   const yesterday = shiftDay(today, -1);
   const elapsed = Number(today.slice(8, 10)) - 1;
   if (elapsed >= 7) {
-    out.push({ label: `${MONTH_NAMES[Number(nowMonth.slice(5, 7)) - 1]}, 1–${elapsed}`, from: `${nowMonth}-01`, to: yesterday, days: elapsed, weight: 0 });
+    out.push({ partial: true, label: `${MONTH_NAMES[Number(nowMonth.slice(5, 7)) - 1]}, 1–${elapsed}`, from: `${nowMonth}-01`, to: yesterday, days: elapsed, weight: 0 });
   }
   for (let i = 1; i <= 3; i++) {
     const m = shiftMonth(nowMonth, -i);
@@ -305,6 +309,8 @@ export function buildAiPlan(input: AiPlanInput): AiPlan {
   if (!periods.length) notes.push("Истории продаж нет — план разложен только по наличию цветка.");
   /** Дневной темп с весами: Σ вес × (значение за период / дней периода). */
   const rate = (pick: (s: Slice) => number) => used.reduce((a, c) => a + c.p.weight * (pick(c.s) / c.p.days), 0);
+  /** Темп прошлого ПОЛНОГО месяца — для осторожного сценария; полного месяца в истории нет — null. */
+  const lastFull = used.find((c) => !c.p.partial) ?? null;
 
   const factSlice = isCurrent && today > `${month}-01` ? collect(input.orders, `${month}-01`, shiftDay(today, -1)) : emptySlice();
 
@@ -355,9 +361,16 @@ export function buildAiPlan(input: AiPlanInput): AiPlan {
     const knownSupply = stock + forecastLeft > 0;
     let targetLeft: number;
     if (!knownSupply) targetLeft = demandLeft;
-    // История пуста (новый цветок) — мерить «больше обычного» не от чего: в план идёт то, что можно продать.
+    // История пуста (новый цветок) — мерить темп не от чего: в план идёт то, что можно продать.
     else if (demandLeft <= 0) targetLeft = sellable;
-    else targetLeft = Math.min(sellable, demandLeft * SCENARIO_STRETCH[scenario]);
+    else {
+      let want = demandLeft * SCENARIO_STRETCH[scenario];
+      if (scenario === "careful" && lastFull) {
+        const calm = (PLAN_CHANNELS.reduce((a, ch) => a + (lastFull.s.channel[ch]?.[f]?.stems ?? 0), 0) / lastFull.p.days) * daysLeft;
+        if (calm > 0) want = Math.min(want, calm);
+      }
+      targetLeft = Math.min(sellable, want);
+    }
     targetLeft = Math.max(0, Math.round(targetLeft));
 
     const clientsHist = used.reduce((a, c) => { add(a, c.s.channel.clients?.[f]?.stems ?? 0, c.s.channel.clients?.[f]?.sum ?? 0); return a; }, q0());
@@ -468,12 +481,12 @@ export function buildAiPlan(input: AiPlanInput): AiPlan {
   }
   managers.sort((a, b) => Number(a.virtual) - Number(b.virtual) || b.target.sum - a.target.sum);
 
-  // Кто продавал, но в списке действующих его уже нет: доля роздана остальным — об этом надо сказать.
+  // Кто продавал клиентам, но менеджером не числится (ушёл или другая роль): доля роздана менеджерам — об этом надо сказать.
   const activeSet = new Set(active.map((m) => m.email));
   const departedMap = new Map<string, number>();
   for (const c of used) for (const [email, row] of Object.entries(c.s.manager)) if (!activeSet.has(email)) departedMap.set(email, (departedMap.get(email) ?? 0) + total(row).sum);
   const departed = [...departedMap.entries()].filter(([, sum]) => sum > 0).map(([email, sum]) => ({ name: input.names[email] || email || "без менеджера", sum })).sort((a, b) => b.sum - a.sum);
-  if (departed.length) notes.push(`Продажи ${departed.map((d) => d.name).join(", ")} (${nf(departed.reduce((a, d) => a + d.sum, 0))} ₸ за историю) розданы действующим менеджерам по их долям.`);
+  if (departed.length) notes.push(`Клиентские продажи тех, кто не числится менеджером (${departed.map((d) => d.name).join(", ")} — ${nf(departed.reduce((a, d) => a + d.sum, 0))} ₸ за историю), розданы менеджерам по их долям.`);
 
   // --- Направления: срез «куда едет» (включает и клиентские заявки в эти направления) ---
   const dirFactor = new Map((input.advice?.directions ?? []).map((d) => [d.direction, d]));
@@ -618,7 +631,7 @@ export function aiPlanPrompt(plan: AiPlan, flowerLabel: (f: string) => string, c
   const lines: string[] = [];
   lines.push(`Месяц плана: ${plan.month}. Сегодня ${plan.today}. Осталось дней: ${plan.daysLeft} из ${plan.daysTotal}. Сценарий: ${SCENARIOS.find((s) => s.code === plan.scenario)?.label}.`);
   lines.push(`Периоды истории (свежие первыми, в скобках вес): ${plan.periods.map((p) => `${p.label} — ${p.days} дн. (${pct(p.weight)})`).join("; ")}.`);
-  lines.push("\nЦВЕТОК (стебли): на складе | срежем до конца месяца | доля списаний | можно продать | обычно продаём за эти дни | в плане | останется лишним (минус — не хватит) | средняя цена клиентам");
+  lines.push("\nЦВЕТОК (стебли): на складе | срежем до конца месяца | доля списаний | можно продать | продадим по текущему темпу за эти дни | в плане | останется лишним | средняя цена клиентам");
   for (const f of plan.flowers) lines.push(`${flowerLabel(f.flowerType)}: ${f.stock} | ${f.forecastLeft}${f.forecastSource === "average" ? " (среднее, прогноза нет)" : f.forecastSource === "none" ? " (нет данных)" : ""} | ${pct(f.writeoffShare)} | ${f.sellable} | ${f.demandLeft} | ${f.targetLeft} | ${f.gap} | ${Math.round(f.price)} ₸`);
   lines.push("\nКАНАЛЫ (стебли): код | название | история по периодам | уже в этом месяце | план на остаток");
   for (const c of plan.channels) lines.push(`${c.channel} | ${c.label} | ${c.history.join(" / ")} | ${c.fact.stems} | ${c.target.stems}`);
