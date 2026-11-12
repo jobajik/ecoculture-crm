@@ -33,7 +33,9 @@ export default async function AdsLeadsPage({ searchParams }: { searchParams?: { 
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
   const leadgen = role === ROLES.LEADGEN;
-  if (!leadgen && !canManageLeads(role)) redirect("/clients/leads");
+  // Маркетолог (12.11.2026) смотрит отчёт целиком, но карточки лидов ему закрыты — имена без ссылок.
+  const marketer = role === ROLES.MARKETER;
+  if (!leadgen && !marketer && !canManageLeads(role)) redirect("/clients/leads");
   const email = (session?.user?.email ?? "").toLowerCase();
 
   const current = periodOf(new Date());
@@ -60,9 +62,13 @@ export default async function AdsLeadsPage({ searchParams }: { searchParams?: { 
   const leadRows = report.rows.map((r) => (
     <li key={r.leadId} className="px-4 py-3 grid grid-cols-[minmax(0,1fr)] gap-x-4 gap-y-1 lg:grid-cols-[minmax(0,1fr)_150px_64px_160px_120px] lg:items-start text-sm">
       <div className="min-w-0">
-        <Link href={`/clients/leads/${r.leadId}`} className="font-medium hover:underline break-words">
-          {r.name}
-        </Link>
+        {marketer ? (
+          <span className="font-medium break-words">{r.name}</span>
+        ) : (
+          <Link href={`/clients/leads/${r.leadId}`} className="font-medium hover:underline break-words">
+            {r.name}
+          </Link>
+        )}
         <div className="text-xs text-ink-muted truncate">{[r.city, r.source, `заведён ${formatDay(r.createdAt)}`].filter(Boolean).join(" · ")}</div>
         {r.flag && (
           <div className="mt-1">

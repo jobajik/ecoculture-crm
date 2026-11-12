@@ -8,8 +8,9 @@ import { tabOfViews, type SectionTab } from "@/lib/sectionViews";
  * называется как этот вид и переключателя нет. Месяц переносится в аналитику, если он уже выбран.
  */
 export function clientsTabsFor(period?: string, role?: string | null): SectionTab[] {
-  // Маркетолог (12.11.2026): из раздела ему открыты только переписки — на просмотр.
-  if (role === "marketer") return [{ href: "/clients/chats", label: "Переписки" }];
+  // Маркетолог (12.11.2026): из раздела ему открыты только переписки и отчёт «С рекламы» — на просмотр. Это два
+  // отдельных пункта его меню (`navLinks.ts`), поэтому вкладок под шапкой у него нет.
+  if (role === "marketer") return [];
   const manage = role === "admin" || role === "sales_head";
   const leadgen = role === "leadgen";
   // Переписки WhatsApp и решения ИИ (16.10.2026): владелец и РОП — по всем номерам, менеджер и Земфира — по своему.

@@ -87,6 +87,12 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // карточки клиентов и всё остальное ей закрыты. Узкие адреса — выше общего «/clients/leads».
   { prefix: "/clients/leads/calls", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
   { prefix: "/clients/leads/talks", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
+  // Отчёт «С рекламы» смотрит и маркетолог (12.11.2026) — остальным, как и раньше, решает сама страница
+  // (Земфира — свои лиды, РОП и админ — все, прочих она уводит к лидам). Правило стоит ВЫШЕ общего «/clients/leads».
+  {
+    prefix: "/clients/leads/ads",
+    roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions", "leadgen", "marketer"],
+  },
   // Переписки WhatsApp по номерам (16.10.2026): какой номер кому виден — `chatAccess.ts`.
   { prefix: "/clients/chats", roles: ["manager", "sales_head", "admin", "leadgen", "marketer"] },
   {

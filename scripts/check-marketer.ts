@@ -36,20 +36,23 @@ const ME = "nazgul@x.kz";
 check("роль названа по-русски", ROLE_LABELS[M], "Маркетолог");
 
 // --- Что открыто ---------------------------------------------------------------------------
-for (const p of ["/clients/chats", "/sales", "/sales/plan", "/sales/flowers", "/sales/day", "/prices", "/orders", "/orders/ABCDE", "/finance", "/finance/status", "/finance/debts", "/finance/reminders", "/finance/point", "/finance/claims", "/finance/analytics", "/finance/report"]) {
+for (const p of ["/clients/chats", "/clients/leads/ads", "/sales", "/sales/plan", "/sales/flowers", "/sales/day", "/prices", "/orders", "/orders/ABCDE", "/finance", "/finance/status", "/finance/debts", "/finance/reminders", "/finance/point", "/finance/claims", "/finance/analytics", "/finance/report"]) {
   check(`открыто: ${p}`, canOpen(M, p), true);
 }
 
 // --- Что закрыто ---------------------------------------------------------------------------
-for (const p of ["/orders/new", "/clients", "/clients/ABC", "/clients/leads", "/clients/leads/decide", "/clients/leads/ads", "/clients/leads/calls", "/clients/leads/talks", "/clients/broadcasts", "/clients/analytics", "/clients/habits", "/finance/takeouts", "/finance/log", "/warehouse", "/warehouse/stock", "/warehouse/ship", "/office", "/retail", "/plans", "/plans/ai", "/forecast", "/analytics", "/analytics/month", "/payroll", "/greenhouse", "/admin"]) {
+for (const p of ["/orders/new", "/clients", "/clients/ABC", "/clients/leads", "/clients/leads/decide", "/clients/leads/ABC", "/clients/leads/calls", "/clients/leads/talks", "/clients/broadcasts", "/clients/analytics", "/clients/habits", "/finance/takeouts", "/finance/log", "/warehouse", "/warehouse/stock", "/warehouse/ship", "/office", "/retail", "/plans", "/plans/ai", "/forecast", "/analytics", "/analytics/month", "/payroll", "/greenhouse", "/admin"]) {
   check(`закрыто: ${p}`, canOpen(M, p), false);
 }
 
 // --- Меню ------------------------------------------------------------------------------------
 const menu = navLinksFor(M);
-check("разделы меню", menu.map((l) => l.label), ["Переписки", "Продажи", "Заявки", "Оплаты"]);
+check("разделы меню", menu.map((l) => l.label), ["Переписки", "С рекламы", "Продажи", "Заявки", "Оплаты"]);
 check("все адреса меню открыты", menu.flatMap((l) => [l.href, ...l.subs.map((s) => s.href)]).filter((h) => !canOpen(M, h.split("?")[0])), []);
-check("в «Клиентах» — только переписки", clientsTabsFor(undefined, M).map((t) => t.href), ["/clients/chats"]);
+check("вкладок раздела «Клиенты» нет — переписки и «С рекламы» стоят в меню", clientsTabsFor(undefined, M).map((t) => t.href), []);
+// Отчёт «С рекламы» открылся маркетологу, а остальным роли страницы прежние (уводит к лидам сама страница).
+check("«С рекламы»: охранник пускает тех же, что и раньше", ["manager", "accountant", "leadgen", "sales_head"].map((r) => canOpen(r, "/clients/leads/ads")), [true, true, true, true]);
+check("«С рекламы»: склад и агроном по-прежнему нет", ["warehouse", "agronomist", "office"].map((r) => canOpen(r, "/clients/leads/ads")), [false, false, false]);
 check("продажи: рейтинг, план-факт, по цветам, за день, прайс", salesTabsFor(M).map((t) => t.href), ["/sales", "/sales/plan", "/sales/flowers", "/sales/day", "/prices"]);
 const finHrefs = financeTabsFor(M).flatMap((t) => (t.views ? t.views.map((v) => v.href) : [t.href]));
 check("оплаты: без удержаний и журнала", [finHrefs.includes("/finance/takeouts"), finHrefs.includes("/finance/log"), finHrefs.includes("/finance/debts")], [false, false, true]);
