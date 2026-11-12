@@ -99,7 +99,7 @@ export interface KaspiSendInput {
   phone: string;
   amount: number;
   /** Уже выставленные по заявке счета. */
-  existing: Pick<KaspiInvoice, "farm" | "status">[];
+  existing: Pick<KaspiInvoice, "farm" | "status" | "amount" | "phone">[];
 }
 
 /** Почему счёт выставить нельзя; пустая строка — можно. */
@@ -117,10 +117,25 @@ export function kaspiSendRefusal(input: KaspiSendInput): string {
   const due = part.amount - part.paidAmount;
   if (due <= MONEY_EPSILON) return "Эта часть заявки уже оплачена";
   if (input.amount > Math.ceil(due)) return `Больше остатка к оплате (${Math.ceil(due).toLocaleString("ru-RU")} ₸)`;
-  if (input.existing.some((i) => i.farm === input.farm && isOpenKaspiStatus(i.status))) {
-    return "Счёт на эту часть уже отправлен и ждёт оплаты — сначала отмените его";
+  // Одну часть заявки можно разложить на несколько счетов — на разные номера (12.11.2026, владелец: «один счёт на два
+  // разных номера, в одной заявке»: клиент платит с двух Kaspi). Два правила, чтобы клиент не заплатил дважды: на один
+  // номер — один ждущий счёт, а все ждущие счета вместе — не больше остатка к оплате.
+  const open = input.existing.filter((i) => i.farm === input.farm && isOpenKaspiStatus(i.status));
+  if (open.length === 0) return "";
+  if (open.some((i) => kaspiPhone(i.phone) === kaspiPhone(input.phone))) {
+    return "На этот номер счёт уже отправлен и ждёт оплаты — выберите другой номер или сначала отмените тот счёт";
   }
+  const waiting = kaspiOpenAmount(input.existing, input.farm);
+  const rest = Math.ceil(due - waiting - 0.001);
+  const ru = (v: number) => `${v.toLocaleString("ru-RU")} ₸`;
+  if (rest < 1) return `Счета на всю сумму уже отправлены и ждут оплаты (${ru(waiting)}) — сначала отмените один из них`;
+  if (input.amount > rest) return `Уже ждут оплаты счета на ${ru(waiting)} — ещё можно выставить не больше ${ru(rest)}`;
   return "";
+}
+
+/** Сколько по этой компании уже выставлено счетами, которые ждут оплаты. */
+export function kaspiOpenAmount(existing: Pick<KaspiInvoice, "farm" | "status" | "amount">[], farm: string): number {
+  return existing.filter((i) => i.farm === farm && isOpenKaspiStatus(i.status)).reduce((s, i) => s + (Number(i.amount) || 0), 0);
 }
 
 /** Сколько предложить в счёте: остаток по компании, до целого тенге вверх. */

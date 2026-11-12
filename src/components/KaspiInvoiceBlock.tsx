@@ -16,6 +16,7 @@ import {
   isOpenKaspiStatus,
   isPaidKaspiStatus,
   kaspiErrorText,
+  kaspiOpenAmount,
   kaspiPhone,
   kaspiStatusLabel,
   kaspiTrackerStep,
@@ -181,7 +182,12 @@ export default function KaspiInvoiceBlock({
 
       {data.farms.map((f) => {
         const invs = data.invoices.filter((i) => i.farm === f.farm);
-        const open = invs.find((i) => isOpenKaspiStatus(i.status));
+        // Ждущих счетов по одной компании может быть несколько — на разные номера (12.11.2026, владелец: «один счёт на
+        // два разных номера, в одной заявке»). Вместе они не больше остатка, поэтому форма ниже предлагает только то,
+        // что ещё не выставлено.
+        const opens = invs.filter((i) => isOpenKaspiStatus(i.status));
+        const waiting = kaspiOpenAmount(invs, f.farm);
+        const rest = Math.max(0, f.due - waiting);
         const latest = invs[0];
         const v = form[f.farm];
         const head = several && (
@@ -198,27 +204,43 @@ export default function KaspiInvoiceBlock({
           ) : null;
         }
 
-        if (open) {
+        const trackers = opens.map((open) => (
+          <Tracker
+            key={open.invoiceId}
+            inv={open}
+            busy={busy}
+            onRefresh={() =>
+              run(`refresh-${open.invoiceId}`, async () => {
+                const r = unwrapValue(await refreshKaspiInvoiceAction(open.invoiceId));
+                return `Статус: ${kaspiStatusLabel(r.status)}`;
+              })
+            }
+            onCancel={() => {
+              if (
+                !window.confirm(
+                  `Отменить счёт на ${money(open.amount)} (${prettyKaspiPhone(open.phone)})? Клиент больше не сможет его оплатить.`
+                )
+              )
+                return;
+              run(`cancel-${open.invoiceId}`, async () => {
+                unwrap(await cancelKaspiInvoiceAction(open.invoiceId));
+                return "Счёт отменяется.";
+              });
+            }}
+          />
+        ));
+
+        // Всё, что осталось оплатить, уже лежит в ждущих счетах — выставлять больше нечего.
+        if (opens.length > 0 && (rest < 1 || !v)) {
           return (
             <div key={f.farm} className="space-y-2">
               {head}
-              <Tracker
-                inv={open}
-                busy={busy}
-                onRefresh={() =>
-                  run(`refresh-${open.invoiceId}`, async () => {
-                    const r = unwrapValue(await refreshKaspiInvoiceAction(open.invoiceId));
-                    return `Статус: ${kaspiStatusLabel(r.status)}`;
-                  })
-                }
-                onCancel={() => {
-                  if (!window.confirm(`Отменить счёт на ${money(open.amount)}? Клиент больше не сможет его оплатить.`)) return;
-                  run(`cancel-${open.invoiceId}`, async () => {
-                    unwrap(await cancelKaspiInvoiceAction(open.invoiceId));
-                    return "Счёт отменяется.";
-                  });
-                }}
-              />
+              {trackers}
+              {opens.length > 1 && (
+                <p className="text-xs text-ink-muted">
+                  Счета ждут оплаты: {money(waiting)} — это весь остаток по заявке.
+                </p>
+              )}
             </div>
           );
         }
@@ -237,9 +259,19 @@ export default function KaspiInvoiceBlock({
         }
 
         if (!v) return null;
-        const phone = v.choice === "other" ? kaspiPhone(v.other) : v.choice;
-        const amount = Number((v.editAmount ? v.amount : String(f.due)).replace(/\s/g, ""));
-        const failed = latest && !isOpenKaspiStatus(latest.status) && !isPaidKaspiStatus(latest.status) ? latest : null;
+        const more = opens.length > 0;
+        // На номер, где счёт уже ждёт оплаты, второй не выставляется — сразу предлагаем другой номер клиента.
+        const taken = new Set(opens.map((i) => kaspiPhone(i.phone)));
+        const choice =
+          v.choice !== "other" && taken.has(kaspiPhone(v.choice))
+            ? data.phones.find((o) => !taken.has(kaspiPhone(o.phone)))?.phone ?? "other"
+            : v.choice;
+        const phone = choice === "other" ? kaspiPhone(v.other) : choice;
+        const phoneTaken = !!phone && taken.has(phone);
+        const full = more ? rest : f.due;
+        const amount = Number((v.editAmount ? v.amount : String(full)).replace(/\s/g, ""));
+        const failed =
+          !more && latest && !isOpenKaspiStatus(latest.status) && !isPaidKaspiStatus(latest.status) ? latest : null;
         const set = (patch: Partial<Form>) => setForm((prev) => ({ ...prev, [f.farm]: { ...v, ...patch } }));
 
         return (
@@ -250,6 +282,8 @@ export default function KaspiInvoiceBlock({
               e.preventDefault();
               run(`send-${f.farm}`, async () => {
                 const r = unwrapValue(await sendKaspiInvoiceAction({ orderId, farm: f.farm, phone, amount }));
+                // Форма остаётся на экране для следующего счёта — сумму и вписанный номер начинаем заново.
+                set({ editAmount: false, amount: "", other: "" });
                 return r.sandbox
                   ? "Счёт создан в ТЕСТОВОМ режиме ApiPay — клиенту он не придёт."
                   : `Счёт отправлен на ${prettyKaspiPhone(phone)}. Клиенту придёт уведомление в Kaspi.`;
@@ -257,6 +291,17 @@ export default function KaspiInvoiceBlock({
             }}
           >
             {head}
+            {more && (
+              <>
+                {trackers}
+                <div className="pt-1">
+                  <div className="text-sm font-semibold">Ещё счёт — на другой номер</div>
+                  <p className="text-xs text-ink-muted mt-0.5">
+                    Уже ждёт оплаты {money(waiting)} из {money(f.due)}. Осталось выставить {money(rest)}.
+                  </p>
+                </div>
+              </>
+            )}
             {f.sessionLost && (
               <p className="text-sm rounded-lg bg-status-critical/10 text-status-critical px-3 py-2">
                 <b>Касса Kaspi отключилась.</b> {f.sessionLost}. Нажмите «Переподключить кассира» в красной полосе
@@ -274,24 +319,35 @@ export default function KaspiInvoiceBlock({
             <div>
               <div className="label">Номер клиента в Kaspi</div>
               <div className="flex flex-wrap gap-2">
-                {data.phones.map((o) => (
-                  <Chip key={o.phone} active={v.choice === o.phone} onClick={() => set({ choice: o.phone })}>
-                    <span className="tabular-nums">{prettyKaspiPhone(o.phone)}</span>
-                    <span className="text-[11px] opacity-70">{o.label}</span>
-                  </Chip>
-                ))}
-                <Chip active={v.choice === "other"} onClick={() => set({ choice: "other" })}>
+                {data.phones.map((o) => {
+                  const busyPhone = taken.has(kaspiPhone(o.phone));
+                  return (
+                    <Chip
+                      key={o.phone}
+                      active={choice === o.phone}
+                      disabled={busyPhone}
+                      onClick={() => set({ choice: o.phone })}
+                    >
+                      <span className="tabular-nums">{prettyKaspiPhone(o.phone)}</span>
+                      <span className="text-[11px] opacity-70">{busyPhone ? "счёт уже там" : o.label}</span>
+                    </Chip>
+                  );
+                })}
+                <Chip active={choice === "other"} onClick={() => set({ choice: "other" })}>
                   {data.phones.length ? "Другой номер" : "Вписать номер"}
                 </Chip>
               </div>
-              {data.phones.length === 0 && v.choice !== "other" && (
+              {data.phones.length === 0 && choice !== "other" && (
                 <p className="text-xs text-ink-muted mt-1.5">В карточке клиента нет мобильного номера.</p>
               )}
-              {v.choice === "other" && (
+              {choice === "other" && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <PhoneInput className="input !w-52" autoFocus value={v.other} onChange={(other) => set({ other })} />
+                  <PhoneInput className="input !w-52" autoFocus={!more} value={v.other} onChange={(other) => set({ other })} />
                   {v.other && !phone && (
                     <span className="text-xs text-status-critical">нужен мобильный номер</span>
+                  )}
+                  {phoneTaken && (
+                    <span className="text-xs text-status-critical">на этот номер счёт уже ждёт оплаты</span>
                   )}
                 </div>
               )}
@@ -300,9 +356,11 @@ export default function KaspiInvoiceBlock({
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <button
                 className="btn-primary !px-5 w-full sm:w-auto"
-                disabled={busy !== null || !phone || !(amount > 0)}
+                disabled={busy !== null || !phone || phoneTaken || !(amount > 0)}
               >
-                {busy === `send-${f.farm}` ? "Отправляю…" : `Выставить счёт · ${money(amount || 0)}`}
+                {busy === `send-${f.farm}`
+                  ? "Отправляю…"
+                  : `${more ? "Выставить ещё счёт" : "Выставить счёт"} · ${money(amount || 0)}`}
               </button>
               {v.editAmount ? (
                 <label className="flex items-center gap-2 text-sm text-ink-secondary">
@@ -313,18 +371,23 @@ export default function KaspiInvoiceBlock({
                     value={v.amount}
                     onChange={(e) => set({ amount: e.target.value })}
                   />
-                  <span className="text-xs text-ink-muted">из {money(f.due)}</span>
+                  <span className="text-xs text-ink-muted">из {money(full)}</span>
                 </label>
               ) : (
                 <button
                   type="button"
                   className="text-sm text-accent hover:underline"
-                  onClick={() => set({ editAmount: true, amount: String(f.due) })}
+                  onClick={() => set({ editAmount: true, amount: String(full) })}
                 >
-                  выставить часть
+                  {more ? "изменить сумму" : "выставить часть · на два номера"}
                 </button>
               )}
             </div>
+            {v.editAmount && amount > 0 && amount < full && (
+              <p className="text-xs text-ink-muted">
+                Остальное — {money(full - amount)} — после отправки можно выставить ещё одним счётом на другой номер.
+              </p>
+            )}
           </form>
         );
       })}
@@ -339,10 +402,12 @@ export default function KaspiInvoiceBlock({
 
 function Chip({
   active,
+  disabled,
   onClick,
   children,
 }: {
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -350,9 +415,11 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={active}
       className={clsx(
         "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm min-h-[44px] sm:min-h-0 transition-colors",
+        disabled && "opacity-50 cursor-not-allowed",
         active
           ? "border-accent bg-accent-soft text-ink-primary ring-1 ring-accent"
           : "border-line-hairline bg-surface text-ink-secondary hover:border-line-strong"

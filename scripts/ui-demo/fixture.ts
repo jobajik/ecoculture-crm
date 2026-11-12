@@ -153,6 +153,27 @@ for (let off = -40; off <= 0; off++) {
     if (paid) payments.push({ PaymentID: "P" + id(7), CreatedAt: at(off + 1), OrderID: orderId, Date: day(Math.min(off + 1, 0)), Amount: paid, Farm: "", Method: c.PaymentMethod, AccountantEmail: "yulia@demo.kz", Note: "", Flower: "" });
   }
 }
+// --- Счета Kaspi: заявка с одним ждущим счётом на часть суммы и заявка с двумя счетами на разные номера ---
+// (касса в копии «подключается» только с DEMO_KASPI=1 — см. run.sh; в ApiPay копия не ходит)
+const kaspi: Record<string, unknown>[] = [];
+const mkKaspiOrder = (orderId: string, c: Record<string, unknown>, parts: { amount: number; phone: string }[]) => {
+  const rows = [
+    { v: roseV[0], g: "60", q: 300, p: 235 },
+    { v: roseV[1], g: "50", q: 200, p: 215 },
+  ];
+  for (const r of rows) items.push({ OrderID: orderId, ItemID: "I" + id(7), FlowerType: "rose", Variety: r.v, Grade: r.g, Quantity: r.q, UnitPrice: r.p, ShippedQuantity: 0 });
+  orders.push({
+    OrderID: orderId, CreatedAt: at(0), ManagerEmail: c.ManagerEmail, ClientName: c.Name, ClientPhone: c.Phone, DeliveryDate: day(1), Status: "new", Notes: "",
+    ManagerConfirmed: "TRUE", ManagerConfirmedAt: at(0), Paid: "", PaidAt: "", PaymentMethod: "Каспи", AccountantEmail: "", PaidAmount: "", PromisedAt: "", CollectionNote: "", ClientID: c.ClientID,
+    PaidRoseFarm: "", PaidEsentai: "", Retail: "", Direction: "", Kind: "", InvoiceSentAt: at(0), InvoiceNote: "", Realization1C: "", Store: "",
+  });
+  parts.forEach((part) =>
+    kaspi.push({ InvoiceID: String(726230 + kaspi.length), CreatedAt: at(0), OrderID: orderId, Farm: "rose_farm", Amount: part.amount, Phone: part.phone, Status: "pending", KaspiInvoiceID: "", ErrorCode: "", ErrorMessage: "", PaidAt: "", PaymentID: "", CreatedByEmail: "yulia@demo.kz", Sandbox: "", UpdatedAt: at(0) })
+  );
+};
+mkKaspiOrder("KSPA1", clients[0], [{ amount: 50500, phone: "87015550101" }]);
+mkKaspiOrder("KSPB2", clients[1], [{ amount: 50500, phone: "87015550101" }, { amount: 63000, phone: "87775550202" }]);
+tab("KaspiInvoices", kaspi);
 tab("Orders", orders);
 tab("OrderItems", items);
 tab("Shipments", shipments);

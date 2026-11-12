@@ -234,8 +234,9 @@ export function planReminders(input: {
     for (const part of farmPayments(o)) {
       const due = kaspiDueAmount(part);
       if (due <= 0 || !input.kaspiFarms.includes(part.farm)) continue;
-      const open = input.invoices.find((i) => i.orderId === o.orderId && i.farm === part.farm && isOpenKaspiStatus(i.status));
-      if (open) g.kaspiOpen.push({ orderId: o.orderId, farm: part.farm, amount: open.amount });
+      // Ждущих счетов по одной компании может быть несколько (на разные номера) — в напоминании их сумма.
+      const open = input.invoices.filter((i) => i.orderId === o.orderId && i.farm === part.farm && isOpenKaspiStatus(i.status));
+      if (open.length) g.kaspiOpen.push({ orderId: o.orderId, farm: part.farm, amount: open.reduce((s, i) => s + i.amount, 0) });
       else g.kaspiNew.push({ orderId: o.orderId, farm: part.farm, amount: due });
     }
     groups.set(key, g);

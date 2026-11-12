@@ -27,6 +27,8 @@ GOOGLE_SHEETS_SPREADSHEET_ID=demo
 PAYROLL_SPREADSHEET_ID=demo2
 DEMO_FIXTURE=$OUT/fixture.json
 ENV
+# DEMO_KASPI=1 — показать блок «Счёт Kaspi» в панели оплаты (ключи выдуманные, в ApiPay копия не достучится).
+if [ -n "$DEMO_KASPI" ]; then printf 'APIPAY_ROSE_FARM_KEY=demo\nAPIPAY_ESENTAI_KEY=demo\n' >> "$D/.env.local"; fi
 cd "$D"
 npx next build > "$OUT/build.log" 2>&1 || { tail -30 "$OUT/build.log"; exit 1; }
 (nohup npx next start -p "$PORT" > "$OUT/start.log" 2>&1 &)

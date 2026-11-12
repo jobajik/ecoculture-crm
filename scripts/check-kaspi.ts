@@ -8,6 +8,7 @@ import {
   kaspiDescription,
   kaspiDueAmount,
   kaspiPhone,
+  kaspiOpenAmount,
   kaspiSendRefusal,
   kaspiStatusPlan,
   recordedPaymentId,
@@ -81,13 +82,41 @@ check(
   kaspiSendRefusal({ ...base, invoiceFarms: [{ farm: "esentai", amount: 30000, paidAmount: 30000 }] }),
   "Эта часть заявки уже оплачена"
 );
+// --- Одна часть заявки — несколькими счетами на разные номера (12.11.2026, №UYQ72) -----------------
+const waits = (amount: number, phone = "87015552030", status = "pending", farm = "esentai") => ({ farm, status, amount, phone });
 check(
-  "открытый счёт не дублируем",
-  kaspiSendRefusal({ ...base, existing: [{ farm: "esentai", status: "pending" }] }).startsWith("Счёт на эту часть уже отправлен"),
+  "на тот же номер второй ждущий счёт нельзя",
+  kaspiSendRefusal({ ...base, amount: 5000, existing: [waits(8000)] }).startsWith("На этот номер счёт уже отправлен"),
   true
 );
-check("истёкший не мешает новому", kaspiSendRefusal({ ...base, existing: [{ farm: "esentai", status: "expired" }] }), "");
-check("открытый счёт другой компании не мешает", kaspiSendRefusal({ ...base, existing: [{ farm: "rose_farm", status: "pending" }] }), "");
+check(
+  "тот же номер, записанный иначе, — тот же номер",
+  kaspiSendRefusal({ ...base, amount: 5000, phone: "+7 701 555 20 30", existing: [waits(8000)] }).startsWith("На этот номер счёт уже отправлен"),
+  true
+);
+check("другой номер, остаток целиком", kaspiSendRefusal({ ...base, amount: 12000, phone: "87770001122", existing: [waits(8000)] }), "");
+check("другой номер, часть остатка", kaspiSendRefusal({ ...base, amount: 5000, phone: "87770001122", existing: [waits(8000)] }), "");
+check(
+  "другой номер, но больше того, что ещё не выставлено",
+  kaspiSendRefusal({ ...base, amount: 12001, phone: "87770001122", existing: [waits(8000)] }).replace(/\s/g, " "),
+  "Уже ждут оплаты счета на 8 000 ₸ — ещё можно выставить не больше 12 000 ₸"
+);
+check(
+  "вся сумма уже в ждущих счетах",
+  kaspiSendRefusal({ ...base, amount: 1, phone: "87770001122", existing: [waits(20000)] }).startsWith("Счета на всю сумму уже отправлены"),
+  true
+);
+check(
+  "два ждущих счёта считаются вместе",
+  kaspiSendRefusal({ ...base, amount: 5001, phone: "87051112233", existing: [waits(8000), waits(7000, "87770001122")] }).startsWith("Уже ждут оплаты счета на"),
+  true
+);
+check("третий номер на остаток после двух", kaspiSendRefusal({ ...base, amount: 5000, phone: "87051112233", existing: [waits(8000), waits(7000, "87770001122")] }), "");
+check("счёт «уходит в Kaspi» тоже ждущий", kaspiSendRefusal({ ...base, amount: 20000, phone: "87770001122", existing: [waits(8000, "87015552030", "processing")] }).startsWith("Уже ждут оплаты"), true);
+check("истёкший не мешает новому", kaspiSendRefusal({ ...base, existing: [waits(20000, "87015552030", "expired")] }), "");
+check("отменённый и не дошедший не считаются", kaspiSendRefusal({ ...base, existing: [waits(20000, "87015552030", "cancelled"), waits(20000, "87015552030", "error")] }), "");
+check("открытый счёт другой компании не мешает", kaspiSendRefusal({ ...base, existing: [waits(20000, "87015552030", "pending", "rose_farm")] }), "");
+check("сколько ждёт оплаты по компании", kaspiOpenAmount([waits(8000), waits(7000, "87770001122"), waits(500, "x", "expired"), waits(900, "y", "pending", "rose_farm")], "esentai"), 15000);
 
 // --- Проводка оплаты один раз -----------------------------------------------------------
 check("pending → paid: провести", kaspiStatusPlan({ status: "pending", paymentId: "" }, { status: "paid" }), { changed: true, recordPayment: true });
