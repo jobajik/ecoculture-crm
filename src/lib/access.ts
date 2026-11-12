@@ -41,7 +41,7 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // Рекламацию заводит менеджер, а решение по ней видит у бухгалтера. Раньше
   // весь /finance был закрыт от менеджера, и он не мог узнать, чем кончилась
   // его же жалоба, хотя страница /finance/claims его пускала.
-  { prefix: "/finance/claims", roles: ["accountant", "manager", "sales_head", "admin"] },
+  { prefix: "/finance/claims", roles: ["accountant", "manager", "sales_head", "admin", "marketer"] },
   // Удержания с сотрудников и журнал действий бухгалтера — не про продажи:
   // первое кадровое, второе служебное. РОПу они не нужны, и правила стоят ВЫШЕ
   // общего «/finance», потому что совпадение ищется по первому подходящему.
@@ -50,11 +50,12 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   // РОП видит оплаты, долги и отчёт — но ничего в них не меняет: право смотреть
   // и право трогать разведены (`src/lib/financeAccess.ts`). Так попросил
   // владелец: «просто чтобы видела долги и прочее».
-  { prefix: "/finance", roles: ["accountant", "admin", "sales_head"] },
+  // Маркетолог (12.11.2026) — так же: видит оплаты и долги, ничего не меняет.
+  { prefix: "/finance", roles: ["accountant", "admin", "sales_head", "marketer"] },
   // РОП по замыслу видит продажи — их же он и планирует. В списке его не было,
   // и middleware разворачивал его с собственного раздела.
-  { prefix: "/sales", roles: ["manager", "sales_head", "admin", "accountant"] },
-  { prefix: "/prices", roles: ["manager", "sales_head", "admin"] },
+  { prefix: "/sales", roles: ["manager", "sales_head", "admin", "accountant", "marketer"] },
+  { prefix: "/prices", roles: ["manager", "sales_head", "admin", "marketer"] },
   // «План с ИИ» ставит планы всему отделу — только администраторы. Правило стоит ВЫШЕ общего «/plans».
   { prefix: "/plans/ai", roles: ["admin"] },
   { prefix: "/plans", roles: ["sales_head", "admin"] },
@@ -72,6 +73,8 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
       "retail_almaty",
       "office_retail",
       "retail_regions",
+      // Маркетолог заявки только смотрит: «/orders/new» выше его не пускает, а править и отменять не дают правила заявок.
+      "marketer",
     ],
   },
   { prefix: "/analytics/month", roles: ["sales_head", "admin"] },
@@ -85,7 +88,7 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   { prefix: "/clients/leads/calls", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
   { prefix: "/clients/leads/talks", roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions"] },
   // Переписки WhatsApp по номерам (16.10.2026): какой номер кому виден — `chatAccess.ts`.
-  { prefix: "/clients/chats", roles: ["manager", "sales_head", "admin", "leadgen"] },
+  { prefix: "/clients/chats", roles: ["manager", "sales_head", "admin", "leadgen", "marketer"] },
   {
     prefix: "/clients/leads",
     roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions", "leadgen"],

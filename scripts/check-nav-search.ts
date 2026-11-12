@@ -21,7 +21,7 @@ function check(name: string, actual: unknown, expected: unknown) {
 }
 
 // --- Меню --------------------------------------------------------------------
-const ROLES_ALL = ["admin", "manager", "sales_head", "accountant", "warehouse", "office", "office_retail", "retail_almaty", "retail_regions", "agronomist", "leadgen"];
+const ROLES_ALL = ["admin", "manager", "sales_head", "accountant", "warehouse", "office", "office_retail", "retail_almaty", "retail_regions", "agronomist", "leadgen", "marketer"];
 for (const role of ROLES_ALL) {
   const links = navLinksFor(role);
   // Считаются рабочие разделы: группа «Прочее» (Настройки, у владельца — и Зарплата) стоит отдельно внизу.

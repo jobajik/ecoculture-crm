@@ -37,6 +37,7 @@ function check(label: string, actual: unknown, expected: unknown) {
 check("бухгалтер видит", canSeeFinance(ROLES.ACCOUNTANT), true);
 check("администратор видит", canSeeFinance(ROLES.ADMIN), true);
 check("РОП видит — это и просил владелец", canSeeFinance(ROLES.SALES_HEAD), true);
+check("маркетолог видит (12.11.2026: «видеть переписки, продажи и оплаты»)", canSeeFinance(ROLES.MARKETER), true);
 check("менеджер не видит", canSeeFinance(ROLES.MANAGER), false);
 check("зав. складом не видит", canSeeFinance(ROLES.WAREHOUSE), false);
 check("менеджер розницы не видит", canSeeFinance(ROLES.RETAIL_ALMATY), false);
@@ -47,6 +48,7 @@ check("пустая роль не видит (грабли 1.10)", canSeeFinance
 // Главная строка этой проверки. РОП смотрит, но не меняет.
 
 check("РОП НЕ меняет", canEditFinance(ROLES.SALES_HEAD), false);
+check("маркетолог НЕ меняет", canEditFinance(ROLES.MARKETER), false);
 check("бухгалтер меняет", canEditFinance(ROLES.ACCOUNTANT), true);
 check("администратор меняет", canEditFinance(ROLES.ADMIN), true);
 check("менеджер не меняет", canEditFinance(ROLES.MANAGER), false);
@@ -63,7 +65,9 @@ for (const role of Object.values(ROLES)) {
 // --- Кадровое и служебное РОПу не показываем ---------------------------------
 
 check("удержания и журнал — не для РОПа", canSeeFinanceInternals(ROLES.SALES_HEAD), false);
+check("и не для маркетолога", canSeeFinanceInternals(ROLES.MARKETER), false);
 check("бухгалтеру — да", canSeeFinanceInternals(ROLES.ACCOUNTANT), true);
+check("страницы маркетолога — те же, что у РОПа", financeTabsFor(ROLES.MARKETER).flatMap((t) => (t.views ? t.views.map((v) => v.href) : [t.href])), financeTabsFor(ROLES.SALES_HEAD).flatMap((t) => (t.views ? t.views.map((v) => v.href) : [t.href])));
 
 // С 12.11.2026 парные вкладки — виды одной вкладки (`sectionViews.ts`): считаем и вкладки, и адреса всех видов.
 const allHrefs = (role: string) => financeTabsFor(role).flatMap((t) => (t.views ? t.views.map((v) => v.href) : [t.href]));

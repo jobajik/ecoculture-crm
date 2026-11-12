@@ -26,7 +26,8 @@ export function visibleOrdersFor(
   const visible = all.filter((o) => {
     if (territory) return (isRetailOrder(o) && o.retail === territory) || isOwnClientOrder(o, myEmail);
     if (role === ROLES.MANAGER) return !isRetailOrder(o) && !isRegionOrder(o);
-    if (role === ROLES.ACCOUNTANT) return !isRetailOrder(o);
+    // Маркетолог смотрит продажи — как бухгалтер, без перемещений в наши магазины.
+    if (role === ROLES.ACCOUNTANT || role === ROLES.MARKETER) return !isRetailOrder(o);
     return true;
   });
   return visible

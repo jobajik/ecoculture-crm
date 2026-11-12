@@ -8,6 +8,7 @@ import { listUsers } from "@/lib/repo/users";
 import { prefetchTables } from "@/lib/sheets";
 import { DEBT_OVERDUE_DAYS, SHEET_TABS, isValidPeriod, periodLabel, periodOf } from "@/lib/constants";
 import { canSeeFinance } from "@/lib/financeAccess";
+import { canOpen } from "@/lib/access";
 import { buildFinanceAnalytics, type DebtorRow } from "@/lib/financeAnalytics";
 import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
@@ -251,7 +252,7 @@ export default async function FinanceAnalyticsPage({ searchParams }: { searchPar
             className="divide-y divide-line-hairline/70"
             empty={<p className="px-4 py-6 text-sm text-ink-muted">Никто не должен.</p>}
             items={a.debtors.map((d) => (
-              <DebtorLine key={d.clientKey} d={d} />
+              <DebtorLine key={d.clientKey} d={d} link={canOpen(role, "/clients/x")} />
             ))}
           />
         )}
@@ -321,8 +322,8 @@ function Stat({
   );
 }
 
-function DebtorLine({ d }: { d: DebtorRow }) {
-  const name = d.clientId ? (
+function DebtorLine({ d, link }: { d: DebtorRow; link: boolean }) {
+  const name = d.clientId && link ? (
     <Link href={`/clients/${d.clientId}`} className="block truncate font-medium hover:underline">
       {d.name}
     </Link>

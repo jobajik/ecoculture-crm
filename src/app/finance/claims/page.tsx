@@ -21,7 +21,7 @@ export default async function ClaimsPage() {
   // Рекламации — разговор менеджера с бухгалтером, поэтому видят их обе роли:
   // менеджеру важно знать, чем кончилось его обращение.
   if (
-    ![ROLES.ACCOUNTANT, ROLES.ADMIN, ROLES.MANAGER, ROLES.SALES_HEAD].includes(role as never)
+    ![ROLES.ACCOUNTANT, ROLES.ADMIN, ROLES.MANAGER, ROLES.SALES_HEAD, ROLES.MARKETER].includes(role as never)
   ) {
     redirect("/");
   }

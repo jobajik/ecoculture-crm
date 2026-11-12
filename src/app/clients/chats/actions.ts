@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { guard } from "@/lib/actionResult";
 import { ROLES } from "@/lib/constants";
 import { phoneKey } from "@/lib/leads";
-import { canSeeLine } from "@/lib/chatAccess";
+import { canSeeLine, chatsReadOnly } from "@/lib/chatAccess";
 import { listWaMessages } from "@/lib/repo/talks";
 import { closeAssistantNotes, listAssistantLog, listWaLines } from "@/lib/repo/waLines";
 import { assistantAnswer, DRAFT_TASK, sendFromLine, sendOnLine } from "@/lib/lineAssistant";
@@ -36,6 +36,7 @@ async function chatOf(line: string, phone: string) {
 
 async function draftReplyActionInner(line: string, phone: string): Promise<{ text: string; note: string; silent: boolean }> {
   const { email, role } = await requireChatUser();
+  if (chatsReadOnly(role)) throw new Error("У вас только просмотр переписок");
   if (!(await canSeeLine(role, email, line))) throw new Error("Это чужой номер");
   const chat = await chatOf(line, phone);
   const users = await listUsers();
@@ -48,6 +49,7 @@ async function draftReplyActionInner(line: string, phone: string): Promise<{ tex
 
 async function sendReplyActionInner(line: string, phone: string, text: string): Promise<{ messageId: string }> {
   const { email, role } = await requireChatUser();
+  if (chatsReadOnly(role)) throw new Error("У вас только просмотр переписок");
   const clean = String(text || "").replace(/\r/g, "").trim();
   if (!clean) throw new Error("Пустое сообщение");
   if (clean.length > 3000) throw new Error("Слишком длинное сообщение");
@@ -76,6 +78,7 @@ async function sendReplyActionInner(line: string, phone: string, text: string): 
 
 async function closeNoteActionInner(line: string, phone: string): Promise<{ closed: number }> {
   const { email, role } = await requireChatUser();
+  if (chatsReadOnly(role)) throw new Error("У вас только просмотр переписок");
   if (!(await canSeeLine(role, email, line))) throw new Error("Это чужой номер");
   const notes = (await listAssistantLog({ fresh: true })).filter((r) => r.kind === "note" && !r.doneAt && r.line === line && phoneKey(r.phone) === phoneKey(phone));
   await closeAssistantNotes(notes.map((n) => n.rowNumber), new Date().toISOString());

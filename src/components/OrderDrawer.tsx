@@ -1,5 +1,6 @@
 "use client";
 
+import { canOpen } from "@/lib/access";
 import { moneyExact } from "@/lib/formatNumber";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -117,7 +118,7 @@ export default function OrderDrawer({
           </div>
           <div className="font-display font-extrabold text-[24px] leading-tight text-accent">№ {orderCode(order.orderId)}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-            {order.clientId ? (
+            {order.clientId && canOpen(viewerRole, "/clients/x") ? (
               <Link href={`/clients/${order.clientId}`} className="font-semibold text-[15px] hover:text-accent truncate">
                 {order.clientName || "—"}
               </Link>

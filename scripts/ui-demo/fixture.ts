@@ -35,6 +35,7 @@ const U = [
   ["ruslan@demo.kz", "Руслан Байжанов", "office_retail", ""],
   ["agro@demo.kz", "Бауржан Нурланов", "agronomist", "rose_farm"],
   ["zemfira@demo.kz", "Земфира Алиева", "leadgen", ""],
+  ["marketing@demo.kz", "Назгуль Ермекова", "marketer", ""],
 ];
 tab("Users", U.map(([Email, Name, Role, Farm]) => ({ Email, Name, Role, Active: "TRUE", Farm })));
 const managers = ["ilyas@demo.kz", "emil@demo.kz", "ilgar@demo.kz"];

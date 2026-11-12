@@ -197,6 +197,14 @@ function baseLinksFor(role: string): NavLink[] {
     case "leadgen":
       // Земфира: её работа целиком в лидах, главной у неё нет — та и уводит в лиды.
       return [section("/clients/leads", "Лиды", clientsTabsFor(undefined, role), ["/clients"])];
+    case "marketer":
+      // Маркетолог (12.11.2026): смотрит переписки, продажи и оплаты — главной у него нет, та уводит в переписки.
+      return [
+        section("/clients/chats", "Переписки", []),
+        section("/sales", "Продажи", salesTabsFor(role), ["/prices"]),
+        ORDERS,
+        section("/finance", "Оплаты", financeTabsFor(role)),
+      ];
     case "payroll":
       // Только зарплата: сам раздел добавит `navLinksFor` по роли модуля; без неё — пусто, и главная это объяснит.
       return [];

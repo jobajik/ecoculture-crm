@@ -6,13 +6,23 @@ import { isManagerLine, type WaLine } from "./waLines";
 /**
  * Кто какие номера видит в «Переписках» (16.10.2026): владелец и РОП — все (основной, Земфиру,
  * менеджеров), менеджер — свой номер, Земфира — свой. Проверяют страница и действия.
+ * Маркетолог (12.11.2026) видит все номера, но только читает: не пишет, не закрывает записки, не просит черновик.
  */
+export function canSeeAllChats(role: string | null | undefined): boolean {
+  return canManageLeads(role) || role === ROLES.MARKETER;
+}
+
+/** Только читает переписки: ни отправки, ни черновика ИИ, ни «Сделано» у записок. */
+export function chatsReadOnly(role: string | null | undefined): boolean {
+  return role === ROLES.MARKETER;
+}
+
 export async function visibleLines(role: string | null | undefined, email: string): Promise<{ code: string; label: string; line?: WaLine }[]> {
   const lines = await listWaLines();
   const me = email.toLowerCase();
   // Номер Земфиры — тоже линия помощника (20.10.2026): по ней «Переписки» показывают, ответит ли ИИ сам.
   const zemfira = (await leadsLine()) ?? undefined;
-  if (canManageLeads(role)) {
+  if (canSeeAllChats(role)) {
     return [
       ...lines.map((l) => ({ code: l.code, label: l.label, line: l })),
       { code: "leads", label: "Земфира (реклама)", line: zemfira },
@@ -24,7 +34,7 @@ export async function visibleLines(role: string | null | undefined, email: strin
 }
 
 export async function canSeeLine(role: string | null | undefined, email: string, line: string): Promise<boolean> {
-  if (canManageLeads(role)) return true;
+  if (canSeeAllChats(role)) return true;
   if (line === "leads") return role === ROLES.LEADGEN;
   if (!isManagerLine(line)) return false;
   return (await listWaLines()).some((l) => l.code === line && l.managerEmail === email.toLowerCase());

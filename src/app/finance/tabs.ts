@@ -55,7 +55,8 @@ function tabsFor(salesHead: boolean): SectionTab[] {
 }
 
 export function financeTabsFor(role: string | null | undefined): SectionTab[] {
-  return tabsFor(role === ROLES.SALES_HEAD);
+  // РОП и маркетолог только смотрят: удержания с сотрудников и журнал им не показываются.
+  return tabsFor(role === ROLES.SALES_HEAD || role === ROLES.MARKETER);
 }
 
 /** Оставлено для мест, где роль ещё не прокинута. Новый код зовёт financeTabsFor. */

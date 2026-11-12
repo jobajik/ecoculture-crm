@@ -109,6 +109,7 @@ export default function ChatsBoard({
   thread,
   verdict,
   canSend,
+  readOnly = false,
   aiReady,
   lineConnected,
 }: {
@@ -119,6 +120,8 @@ export default function ChatsBoard({
   thread: BoardMessage[];
   verdict: string;
   canSend: boolean;
+  /** Только чтение (маркетолог): без поля ответа, черновика ИИ, «Сделано» и ссылок на карточки. */
+  readOnly?: boolean;
   aiReady: boolean;
   lineConnected: boolean;
 }) {
@@ -219,7 +222,7 @@ export default function ChatsBoard({
         </div>
 
         {selected ? (
-          <Thread key={selected.key} line={line} chat={selected} thread={thread} verdict={verdict} canSend={canSend} aiReady={aiReady} backHref={href()} />
+          <Thread key={selected.key} line={line} chat={selected} thread={thread} verdict={verdict} canSend={canSend} readOnly={readOnly} aiReady={aiReady} backHref={href()} />
         ) : (
           <div className="card hidden lg:grid place-items-center min-h-[320px] text-sm text-ink-muted">Выберите переписку слева.</div>
         )}
@@ -234,6 +237,7 @@ function Thread({
   thread,
   verdict,
   canSend,
+  readOnly,
   aiReady,
   backHref,
 }: {
@@ -242,6 +246,7 @@ function Thread({
   thread: BoardMessage[];
   verdict: string;
   canSend: boolean;
+  readOnly: boolean;
   aiReady: boolean;
   backHref: string;
 }) {
@@ -307,21 +312,32 @@ function Thread({
         </Link>
         <span className="font-semibold">{chat.name}</span>
         <span className="text-sm text-ink-muted tabular-nums">+{chat.phone}</span>
-        {chat.partyKind === "lead" && (
+        {chat.partyKind === "lead" && !readOnly && (
           <Link href={`/clients/leads/${chat.partyId}`} className="text-sm text-section-leads hover:underline">
             лид{chat.partyManager ? ` · ${chat.partyManager}` : ""} →
           </Link>
         )}
-        {chat.partyKind === "client" && (
+        {chat.partyKind === "client" && !readOnly && (
           <Link href={`/clients/${chat.partyId}`} className="text-sm text-section-client hover:underline">
             клиент{chat.partyManager ? ` · ${chat.partyManager}` : ""} →
           </Link>
         )}
+        {/* Только просмотр: карточки лидов и клиентов закрыты — кто это, пишем словами, без ссылки. */}
+        {readOnly && (chat.partyKind === "lead" || chat.partyKind === "client") && (
+          <span className="text-sm text-ink-secondary">
+            {chat.partyKind === "lead" ? "лид" : "клиент"}
+            {chat.partyManager ? ` · ${chat.partyManager}` : ""}
+          </span>
+        )}
         {chat.partyKind === "staff" && <span className="text-xs rounded px-1.5 py-0.5 bg-surface-sunk text-ink-secondary">наш сотрудник — ИИ ему не отвечает</span>}
         {!chat.partyKind && <span className="text-xs text-ink-muted">нет ни в лидах, ни в клиентах</span>}
-        <a href={wa} target="_blank" rel="noreferrer" className="ml-auto text-sm text-status-good font-medium">
-          WhatsApp ↗
-        </a>
+        {readOnly ? (
+          <span className="ml-auto text-xs text-ink-muted">только просмотр</span>
+        ) : (
+          <a href={wa} target="_blank" rel="noreferrer" className="ml-auto text-sm text-status-good font-medium">
+            WhatsApp ↗
+          </a>
+        )}
       </div>
       {chat.notes.length > 0 && (
         <div className="px-4 py-2 bg-status-warning/10 text-sm flex flex-wrap items-start gap-2">
@@ -332,12 +348,14 @@ function Thread({
               </div>
             ))}
           </div>
-          <button type="button" className="btn-secondary !py-1 text-sm" onClick={done} disabled={!!busy}>
-            Сделано
-          </button>
+          {!readOnly && (
+            <button type="button" className="btn-secondary !py-1 text-sm" onClick={done} disabled={!!busy}>
+              Сделано
+            </button>
+          )}
         </div>
       )}
-      {chat.partyKind === "lead" && chat.decision && (
+      {chat.partyKind === "lead" && chat.decision && !readOnly && (
         <DecisionStrip
           leadId={chat.partyId}
           d={chat.decision}
@@ -369,7 +387,8 @@ function Thread({
         ))}
         <div ref={bottom} />
       </div>
-      <div className="px-4 py-3 border-t border-line-hairline space-y-2">
+      {readOnly && verdict && <div className="px-4 py-3 border-t border-line-hairline text-xs text-ink-muted">{verdict}</div>}
+      <div className={clsx("px-4 py-3 border-t border-line-hairline space-y-2", readOnly && "hidden")}>
         {verdict && <p className="text-xs text-ink-muted">{verdict}</p>}
         <textarea
           className="input w-full min-h-[90px]"

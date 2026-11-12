@@ -35,7 +35,7 @@ export default async function PricesPage({
   // Смотреть прайс полезно и менеджеру — он по нему продаёт. Заносить цену
   // может только РОП и администратор: это решение о деньгах, и владелец прямо
   // отнёс его к зоне ответственности руководителя отдела продаж.
-  if (!role || ![ROLES.SALES_HEAD, ROLES.ADMIN, ROLES.MANAGER].includes(role as never)) {
+  if (!role || ![ROLES.SALES_HEAD, ROLES.ADMIN, ROLES.MANAGER, ROLES.MARKETER].includes(role as never)) {
     redirect("/");
   }
   const canEdit = role === ROLES.SALES_HEAD || role === ROLES.ADMIN;

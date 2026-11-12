@@ -10,7 +10,7 @@ import { ROLES } from "./constants";
  *
  * Отсюда ДВА разных права, и путать их нельзя:
  *
- * - **видеть** — бухгалтер, администратор и РОП;
+ * - **видеть** — бухгалтер, администратор, РОП и маркетолог (12.11.2026: «будет видеть переписки, продажи и оплаты»);
  * - **трогать** (проводить оплату, отмечать счёт, ставить обещание, решать
  *   рекламацию) — только бухгалтер и администратор.
  *
@@ -24,7 +24,7 @@ import { ROLES } from "./constants";
 
 /** Кто открывает раздел «Оплаты». */
 export function canSeeFinance(role: string | null | undefined): boolean {
-  return role === ROLES.ACCOUNTANT || role === ROLES.ADMIN || role === ROLES.SALES_HEAD;
+  return role === ROLES.ACCOUNTANT || role === ROLES.ADMIN || role === ROLES.SALES_HEAD || role === ROLES.MARKETER;
 }
 
 /** Кто в нём что-то МЕНЯЕТ: проводит деньги, отмечает счёт, ставит обещание. */

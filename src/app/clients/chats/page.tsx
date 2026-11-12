@@ -13,7 +13,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listWaMessages } from "@/lib/repo/talks";
 import { listUsers } from "@/lib/repo/users";
 import { listAssistantLog } from "@/lib/repo/waLines";
-import { canSendOnLeadsLine, visibleLines } from "@/lib/chatAccess";
+import { canSendOnLeadsLine, chatsReadOnly, visibleLines } from "@/lib/chatAccess";
 import { buildChatList, isManagerLine, assistantVerdict, type ChatPartyInfo } from "@/lib/waLines";
 import { mergeMessages } from "@/lib/whatsapp";
 import { openAiConfigured } from "@/lib/openai";
@@ -196,6 +196,7 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
           thread={thread}
           verdict={verdict}
           canSend={canSend}
+          readOnly={chatsReadOnly(role)}
           aiReady={openAiConfigured()}
           lineConnected={!isManagerLine(current.code) || !!current.line?.tokenEnc}
         />

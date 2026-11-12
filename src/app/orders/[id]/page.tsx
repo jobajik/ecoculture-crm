@@ -63,6 +63,7 @@ import clsx from "clsx";
 import { orderCode } from "@/lib/paymentStage";
 import { DEBT_OVERDUE_DAYS } from "@/lib/constants";
 import { canEditFinance } from "@/lib/financeAccess";
+import { canOpen } from "@/lib/access";
 import { paymentHistory, realizationsOf } from "@/lib/payments";
 import { withBotName } from "@/lib/botIdentity";
 import { canRepeatFrom, newClientOrderHref } from "@/lib/repeatOrder";
@@ -83,6 +84,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!loaded) notFound();
 
   const role = session?.user?.role;
+  // Карточка клиента открыта не всем, кто видит заявку (склад, маркетолог) — им имя клиента без ссылки.
+  const clientLinks = canOpen(role, "/clients/x");
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
   // Склад региона, который ведёт менеджер (Салтанат — «Астана», `officeStore.ts`).
   const myStore = normalizeStore(session?.user?.store);
@@ -106,7 +109,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!officeOrder && territory && !isOwnClientOrder(loaded, myEmail) && (!retail || loaded.retail !== territory)) {
     notFound();
   }
-  if (retail && (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT)) notFound();
+  if (retail && (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT || role === ROLES.MARKETER)) notFound();
 
   // Зав. складом видит в заявке только свои позиции. Если своего цветка в заявке
   // нет — заявка для неё не существует, чтобы нельзя было открыть её по прямой ссылке.
@@ -361,7 +364,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <div className="font-display text-[17px] font-bold leading-snug mt-0.5 break-words">
             {region ? (
               order.direction || "—"
-            ) : order.clientId ? (
+            ) : order.clientId && clientLinks ? (
               <Link href={`/clients/${order.clientId}`} className="hover:text-accent">
                 {order.clientName}
               </Link>
@@ -466,7 +469,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           ) : (
             <>
               <Fact icon="client" label="Клиент">
-                {order.clientId ? (
+                {order.clientId && clientLinks ? (
                   <Link href={`/clients/${order.clientId}`} className="font-medium text-section-client hover:underline">
                     {order.clientName}
                   </Link>
