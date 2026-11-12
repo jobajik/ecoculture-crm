@@ -24,6 +24,8 @@ import { isInfoPhoto, photoLabel, photoMessage } from "./botPhotos";
 import { pricesForBot } from "./botKnowledge";
 import { isNoText, isYesText, parseStaffBroadcastPlan, phonesInText, STAFF_BROADCAST_PREFIX, type StaffBroadcastPlan } from "./staffBroadcast";
 import { planStaffBroadcast, runStaffBroadcastPlan } from "./staffBroadcastRunner";
+import { forwardedBefore, narrowOrderTargets, parseStaffOrderPending, STAFF_ORDER_PREFIX } from "./staffOrder";
+import { prepareStaffOrder, runStaffOrder } from "./staffOrderRunner";
 import {
   dropRecipients,
   dueReminders,
@@ -165,12 +167,30 @@ function selfTarget(staffPhone: string): StaffTarget {
   return { phone: waPhone(staffPhone) || staffPhone.replace(/\D/g, ""), name: "вам", kind: "сотрудник", managerEmail: "", lastAt: "" };
 }
 
-async function execute(command0: StaffCommand, target: StaffTarget, staff: AppUser | null, staffPhone: string, main: GreenConfig, messages: WaMessage[]): Promise<void> {
+async function execute(
+  command0: StaffCommand,
+  target: StaffTarget,
+  staff: AppUser | null,
+  staffPhone: string,
+  main: GreenConfig,
+  messages: WaMessage[],
+  /** Сообщение-поручение (номер и время) — заявке нужно найти пересланное перед ним. */
+  source: { id: string; at: string } = { id: "", at: new Date().toISOString() }
+): Promise<void> {
   let command = command0;
   const self = phoneKey(target.phone) === phoneKey(staffPhone);
   if (command.intent === "mute" || command.intent === "unmute") return setMuted(target, command.intent === "mute", staff, staffPhone, main);
   const line = self ? { code: "", cfg: main, via: "основного номера" } : await sendingLine(target, messages, staff);
   if (!line) return replyStaff(main, staffPhone, "Не получилось: ни один номер WhatsApp сейчас не подключён.");
+  if (command.intent === "order") {
+    // Заявка клиенту (12.11.2026, «прими заявку у Карины»): сначала план менеджеру и «ДА» — `staffOrderRunner.ts`.
+    if (self) return replyStaff(main, staffPhone, "Кому оформить заявку? Назовите клиента — имя, точку или номер.");
+    const { reply, pending } = await prepareStaffOrder({ commandText: command.text, source, target, staff, staffPhone, line });
+    const key = phoneKey(staffPhone);
+    // План заявки и план рассылки ждут одно и то же «ДА» — оставляем только свежий.
+    if (pending) await saveSettings({ [`${STAFF_ORDER_PREFIX}${key}`]: JSON.stringify(pending), [`${STAFF_BROADCAST_PREFIX}${key}`]: "" });
+    return replyStaff(main, staffPhone, reply);
+  }
   if (command.intent === "send_order") {
     // Заказ клиента: последняя живая заявка — её состав, сумма, доставка и оплата; текст собирает код.
     const orders = await listOrdersWithItems();
@@ -238,9 +258,19 @@ async function setMuted(target: StaffTarget, on: boolean, staff: AppUser | null,
   await replyStaff(main, staffPhone, muteDoneText(target.name, target.phone, on));
 }
 
+/** Тёзки в поручении «прими заявку у Карины»: о ком речь — по пересланному сообщению или по идущей переписке. */
+function orderTargets(targets: StaffTarget[], messages: WaMessage[], staffPhone: string, source: { id: string; at: string }): StaffTarget[] {
+  if (targets.length <= 1) return targets;
+  const staffKey = phoneKey(staffPhone);
+  const fromStaff = messages.filter((m) => !m.line && m.direction === "in" && phoneKey(m.phone) === staffKey);
+  const forwarded = forwardedBefore(fromStaff, source.id, source.at).map((m) => m.text);
+  const chats = messages.filter((m) => phoneKey(m.phone) !== staffKey).map((m) => ({ phoneKey: phoneKey(m.phone), at: m.at, text: m.text }));
+  return narrowOrderTargets(targets, chats, forwarded, phoneKey);
+}
+
 /** Поручение, которому нужен клиент: отправить фото/сообщение/заказ, не писать, снова писать. */
 function needsTarget(intent: StaffCommand["intent"]): boolean {
-  return intent === "send" || intent === "send_order" || intent === "mute" || intent === "unmute";
+  return intent === "send" || intent === "send_order" || intent === "order" || intent === "mute" || intent === "unmute";
 }
 
 /** Напоминания, чей час настал: сотруднику с основного номера; отправленные — из списка долой. */
@@ -313,6 +343,20 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
     const pending = parsePending(fresh[settingKey]);
     const staff = await staffUserOf(key);
 
+    // Ответ на план заявки: «ДА» — оформить, выставить счёт и написать клиенту; «НЕТ» — забыть (12.11.2026, `staffOrder.ts`).
+    const orderKey = `${STAFF_ORDER_PREFIX}${key}`;
+    const orderPlan = parseStaffOrderPending(fresh[orderKey]);
+    if (orderPlan && (isYesText(text) || isNoText(text))) {
+      await saveSettings({ [orderKey]: "" });
+      if (isNoText(text)) {
+        await replyStaff(main, message.phone, "Хорошо, заявку не оформляю.");
+        return true;
+      }
+      const line = await sendingLine(orderPlan.target, await listWaMessages({ lines: "all" }), staff);
+      await replyStaff(main, message.phone, line ? await runStaffOrder({ pending: orderPlan, staff, line }) : "Не получилось: ни один номер WhatsApp сейчас не подключён.");
+      return true;
+    }
+
     // Ответ на план рассылки: «ДА» — запустить, «НЕТ» — забыть (27.10.2026, `staffBroadcast.ts`).
     const broadcastKey = `${STAFF_BROADCAST_PREFIX}${key}`;
     const broadcastPlan = parseStaffBroadcastPlan(fresh[broadcastKey]);
@@ -345,7 +389,7 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
               : null;
       if (target) {
         await saveSettings({ [settingKey]: "" });
-        await execute(pending.command, target, staff, message.phone, main, messages);
+        await execute(pending.command, target, staff, message.phone, main, messages, { id: message.messageId, at: message.at });
         return true;
       }
     }
@@ -354,10 +398,12 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
     const ctx = await loadPhotoContext();
     let command = await understand(text, ctx);
     if (command.intent === "none") return true;
+    // Заявка клиенту: состав вынет вторая модель из самого поручения, пересланного и переписки — ей нужен весь текст.
+    if (command.intent === "order") command = { ...command, items: [], text };
     // Рассылка своим клиентам: сначала план и «ДА».
     if (command.intent === "broadcast") {
       const { reply, plan } = await planStaffBroadcast(command, staff, ctx, phonesInText(text));
-      if (plan) await saveSettings({ [broadcastKey]: JSON.stringify(plan) });
+      if (plan) await saveSettings({ [broadcastKey]: JSON.stringify(plan), [orderKey]: "" });
       await replyStaff(main, message.phone, reply);
       return true;
     }
@@ -398,6 +444,7 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
       await replyStaff(main, message.phone, command.intent === "other" || command.intent === "send" ? STAFF_OTHER_TEXT : "Кому? Назовите клиента — имя, точку или номер.");
       return true;
     }
+    const source = { id: message.messageId, at: message.at };
     const direct = waPhone(command.phone);
     let targets: StaffTarget[] = direct ? [{ phone: direct, name: command.client || `+${direct}`, kind: "номер", managerEmail: "", lastAt: "" }] : [];
     // Адресат не назван или «мне» — фото самому сотруднику, а не «не нашёл клиента «без имени»».
@@ -406,8 +453,9 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
       return true;
     }
     if (!targets.length && command.client) targets = matchTargets(command.client, await targetCandidates(messages), staff?.email);
+    if (command.intent === "order") targets = orderTargets(targets, messages, message.phone, source);
     if (targets.length === 1) {
-      await execute(command, targets[0], staff, message.phone, main, messages);
+      await execute(command, targets[0], staff, message.phone, main, messages, source);
       return true;
     }
     const list = targets.slice(0, 6);
@@ -421,13 +469,14 @@ export async function handleStaffMessage(message: WaMessage): Promise<boolean> {
 }
 
 /** Что бот сделал бы с поручением — без отправки (`scripts/staff-command-try.ts`). */
-export async function dryRunStaffCommand(text: string, staffPhone: string): Promise<string[]> {
+export async function dryRunStaffCommand(text: string, staffPhone: string, source: { id: string; at: string } = { id: "", at: new Date().toISOString() }): Promise<string[]> {
   const out: string[] = [];
   const key = phoneKey(staffPhone);
   const staff = await staffUserOf(key);
   out.push(`Сотрудник: ${staff ? `${staff.name} (${staff.email})` : "по номеру не узнан — номер сводки/продаж"}; наш номер: ${(await ourPhoneKeys(await settingsMap())).has(key) ? "да" : "НЕТ — поручение не примется"}`);
   const ctx = await loadPhotoContext();
   let command = await understand(text, ctx);
+  if (command.intent === "order") command = { ...command, items: [], text };
   out.push(`Разбор: ${JSON.stringify(command)}`);
   if (command.intent === "broadcast") {
     const { reply, plan } = await planStaffBroadcast(command, staff, ctx, phonesInText(text));
@@ -457,7 +506,11 @@ export async function dryRunStaffCommand(text: string, staffPhone: string): Prom
     out.push("Кому: самому сотруднику, с основного номера");
     return out;
   }
-  const targets = direct ? [{ phone: direct, name: command.client, kind: "номер", managerEmail: "", lastAt: "" }] : matchTargets(command.client, await targetCandidates(messages), staff?.email);
+  let targets = direct ? [{ phone: direct, name: command.client, kind: "номер", managerEmail: "", lastAt: "" }] : matchTargets(command.client, await targetCandidates(messages), staff?.email);
+  if (command.intent === "order" && targets.length > 1) {
+    out.push(`Тёзки: ${targets.map((t) => `${t.name} …${t.phone.slice(-4)} (${t.kind})`).join("; ")}`);
+    targets = orderTargets(targets, messages, staffPhone, source);
+  }
   out.push(`Кому: ${targets.length ? targets.map((t) => `${t.name} …${t.phone.slice(-4)} (${t.kind})`).join("; ") : "не нашёл"}`);
   if (targets.length !== 1) return out;
   if (command.intent === "mute" || command.intent === "unmute") {
@@ -470,5 +523,11 @@ export async function dryRunStaffCommand(text: string, staffPhone: string): Prom
   }
   const line = await sendingLine(targets[0], messages, staff);
   out.push(`С номера: ${line ? line.via : "нет подключённого"}`);
+  if (command.intent === "order" && line) {
+    // План заявки — тот же, что ушёл бы менеджеру; без записи: ни плана в настройках, ни заявки, ни сообщений.
+    const { reply, pending } = await prepareStaffOrder({ commandText: text, source, target: targets[0], staff, staffPhone, line, debug: (s) => out.push(s) });
+    out.push("Сотруднику:", reply);
+    if (pending) out.push(`Черновик: ${JSON.stringify(pending.draft)}`);
+  }
   return out;
 }

@@ -37,6 +37,7 @@ import {
 import { priceKey, type PriceRow } from "../src/lib/priceList";
 import { broadcastCount, isNoText, isYesText, parseStaffBroadcastPlan, phonesInText, pickBroadcastContacts, pickListedContacts, staffBroadcastPlanText, staffBroadcastText, STAFF_BROADCAST_MAX, type ContactCandidate } from "../src/lib/staffBroadcast";
 import { focusOffers } from "../src/lib/staffBroadcastRunner";
+import { almatyStamp, canOrderByCommand, forwardedBefore, narrowOrderTargets, nextDay, orderChatLines, parseStaffOrderDraft, parseStaffOrderPending, recentChat, staffOrderDoneText, staffOrderPlanText, staffOrderProblemText } from "../src/lib/staffOrder";
 import type { BotPhoto } from "../src/lib/botPhotos";
 
 let failed = 0;
@@ -338,6 +339,116 @@ check("падеж: «Фарида», «Боты» → Фарид и Бота, о
 check("никого не нашёл — ничего не убрал", dropRecipients(recs, ["Зульфия"]).removed.length, 0);
 check("ответ: убрал, не нашёл, осталось, ждёт ДА", exclusionReplyText({ removed: ["Фарид"], notFound: ["Зульфия"], left: 8, run: false }), "Убрал 1: Фарид.\nНе нашёл в списке: Зульфия.\nОсталось *8*. Ответьте *ДА* — запущу, *НЕТ* — не запускаю.");
 check("ответ: никого не осталось", exclusionReplyText({ removed: ["Фарид"], notFound: [], left: 0, run: false }), "Убрал 1: Фарид.\nНикого не осталось — рассылку не запускаю.");
+
+// --- Заявка клиенту по поручению менеджера (12.11.2026, «Чат бот, прими заявку у Карины») --------------------------
+check("разбор: order", parseStaffCommand({ intent: "order", client: "Карина", phone: "", items: [], text: "", count: 0, photo: true, regulars: false, remindAt: "", remindText: "" }).intent, "order");
+check("подсказка знает про заявку", [STAFF_OTHER_TEXT.includes("оформить клиенту заявку"), STAFF_OTHER_TEXT.includes("Прими заявку у Карины")], [true, true]);
+check("кто может: менеджер, РОП, админ — да; склад, бухгалтер, Земфира — нет", ["manager", "sales_head", "admin", "warehouse", "accountant", "leadgen", ""].map((r) => canOrderByCommand(r)), [true, true, true, false, false, false, false]);
+
+const orderRaw = {
+  items: [
+    { flowerType: "eustoma", variety: "Alissa Pink", grade: "Стандарт", quantity: 50 },
+    { flowerType: "eustoma", variety: "Alissa 1 Pure White/Махровые", grade: "Стандарт", quantity: 30 },
+    { flowerType: "tulip", variety: "X", grade: "", quantity: 10 },
+    { flowerType: "rose", variety: "Jumilia", grade: "60", quantity: 0 },
+  ],
+  deliveryDate: "2026-11-13",
+  address: "",
+  note: "",
+  basis: "пересланное сообщение 18:47",
+  unclear: "",
+};
+const od = parseStaffOrderDraft(orderRaw);
+check("черновик: чужой цветок и нулевое количество отброшены", od.draft.items.map((i) => `${i.variety} ${i.quantity}`), ["Alissa Pink 50", "Alissa 1 Pure White/Махровые 30"]);
+check("черновик: день и основание", [od.draft.deliveryDate, od.draft.confirmed, od.basis], ["2026-11-13", true, "пересланное сообщение 18:47"]);
+check("черновик: пусто — не подтверждён, причина сохранена", [parseStaffOrderDraft({ items: [], unclear: "в переписке нет количества" }).draft.confirmed, parseStaffOrderDraft({ items: [], unclear: "в переписке нет количества" }).unclear], [false, "в переписке нет количества"]);
+check("черновик: мусор вместо ответа", parseStaffOrderDraft(null).draft.items.length, 0);
+
+const orderTarget: StaffTarget = { phone: "77017770011", name: "Карина", kind: "клиент", managerEmail: "ilyas@x.kz", lastAt: "", clientId: "CL-1" };
+const pendingRaw = (at: string) => JSON.stringify({ at, target: orderTarget, draft: od.draft, kaspiPhone: "87017770011", basis: od.basis });
+const nowMs = Date.parse("2026-11-12T14:00:00Z");
+check("план ждёт «ДА» три часа", [!!parseStaffOrderPending(pendingRaw("2026-11-12T13:50:00Z"), nowMs), !!parseStaffOrderPending(pendingRaw("2026-11-12T10:50:00Z"), nowMs)], [true, false]);
+check("план без позиций или мусор — нет плана", [parseStaffOrderPending(JSON.stringify({ at: "2026-11-12T13:50:00Z", target: orderTarget, draft: { items: [] } }), nowMs), parseStaffOrderPending("{", nowMs), parseStaffOrderPending(undefined, nowMs)], [null, null, null]);
+check("план читается обратно тем же составом", parseStaffOrderPending(pendingRaw("2026-11-12T13:50:00Z"), nowMs)?.draft.items.length, 2);
+
+check("время сообщения — по Алматы", almatyStamp("2026-11-12T13:47:00Z"), "12.11 18:47");
+check(
+  "переписка для модели: с днём и временем, по порядку",
+  orderChatLines(
+    [
+      { at: "2026-11-12T13:47:00Z", direction: "out", text: "Сделаю 5 пачек Alissa Pink,\nна завтра - 32 000 ₸. Оформляем?" },
+      { at: "2026-11-12T13:40:00Z", direction: "in", text: "Эустому на завтра можно?" },
+    ],
+    { in: "Клиент", out: "Мы" }
+  ),
+  "[12.11 18:40] Клиент: Эустому на завтра можно?\n[12.11 18:47] Мы: Сделаю 5 пачек Alissa Pink, на завтра - 32 000 ₸. Оформляем?"
+);
+const fw = [
+  { messageId: "old", at: "2026-11-12T13:20:00Z" },
+  { messageId: "fwd", at: "2026-11-12T13:46:50Z" },
+  { messageId: "cmd", at: "2026-11-12T13:47:05Z" },
+  { messageId: "late", at: "2026-11-12T13:47:20Z" },
+  { messageId: "later", at: "2026-11-12T13:50:00Z" },
+];
+check("пересланное: за 15 минут до поручения и чуть после, без самого поручения", forwardedBefore(fw, "cmd", "2026-11-12T13:47:05Z").map((m) => m.messageId), ["fwd", "late"]);
+const chatDays = Array.from({ length: 40 }, (_, i) => ({ at: new Date(Date.parse("2026-11-12T12:00:00Z") - i * 3 * 3600000).toISOString() }));
+const rc = recentChat(chatDays, new Date("2026-11-12T12:00:00Z"));
+check("переписка: не больше 30 сообщений и не старше 4 дней, от старых к новым", [rc.length <= 30, rc[0].at >= "2026-11-08T12:00:00.000Z", rc[rc.length - 1].at], [true, true, "2026-11-12T12:00:00.000Z"]);
+// Тёзки: «прими заявку у Карины», а Карин пять.
+const karinas = [{ phone: "77010000001" }, { phone: "77010000002" }, { phone: "77010000003" }];
+const kk = (p: string) => p.slice(-10);
+const nowK = new Date("2026-11-12T14:00:00Z");
+const offer = "Сделаю 5 пачек Alissa Pink и 3 пачки Alissa 1 Pure White, это 80 шт., на завтра - 32 000 ₸. Всё верно, оформляем?";
+check(
+  "тёзки: пересланное сообщение есть в чате одной — она",
+  narrowOrderTargets(karinas, [{ phoneKey: "7010000002", at: "2026-11-12T13:40:00Z", text: offer }, { phoneKey: "7010000001", at: "2026-11-12T13:00:00Z", text: "Здравствуйте" }], [`[фото] ${offer}`], kk, nowK).map((t) => t.phone),
+  ["77010000002"]
+);
+check(
+  "тёзки: пересланного нет, за двое суток переписка одна — она",
+  narrowOrderTargets(karinas, [{ phoneKey: "7010000003", at: "2026-11-12T09:00:00Z", text: "ок" }, { phoneKey: "7010000001", at: "2026-11-01T09:00:00Z", text: "давно" }], [], kk, nowK).map((t) => t.phone),
+  ["77010000003"]
+);
+check(
+  "тёзки: две живые переписки — не угадываем, менеджер выберет цифрой",
+  narrowOrderTargets(karinas, [{ phoneKey: "7010000003", at: "2026-11-12T09:00:00Z", text: "ок" }, { phoneKey: "7010000001", at: "2026-11-12T10:00:00Z", text: "да" }], [], kk, nowK).length,
+  3
+);
+check("тёзки: короткое пересланное («да») ничего не решает", narrowOrderTargets(karinas, [{ phoneKey: "7010000001", at: "2026-11-01T10:00:00Z", text: "да" }], ["да"], kk, nowK).length, 3);
+check("тёзки: один кандидат — он и есть", narrowOrderTargets([karinas[0]], [], [], kk, nowK).length, 1);
+
+check("день не назван — завтра (и через конец месяца)", [nextDay("2026-11-12"), nextDay("2026-11-30"), nextDay("2026-12-31")], ["2026-11-13", "2026-12-01", "2027-01-01"]);
+
+const planText = staffOrderPlanText({
+  name: "Карина",
+  phone: "77017770011",
+  items: [
+    { flowerType: "eustoma", variety: "Alissa Pink", grade: "Стандарт", quantity: 50, unitPrice: 400 },
+    { flowerType: "eustoma", variety: "Alissa 1 Pure White/Махровые", grade: "Стандарт", quantity: 30, unitPrice: 400 },
+  ],
+  deliveryDate: "2026-11-13",
+  dateGuessed: false,
+  store: "",
+  total: 32000,
+  kaspiPhone: "87017770011",
+  via: "номера Ильяса",
+  basis: "пересланное сообщение 18:47",
+  newClient: false,
+}).replace(/\u00a0/g, " ");
+check("план: клиент с хвостом номера, а не номер целиком", [planText.startsWith("Заявка для Карина (…0011):"), planText.includes("77017770011")], [true, false]);
+check("план: позиции, сумма, день, счёт, откуда", [planText.includes("— 50 шт. × 400 ₸ = 20 000 ₸"), planText.includes("Итого: *32 000 ₸*"), planText.includes("Доставка: 13.11 · основной склад"), planText.includes("Счёт Kaspi уйдёт на …0011, клиенту напишу с номера Ильяса."), planText.includes("Взял из: пересланное сообщение 18:47.")], [true, true, true, true, true]);
+check("план: ждёт ДА", planText.includes("Ответьте *ДА* — оформлю и выставлю счёт."), true);
+check("план без похожей заявки — без предупреждения", planText.includes("Внимание"), false);
+const similarText = staffOrderPlanText({ name: "Карина", phone: "77017770011", items: [{ flowerType: "eustoma", variety: "Alissa Pink", grade: "Стандарт", quantity: 50, unitPrice: 400 }], deliveryDate: "2026-11-13", dateGuessed: false, store: "", total: 20000, kaspiPhone: "", via: "номера Ильяса", basis: "", newClient: false, similar: { code: "9ENID", createdAt: "2026-11-12T04:30:00.000Z", deliveryDate: "2026-11-12", shipped: false } });
+check("план: похожая заявка уже есть — предупреждение, что это будет новая", similarText.includes("Внимание: у клиента уже есть заявка №9ENID от 12.11 с этими же позициями (доставка 12.11). Это будет НОВАЯ заявка — если речь о той, ответьте НЕТ."), true);
+const guessedText = staffOrderPlanText({ name: "Асель", phone: "77051112233", items: [{ flowerType: "chrysanthemum", variety: "Altaj", grade: "Третья", quantity: 100, unitPrice: 270 }], deliveryDate: "2026-11-13", dateGuessed: true, store: "office", total: 27000, kaspiPhone: "", via: "основного номера", basis: "", newClient: true }).replace(/\u00a0/g, " ");
+check("план: день не назван, склад офиса, новая карточка, счёт на номер WhatsApp", [guessedText.includes("(день не назван — поставил завтра) · склад офиса"), guessedText.includes("карточки клиента ещё нет, заведу"), guessedText.includes("Счёт Kaspi уйдёт на …2233"), guessedText.includes("Взял из")], [true, true, true, false]);
+check("план: одна позиция — без «= сумма» в строке", guessedText.includes("— 100 шт. × 270 ₸\n"), true);
+check("не оформил: причина без двойной точки и пример, как написать", [staffOrderProblemText("Карина", "На какой день сделать доставку?").startsWith("Заявку для Карина не оформил: На какой день сделать доставку.\n"), staffOrderProblemText("Карина", "x").includes("«Оформи заявку Карине:")], [true, true]);
+const doneText = staffOrderDoneText({ code: "AB12C", name: "Карина", phone: "77017770011", via: "номера Ильяса", clientText: "*Заказ №AB12C оформлен*", problems: "счёт Rose Farm выставить вручную (касса не подключена)", sentToClient: true });
+check("готово: номер заявки, проблема со счётом, что ушло клиенту", [doneText.startsWith("Готово: заявка №AB12C для Карина (…0011)."), doneText.includes("Внимание: счёт Rose Farm выставить вручную"), doneText.includes("Клиенту написал с номера Ильяса:"), doneText.endsWith("*Заказ №AB12C оформлен*")], [true, true, true, true]);
+check("готово: клиенту не ушло — сказано прямо", staffOrderDoneText({ code: "AB12C", name: "Карина", phone: "77017770011", via: "x", clientText: "t", problems: "", sentToClient: false }).includes("Клиенту написать НЕ получилось"), true);
+check("«ок» и «да» на план — согласие, «нет» — отказ, «ок, а когда?» — ни то ни другое", [isYesText("Ок"), isYesText("да"), isNoText("нет"), isYesText("ок, а когда?"), isNoText("ок, а когда?")], [true, true, true, false, false]);
 
 console.log(failed === 0 ? "\nВсе проверки прошли." : `\nПровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

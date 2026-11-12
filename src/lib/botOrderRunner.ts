@@ -38,6 +38,7 @@ import {
   planBotOrder,
   type BotOrderDraft,
   type InvoiceOutcome,
+  type PlannedItem,
 } from "./botOrder";
 import { notifyBotSale } from "./botSalesAlert";
 import { MANAGER_PROFILES_SETTING, nextShipDay, parseManagerProfiles, profileOf, shipDayLabel } from "./managerProfile";
@@ -103,6 +104,20 @@ function dueParts(order: OrderWithItems): { farm: string; due: number }[] {
     .filter((p) => p.due >= 1);
 }
 
+/** Что получится из заказа — без записи (`placeBotOrder({ preview: true })`). */
+export interface BotOrderPreview {
+  items: PlannedItem[];
+  deliveryDate: string;
+  store: StoreCode;
+  clientName: string;
+  city: string;
+  /** Карточки клиента ещё нет — заведётся при оформлении. */
+  newClient: boolean;
+  total: number;
+  /** Похожая заявка клиента за двое суток (те же позиции) — предупреждение менеджеру, не отказ (`byManager`). */
+  similar: { code: string; createdAt: string; deliveryDate: string; shipped: boolean } | null;
+}
+
 /**
  * Клиент подтвердил заказ: карточка (найти или завести), заявка на склад,
  * счета Kaspi. Возвращает текст клиенту и записку менеджеру.
@@ -114,7 +129,21 @@ export async function placeBotOrder(input: {
   kaspiPhone: string;
   /** Кто продаёт: бот (по умолчанию) или помощник на номере менеджера — тогда заявка и новая карточка на менеджера. */
   channel?: SellerChannel;
-}): Promise<{ text: string; orderId: string; note: string }> {
+  /**
+   * Только показать, что получится (заявка по поручению менеджера, 12.11.2026 — `staffOrderRunner.ts`): склад, цены,
+   * пачки и повторы проверены, но ни карточка, ни заявка, ни счёт не создаются. Ответ — в `preview`.
+   */
+  preview?: boolean;
+  /** Добавка в заметку заявки («По поручению Ильяса в чате Ecoculture»). */
+  noteExtra?: string;
+  /**
+   * Заявку прямо попросил оформить менеджер. Тогда «похожая заявка уже есть» — не отказ, а предупреждение в плане
+   * (12.11.2026, Карина: утром взяла эустому на сегодня, вечером заказала ту же на завтра — правило «все позиции уже
+   * есть в неотгруженной заявке» ответило «уже оформлен №9ENID»). Отказ остаётся только на точный повтор: те же
+   * позиции, количество и день доставки.
+   */
+  byManager?: boolean;
+}): Promise<{ text: string; orderId: string; note: string; preview?: BotOrderPreview }> {
   const { phone } = input;
   let draft = input.draft;
   const ch = input.channel ?? BOT_CHANNEL;
@@ -200,7 +229,11 @@ export async function placeBotOrder(input: {
     // клиент оплатил; через полчаса помощник Эмиля из той же переписки оформил №DKHCR и выставил второй счёт —
     // «бот продублировал, нужно убрать»). Любая живая заявка клиента за сутки с теми же позициями — не повод для новой:
     // отвечаем, что заказ уже оформлен, и оставляем менеджеру записку.
-    const human = duplicateOfHuman(allOrders, phone, client?.clientId ?? "", plan.items.map((i) => ({ ...i })), signature, new Date());
+    const found = duplicateOfHuman(allOrders, phone, client?.clientId ?? "", plan.items.map((i) => ({ ...i })), signature, new Date());
+    const exact = !!found && signature(found.items) === signature(plan.items) && found.deliveryDate === plan.deliveryDate;
+    const human = input.byManager && !exact ? null : found;
+    // Похожая, но не та же заявка — менеджеру в план, чтобы решил сам.
+    const similar = input.byManager && found && !exact ? found : null;
     if (recent || human) {
       const o = (recent ?? human) as OrderWithItems;
       return {
@@ -212,6 +245,26 @@ export async function placeBotOrder(input: {
                 phoneKey(human.clientPhone) !== phoneKey(phone) ? ` (в заявке телефон ${human.clientPhone}, клиент пишет с ${waPhoneText(phone)} — проверьте номер)` : ""
               }`
             : "",
+      };
+    }
+
+    if (input.preview) {
+      const key = phoneKey(phone);
+      const lead = client || !key ? undefined : (await listLeads()).find((l) => phoneKey(l.phone) === key && l.stage !== "lost");
+      return {
+        text: "",
+        orderId: "",
+        note: "",
+        preview: {
+          items: plan.items,
+          deliveryDate: plan.deliveryDate,
+          store,
+          clientName: client?.name || lead?.name || newClientName(draft.shopName, input.senderName, phone),
+          city: client?.city || lead?.city || draft.city || regionCity || BOT_DEFAULT_CITY,
+          newClient: !client,
+          total: plan.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0),
+          similar: similar ? { code: orderCode(similar.orderId), createdAt: localDayKey(new Date(similar.createdAt)), deliveryDate: similar.deliveryDate, shipped: similar.status === ORDER_STATUSES.SHIPPED } : null,
+        },
       };
     }
 
@@ -256,6 +309,7 @@ export async function placeBotOrder(input: {
 
     const notes = [
       orderNoteHead(ch),
+      input.noteExtra ? input.noteExtra : "",
       draft.address ? `Адрес: ${draft.address}.` : "",
       draft.note ? `Пожелания: ${draft.note}.` : "",
     ]
