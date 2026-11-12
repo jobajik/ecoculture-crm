@@ -26,7 +26,7 @@ async function main() {
   const [code, flower, word, since, flower2, word2, gradeArg] = process.argv.slice(2);
   // Русские слова из .bat портятся кодировкой консоли — градацию можно назвать латиницей.
   const grade2 = ({ top: "Высшая", first: "Первая", second: "Вторая", third: "Третья" } as Record<string, string>)[gradeArg] ?? gradeArg;
-  if (!code || !flower || !word || !since) throw new Error("Нужны: номер заявки, цветок, слово сорта, дата «с»");
+  if (!code) throw new Error("Нужен номер заявки (дальше: цветок, слово сорта, дата «с»; «-» вместо цветка — только заявка)");
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.SHIPMENTS, SHEET_TABS.BATCHES, SHEET_TABS.STOCK_MOVES, SHEET_TABS.WRITEOFFS, SHEET_TABS.USERS, SHEET_TABS.CLAIMS]);
   const [orders, shipments, batches, moves, writeoffs, users, claims] = await Promise.all([listOrdersWithItems(), listShipments(), listBatches(), listStockMoves(), listWriteoffs(), listUsers(), listClaims()]);
   const who = (e: string) => users.find((u) => u.email.toLowerCase() === String(e || "").toLowerCase())?.name || e || "—";
@@ -43,6 +43,10 @@ async function main() {
     for (const i of o.items) {
       console.log(`  позиция ${i.itemId}: ${i.flowerType} · ${i.variety} · ${i.grade} · заказано ${i.quantity} · отгружено ${i.shippedQuantity} · цена ${i.unitPrice}`);
       for (const s of shipments.filter((x) => x.itemId === i.itemId)) console.log(`    отгрузка ${s.shipmentId} · ${d16(s.createdAt)} · ${s.quantity} шт. · ${who(s.warehouseEmail)} · партия ${bl(s.batchId)}${s.notes ? ` · ${s.notes}` : ""}`);
+      // Та же позиция на других складах — на случай «отгрузили из офиса, а записали с основного».
+      for (const b of batches.filter((x) => x.flowerType === i.flowerType && x.variety === i.variety && x.grade === i.grade && x.store && x.quantityRemaining > 0)) {
+        console.log(`    есть на складе «${b.store}»: ${b.batchId} · срезка ${b.harvestDate} · остаток ${b.quantityRemaining}`);
+      }
     }
     for (const c of claims.filter((x) => x.orderId === o.orderId)) console.log(`  рекламация ${c.claimId} · ${d16(c.createdAt)} · ${c.status} · ${c.reason} · ${c.comment}`);
   }
@@ -65,7 +69,7 @@ async function main() {
     console.log(`--- перемещения ${fl} «${w}» с ${since} ---`);
     for (const m of moves.filter((x) => x.flowerType === fl && has(x.variety, w) && (!gr || x.grade === gr) && String(x.createdAt).slice(0, 10) >= since)) console.log(`${m.moveId} · ${d16(m.createdAt)} · ${m.direction} · ${m.variety} · ${m.grade} · ${m.quantity} · ${who(m.byEmail)} · ${m.fromBatchId} → ${m.toBatchId}${m.note ? ` · ${m.note}` : ""}`);
   };
-  show(flower, word);
+  if (flower && flower !== "-" && word && since) show(flower, word);
 
   if (flower2 && word2) {
     for (const fl of flower2.split(",")) {
