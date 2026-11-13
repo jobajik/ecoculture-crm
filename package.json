@@ -22,6 +22,7 @@
     "jszip": "^3.10.1",
     "next": "14.2.35",
     "next-auth": "4.24.15",
+    "pg": "^8.23.1",
     "pngjs": "^7.0.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@types/node": "20.14.15",
+    "@types/pg": "^8.23.1",
     "@types/pngjs": "^6.0.5",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
