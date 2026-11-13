@@ -79,6 +79,10 @@ import { listUsers } from "@/lib/repo/users";
 import { commitReturn } from "@/lib/repo/orderReturn";
 import type { ReturnLineInput } from "@/lib/orderReturn";
 import { getCurrentPrices } from "@/lib/repo/prices";
+import { deleteOrder } from "@/lib/repo/orders";
+import { listBatches } from "@/lib/repo/batches";
+import { createOrderShipments } from "@/lib/repo/shipments";
+import { RUB_DIRECTION, cleanRub, formatRub, planRubItems, rubShipmentRefusal, rubTotal, type RubBatch, type RubLineInput } from "@/lib/rubShipment";
 import { PRICE_KINDS } from "@/lib/priceList";
 
 async function createOrderActionInner(
@@ -604,6 +608,72 @@ async function createRegionOrderActionInner(input: {
 }
 
 /**
+ * Отгрузка в РФ с ценами в рублях: заявка и отгрузка одним шагом (13.11.2026, правила — `rubShipment.ts`).
+ *
+ * Зав. складом выбирает клиента из базы и партии, которые реально уехали, ставит количество и цену в рублях. Заявка
+ * заводится как «объём на регион» с направлением «РФ» (счёта и долга в тенге нет, поступления потом вписывает
+ * бухгалтер) и сразу отгружается из выбранных партий обычной отгрузкой — со всеми её проверками и одной атомарной
+ * записью. Если отгрузка не прошла (остаток партии изменился за секунду до нажатия), только что созданная заявка
+ * удаляется: пустая заявка без отгрузки никому не нужна.
+ */
+async function createRubShipmentActionInner(input: { clientId: string; deliveryDate: string; note?: string; lines: RubLineInput[] }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const role = session.user.role;
+  const farm = role === ROLES.WAREHOUSE ? session.user.farm ?? null : null;
+
+  const lines: RubLineInput[] = (input.lines ?? []).map((l) => ({
+    batchId: String(l.batchId || ""),
+    quantity: Number(l.quantity),
+    priceRub: cleanRub(Number(l.priceRub)),
+  }));
+  forgetReads(); // остатки нужны свежие: по ним проверяем и из них же отгружаем
+  const [client, allBatches] = await Promise.all([input.clientId ? getClientById(input.clientId) : null, listBatches()]);
+  const batches = new Map<string, RubBatch>(allBatches.map((b) => [b.batchId, b]));
+  const refusal = rubShipmentRefusal({ role, farm, client, deliveryDate: input.deliveryDate, today: localDayKey(), lines, batches });
+  if (refusal) throw new Error(refusal);
+  if (!client) throw new Error("Выберите клиента из базы");
+
+  const plan = planRubItems(lines, batches);
+  const note = String(input.note ?? "").trim().slice(0, 300);
+  const orderId = await createOrder({
+    kind: ORDER_KINDS.REGION,
+    direction: RUB_DIRECTION,
+    clientId: client.clientId,
+    clientName: client.name,
+    clientPhone: client.phone || "",
+    deliveryDate: input.deliveryDate,
+    confirmed: true,
+    notes: `Отгрузка в РФ, цены в рублях: ${formatRub(rubTotal(plan))}. Оформил склад по факту.${note ? ` ${note}` : ""}`,
+    items: plan.map((i) => ({
+      flowerType: i.flowerType as NewOrderInput["items"][number]["flowerType"],
+      variety: i.variety,
+      grade: i.grade,
+      quantity: i.quantity,
+      unitPrice: 0, // в тенге цены нет: рубли считаются отдельно, поступления вписывает бухгалтер
+      priceRub: i.priceRub,
+    })),
+    managerEmail: session.user.email,
+  });
+
+  try {
+    await createOrderShipments({
+      orderId,
+      warehouseEmail: session.user.email,
+      lines: plan.map((i, idx) => ({ itemId: `${orderId}-I${idx + 1}`, parts: i.parts })),
+    });
+  } catch (err) {
+    await deleteOrder(orderId).catch(() => {});
+    throw new Error(`Отгрузка не записана: ${err instanceof Error ? err.message : String(err)}. Заявка не создана — проверьте остатки и повторите.`);
+  }
+
+  revalidatePath("/orders");
+  revalidatePath("/warehouse");
+  revalidatePath("/plans/regions");
+  return orderId;
+}
+
+/**
  * Сколько по этой городской заявке поступило денег. Вписывает бухгалтер.
  *
  * Сумма НЕ сверяется с суммой заявки: суммы у заявки нет — цены в позициях
@@ -686,6 +756,10 @@ export async function deleteOrderAction(...args: Parameters<typeof deleteOrderAc
 
 export async function orderDeleteInfoAction(...args: Parameters<typeof orderDeleteInfoActionInner>) {
   return guard(() => orderDeleteInfoActionInner(...args));
+}
+
+export async function createRubShipmentAction(...args: Parameters<typeof createRubShipmentActionInner>) {
+  return guard(() => createRubShipmentActionInner(...args));
 }
 
 export async function createRegionOrderAction(...args: Parameters<typeof createRegionOrderActionInner>) {

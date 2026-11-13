@@ -90,6 +90,7 @@ export function toOrderItem(record: Record<string, string>): OrderItem {
     quantity: sheetNumber(record.Quantity),
     unitPrice: sheetNumber(record.UnitPrice),
     shippedQuantity: sheetNumber(record.ShippedQuantity),
+    ...(sheetNumber(record.PriceRub) > 0 ? { priceRub: sheetNumber(record.PriceRub) } : {}),
   };
 }
 
@@ -99,6 +100,8 @@ export interface NewOrderItemInput {
   grade: string;
   quantity: number;
   unitPrice: number;
+  /** Цена в рублях — только у отгрузки в РФ, которую заводит склад. */
+  priceRub?: number;
 }
 
 export interface NewOrderInput {
@@ -260,6 +263,7 @@ export function buildNewOrder(
     Quantity: item.quantity,
     UnitPrice: item.unitPrice,
     ShippedQuantity: 0,
+    PriceRub: item.priceRub && item.priceRub > 0 ? item.priceRub : "",
   }));
   return { orderId, orderRecord, itemRecords };
 }

@@ -64,6 +64,9 @@ export default async function WarehousePage() {
             <Link href="/orders/new?region=1" className="btn-secondary">
               + Опт в регион
             </Link>
+            <Link href="/orders/new?rub=1" className="btn-secondary">
+              + Отгрузка в РФ (₽)
+            </Link>
             <Link href="/warehouse/receive" className="btn-primary">
               + Приёмка
             </Link>

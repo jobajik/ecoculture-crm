@@ -25,6 +25,7 @@ import { nameIndex, personName } from "@/lib/personName";
 import ReadyChecks from "@/components/ReadyChecks";
 import RegionIncomePanel from "@/components/RegionIncomePanel";
 import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKind";
+import { formatRub, hasRubPrices, rubTotal } from "@/lib/rubShipment";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isCreditTerms, isReadyToShip, notReadyReason } from "@/lib/orderReady";
@@ -103,6 +104,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // Оптовый объём на город: клиента нет, счёта нет, а деньги подтверждает
   // бухгалтер отдельной суммой.
   const region = isRegionOrder(loaded);
+  // Отгрузка в РФ с ценами в рублях (`rubShipment.ts`): та же заявка по региону, но с клиентом и рублёвыми ценами.
+  const rub = region && hasRubPrices(loaded);
   // Своя клиентская заявка менеджера розницы (мелкий заказ) — открывается.
   // Склад офиса (Руслан — он же розница Алматы) открывает офисные заявки целиком.
   const officeOrder = isOfficeRole(role) && loaded.store === "office";
@@ -310,7 +313,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       <PageHeader
         area="orders"
         title={`№ ${orderCode(order.orderId)}`}
-        eyebrow={region ? "Опт в регион" : retail ? "Заявка магазину" : undefined}
+        eyebrow={rub ? "Отгрузка в РФ · цены в рублях" : region ? "Опт в регион" : retail ? "Заявка магазину" : undefined}
         subtitle={
           <>
             {retail && `${retailLabel(order.retail)} · наш магазин · `}
@@ -339,9 +342,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <Watermark />
         <div className="relative flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs text-ink-muted">{region ? "Объём" : "Сумма"}</div>
+            <div className="text-xs text-ink-muted">{rub ? "Сумма в рублях" : region ? "Объём" : "Сумма"}</div>
             <div className="font-display text-[30px] leading-tight font-extrabold tabular-nums">
-              {region ? `${stems.toLocaleString("ru-RU")} шт.` : moneyExact(order.totalAmount)}
+              {rub ? formatRub(rubTotal(order.items)) : region ? `${stems.toLocaleString("ru-RU")} шт.` : moneyExact(order.totalAmount)}
             </div>
             {hasInvoice && (
               <span className={clsx("badge mt-1", SECTION_TONE[moneyTone].chip)}>
@@ -362,7 +365,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <div className="mt-4 pt-4 border-t border-line-hairline">
           <div className="text-xs text-ink-muted">{region ? "Регион" : "Клиент"}</div>
           <div className="font-display text-[17px] font-bold leading-snug mt-0.5 break-words">
-            {region ? (
+            {rub ? (
+              `${order.direction} · ${order.clientName}`
+            ) : region ? (
               order.direction || "—"
             ) : order.clientId && clientLinks ? (
               <Link href={`/clients/${order.clientId}`} className="hover:text-accent">
@@ -463,9 +468,21 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           {/* У городской заявки контрагента нет по замыслу: показывать «Клиент —
               Астана» значило бы выдумать клиента, которого не существует. */}
           {region ? (
-            <Fact icon="route" label="Регион">
-              <span className="font-medium">{order.direction || "—"}</span>
-            </Fact>
+            <>
+              <Fact icon="route" label="Регион">
+                <span className="font-medium">{order.direction || "—"}</span>
+              </Fact>
+              {rub && (
+                <Fact icon="client" label="Клиент">
+                  <span className="font-medium">{order.clientName}</span>
+                </Fact>
+              )}
+              {rub && order.notes && (
+                <Fact icon="note" label="Комментарий">
+                  <span className="whitespace-pre-wrap">{order.notes}</span>
+                </Fact>
+              )}
+            </>
           ) : (
             <>
               <Fact icon="client" label="Клиент">
@@ -564,6 +581,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                   только заставляли бы гадать, не забыли ли их заполнить. */}
               {!region && <th className="px-4 py-3 font-medium">Цена</th>}
               {!region && <th className="px-4 py-3 font-medium">Сумма</th>}
+              {rub && <th className="px-4 py-3 font-medium">Цена, ₽</th>}
+              {rub && <th className="px-4 py-3 font-medium">Сумма, ₽</th>}
             </tr>
           </thead>
           <tbody>
@@ -584,6 +603,14 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                     {moneyExact(item.quantity * item.unitPrice)}
                   </td>
                 )}
+                {rub && (
+                  <td className="px-4 py-3 tabular-nums" data-label="Цена, ₽">{item.priceRub ? formatRub(item.priceRub) : "—"}</td>
+                )}
+                {rub && (
+                  <td className="px-4 py-3 font-medium tabular-nums" data-label="Сумма, ₽">
+                    {item.priceRub ? formatRub(item.quantity * item.priceRub) : "—"}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -592,7 +619,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               <td colSpan={region ? 1 : 4} className="px-4 py-3 text-right text-ink-secondary">
                 Итого
               </td>
-              {region ? (
+              {rub ? (
+                <>
+                  <td colSpan={3} className="px-4 py-3 font-semibold">
+                    {order.items.reduce((s, i) => s + i.quantity, 0).toLocaleString("ru-RU")} шт.
+                  </td>
+                  <td className="px-4 py-3 font-display text-base font-extrabold tabular-nums whitespace-nowrap">
+                    {formatRub(rubTotal(order.items))}
+                  </td>
+                </>
+              ) : region ? (
                 <td colSpan={2} className="px-4 py-3 font-semibold">
                   {order.items.reduce((s, i) => s + i.quantity, 0).toLocaleString("ru-RU")} шт.
                 </td>

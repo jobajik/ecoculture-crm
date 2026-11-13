@@ -201,6 +201,8 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   shippedQuantity: number;
+  /** Цена стебля в рублях — только у отгрузок в РФ (`rubShipment.ts`); у остальных нет. */
+  priceRub?: number;
 }
 
 export interface OrderWithItems extends Order {

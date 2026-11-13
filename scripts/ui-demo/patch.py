@@ -9,15 +9,47 @@ fake = '''
 let demoData: Record<string, string[][]> | null = null;
 function demoClient(): sheets_v4.Sheets {
   if (!demoData) {
+    // Одни данные на весь процесс: у страницы и у серверного действия свои копии этого модуля, и запись, сделанная
+    // действием, иначе не была бы видна странице.
+    const shared = globalThis as unknown as { __demoData?: Record<string, string[][]> };
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    demoData = JSON.parse(require("fs").readFileSync(process.env.DEMO_FIXTURE as string, "utf-8"));
+    if (!shared.__demoData) shared.__demoData = JSON.parse(require("fs").readFileSync(process.env.DEMO_FIXTURE as string, "utf-8"));
+    demoData = shared.__demoData!;
   }
   const tabOf = (range: string) => range.split("!")[0].replace(/^'|'$/g, "");
   const ok = async () => ({ data: {} });
   return {
     spreadsheets: {
       get: async () => ({ data: { sheets: Object.keys(demoData!).map((t, i) => ({ properties: { title: t, sheetId: i, gridProperties: { rowCount: 1000, columnCount: 40 } } })) } }),
-      batchUpdate: ok,
+      // Записи пакетом (`commitAtomic`, `deleteWhere`) применяются В ПАМЯТИ копии: без этого действие «создать и тут
+      // же прочитать» (заявка + отгрузка одним шагом, 13.11.2026) на копии не проверить. В файл и на сайт не попадают.
+      batchUpdate: async ({ requestBody }: { requestBody: { requests: Record<string, any>[] } }) => {
+        const names = Object.keys(demoData!);
+        const text = (v: any) => {
+          const u = v?.userEnteredValue ?? {};
+          return u.stringValue !== undefined ? String(u.stringValue) : u.numberValue !== undefined ? String(u.numberValue) : u.boolValue !== undefined ? (u.boolValue ? "TRUE" : "FALSE") : "";
+        };
+        for (const r of requestBody.requests ?? []) {
+          if (r.appendCells) {
+            const rows = demoData![names[r.appendCells.sheetId]];
+            for (const row of r.appendCells.rows ?? []) rows.push((row.values ?? []).map(text));
+          } else if (r.updateCells) {
+            const g = r.updateCells.range;
+            const rows = demoData![names[g.sheetId]];
+            (r.updateCells.rows ?? []).forEach((row: any, i: number) => {
+              const target = (rows[g.startRowIndex + i] ??= []);
+              (row.values ?? []).forEach((v: any, j: number) => {
+                while (target.length < g.startColumnIndex + j) target.push("");
+                target[g.startColumnIndex + j] = text(v);
+              });
+            });
+          } else if (r.deleteDimension) {
+            const g = r.deleteDimension.range;
+            demoData![names[g.sheetId]].splice(g.startIndex, g.endIndex - g.startIndex);
+          }
+        }
+        return { data: {} };
+      },
       create: ok,
       values: {
         get: async ({ range }: { range: string }) => ({ data: { values: demoData![tabOf(range)] ?? [] } }),

@@ -11,7 +11,11 @@ import { buildClientStats } from "@/lib/clientStats";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { canSetDirection, cleanDirection } from "@/lib/direction";
+import { canSetDirection, cleanDirection, directionForCity } from "@/lib/direction";
+import RubShipmentForm from "@/components/RubShipmentForm";
+import { RUB_DIRECTION } from "@/lib/rubShipment";
+import { listBatches } from "@/lib/repo/batches";
+import { formatDay } from "@/lib/formatDate";
 import { REGION_ORDER_DIRECTIONS, canFillRegionOrders } from "@/lib/orderKind";
 import RegionOrderForm from "@/components/RegionOrderForm";
 import PageHeader from "@/components/PageHeader";
@@ -20,6 +24,7 @@ import {
   ORDER_STATUSES,
   ROLES,
   flowerTypesForFarm,
+  getFarmFor,
   formatGrade,
   retailLabel,
   type FlowerType,
@@ -60,7 +65,7 @@ export default async function NewOrderPage({
     date?: string;
     retail?: string;
     direction?: string;
-    region?: string;
+    region?: string; rub?: string;
     /** «1» — менеджер розницы оформляет заявку клиенту, а не магазину. */
     sale?: string;
     /** Черновик из WhatsApp (`waOrder.ts`): форма открывается заполненной. */
@@ -91,7 +96,42 @@ export default async function NewOrderPage({
   // Зав. складом заводит только заявки в регионы: в наши магазины (retail=1) и
   // опт на город (region=1). Без этой строки она попадала бы на клиентскую
   // форму, где ей нечего делать: чужие клиенты и чужой прайс.
-  if (role === ROLES.WAREHOUSE && !retail && !regionForm) redirect("/retail/regions");
+  // Отгрузка в РФ с ценами в рублях (`rub=1`): заявка и отгрузка одним шагом, заводит склад (`rubShipment.ts`).
+  const rubForm = canFillRegionOrders(role) && searchParams?.rub === "1";
+
+  if (role === ROLES.WAREHOUSE && !retail && !regionForm && !rubForm) redirect("/retail/regions");
+
+  if (rubForm) {
+    const farm = role === ROLES.WAREHOUSE ? session?.user?.farm ?? "" : "";
+    if (role === ROLES.WAREHOUSE && !farm) {
+      return (
+        <div>
+          <PageHeader area="orders" title="Отгрузка в РФ (рубли)" icon="route" />
+          <div className="card max-w-3xl text-sm">У вас не указано производство. Попросите администратора заполнить его в «Настройки → Сотрудники».</div>
+        </div>
+      );
+    }
+    const [allClients, allBatches] = await Promise.all([listClients(), listBatches()]);
+    const rubClients = allClients
+      .filter((c) => c.active && !(c.retail || "").trim())
+      .map((c) => ({ clientId: c.clientId, name: c.name, city: c.city || "", rf: directionForCity(c.city) === RUB_DIRECTION }))
+      .sort((a, b) => Number(b.rf) - Number(a.rf) || a.name.localeCompare(b.name, "ru"));
+    const rubBatches = allBatches
+      .filter((b) => b.quantityRemaining > 0 && !(b.store || "").trim() && (!farm || getFarmFor(b.flowerType) === farm))
+      .sort((a, b) => a.flowerType.localeCompare(b.flowerType) || a.variety.localeCompare(b.variety) || a.grade.localeCompare(b.grade) || (a.harvestDate || a.receivedAt).localeCompare(b.harvestDate || b.receivedAt))
+      .map((b) => ({
+        batchId: b.batchId,
+        title: `${FLOWER_TYPE_LABELS[b.flowerType]} ${b.variety} · ${formatGrade(b.grade)}`,
+        cut: formatDay(b.harvestDate || b.receivedAt),
+        quantityRemaining: b.quantityRemaining,
+      }));
+    return (
+      <div>
+        <PageHeader area="orders" title="Отгрузка в РФ (рубли)" icon="route" />
+        <RubShipmentForm clients={rubClients} batches={rubBatches} today={localDayKey()} />
+      </div>
+    );
+  }
 
   if (regionForm) {
     // Зав. складом — только свой цветок; сервер проверяет то же самое.

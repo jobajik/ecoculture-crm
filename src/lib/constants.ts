@@ -240,6 +240,9 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "Quantity",
     "UnitPrice",
     "ShippedQuantity",
+    // Цена стебля в РУБЛЯХ — только у отгрузок в РФ, которые заводит склад (`rubShipment.ts`, 13.11.2026). Колонка
+    // последняя (грабли 1.1); у всех остальных позиций пусто. Цена в тенге (`UnitPrice`) у таких позиций — ноль.
+    "PriceRub",
   ],
   [SHEET_TABS.BATCHES]: [
     "BatchID",
