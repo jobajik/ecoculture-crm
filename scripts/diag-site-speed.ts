@@ -9,6 +9,7 @@ dotenv.config();
  *
  *   npx tsx scripts/diag-site-speed.ts [раз]        — по умолчанию два замера
  *   npx tsx scripts/diag-site-speed.ts 2 --no-sheets — без чтения таблицы (только база)
+ *   npx tsx scripts/diag-site-speed.ts 2 --sets      — ещё и наборы вкладок шести страниц, по два чтения каждого
  */
 const BASE = "https://www.crm-ecoculture.kz";
 
@@ -51,6 +52,26 @@ async function main() {
       }
       const head = `  база · ${kind} (${d.neon ? "Neon" : "не Neon"}, ${d.region || "регион ?"}, ${d.pooled ? "с пулом" : "прямое"})`;
       console.log(d.ok ? `${head}: соединение ${d.connectMs} мс, запросы ${d.queryMs.join(" / ")} мс · PostgreSQL ${d.version}, база ${d.db}, таблиц ${d.tables}` : `${head}: ОШИБКА ${d.error}`);
+    }
+  }
+
+  if (process.argv.includes("--sets")) {
+    console.log("\nЧтение данных страницы с сервера (таблица, одним запросом):");
+    const labels: [string, string][] = [["orders", "Заявки (список)"], ["finance", "Оплаты"], ["stock", "Склад"], ["order", "Заявка (страница)"], ["leads", "Лиды (доска)"], ["chats", "Переписки"]];
+    for (const [name, label] of labels) {
+      const got: string[] = [];
+      let rows = "";
+      for (let i = 0; i < 2; i++) {
+        const r = await timed("/api/diag/speed?set=" + name, { authorization: `Bearer ${secret}` });
+        if (r.status !== 200) {
+          got.push(`http ${r.status}`);
+          continue;
+        }
+        const s = JSON.parse(r.text).set;
+        got.push(s.error ? `ОШИБКА ${s.error}` : `${s.ms} мс (весь ответ ${r.ms})`);
+        if (s.rows !== undefined) rows = `${s.rows} строк`;
+      }
+      console.log(`  ${label.padEnd(18)} ${rows.padStart(13)}  ${got.join(" · ")}`);
     }
   }
 }

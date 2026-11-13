@@ -16,14 +16,50 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Недостаточно прав", { status: 403 });
   }
-  const withSheets = new URL(request.url).searchParams.get("sheets") !== "0";
+  const params = new URL(request.url).searchParams;
+  const withSheets = params.get("sheets") !== "0";
   const out: Record<string, unknown> = {
     commit: (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7),
     region: process.env.VERCEL_REGION || "",
   };
+  // `?set=chats` — только чтение набора вкладок одной страницы (одним запросом, как это делает сама страница).
+  const set = params.get("set") || "";
+  if (set) {
+    out.set = await pageSetTiming(set);
+    return Response.json(out, { headers: { "Cache-Control": "no-store" } });
+  }
   if (withSheets) out.sheets = await sheetsTimings();
   out.db = { pooled: await dbTimings(pooledDbUrl()), direct: await dbTimings(directDbUrl()) };
   return Response.json(out, { headers: { "Cache-Control": "no-store" } });
+}
+
+/** Какие вкладки берёт страница — те же наборы, что в `scripts/diag-speed.ts`. */
+function pageSets(): Record<string, string[]> {
+  const T = SHEET_TABS;
+  return {
+    orders: [T.ORDERS, T.ORDER_ITEMS, T.CLIENTS, T.USERS],
+    order: [T.ORDERS, T.ORDER_ITEMS, T.CLIENTS, T.USERS, T.SHIPMENTS, T.BATCHES, T.PAYMENTS, T.KASPI_INVOICES, T.CLAIMS],
+    finance: [T.ORDERS, T.ORDER_ITEMS, T.CLIENTS, T.USERS, T.PAYMENTS, T.KASPI_INVOICES],
+    stock: [T.BATCHES, T.ORDERS, T.ORDER_ITEMS, T.SHIPMENTS, T.WRITEOFFS],
+    chats: [T.WA_MESSAGES, T.LEADS, T.CLIENTS, T.USERS, T.ASSISTANT_LOG, T.LEAD_ANALYSES, T.LEAD_TOUCHES],
+    leads: [T.LEADS, T.LEAD_TOUCHES, T.WA_MESSAGES, T.LEAD_ANALYSES, T.CLIENTS, T.USERS],
+  };
+}
+
+async function pageSetTiming(name: string) {
+  const tabs = pageSets()[name];
+  if (!tabs) return { name, error: "нет такого набора" };
+  try {
+    forgetReads();
+    const t0 = Date.now();
+    await prefetchTables(tabs);
+    const ms = Date.now() - t0;
+    let rows = 0;
+    for (const tab of tabs) rows += (await readTable(tab)).rows.length; // из памяти чтений — второго запроса нет
+    return { name, tabs: tabs.length, rows, ms };
+  } catch (err) {
+    return { name, error: err instanceof Error ? err.message.slice(0, 200) : String(err) };
+  }
 }
 
 async function sheetsTimings() {
