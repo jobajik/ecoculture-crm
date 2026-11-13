@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   // `?set=chats` — только чтение набора вкладок одной страницы (одним запросом, как это делает сама страница).
   const set = params.get("set") || "";
   if (set) {
-    out.set = await pageSetTiming(set);
+    out.set = await pageSetTiming(set, Math.max(0, Math.min(5000, Number(params.get("pause")) || 0)));
     return Response.json(out, { headers: { "Cache-Control": "no-store" } });
   }
   if (withSheets) out.sheets = await sheetsTimings();
@@ -46,7 +46,11 @@ function pageSets(): Record<string, string[]> {
   };
 }
 
-async function pageSetTiming(name: string) {
+/**
+ * `pause` — сколько миллисекунд подождать между пакетным чтением и чтениями по вкладке: так ведёт себя страница,
+ * которая между ними что-то считает. `againMs` заметно больше паузы — значит, вкладки читались у Google второй раз.
+ */
+async function pageSetTiming(name: string, pause: number) {
   const tabs = pageSets()[name];
   if (!tabs) return { name, error: "нет такого набора" };
   try {
@@ -54,9 +58,11 @@ async function pageSetTiming(name: string) {
     const t0 = Date.now();
     await prefetchTables(tabs);
     const ms = Date.now() - t0;
+    const t1 = Date.now();
+    if (pause) await new Promise((r) => setTimeout(r, pause));
     let rows = 0;
-    for (const tab of tabs) rows += (await readTable(tab)).rows.length; // из памяти чтений — второго запроса нет
-    return { name, tabs: tabs.length, rows, ms };
+    for (const tab of tabs) rows += (await readTable(tab)).rows.length; // из памяти чтений — второго запроса быть не должно
+    return { name, tabs: tabs.length, rows, ms, pause, againMs: Date.now() - t1 };
   } catch (err) {
     return { name, error: err instanceof Error ? err.message.slice(0, 200) : String(err) };
   }

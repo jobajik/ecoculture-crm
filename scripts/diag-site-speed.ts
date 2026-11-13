@@ -10,6 +10,9 @@ dotenv.config();
  *   npx tsx scripts/diag-site-speed.ts [раз]        — по умолчанию два замера
  *   npx tsx scripts/diag-site-speed.ts 2 --no-sheets — без чтения таблицы (только база)
  *   npx tsx scripts/diag-site-speed.ts 2 --sets      — ещё и наборы вкладок шести страниц, по два чтения каждого
+ *   npx tsx scripts/diag-site-speed.ts 0 --sets --pause 1500 — то же с паузой между пакетным чтением и чтениями по
+ *                                                      вкладке (как у страницы, которая между ними считает): «повтор»
+ *                                                      заметно больше паузы — вкладки скачивались второй раз
  */
 const BASE = "https://www.crm-ecoculture.kz";
 
@@ -23,7 +26,9 @@ async function timed(path: string, headers: Record<string, string> = {}) {
 async function main() {
   const secret = process.env.CRON_SECRET;
   if (!secret) throw new Error("Нет CRON_SECRET в .env.local");
-  const times = Math.max(1, Math.min(5, Number(process.argv[2]) || 2));
+  const times = process.argv[2] === "0" ? 0 : Math.max(1, Math.min(5, Number(process.argv[2]) || 2));
+  const pauseAt = process.argv.indexOf("--pause");
+  const pause = pauseAt > 0 ? Number(process.argv[pauseAt + 1]) || 0 : 0;
   const noSheets = process.argv.includes("--no-sheets");
 
   console.log("Пустой ответ сайта (/api/version), мс с этого компьютера:");
@@ -57,18 +62,23 @@ async function main() {
 
   if (process.argv.includes("--sets")) {
     console.log("\nЧтение данных страницы с сервера (таблица, одним запросом):");
-    const labels: [string, string][] = [["orders", "Заявки (список)"], ["finance", "Оплаты"], ["stock", "Склад"], ["order", "Заявка (страница)"], ["leads", "Лиды (доска)"], ["chats", "Переписки"]];
+    const all: [string, string][] = [["orders", "Заявки (список)"], ["finance", "Оплаты"], ["stock", "Склад"], ["order", "Заявка (страница)"], ["leads", "Лиды (доска)"], ["chats", "Переписки"]];
+    // `--only chats,leads` — только эти наборы; `--once` — по одному чтению (лимит Google общий с работающими людьми).
+    const onlyAt = process.argv.indexOf("--only");
+    const only = onlyAt > 0 ? (process.argv[onlyAt + 1] || "").split(",") : [];
+    const labels = only.length ? all.filter(([name]) => only.includes(name)) : all;
+    const reads = process.argv.includes("--once") ? 1 : 2;
     for (const [name, label] of labels) {
       const got: string[] = [];
       let rows = "";
-      for (let i = 0; i < 2; i++) {
-        const r = await timed("/api/diag/speed?set=" + name, { authorization: `Bearer ${secret}` });
+      for (let i = 0; i < reads; i++) {
+        const r = await timed(`/api/diag/speed?set=${name}${pause ? `&pause=${pause}` : ""}`, { authorization: `Bearer ${secret}` });
         if (r.status !== 200) {
           got.push(`http ${r.status}`);
           continue;
         }
         const s = JSON.parse(r.text).set;
-        got.push(s.error ? `ОШИБКА ${s.error}` : `${s.ms} мс (весь ответ ${r.ms})`);
+        got.push(s.error ? `ОШИБКА ${s.error}` : `${s.ms} мс${pause ? `, пауза ${s.pause}, повтор ${s.againMs}` : ""} (весь ответ ${r.ms})`);
         if (s.rows !== undefined) rows = `${s.rows} строк`;
       }
       console.log(`  ${label.padEnd(18)} ${rows.padStart(13)}  ${got.join(" · ")}`);
