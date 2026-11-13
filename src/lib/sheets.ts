@@ -1,6 +1,7 @@
 import "./timezone";
 import { google, sheets_v4 } from "googleapis";
 import { SHEET_HEADERS, SHEET_TABS } from "./constants";
+import { createReadMemo } from "./readMemo";
 import { sheetSafeText } from "./sheetCell";
 
 // ---------------------------------------------------------------------------
@@ -162,8 +163,8 @@ export interface SheetTable {
 // стоить двойной отгрузки.
 // ---------------------------------------------------------------------------
 
-const READ_MEMO_MS = 3000;
-const readMemo = new Map<string, { at: number; promise: Promise<SheetTable> }>();
+// Сама память — `readMemo.ts`: три секунды считаются от ПРИХОДА данных, а не от начала запроса (13.11.2026).
+const readMemo = createReadMemo<SheetTable>();
 
 /** Забыть всё прочитанное. Зовётся после любой записи. */
 export function forgetReads(): void {
@@ -218,17 +219,11 @@ export interface ReadOptions {
 
 /** Читает вкладку целиком. Первая строка считается заголовком. */
 export async function readTable(tabName: string, options: ReadOptions = {}): Promise<SheetTable> {
-  const now = Date.now();
-  const memo = readMemo.get(tabName);
-  if (!options.fresh && memo && now - memo.at < READ_MEMO_MS) return memo.promise;
-
-  const promise = callGoogle(() => fetchTable(tabName));
-  readMemo.set(tabName, { at: now, promise });
-  // Неудачное чтение не запоминаем: следующий запрос должен попробовать снова.
-  promise.catch(() => {
-    if (readMemo.get(tabName)?.promise === promise) readMemo.delete(tabName);
-  });
-  return promise;
+  if (!options.fresh) {
+    const remembered = readMemo.get(tabName);
+    if (remembered) return remembered;
+  }
+  return readMemo.track(tabName, callGoogle(() => fetchTable(tabName)));
 }
 
 async function fetchTable(tabName: string): Promise<SheetTable> {
@@ -589,11 +584,7 @@ export async function commitAtomic(ops: WriteOp[]): Promise<void> {
  * трёх секунд берут готовое.
  */
 export async function prefetchTables(tabNames: string[]): Promise<void> {
-  const now = Date.now();
-  const need = tabNames.filter((t) => {
-    const memo = readMemo.get(t);
-    return !(memo && now - memo.at < READ_MEMO_MS);
-  });
+  const need = tabNames.filter((t) => !readMemo.has(t));
   if (need.length === 0) return;
   const sheets = getSheetsClient();
   let groups: Map<string, string[]>;
@@ -613,7 +604,7 @@ export async function prefetchTables(tabNames: string[]): Promise<void> {
       );
       tabs.forEach((tab, i) => {
         const table = toSheetTable(tab, (res.data.valueRanges?.[i]?.values ?? []) as string[][]);
-        readMemo.set(tab, { at: now, promise: Promise.resolve(table) });
+        readMemo.put(tab, table);
       });
     } catch {
       // Пакет не прочитался (например, одной из вкладок ещё нет) — не беда:
