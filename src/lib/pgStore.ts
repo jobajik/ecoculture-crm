@@ -30,10 +30,33 @@ create table if not exists sheet_tabs (
 
 const BATCH = 1500;
 
+/**
+ * Два вида знаков база не хранит, и они убираются при копии — это ЕДИНСТВЕННОЕ отступление от «как есть», и оно
+ * считается (`cleaned`): нулевой знак (U+0000 — PostgreSQL его в тексте не допускает; на живых данных 13.11.2026 он
+ * нашёлся во вкладке AssistantLog, и вкладка не скопировалась вовсе) убирается, половинка составного знака (оборванный
+ * смайлик) заменяется на «\uFFFD». Оба невидимы и смысла не несут.
+ */
+const NUL = /\u0000/g;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+export function cleanCell(value: string | null | undefined): string {
+  const text = value ?? "";
+  if (!NUL.test(text) && !LONE_SURROGATE.test(text)) {
+    NUL.lastIndex = 0;
+    LONE_SURROGATE.lastIndex = 0;
+    return text;
+  }
+  NUL.lastIndex = 0;
+  LONE_SURROGATE.lastIndex = 0;
+  return text.replace(NUL, "").replace(LONE_SURROGATE, "\uFFFD");
+}
+
 export interface CopyResult {
   tab: string;
   rows: number;
   cells: number;
+  /** Сколько ячеек пришлось очистить от знаков, которые база не хранит (см. `cleanCell`), и где первая. */
+  cleaned: number;
+  firstCleaned: string;
   /** Сколько строк, прочитанных обратно из базы, не совпали с тем, что записывали. Должно быть 0. */
   mismatches: number;
   /** Где первое расхождение: номер строки и колонка (содержимое не печатаем — это данные клиентов). */
@@ -74,7 +97,7 @@ export async function copyTabToDb(tab: string, table: SheetTable): Promise<CopyR
     try {
       await client.query("delete from sheet_rows where tab = $1", [tab]);
       for (let from = 0; from < table.rows.length; from += BATCH) {
-        const part = table.rows.slice(from, from + BATCH).map((cells, i) => ({ n: table.rowNumbers[from + i], c: cells.map((v) => v ?? "") }));
+        const part = table.rows.slice(from, from + BATCH).map((cells, i) => ({ n: table.rowNumbers[from + i], c: cells.map(cleanCell) }));
         await client.query(
           `insert into sheet_rows (tab, row_number, cells)
            select $1, (e->>'n')::int, array(select jsonb_array_elements_text(e->'c'))
@@ -85,7 +108,7 @@ export async function copyTabToDb(tab: string, table: SheetTable): Promise<CopyR
       await client.query(
         `insert into sheet_tabs (tab, headers, row_count, copied_at) values ($1, $2, $3, now())
          on conflict (tab) do update set headers = excluded.headers, row_count = excluded.row_count, copied_at = excluded.copied_at`,
-        [tab, table.headers.map((h) => h ?? ""), table.rows.length]
+        [tab, table.headers.map(cleanCell), table.rows.length]
       );
       await client.query("commit");
     } catch (err) {
@@ -96,11 +119,24 @@ export async function copyTabToDb(tab: string, table: SheetTable): Promise<CopyR
 
     const check = await compareWithDb(client, tab, table);
     const cells = table.rows.reduce((sum, r) => sum + r.length, 0);
-    return { tab, rows: table.rows.length, cells, writeMs, ...check };
+    return { tab, rows: table.rows.length, cells, writeMs, ...countCleaned(table), ...check };
   });
 }
 
-/** Сравнивает вкладку в базе с переданной (из Google-таблицы) ячейка в ячейку. Ничего не меняет. */
+function countCleaned(table: SheetTable): Pick<CopyResult, "cleaned" | "firstCleaned"> {
+  let cleaned = 0;
+  let firstCleaned = "";
+  table.rows.forEach((cells, i) =>
+    cells.forEach((v, col) => {
+      if (cleanCell(v) === (v ?? "")) return;
+      cleaned++;
+      if (!firstCleaned) firstCleaned = `строка ${table.rowNumbers[i]}, колонка ${col + 1}`;
+    })
+  );
+  return { cleaned, firstCleaned };
+}
+
+/** Сравнивает вкладку в базе с переданной (из Google-таблицы) ячейка в ячейку — после `cleanCell`. Ничего не меняет. */
 async function compareWithDb(client: Client, tab: string, table: SheetTable): Promise<Pick<CopyResult, "mismatches" | "firstMismatch" | "verifyMs">> {
   const t1 = Date.now();
   const back = await client.query<{ row_number: number; cells: (string | null)[] }>(
@@ -114,13 +150,13 @@ async function compareWithDb(client: Client, tab: string, table: SheetTable): Pr
     mismatches++;
     if (!firstMismatch) firstMismatch = where;
   };
-  if (sameRow(table.headers.map((h) => h ?? ""), head.rows[0]?.headers ?? []) !== -1) note("заголовки");
+  if (sameRow(table.headers.map(cleanCell), head.rows[0]?.headers ?? []) !== -1) note("заголовки");
   if (back.rows.length !== table.rows.length) note(`строк в базе ${back.rows.length}, в таблице ${table.rows.length}`);
   const inDb = new Map(back.rows.map((r) => [r.row_number, r.cells]));
   table.rows.forEach((cells, i) => {
     const stored = inDb.get(table.rowNumbers[i]);
     if (!stored) return note(`строки ${table.rowNumbers[i]} в базе нет`);
-    const col = sameRow(cells.map((v) => v ?? ""), stored);
+    const col = sameRow(cells.map(cleanCell), stored);
     if (col !== -1) note(`строка ${table.rowNumbers[i]}, колонка ${col + 1}`);
   });
   return { mismatches, firstMismatch, verifyMs: Date.now() - t1 };
@@ -134,7 +170,7 @@ export async function verifyTabInDb(tab: string, table: SheetTable): Promise<Cop
   return withClient(async (client) => {
     await client.query(SCHEMA);
     const check = await compareWithDb(client, tab, table);
-    return { tab, rows: table.rows.length, cells: table.rows.reduce((sum, r) => sum + r.length, 0), writeMs: 0, ...check };
+    return { tab, rows: table.rows.length, cells: table.rows.reduce((sum, r) => sum + r.length, 0), writeMs: 0, ...countCleaned(table), ...check };
   });
 }
 

@@ -41,7 +41,7 @@ async function main() {
   const tabs: string[] = asked.length ? asked : listed.data.tabs;
   const mode = process.argv.includes("--verify") ? "&verify=1" : "";
   console.log("Вкладка".padEnd(22), "строк".padStart(7), "ячеек".padStart(9), "чтение".padStart(8), "запись".padStart(8), "сверка".padStart(8), " итог");
-  let rows = 0, cells = 0, bad = 0, failed = 0;
+  let rows = 0, cells = 0, bad = 0, failed = 0, cleaned = 0;
   for (const tab of tabs) {
     let r = await call(`tab=${encodeURIComponent(tab)}${mode}`);
     if (r.status !== 200) {
@@ -56,11 +56,12 @@ async function main() {
       rows += d.rows;
       cells += d.cells;
       if (d.mismatches) bad++;
-      console.log(tab.padEnd(22), String(d.rows).padStart(7), String(d.cells).padStart(9), `${d.readMs} мс`.padStart(8), `${d.writeMs} мс`.padStart(8), `${d.verifyMs} мс`.padStart(8), d.mismatches ? ` РАСХОЖДЕНИЙ ${d.mismatches}: ${d.firstMismatch}` : " сошлось");
+      console.log(tab.padEnd(22), String(d.rows).padStart(7), String(d.cells).padStart(9), `${d.readMs} мс`.padStart(8), `${d.writeMs} мс`.padStart(8), `${d.verifyMs} мс`.padStart(8), (d.mismatches ? ` РАСХОЖДЕНИЙ ${d.mismatches}: ${d.firstMismatch}` : " сошлось") + (d.cleaned ? ` · очищено ячеек ${d.cleaned} (первая: ${d.firstCleaned})` : ""));
+      cleaned += d.cleaned || 0;
     }
     await sleep(1200);
   }
-  console.log(`\nВкладок: ${tabs.length}, строк: ${rows}, ячеек: ${cells}. Не сошлось вкладок: ${bad}. Ошибок: ${failed}.`);
+  console.log(`\nВкладок: ${tabs.length}, строк: ${rows}, ячеек: ${cells}. Не сошлось вкладок: ${bad}. Ошибок: ${failed}. Очищено ячеек: ${cleaned}.`);
   if (bad || failed) process.exit(1);
 }
 
