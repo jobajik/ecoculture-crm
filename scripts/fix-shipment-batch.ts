@@ -9,12 +9,12 @@ dotenv.config();
  * трогаются), а правится ровно то, что было записано неверно, одной атомарной записью (грабли 1.16):
  *   остаток старой партии + количество, остаток новой − количество, в строке отгрузки — новая партия и пометка,
  *   в позиции заявки — новый сорт (если менялся сорт). Количество, цена, сумма и оплата не меняются.
- * Новая партия — того же цветка и той же градации; сорт другой только если он назван (`variety`), склад другой только
- * если назван (`store`: "" — основной, "office"). Берётся самая старая срезка, где хватает остатка, либо `batchId`.
+ * Новая партия — того же цветка; сорт, градация и склад другие только если названы (`variety`, `grade`, `store`: "" —
+ * основной, "office"); с другой градацией она меняется и в позиции заявки. Берётся самая старая срезка, где хватает остатка, либо `batchId`.
  * Без --yes — только показ. С --yes — сначала копия таблицы.
  *
  *   npx tsx scripts/fix-shipment-batch.ts <json> [--yes]
- *   json: [{ "shipmentId": "SHIP-…", "variety": "…", "store": "office", "batchId": "…", "note": "почему" }]
+ *   json: [{ "shipmentId": "SHIP-…", "variety": "…", "grade": "Третья", "store": "office", "batchId": "…", "note": "почему" }]
  */
 import { readFileSync } from "node:fs";
 import { commitAtomic, forgetReads, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../src/lib/sheets";
@@ -26,6 +26,8 @@ import { localDayKey } from "../src/lib/timezone";
 interface Fix {
   shipmentId: string;
   variety?: string;
+  /** Другая градация (16.11.2026, №HQYAL: менеджер записал «Вторая» вместо «Третья», склад отгрузил, что нашлось во второй). */
+  grade?: string;
   store?: string;
   batchId?: string;
   note?: string;
@@ -74,7 +76,8 @@ async function main() {
     }
     const wantVariety = (f.variety ?? from.rec.Variety).trim();
     const wantStore = (f.store ?? from.rec.Store ?? "").trim();
-    const fits = (b: (typeof batches)[number]) => b.rec.FlowerType === from.rec.FlowerType && b.rec.Grade === from.rec.Grade && b.rec.Variety === wantVariety && (b.rec.Store || "") === wantStore;
+    const wantGrade = (f.grade ?? from.rec.Grade).trim();
+    const fits = (b: (typeof batches)[number]) => b.rec.FlowerType === from.rec.FlowerType && b.rec.Grade === wantGrade && b.rec.Variety === wantVariety && (b.rec.Store || "") === wantStore;
     const to = f.batchId
       ? batches.find((b) => b.rec.BatchID === f.batchId)
       : batches
@@ -84,7 +87,7 @@ async function main() {
     console.log(`  сейчас:  ${qty} шт. с партии ${from.rec.BatchID} [${from.rec.Variety} · ${from.rec.Grade} · срезка ${toIsoDate(from.rec.HarvestDate)} · ${from.rec.Store || "основной"}], остаток ${left.get(from.rec.BatchID)}`);
     if (!to) {
       const have = batches.filter((b) => fits(b)).map((b) => `${b.rec.BatchID} остаток ${left.get(b.rec.BatchID)}`);
-      fail(`нет партии «${wantVariety} · ${from.rec.Grade}» на складе «${wantStore || "основной"}» с остатком от ${qty} шт. (есть: ${have.join("; ") || "ни одной"})`);
+      fail(`нет партии «${wantVariety} · ${wantGrade}» на складе «${wantStore || "основной"}» с остатком от ${qty} шт. (есть: ${have.join("; ") || "ни одной"})`);
       continue;
     }
     if (to.rec.BatchID === from.rec.BatchID) {
@@ -103,11 +106,17 @@ async function main() {
     left.set(to.rec.BatchID, (left.get(to.rec.BatchID) ?? 0) - qty);
     batchChanged.add(from.rec.BatchID).add(to.rec.BatchID);
     console.log(`  станет:  ${qty} шт. с партии ${to.rec.BatchID} [${to.rec.Variety} · ${to.rec.Grade} · срезка ${toIsoDate(to.rec.HarvestDate)} · ${to.rec.Store || "основной"}], остаток ${left.get(to.rec.BatchID)}; в ${from.rec.BatchID} вернётся ${qty} → ${left.get(from.rec.BatchID)}`);
-    const stamp = `${localDayKey().slice(8, 10)}.${localDayKey().slice(5, 7)}: партия исправлена, была ${from.rec.BatchID} (${from.rec.Variety}${(from.rec.Store || "") !== wantStore ? `, ${from.rec.Store || "основной"}` : ""})${f.note ? ` — ${f.note}` : ""}`;
+    const stamp = `${localDayKey().slice(8, 10)}.${localDayKey().slice(5, 7)}: партия исправлена, была ${from.rec.BatchID} (${from.rec.Variety}${from.rec.Grade !== wantGrade ? ` ${from.rec.Grade}` : ""}${(from.rec.Store || "") !== wantStore ? `, ${from.rec.Store || "основной"}` : ""})${f.note ? ` — ${f.note}` : ""}`;
     ops.push({ kind: "update", tab: SHEET_TABS.SHIPMENTS, rowNumber: ship.rowNumber, changes: { BatchID: to.rec.BatchID, Notes: [ship.rec.Notes, stamp].filter(Boolean).join(" · ") } });
-    if (item.rec.Variety !== to.rec.Variety) {
-      console.log(`  позиция заявки: сорт «${item.rec.Variety}» → «${to.rec.Variety}» (количество и цена прежние)`);
-      ops.push({ kind: "update", tab: SHEET_TABS.ORDER_ITEMS, rowNumber: item.rowNumber, changes: { Variety: to.rec.Variety } });
+    const itemChanges: Record<string, string> = {};
+    if (item.rec.Variety !== to.rec.Variety) itemChanges.Variety = to.rec.Variety;
+    if (item.rec.Grade !== to.rec.Grade) itemChanges.Grade = to.rec.Grade;
+    if (Object.keys(itemChanges).length > 0) {
+      console.log(`  позиция заявки: «${item.rec.Variety} · ${item.rec.Grade}» → «${to.rec.Variety} · ${to.rec.Grade}» (количество и цена прежние)`);
+      // Одна позиция — одна правка, даже если по ней несколько строк отгрузки.
+      if (!ops.some((o) => o.kind === "update" && o.tab === SHEET_TABS.ORDER_ITEMS && o.rowNumber === item.rowNumber)) {
+        ops.push({ kind: "update", tab: SHEET_TABS.ORDER_ITEMS, rowNumber: item.rowNumber, changes: itemChanges });
+      }
     }
   }
   for (const id of batchChanged) {
