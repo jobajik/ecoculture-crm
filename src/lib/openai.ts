@@ -137,6 +137,32 @@ export async function transcribeAudio(data: ArrayBuffer, mime: string): Promise<
 }
 
 /**
+ * Озвучка текста стандартным синтетическим голосом (16.11.2026, `voiceOffer.ts`). Возвращает mp3. Голос — из встроенных,
+ * не копия чьего-то голоса. Модели пробуются по очереди: у `tts-1` нет поля «как говорить», поэтому оно отдаётся только
+ * моделям, которые его понимают.
+ */
+export async function speakText(text: string, options: { voice?: string; style?: string } = {}): Promise<{ data: Buffer; model: string; voice: string }> {
+  const key = openAiKey();
+  if (!key) throw new Error("OpenAI не подключён");
+  const models = [process.env.OPENAI_TTS_MODEL, "gpt-4o-mini-tts", "tts-1"].filter((m): m is string => !!m && !!m.trim());
+  const voices = [options.voice, "onyx"].filter((v): v is string => !!v && !!v.trim());
+  let last: Error | null = null;
+  for (const model of models) {
+    for (const voice of Array.from(new Set(voices))) {
+      const res = await fetch(`${BASE()}/audio/speech`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model, voice, input: text.slice(0, 3500), response_format: "mp3", ...(options.style && !/^tts-1/.test(model) ? { instructions: options.style } : {}) }),
+        signal: AbortSignal.timeout(60000),
+      });
+      if (res.ok) return { data: Buffer.from(await res.arrayBuffer()), model, voice };
+      last = await failure(res, "Озвучка");
+    }
+  }
+  throw last ?? new Error("OpenAI: озвучка не удалась");
+}
+
+/**
  * Запрос к модели с ответом строго по JSON-схеме. Возвращает разобранный
  * объект и имя модели, которая ответила (оно пишется в разбор).
  */
