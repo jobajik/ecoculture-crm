@@ -24,7 +24,9 @@ import { apiPayConfig, cancelInvoice } from "./apipay";
 import { issueKaspiInvoice } from "./kaspiIssue";
 import { isOpenKaspiStatus, isPaidKaspiStatus, kaspiErrorText, kaspiPhone, prettyKaspiPhone } from "./kaspiInvoice";
 import { stockMap } from "./botKnowledge";
-import { BOT_MANAGER_EMAIL } from "./botIdentity";
+import { BOT_MANAGER_EMAIL, isBotEmail } from "./botIdentity";
+import { debtContextLines } from "./botDebt";
+import { listDebtReminders } from "./repo/debtReminders";
 import { isNotASale } from "./orderKind";
 import { formatGrade, FLOWER_TYPE_LABELS } from "./constants";
 import {
@@ -560,8 +562,15 @@ export function duplicateOfHuman(
 /** Что бот знает о клиенте: карточка и его заказы через бота — для подсказки модели. */
 export async function botClientContext(phone: string, ch: SellerChannel = BOT_CHANNEL): Promise<string> {
   try {
-    await prefetchTables([SHEET_TABS.CLIENTS, SHEET_TABS.LEADS, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.KASPI_INVOICES]);
-    const [clients, leads, orders, invoices] = await Promise.all([listClients(), listLeads(), listOrdersWithItems(), listKaspiInvoices()]);
+    await prefetchTables([SHEET_TABS.CLIENTS, SHEET_TABS.LEADS, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.KASPI_INVOICES, SHEET_TABS.DEBT_REMINDERS]);
+    const [clients, leads, orders, invoices, reminders, users] = await Promise.all([
+      listClients(),
+      listLeads(),
+      listOrdersWithItems(),
+      listKaspiInvoices(),
+      listDebtReminders(),
+      listUsers().catch(() => []),
+    ]);
     const client = clientForPhone(clients, phone);
     const key = phoneKey(phone);
     const lead = !client && key ? leads.find((l) => phoneKey(l.phone) === key) : undefined;
@@ -591,11 +600,26 @@ export async function botClientContext(phone: string, ch: SellerChannel = BOT_CH
         );
       }
     }
-    // Помощник менеджера знает всю историю клиента (у любого менеджера): что брал, долг, что обычно.
-    if (ch.line && (client || lead)) {
+    // Помощник менеджера знает всю историю клиента (у любого менеджера): что брал, долг, что обычно. С 16.11.2026 её
+    // знает и бот основного номера: он видел только СВОИ заказы и ответ на напоминание об оплате принял за новый заказ.
+    if (client || lead) {
       lines.push("История заказов:", ...clientHistoryLines({ orders, phone, clientId: client?.clientId ?? "", now: new Date() }));
     }
     const mine = botOrdersOf(orders, phone, client?.clientId ?? "", ch).slice(0, 5);
+    // Неоплаченные заявки менеджеров, их счета Kaspi и свежее напоминание об оплате (`botDebt.ts`).
+    const names = new Map(users.map((u) => [u.email.toLowerCase(), (u.name || "").trim().split(/\s+/)[0] || ""]));
+    lines.push(
+      ...debtContextLines({
+        orders,
+        invoices,
+        reminders,
+        clientId: client?.clientId ?? "",
+        phone,
+        now: new Date(),
+        managerName: (email) => (isBotEmail(email) ? "бот" : names.get((email || "").toLowerCase()) || "менеджер"),
+        own: new Set(mine.map((o) => o.orderId)),
+      })
+    );
     if (ch.line && mine.length) lines.push("Заказы, которые оформил ты (счета Kaspi):");
     for (const o of mine) {
       const items = o.items.map((i) => `${i.variety} ${i.grade} ${i.quantity} шт.`).join(", ");

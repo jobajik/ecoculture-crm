@@ -93,6 +93,44 @@ export function withMissingIncoming(context: BotChat["context"], missing: TurnMe
   return all.reduce<BotChat["context"]>((acc, item) => pushContext(acc, item), []);
 }
 
+const flatText = (text: string) => (text || "").toLowerCase().replace(/[*_~]/g, "").replace(/\s+/g, " ").trim();
+
+/**
+ * НАШИ сообщения с этого номера, которых нет в памяти бота (16.11.2026): напоминание об оплате, сообщение по поручению
+ * сотрудника, уведомление о заказе уходят через API, и бот их «не слышал». Клиентка ответила на напоминание об оплате —
+ * а бот счёл это ответом на свою рассылку недельной давности. Берём наши исходящие за `windowHours` часов с текстом,
+ * которого в памяти ещё нет (сравниваем по началу текста: в памяти строка может быть обрезана или с пометкой «[фото…]»).
+ */
+export function missingOutgoing(
+  context: BotChat["context"],
+  recent: TurnMessage[],
+  phone: string,
+  now: Date,
+  windowHours = 48
+): TurnMessage[] {
+  const key = phoneKey(phone);
+  const from = now.getTime() - windowHours * 3600_000;
+  const known = context.filter((c) => c.role === "us").map((c) => flatText(c.text));
+  const seen = new Set<string>();
+  return recent
+    .filter((m) => m.direction === "out" && phoneKey(m.phone) === key && (Date.parse(m.at) || 0) >= from && flatText(m.text).length > 0)
+    .filter((m) => {
+      const head = flatText(m.text).slice(0, 60);
+      if (seen.has(head) || known.some((k) => k.includes(head))) return false;
+      seen.add(head);
+      return true;
+    })
+    .sort((a, b) => (a.at < b.at ? -1 : 1));
+}
+
+/** Память с дописанными нашими сообщениями — по времени, в тех же пределах, что `pushContext`. */
+export function withMissingOutgoing(context: BotChat["context"], missing: TurnMessage[]): BotChat["context"] {
+  if (missing.length === 0) return context;
+  const all = [...context, ...missing.map((m) => ({ role: "us" as const, text: m.text, at: m.at }))];
+  all.sort((a, b) => (a.at < b.at ? -1 : 1));
+  return all.reduce<BotChat["context"]>((acc, item) => pushContext(acc, item), []);
+}
+
 /**
  * Клиент написал ещё что-то после `last` (не кивок) — отвечать будет ход того сообщения, этот молчит.
  * Кивок ответа не забирает: на «Блин, мне 1000 надо» + «😅» отвечает ход первого.

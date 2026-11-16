@@ -4,7 +4,7 @@ import { localDayKey } from "./timezone";
 import { getCurrentPrices } from "./repo/prices";
 import { listBatches } from "./repo/batches";
 import { almatyHourOf, botStoreFor, botStoreNote, inStore, isRegionStore, regionStoreForCity, type StoreCode } from "./officeStore";
-import { notifyBotSale } from "./botSalesAlert";
+import { notifyBotSale, notifyClientManager } from "./botSalesAlert";
 import { ourPhoneKeys } from "./lineNotify";
 import { getSettings } from "./repo/settings";
 import { botChatWrite, emptyBotChat, listBotChats, listBroadcasts, listRecipients, settingsMap } from "./repo/broadcasts";
@@ -12,11 +12,14 @@ import { harvestForBot, lastBroadcastForBot, pricesForBot, sellableForBot, stock
 import { listHarvestForecast } from "./repo/harvestForecast";
 import { listWaMessages } from "./repo/talks";
 import { readTable } from "./sheets";
+import { INVOICE_CLAIM_TASK, claimsInvoiceNow } from "./botDebt";
 import {
   REPEAT_TASK,
   botAlertTeamText,
   mergeChatMemory,
   missingIncoming,
+  missingOutgoing,
+  withMissingOutgoing,
   repeatsOurMessage,
   supersededBy,
   isGreetingOnly,
@@ -621,6 +624,43 @@ export async function botReply(
   channel: SellerChannel = BOT_CHANNEL
 ): Promise<ReturnType<typeof botDecision>> {
   const { system, user } = await botPrompt(chat, instructions, task, channel);
+  return honestAboutInvoice(await botReplyOnce(system, user), system, user, channel);
+}
+
+/** Ход ничего не оформляет: ни подтверждённого заказа, ни перевыставления счёта. */
+function doesNothingWithInvoice(d: ReturnType<typeof botDecision>): boolean {
+  return !d.order.confirmed && !d.invoiceAgain && !d.kaspiPhone;
+}
+
+/**
+ * Бот не обещает счёт, которого в этом ответе не выставляет (16.11.2026: «Сейчас выставляю счёт на 200 шт.… 36 000 ₸»,
+ * «счёт Kaspi сейчас придёт на этот номер» — и ни одного счёта). Один переспрос; не помогло — клиенту уходит честная
+ * фраза, а людям — тревога «клиент ждёт счёт».
+ */
+async function honestAboutInvoice(
+  decision: ReturnType<typeof botDecision>,
+  system: string,
+  user: string,
+  channel: SellerChannel
+): Promise<ReturnType<typeof botDecision>> {
+  if (decision.silent || !doesNothingWithInvoice(decision) || !claimsInvoiceNow(decision.reply)) return decision;
+  try {
+    const again = await chatJson(system, `${user}\n\nТвой прошлый ответ:\n${decision.reply}\n\n${INVOICE_CLAIM_TASK}`, "bot_reply", BOT_SCHEMA, { fast: true });
+    const second = botDecision(again.data);
+    if (second.silent || !doesNothingWithInvoice(second) || !claimsInvoiceNow(second.reply)) return second;
+  } catch (err) {
+    console.error("bot invoice claim:", err instanceof Error ? err.message : err);
+  }
+  return {
+    ...decision,
+    reply: channel.line ? "Сейчас проверю по счёту и напишу вам." : "Передал менеджеру - он проверит счёт и напишет вам сюда же.",
+    photo: { flowerType: "", variety: "", grade: "" },
+    catalog: "",
+    alert: [decision.alert, "клиент ждёт счёт, бот его не выставлял — проверьте заявку и ответьте клиенту"].filter(Boolean).join("; "),
+  };
+}
+
+async function botReplyOnce(system: string, user: string): Promise<ReturnType<typeof botDecision>> {
   const { data } = await chatJson(system, user, "bot_reply", BOT_SCHEMA, { fast: true });
   const first = botDecision(data);
   // Длинно (21.10.2026, владелец: «меньше объёма текста») — переспросить короче; заказ подтверждает код, его не трогаем.
@@ -652,6 +692,7 @@ export async function botAct(
     return { text: "", note: managerOrderNote(opts.orderBy, decision.order.items), files: [] };
   }
   let text = decision.reply;
+  let skipPhoto = false;
   const notes: string[] = decision.alert ? [`внимание: ${decision.alert}`] : [];
   // Отмена — первой: если следом новый заказ (клиент поменял количество), старый не должен висеть рядом.
   let cancelledText = "";
@@ -668,11 +709,17 @@ export async function botAct(
   } else if (decision.kaspiPhone || decision.invoiceAgain) {
     const again = await reissueBotInvoices(chat.phone, decision.kaspiPhone, channel);
     if (again) text = again;
+    else if (claimsInvoiceNow(text)) {
+      // Перевыставлять было нечего (это заявка менеджера, а не заказ бота) — обещание счёта клиенту не уходит (16.11.2026).
+      text = channel.line ? "Сейчас проверю по счёту и напишу вам." : "Передал менеджеру - он проверит счёт и напишет вам сюда же.";
+      notes.push("внимание: клиент ждёт счёт, бот его не выставлял — проверьте заявку и ответьте клиенту");
+      skipPhoto = true;
+    }
   }
   const files = decision.catalog ? await catalogForChat(decision.catalog) : [];
   let out = toWhatsApp(text);
   // Ответ про конкретную позицию — с её фото из теплицы, ответ подписью (как сделал бы человек).
-  if (!files.length && out && !decision.order.confirmed && decision.photo.flowerType && out.length <= 1024) {
+  if (!files.length && out && !skipPhoto && !decision.order.confirmed && decision.photo.flowerType && out.length <= 1024) {
     const pic = await itemPhotoFor(chat, decision.photo, out);
     if (pic) {
       files.push(pic);
@@ -771,11 +818,11 @@ const SERIES_WAIT_MS = 4000;
 const GREETING_WAIT_MS = 15000;
 
 /** Свежие сообщения этого номера из WaMessages (их пишет вебхук до бота) — одно чтение. */
-async function recentTurnMessages(phone: string): Promise<{ messageId: string; phone: string; direction: string; at: string; text: string; type: string }[]> {
+async function recentTurnMessages(phone: string, minutes = 20): Promise<{ messageId: string; phone: string; direction: string; at: string; text: string; type: string }[]> {
   try {
     await readTable(SHEET_TABS.WA_MESSAGES, { fresh: true });
     const key = phoneKey(phone);
-    const from = new Date(Date.now() - 20 * 60_000).toISOString();
+    const from = new Date(Date.now() - minutes * 60_000).toISOString();
     return (await listWaMessages()).filter((m) => phoneKey(m.phone) === key && m.at >= from);
   } catch {
     return [];
@@ -788,10 +835,16 @@ async function answer(chat: BotChat, last: BotIncoming, instructions: string): P
   // дольше: следом обычно идёт сам вопрос (12.10: на «здравствуйте» бот выложил прайс из четырёх
   // позиций, а клиент через минуту спросил про розы).
   await new Promise((r) => setTimeout(r, last.type === "text" && isGreetingOnly(last.text) ? GREETING_WAIT_MS : SERIES_WAIT_MS));
-  const recent = await recentTurnMessages(last.phone);
+  // Одно чтение на двое суток: из него же — последние 20 минут для серии сообщений.
+  const twoDays = await recentTurnMessages(last.phone, 48 * 60);
+  const since = new Date(Date.now() - 20 * 60_000).toISOString();
+  const recent = twoDays.filter((m) => m.at >= since);
   const newer = supersededBy(last, recent, last.phone);
   if (newer) return false;
   chat.context = withMissingIncoming(chat.context, missingIncoming(chat.context, recent, last.phone, new Date()));
+  // Что мы сами писали клиенту с этого номера мимо бота (напоминание об оплате, сообщение по поручению) — бот должен
+  // это видеть: клиент часто отвечает именно на такое сообщение (16.11.2026, `botDebt.ts`).
+  chat.context = withMissingOutgoing(chat.context, missingOutgoing(chat.context, twoDays, last.phone, new Date()));
   // Автоответ магазина на нашу рассылку — не человек, продавать ему нечего.
   if (last.type === "text" && looksLikeAutoreply(last.text, chat.context, last.at)) return false;
   let decision: ReturnType<typeof botDecision>;
@@ -841,7 +894,10 @@ async function noteAndAlert(chat: BotChat, note: string): Promise<void> {
     .join("; ");
   if (!alert || !teamAlertDue(prev, new Date())) return;
   const lastClient = [...chat.context].reverse().find((c) => c.role === "client")?.text ?? "";
-  await notifyBotSale(botAlertTeamText({ phone: chat.phone, name: chat.name, note: alert, lastClient }));
+  const text = botAlertTeamText({ phone: chat.phone, name: chat.name, note: alert, lastClient });
+  await notifyBotSale(text);
+  // И менеджеру этого клиента, если он не в команде продаж бота: это его клиент и его заявка.
+  await notifyClientManager(chat.phone, text);
 }
 
 /**
