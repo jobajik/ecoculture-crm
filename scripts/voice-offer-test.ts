@@ -9,7 +9,10 @@ dotenv.config();
  * Получатели — только администраторы из «Настройки → Сотрудники», названные по имени в файле; у каждого должен быть
  * записан WhatsApp. Без --yes — только показ: текст и кому ушло бы.
  *
- *   npx tsx scripts/voice-offer-test.ts <json: { "names": ["Ержан", "Данияр"], "voice": "onyx" }> [--yes]
+ * `teamNumberFor` — имя того, чей номер взять из списка «Продажи бота», если в его карточке WhatsApp не записан
+ * (только когда в списке ровно один номер без карточки).
+ *
+ *   npx tsx scripts/voice-offer-test.ts <json: { "names": ["Ержан", "Данияр"], "voice": "onyx", "teamNumberFor": "Ержан" }> [--yes]
  */
 import { readFileSync } from "node:fs";
 process.env.NEXTAUTH_URL = "https://www.crm-ecoculture.kz"; // ссылка на аудио — на боевой сайт
@@ -28,22 +31,38 @@ import { publicFileUrl } from "../src/lib/waFileSign";
 import { speakText } from "../src/lib/openai";
 import { pickVoiceOffers, voiceOfferText, voiceTestNote } from "../src/lib/voiceOffer";
 import { ROLES } from "../src/lib/constants";
+import { settingsMap } from "../src/lib/repo/broadcasts";
+import { digestPhones } from "../src/lib/morningDigest";
+import { BOT_SALES_SETTING } from "../src/lib/botSalesAlert";
+import { phoneKey } from "../src/lib/leads";
 
 async function main() {
   const file = process.argv[2];
   if (!file) throw new Error("Нужен файл JSON с именами получателей");
-  const spec = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as { names: string[]; voice?: string };
+  const spec = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as { names: string[]; voice?: string; teamNumberFor?: string };
   const yes = process.argv.includes("--yes");
 
-  const users = await listUsers();
-  const to: { name: string; phone: string }[] = [];
+  const [users, map] = await Promise.all([listUsers(), settingsMap()]);
+  // Команда из «Настройки → Продажи бота в WhatsApp» (владелец, 03.10.2026: «Руслану, мне и Данияру»). У владельца в
+  // карточке сотрудника WhatsApp не записан — его номер там единственный, который не принадлежит ни одной карточке.
+  const team = digestPhones(map[BOT_SALES_SETTING]).map((p) => waPhone(p)).filter(Boolean);
+  const cardOf = (p: string) => users.find((u) => phoneKey(u.phone) && phoneKey(u.phone) === phoneKey(p));
+  const noCard = team.filter((p) => !cardOf(p));
+  console.log(`Команда «Продажи бота»: ${team.map((p) => `…${p.slice(-4)} ${cardOf(p)?.name || "без карточки"}`).join(", ") || "пусто"}`);
+  const to: { name: string; phone: string; from: string }[] = [];
   for (const name of spec.names) {
     const found = users.filter((u) => u.active && u.role === ROLES.ADMIN && (u.name || "").trim().split(/\s+/)[0].toLowerCase() === name.trim().toLowerCase());
     if (found.length !== 1) throw new Error(`Администраторов по имени «${name}»: ${found.length} — нужен ровно один`);
-    const phone = waPhone(found[0].phone);
-    if (!phone) throw new Error(`У сотрудника «${found[0].name}» не записан WhatsApp («Настройки → Сотрудники»)`);
-    to.push({ name: found[0].name, phone });
+    let phone = waPhone(found[0].phone);
+    let from = "карточка сотрудника";
+    if (!phone && spec.teamNumberFor === name && noCard.length === 1) {
+      phone = noCard[0];
+      from = "список «Продажи бота» — единственный номер без карточки";
+    }
+    if (!phone) throw new Error(`У сотрудника «${found[0].name}» не записан WhatsApp («Настройки → Сотрудники»); номеров без карточки в списке «Продажи бота»: ${noCard.length}`);
+    to.push({ name: found[0].name, phone, from });
   }
+  if (new Set(to.map((t) => phoneKey(t.phone))).size !== to.length) throw new Error("Получатели совпали по номеру — не отправляю");
 
   const now = new Date();
   const [batches, settings, prices] = await Promise.all([listSellableBatches(), getSettings(), getCurrentPrices(localDayKey())]);
@@ -51,7 +70,7 @@ async function main() {
   const text = voiceOfferText(pickVoiceOffers(rows));
   if (!text) throw new Error("На основном складе нечего предложить (нет позиций от 100 шт. с ценой)");
   console.log(`Текст (${text.length} зн.):\n${text}\n`);
-  console.log(`Получатели: ${to.map((t) => `${t.name} …${t.phone.slice(-4)}`).join(", ")}`);
+  console.log(`Получатели: ${to.map((t) => `${t.name} …${t.phone.slice(-4)} (${t.from})`).join(", ")}`);
   if (!yes) return console.log("\nБез --yes ничего не отправлено.");
 
   const cfg = greenConfig();
