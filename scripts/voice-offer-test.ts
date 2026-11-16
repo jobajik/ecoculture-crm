@@ -9,10 +9,10 @@ dotenv.config();
  * Получатели — только администраторы из «Настройки → Сотрудники», названные по имени в файле; у каждого должен быть
  * записан WhatsApp. Без --yes — только показ: текст и кому ушло бы.
  *
- * `teamNumberFor` — имя того, чей номер взять из списка «Продажи бота», если в его карточке WhatsApp не записан
- * (только когда в списке ровно один номер без карточки).
+ * Если в карточке WhatsApp не записан — номер берётся из списка «Продажи бота»: тот единственный, с которого человек
+ * пишет нам под своим именем (`aliases` — как ещё оно пишется, например латиницей).
  *
- *   npx tsx scripts/voice-offer-test.ts <json: { "names": ["Ержан", "Данияр"], "voice": "onyx", "teamNumberFor": "Ержан" }> [--yes]
+ *   npx tsx scripts/voice-offer-test.ts <json: { "names": ["Ержан", "Данияр"], "voice": "onyx", "aliases": { "Ержан": ["Yerzhan"] } }> [--yes]
  */
 import { readFileSync } from "node:fs";
 process.env.NEXTAUTH_URL = "https://www.crm-ecoculture.kz"; // ссылка на аудио — на боевой сайт
@@ -35,31 +35,41 @@ import { settingsMap } from "../src/lib/repo/broadcasts";
 import { digestPhones } from "../src/lib/morningDigest";
 import { BOT_SALES_SETTING } from "../src/lib/botSalesAlert";
 import { phoneKey } from "../src/lib/leads";
+import { listWaLines } from "../src/lib/repo/waLines";
+import { listWaMessages } from "../src/lib/repo/talks";
 
 async function main() {
   const file = process.argv[2];
   if (!file) throw new Error("Нужен файл JSON с именами получателей");
-  const spec = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as { names: string[]; voice?: string; teamNumberFor?: string };
+  const spec = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as { names: string[]; voice?: string; aliases?: Record<string, string[]> };
   const yes = process.argv.includes("--yes");
 
-  const [users, map] = await Promise.all([listUsers(), settingsMap()]);
-  // Команда из «Настройки → Продажи бота в WhatsApp» (владелец, 03.10.2026: «Руслану, мне и Данияру»). У владельца в
-  // карточке сотрудника WhatsApp не записан — его номер там единственный, который не принадлежит ни одной карточке.
-  const team = digestPhones(map[BOT_SALES_SETTING]).map((p) => waPhone(p)).filter(Boolean);
+  const [users, map, lines, messages] = await Promise.all([listUsers(), settingsMap(), listWaLines(), listWaMessages({ lines: "all" })]);
+  // Команда из «Настройки → Продажи бота в WhatsApp» (владелец, 03.10.2026: «Руслану, мне и Данияру»). В карточках
+  // сотрудников WhatsApp у них не записан, поэтому чей номер чей — по имени, под которым человек сам пишет нам в WhatsApp.
+  const team = Array.from(new Set(digestPhones(map[BOT_SALES_SETTING]).map((p) => waPhone(p)).filter(Boolean)));
   const cardOf = (p: string) => users.find((u) => phoneKey(u.phone) && phoneKey(u.phone) === phoneKey(p));
-  const noCard = team.filter((p) => !cardOf(p));
-  console.log(`Команда «Продажи бота»: ${team.map((p) => `…${p.slice(-4)} ${cardOf(p)?.name || "без карточки"}`).join(", ") || "пусто"}`);
+  const lineOf = (p: string) => lines.find((l) => l.phone && phoneKey(l.phone) === phoneKey(p));
+  const waNames = (p: string) => Array.from(new Set(messages.filter((m) => m.direction === "in" && phoneKey(m.phone) === phoneKey(p)).map((m) => (m.senderName || "").trim()).filter(Boolean)));
+  for (const p of team) {
+    const line = lineOf(p);
+    console.log(`Команда «Продажи бота» …${p.slice(-4)}: карточка — ${cardOf(p)?.name || "нет"}; линия — ${line ? users.find((u) => u.email.toLowerCase() === line.managerEmail.toLowerCase())?.name || line.label || line.code : "нет"}; в WhatsApp зовётся — ${waNames(p).join(" / ") || "не писал"}`);
+  }
+  const words = (v: string) => v.toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
   const to: { name: string; phone: string; from: string }[] = [];
   for (const name of spec.names) {
     const found = users.filter((u) => u.active && u.role === ROLES.ADMIN && (u.name || "").trim().split(/\s+/)[0].toLowerCase() === name.trim().toLowerCase());
     if (found.length !== 1) throw new Error(`Администраторов по имени «${name}»: ${found.length} — нужен ровно один`);
     let phone = waPhone(found[0].phone);
     let from = "карточка сотрудника";
-    if (!phone && spec.teamNumberFor === name && noCard.length === 1) {
-      phone = noCard[0];
-      from = "список «Продажи бота» — единственный номер без карточки";
+    if (!phone) {
+      const spell = [name, ...(spec.aliases?.[name] || [])].map((v) => v.toLowerCase());
+      const mine = team.filter((p) => waNames(p).some((n) => words(n).some((w) => spell.includes(w))));
+      if (mine.length === 1) {
+        phone = mine[0];
+        from = `список «Продажи бота», в WhatsApp зовётся «${waNames(phone).join(" / ")}»`;
+      } else throw new Error(`У сотрудника «${found[0].name}» не записан WhatsApp («Настройки → Сотрудники»), а в списке «Продажи бота» номеров с его именем: ${mine.length}`);
     }
-    if (!phone) throw new Error(`У сотрудника «${found[0].name}» не записан WhatsApp («Настройки → Сотрудники»); номеров без карточки в списке «Продажи бота»: ${noCard.length}`);
     to.push({ name: found[0].name, phone, from });
   }
   if (new Set(to.map((t) => phoneKey(t.phone))).size !== to.length) throw new Error("Получатели совпали по номеру — не отправляю");
