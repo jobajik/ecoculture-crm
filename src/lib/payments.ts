@@ -476,6 +476,17 @@ export function lostPaymentFix(input: {
     if (mixed) byFarm[farm] = round2(stored + missing);
     added = round2(added + missing);
   }
+  // Смешанная заявка: итог обязан равняться сумме частей компаний. 14.11.2026, №6C93W: два счёта оплатили с разницей
+  // в девять секунд, обе записи итога читали заявку «ещё без денег». Части компаний записались обе (каждая пишет свою
+  // ячейку — правка пишет только изменившееся), а в ОБЩЕМ итоге осталась та сумма, что легла последней: 40 000 из
+  // 67 000. По компаниям всё сходилось с журналом, проверка выше молчала, и заявка два дня висела с «остатком 27 000»,
+  // а клиенту трижды перевыставляли счёт. Разница «части больше итога» чинится по тому же признаку — она складывается
+  // из недавних платежей журнала.
+  if (mixed) {
+    const parts = round2(input.farms.reduce((s, f) => s + (Number(byFarm[f]) || 0), 0));
+    const gap = round2(parts - (Number(input.paidAmount) || 0) - added);
+    if (gap > MONEY_EPSILON && subsetHits(input.ledger.filter(fresh).map((p) => p.amount), gap)) added = round2(added + gap);
+  }
   if (added <= MONEY_EPSILON) return null;
   // У заявки одной компании её поле тоже ведётся (`totalsAfter`) — поднять вместе с итогом.
   const only = input.farms[0];

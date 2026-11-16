@@ -507,6 +507,38 @@ async function main() {
     );
   }
 
+  // --- части компаний записались обе, а общий итог — только последний (№6C93W, 14.11.2026)
+  {
+    const now = new Date("2026-11-14T07:38:18.000Z");
+    const ledger = [
+      { farm: "esentai", amount: 27_000, createdAt: "2026-11-14T07:38:14.171Z" },
+      { farm: "rose_farm", amount: 40_000, createdAt: "2026-11-14T07:38:14.530Z" },
+    ];
+    const live = { farms: ["rose_farm", "esentai"], paidAmount: 40_000, paidByFarm: { rose_farm: 40_000, esentai: 27_000 }, ledger, now, recentOnly: true };
+    check("живой случай: части сходятся с журналом, итог меньше — итог 67 000", lostPaymentFix(live), {
+      paidAmount: 67_000,
+      byFarm: { rose_farm: 40_000, esentai: 27_000 },
+      added: 27_000,
+    });
+    check("через два дня сам не чинит…", lostPaymentFix({ ...live, now: new Date("2026-11-16T11:00:00.000Z") }), null);
+    check("…а по списку человека — чинит", lostPaymentFix({ ...live, now: new Date("2026-11-16T11:00:00.000Z"), recentOnly: false })?.paidAmount, 67_000);
+    check("итог уже полный — ничего не делаем", lostPaymentFix({ ...live, paidAmount: 67_000 }), null);
+    check(
+      "части больше итога на сумму, которой нет среди платежей, — не трогаем",
+      lostPaymentFix({ ...live, paidAmount: 50_000 }),
+      null
+    );
+    check(
+      "потерялись и часть компании, и общий итог — возвращается всё",
+      lostPaymentFix({
+        ...live,
+        paidAmount: 40_000,
+        paidByFarm: { rose_farm: 40_000, esentai: 0 },
+      }),
+      { paidAmount: 67_000, byFarm: { rose_farm: 40_000, esentai: 27_000 }, added: 27_000 }
+    );
+  }
+
   console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено проверок: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);
 }
