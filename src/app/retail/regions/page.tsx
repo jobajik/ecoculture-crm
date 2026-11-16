@@ -127,6 +127,11 @@ export default async function RetailRegionsPage({
                 + Отгрузка в РФ (₽)
               </Link>
             )}
+            {canFillRegionOrders(role) && (
+              <Link href="/orders?stage=rf" className="btn-ghost">
+                Отгрузки в РФ
+              </Link>
+            )}
             {canOrder && card && (
               <Link
                 href={`/orders/new?retail=1&client=${card.clientId}&date=${date}`}

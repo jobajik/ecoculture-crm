@@ -11,7 +11,13 @@ import { PRICE_KINDS, priceMapForClient } from "@/lib/priceList";
 import { editHeaderRefusal, editItemsRefusal } from "@/lib/orderEdit";
 import { isRegionOrder } from "@/lib/orderKind";
 import { isOwnClientOrder, isRetailOrder, retailLabel, retailTerritoryFor } from "@/lib/retail";
-import { ROLES } from "@/lib/constants";
+import { FLOWER_TYPE_LABELS, MONEY_EPSILON, ROLES, formatGrade } from "@/lib/constants";
+import { isRfShipment, rfEditRefusal } from "@/lib/rfEdit";
+import { hasRubPrices, rubComment } from "@/lib/rubShipment";
+import { rubFormBatches, rubFormClients } from "@/lib/rubFormData";
+import { listBatches } from "@/lib/repo/batches";
+import { localDayKey } from "@/lib/timezone";
+import RfShipmentEditForm from "@/components/RfShipmentEditForm";
 import OrderEditForm from "@/components/OrderEditForm";
 import PageHeader from "@/components/PageHeader";
 import { orderCode } from "@/lib/paymentStage";
@@ -46,6 +52,51 @@ export default async function EditOrderPage({ params }: { params: { id: string }
     notFound();
   }
   if (retail && (role === ROLES.MANAGER || role === ROLES.ACCOUNTANT)) notFound();
+
+  // Отгрузка в РФ правится своей формой (`rfEdit.ts`): рублёвые цены, количество с возвратом на склад, отмена. Обычная
+  // форма про рубли не знает, а отгруженную заявку открывает только администратору.
+  if (isRfShipment(order)) {
+    const farm = role === ROLES.WAREHOUSE ? session?.user?.farm ?? "" : "";
+    if (rfEditRefusal(order, role, role === ROLES.WAREHOUSE ? farm : null)) redirect(`/orders/${order.orderId}`);
+    const [allClients, allBatches] = await Promise.all([listClients(), listBatches()]);
+    const priced = hasRubPrices(order);
+    return (
+      <div>
+        <PageHeader
+          area="orders"
+          title={`Изменить отгрузку в РФ №${orderCode(order.orderId)}`}
+          subtitle={priced ? undefined : "Цены в рублях и клиент ещё не указаны — их можно дописать здесь."}
+          actions={
+            <Link href={`/orders/${order.orderId}`} className="text-sm text-ink-secondary hover:underline">
+              ← к заявке
+            </Link>
+          }
+        />
+        <RfShipmentEditForm
+          orderId={order.orderId}
+          clients={rubFormClients(allClients, order.clientId)}
+          batches={rubFormBatches(allBatches, farm)}
+          items={order.items.map((i) => ({
+            itemId: i.itemId,
+            title: `${FLOWER_TYPE_LABELS[i.flowerType] ?? i.flowerType} ${i.variety} · ${formatGrade(i.grade)}`,
+            quantity: i.quantity,
+            shipped: i.shippedQuantity,
+            priceRub: i.priceRub ?? 0,
+          }))}
+          today={localDayKey()}
+          initialClientId={order.clientId}
+          initialDate={order.deliveryDate}
+          initialComment={rubComment(order.notes)}
+          hadPrices={priced}
+          lockedCancel={
+            order.paidAmount > MONEY_EPSILON
+              ? "По отгрузке вписаны поступления. Чтобы отменить её, сначала бухгалтер убирает сумму."
+              : ""
+          }
+        />
+      </div>
+    );
+  }
 
   const refusal = editHeaderRefusal(order, role, email);
   if (refusal) redirect(`/orders/${order.orderId}`);

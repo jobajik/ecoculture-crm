@@ -62,6 +62,19 @@ export function formatRub(value: number): string {
   return `${clean.toLocaleString("ru-RU", { minimumFractionDigits: Number.isInteger(clean) ? 0 : 2, maximumFractionDigits: 2 })} ₽`;
 }
 
+const NOTE_HEAD = /^Отгрузка в РФ, цены в рублях: [^.]*?₽\. Оформил склад по факту\.\s*/;
+
+/** Комментарий заявки: служебное начало с суммой в рублях и то, что дописал человек. */
+export function rubNote(total: number, comment: string): string {
+  const own = (comment || "").trim().slice(0, 300);
+  return `Отгрузка в РФ, цены в рублях: ${formatRub(total)}. Оформил склад по факту.${own ? ` ${own}` : ""}`;
+}
+
+/** Что из комментария написал человек — без служебного начала (его пересчитывает правка). */
+export function rubComment(notes: string | null | undefined): string {
+  return String(notes ?? "").replace(NOTE_HEAD, "").trim();
+}
+
 /**
  * Почему такую отгрузку принять нельзя. Пустая строка — можно. Проверка сервера: форма подсказывает то же самое, но
  * вкладка могла быть открыта со вчерашними остатками (грабли 1.11).
@@ -87,6 +100,19 @@ export function rubShipmentRefusal(input: {
   if (input.deliveryDate > input.today) return "Отгрузка записывается по факту — дата не может быть в будущем";
   if (!input.lines || input.lines.length === 0) return "Добавьте хотя бы одну партию";
 
+  return rubLinesRefusal({ role: input.role, farm: input.farm, lines: input.lines, batches: input.batches });
+}
+
+/**
+ * Проверка самих строк «партия — количество — цена»: общая для новой отгрузки и для партий, которые дописывают в уже
+ * записанную (`rfEdit.ts`). Пустая строка — можно.
+ */
+export function rubLinesRefusal(input: {
+  role: string | null | undefined;
+  farm?: string | null;
+  lines: RubLineInput[];
+  batches: Map<string, RubBatch>;
+}): string {
   const taken = new Map<string, number>();
   for (const line of input.lines) {
     const batch = input.batches.get(line.batchId);

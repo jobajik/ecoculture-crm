@@ -26,6 +26,7 @@ import ReadyChecks from "@/components/ReadyChecks";
 import RegionIncomePanel from "@/components/RegionIncomePanel";
 import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKind";
 import { formatRub, hasRubPrices, rubTotal } from "@/lib/rubShipment";
+import { isRfShipment, rfEditRefusal } from "@/lib/rfEdit";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isCreditTerms, isReadyToShip, notReadyReason } from "@/lib/orderReady";
@@ -213,7 +214,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // Исключение — свой опт на город у зав. складом: он заведён только её цветком,
   // значит показан целиком, и править его ей можно.
   const shownWhole = !farm || (region && order.items.length === loaded.items.length);
-  const canEdit = shownWhole && canEditOrder(loaded, role, session?.user?.email);
+  // Отгрузку в РФ правят по своим правилам (`rfEdit.ts`): она отгружена с первой минуты, и обычное «отгруженное не
+  // правится» закрыло бы её от всех, кроме администратора.
+  const rf = isRfShipment(loaded);
+  const canEdit = rf
+    ? rfEditRefusal(loaded, role, role === ROLES.WAREHOUSE ? session?.user?.farm ?? "" : null) === ""
+    : shownWhole && canEditOrder(loaded, role, session?.user?.email);
   // «Повторить» — новая заявка тому же клиенту с теми же позициями (цены — текущие).
   const repeatHref =
     !farm && canRepeatFrom(loaded, role, myEmail) ? newClientOrderHref(role, loaded.clientId, loaded.orderId) : "";
@@ -313,7 +319,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       <PageHeader
         area="orders"
         title={`№ ${orderCode(order.orderId)}`}
-        eyebrow={rub ? "Отгрузка в РФ · цены в рублях" : region ? "Опт в регион" : retail ? "Заявка магазину" : undefined}
+        eyebrow={rub ? "Отгрузка в РФ · цены в рублях" : rf ? "Отгрузка в РФ · цены в рублях не указаны" : region ? "Опт в регион" : retail ? "Заявка магазину" : undefined}
         subtitle={
           <>
             {retail && `${retailLabel(order.retail)} · наш магазин · `}
@@ -346,6 +352,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             <div className="font-display text-[30px] leading-tight font-extrabold tabular-nums">
               {rub ? formatRub(rubTotal(order.items)) : region ? `${stems.toLocaleString("ru-RU")} шт.` : moneyExact(order.totalAmount)}
             </div>
+            {rf && !rub && canEdit && (
+              <Link href={`/orders/${order.orderId}/edit`} className="mt-1 inline-block text-sm text-accent hover:underline">
+                Указать клиента и цены в рублях
+              </Link>
+            )}
             {hasInvoice && (
               <span className={clsx("badge mt-1", SECTION_TONE[moneyTone].chip)}>
                 {moneyTone === "good"

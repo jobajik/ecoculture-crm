@@ -82,7 +82,9 @@ import { getCurrentPrices } from "@/lib/repo/prices";
 import { deleteOrder } from "@/lib/repo/orders";
 import { listBatches } from "@/lib/repo/batches";
 import { createOrderShipments } from "@/lib/repo/shipments";
-import { RUB_DIRECTION, cleanRub, formatRub, planRubItems, rubShipmentRefusal, rubTotal, type RubBatch, type RubLineInput } from "@/lib/rubShipment";
+import { RUB_DIRECTION, cleanRub, formatRub, planRubItems, rubNote, rubShipmentRefusal, rubTotal, type RubBatch, type RubLineInput } from "@/lib/rubShipment";
+import { commitRfCancel, commitRfEdit } from "@/lib/repo/rfEdit";
+import type { RfEditInput } from "@/lib/rfEdit";
 import { PRICE_KINDS } from "@/lib/priceList";
 
 async function createOrderActionInner(
@@ -644,7 +646,7 @@ async function createRubShipmentActionInner(input: { clientId: string; deliveryD
     clientPhone: client.phone || "",
     deliveryDate: input.deliveryDate,
     confirmed: true,
-    notes: `Отгрузка в РФ, цены в рублях: ${formatRub(rubTotal(plan))}. Оформил склад по факту.${note ? ` ${note}` : ""}`,
+    notes: rubNote(rubTotal(plan), note),
     items: plan.map((i) => ({
       flowerType: i.flowerType as NewOrderInput["items"][number]["flowerType"],
       variety: i.variety,
@@ -671,6 +673,68 @@ async function createRubShipmentActionInner(input: { clientId: string; deliveryD
   revalidatePath("/warehouse");
   revalidatePath("/plans/regions");
   return orderId;
+}
+
+const RF_PATHS = ["/orders", "/warehouse", "/warehouse/stock", "/plans/regions", "/retail/regions"];
+
+/**
+ * Правка отгрузки в РФ (16.11.2026, правила — `rfEdit.ts`, запись одним запросом — `repo/rfEdit.ts`): день, клиент,
+ * комментарий, цена в рублях; количество вниз — с возвратом в партии; больше цветка — из партий. Роль и производство
+ * берутся из сессии, клиент и остатки читаются сервером заново.
+ */
+async function updateRfShipmentActionInner(orderId: string, input: RfEditInput) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const email = session.user.email.toLowerCase();
+  const role = session.user.role;
+  const farm = role === ROLES.WAREHOUSE ? session.user.farm ?? "" : null;
+
+  const edit: RfEditInput = {
+    deliveryDate: String(input.deliveryDate ?? ""),
+    clientId: String(input.clientId ?? "").trim(),
+    comment: String(input.comment ?? ""),
+    items: (input.items ?? []).map((i) => ({ itemId: String(i.itemId || ""), quantity: Number(i.quantity), priceRub: cleanRub(Number(i.priceRub)) })),
+    add: (input.add ?? []).map((l) => ({ batchId: String(l.batchId || ""), quantity: Number(l.quantity), priceRub: cleanRub(Number(l.priceRub)) })),
+  };
+  forgetReads();
+  const client = edit.clientId ? await getClientById(edit.clientId) : null;
+  const plan = await commitRfEdit({ orderId, actor: { email, role, farm }, edit, client, today: localDayKey() });
+
+  if (plan.describe.length > 0) {
+    // В тенге у такой заявки сумма ноль по замыслу — рубли идут словами, чтобы журнал отвечал «кто и что поменял».
+    await logMoney({
+      actorEmail: email,
+      orderId,
+      action: MONEY_LOG_ACTIONS.ORDER_EDITED,
+      details: `Отгрузка в РФ: ${plan.describe.join("; ")}`,
+      amountBefore: 0,
+      amountAfter: 0,
+    });
+    for (const path of [...RF_PATHS, `/orders/${orderId}`]) revalidatePath(path);
+  }
+  return { changes: plan.describe, backToStock: plan.backToStock, added: plan.added, total: formatRub(plan.rubAfter) };
+}
+
+/** Отмена отгрузки в РФ целиком: всё уехавшее возвращается в свои партии, заявка остаётся отменённой. */
+async function cancelRfShipmentActionInner(orderId: string, reason: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const email = session.user.email.toLowerCase();
+  const role = session.user.role;
+  const farm = role === ROLES.WAREHOUSE ? session.user.farm ?? "" : null;
+
+  forgetReads();
+  const plan = await commitRfCancel({ orderId, actor: { email, role, farm }, reason: String(reason ?? "") });
+  await logMoney({
+    actorEmail: email,
+    orderId,
+    action: MONEY_LOG_ACTIONS.ORDER_CANCELLED,
+    details: plan.describe,
+    amountBefore: 0,
+    amountAfter: 0,
+  });
+  for (const path of [...RF_PATHS, `/orders/${orderId}`]) revalidatePath(path);
+  return { backToStock: plan.backToStock };
 }
 
 /**
@@ -760,6 +824,14 @@ export async function orderDeleteInfoAction(...args: Parameters<typeof orderDele
 
 export async function createRubShipmentAction(...args: Parameters<typeof createRubShipmentActionInner>) {
   return guard(() => createRubShipmentActionInner(...args));
+}
+
+export async function updateRfShipmentAction(...args: Parameters<typeof updateRfShipmentActionInner>) {
+  return guard(() => updateRfShipmentActionInner(...args));
+}
+
+export async function cancelRfShipmentAction(...args: Parameters<typeof cancelRfShipmentActionInner>) {
+  return guard(() => cancelRfShipmentActionInner(...args));
 }
 
 export async function createRegionOrderAction(...args: Parameters<typeof createRegionOrderActionInner>) {

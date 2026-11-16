@@ -60,12 +60,16 @@ export default async function WarehousePage() {
         icon="truck"
         tabs={WAREHOUSE_TABS}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href="/orders/new?region=1" className="btn-secondary">
               + Опт в регион
             </Link>
             <Link href="/orders/new?rub=1" className="btn-secondary">
               + Отгрузка в РФ (₽)
+            </Link>
+            {/* Записанные отгрузки в РФ — посмотреть, поправить цену или количество, отменить (`rfEdit.ts`). */}
+            <Link href="/orders?stage=rf" className="btn-ghost">
+              Отгрузки в РФ
             </Link>
             <Link href="/warehouse/receive" className="btn-primary">
               + Приёмка

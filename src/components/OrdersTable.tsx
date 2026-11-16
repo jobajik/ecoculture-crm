@@ -21,6 +21,14 @@ import Pill from "./Pill";
 import Icon, { type IconName } from "./Icon";
 import clsx from "clsx";
 import { storeLabel } from "@/lib/officeStore";
+import { isRfShipment, rfSummary } from "@/lib/rfEdit";
+import { formatRub, hasRubPrices, rubTotal } from "@/lib/rubShipment";
+
+/**
+ * Отбор «Отгрузки в РФ» (16.11.2026): владелец не нашёл в списке заявку по РФ — она стояла строкой «клиент · 0 ₸ ·
+ * отгружена», без слова «РФ» и без рублей. Теперь у таких строк метка и сумма в рублях, а отбор собирает их вместе.
+ */
+const RF_FILTER = "rf";
 
 /** Фильтр списка: этап заявки, «опаздывают» или все. */
 export const STAGE_FILTERS: { value: string; label: string }[] = [
@@ -29,6 +37,7 @@ export const STAGE_FILTERS: { value: string; label: string }[] = [
   { value: "late", label: "Опаздывают" },
   { value: "nodate", label: "Без даты доставки" },
   ...STAGE_ORDER.map((k) => ({ value: k, label: STAGE_LABELS[k] })),
+  { value: RF_FILTER, label: "Отгрузки в РФ" },
 ];
 
 /**
@@ -138,7 +147,8 @@ export default function OrdersTable({
       if (status === "open" && (st.key === "shipped" || st.key === "cancelled")) return false;
       if (status === "late" && st.lateDays <= 0) return false;
       if (status === "nodate" && (o.deliveryDate || st.key === "shipped" || st.key === "cancelled")) return false;
-      if (!["all", "open", "late", "nodate"].includes(status) && st.key !== status) return false;
+      if (status === RF_FILTER && !isRfShipment(o)) return false;
+      if (!["all", "open", "late", "nodate", RF_FILTER].includes(status) && st.key !== status) return false;
       if (search.trim() && !matchesOrderListSearch(o, personName(o.managerEmail, managerNames), search)) return false;
       return true;
     });
@@ -184,6 +194,7 @@ export default function OrdersTable({
     const open = st.key !== "shipped" && st.key !== "cancelled";
     if (open) counts.open = (counts.open ?? 0) + 1;
     if (st.lateDays > 0) counts.late = (counts.late ?? 0) + 1;
+    if (isRfShipment(o)) counts[RF_FILTER] = (counts[RF_FILTER] ?? 0) + 1;
     if (open && !o.deliveryDate) counts.nodate = (counts.nodate ?? 0) + 1;
     if (o.createdAt.slice(0, 7) === month && st.key !== "cancelled") {
       monthCount += 1;
@@ -199,6 +210,8 @@ export default function OrdersTable({
   const chips: { value: string; label: string }[] = [
     { value: "all", label: "Все" },
     { value: "open", label: "Открытые" },
+    // Третьим, а не в хвосте: чипов одиннадцать, и последние на обычном экране уезжают за край ряда.
+    { value: RF_FILTER, label: "Отгрузки в РФ" },
     { value: "wait_confirm", label: "Ждут подтверждения" },
     { value: "wait_money", label: "Ждут оплату" },
     { value: "ready", label: "Готовы к отгрузке" },
@@ -208,6 +221,7 @@ export default function OrdersTable({
     { value: "shipped", label: "Отгружены" },
     { value: "cancelled", label: "Отменены" },
   ];
+  const rfTotals = status === RF_FILTER ? rfSummary(filtered) : null;
   const deliveryLabel = (d: string) => (!d ? "—" : d === today ? "сегодня" : d === tomorrow ? "завтра" : formatDay(d));
   const short = (v: number) =>
     v >= 1_000_000 ? `${(v / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} млн ₸` : `${Math.round(v).toLocaleString("ru-RU")} ₸`;
@@ -239,6 +253,16 @@ export default function OrdersTable({
           {managers.find((m) => m.email === manager)?.name}: заявок {filtered.length.toLocaleString("ru-RU")}
           {managerTotal > 0 ? ` на ${Math.round(managerTotal).toLocaleString("ru-RU")} ₸` : ""}
           <span className="text-ink-muted"> · без отменённых в сумме</span>
+        </p>
+      )}
+      {rfTotals && (
+        <p className="mb-3 text-sm text-ink-secondary">
+          Отгрузок в РФ: <b className="font-semibold text-ink-primary">{rfTotals.count.toLocaleString("ru-RU")}</b> · стеблей{" "}
+          <b className="font-semibold text-ink-primary">{rfTotals.stems.toLocaleString("ru-RU")}</b> · на{" "}
+          <b className="font-semibold text-ink-primary">{formatRub(rfTotals.rub)}</b> · поступило{" "}
+          <b className="font-semibold text-ink-primary">{moneyExact(rfTotals.income)}</b>
+          {rfTotals.noPrices > 0 && <span className="text-status-serious"> · без цен в рублях: {rfTotals.noPrices}</span>}
+          <span className="text-ink-muted"> · без отменённых</span>
         </p>
       )}
       <div className="xl:flex xl:gap-4 xl:items-start">
@@ -367,6 +391,7 @@ export default function OrdersTable({
                       <Link href={`/orders/${o.orderId}`} className="truncate max-w-[200px] font-semibold hover:text-accent" title={o.clientName}>
                         {o.clientName || "—"}
                       </Link>
+                      {isRfShipment(o) && o.clientId && <span className="badge bg-accent-soft text-accent flex-none">РФ</span>}
                       <span className="text-xs text-ink-muted truncate max-w-[160px] xl:max-w-[120px]" title={`Менеджер: ${mName}`}>
                         <span className="sm:hidden xl:inline">· </span>
                         {mName}
@@ -384,7 +409,13 @@ export default function OrdersTable({
                     <ItemsCell lines={o.items.map(itemText)} />
                   </td>
                   <td className={clsx("px-3 py-2.5 font-semibold sm:text-right whitespace-nowrap tabular-nums", narrow)} data-label="Сумма">
-                    {moneyExact(o.totalAmount)}
+                    {hasRubPrices(o) ? (
+                      formatRub(rubTotal(o.items))
+                    ) : isRfShipment(o) ? (
+                      <span className="text-xs font-normal text-ink-muted">₽ не указаны</span>
+                    ) : (
+                      moneyExact(o.totalAmount)
+                    )}
                   </td>
                   <td className={clsx("px-3 py-2.5", narrow)} data-label="Оплата">
                     {pay && pay.tone !== "muted" ? <Pill tone={pay.tone}>{pay.label}</Pill> : <span className="text-ink-muted text-xs">{pay?.label ?? "—"}</span>}

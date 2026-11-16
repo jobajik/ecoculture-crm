@@ -2,6 +2,7 @@
 
 import { canOpen } from "@/lib/access";
 import { moneyExact } from "@/lib/formatNumber";
+import { formatRub, hasRubPrices, rubTotal } from "@/lib/rubShipment";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -179,6 +180,7 @@ export default function OrderDrawer({
                 <b>{i.quantity.toLocaleString("ru-RU")}</b>
                 {i.shippedQuantity > 0 && <span className="text-ink-muted"> (отгр. {i.shippedQuantity.toLocaleString("ru-RU")})</span>}
                 {i.unitPrice > 0 && <span className="text-ink-muted"> × {moneyExact(i.unitPrice)}</span>}
+                {(i.priceRub ?? 0) > 0 && <span className="text-ink-muted"> × {formatRub(i.priceRub ?? 0)}</span>}
               </span>
             </div>
           ))}
@@ -188,7 +190,9 @@ export default function OrderDrawer({
         <div className="px-5 py-3 border-b border-line-hairline grid grid-cols-3 gap-2">
           <div className="rounded-xl bg-surface-plane px-3 py-2">
             <div className="text-[11px] text-ink-muted">Сумма</div>
-            <div className="font-display font-extrabold text-[15px]">{noInvoice ? "—" : money(order.totalAmount)}</div>
+            <div className="font-display font-extrabold text-[15px]">
+              {hasRubPrices(order) ? formatRub(rubTotal(order.items)) : noInvoice ? "—" : money(order.totalAmount)}
+            </div>
           </div>
           <div className="rounded-xl bg-surface-plane px-3 py-2">
             <div className="text-[11px] text-ink-muted">Оплачено</div>
