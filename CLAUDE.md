@@ -1283,6 +1283,20 @@ Blanchette — пачка не указана, `ROSE_KIND_PACK.peony_spray` = nu
 заказ бота по одноголовой и спрей-розе не кратно 15 не оформляется. Проверки — `check-bot-turn` («Паккинг»),
 `check-bot-order` («пачки»).
 
+**Склады для самовывоза** (16.11.2026, владелец прислал список «адреса оптовых складов в городах для самовывоза» и
+следом «эти адреса точно можно внести в CRM»). `src/lib/pickupPoints.ts`, `PICKUP_POINTS`: Алматы — мкр Аксай-3а, д. 62а,
+здание Агроцентра; Усть-Каменогорск — ул. Бажова 91, Цветочник; Семей — ул. Ибраева 147; Караганда — ул. Молокова 104,
+бутик 29 (4 корпус), склады МАДИ; Астана — ул. Жошы хана 1/2. Город узнаётся по ЯВНОМУ списку написаний (`aliases`:
+«г.», дефис, «Оскемен» / «Өскемен», «Қарағанды», «Нур-Султан»), похожий город — нет. Где действует:
+- **подсказка модели** (`pickupPromptBlock`) — бот основного номера, «продаёт сам» и помощник номеров: на «где забрать?» —
+  адрес склада ГОРОДА КЛИЕНТА одной строкой, город неизвестен — сначала город, списком не выкладывать; города нет в списке
+  — адрес не придумывать; «сегодня» по адресу не обещать (регион — с фурой), часы работы и дорогу не выдумывать;
+- **подтверждение заказа бота** (`pickupOrAddressLine` в `botOrder.ts`): адреса нет — «Напишите адрес доставки — или
+  заберёте сами со склада: <адрес>» по городу заказа (город не назван — Алматы, `BOT_DEFAULT_CITY`); склада в городе нет —
+  по-старому «из офиса». Склад Алматы для самовывоза считается тем же «офисом», куда приезжают оптовики;
+- **страница заявки** — строка «Самовывоз» по городу карточки клиента (у объёма на город её нет).
+Новый склад — строкой в `PICKUP_POINTS`, новое написание города — в `aliases`. Проверка — `check-pickup`.
+
 **Дубли заявок после менеджеров** (21.10.2026, владелец: «мне говорят, что ты дублируешь заявки после менеджеров»; что
 нашлось — `scripts/diag-dup-orders.ts [дней]`: заявки бота и помощника рядом с заявками людей того же клиента, ±48 ч).
 Сабина: Эмиль голосом договорился на 100 шт. Altaj Вторая и в 06:20 оформил №K0DI0, но записал телефон с опечаткой
@@ -3842,7 +3856,7 @@ src/
 `check-payment-stage`, `check-order-delete`, `check-action-refusals`, `check-sheet-cell`,
 `check-auth-role`, `check-cash-by-flower`, `check-payments`, `check-writeoff-bulk`,
 `check-integrity`, `check-order-stage`, `check-plan-overview`, `check-order-return`,
-`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`, `check-wa-lines`, `check-auto-broadcast`, `check-staff-command`, `check-leads-bulk`, `check-payroll`, `check-payroll-work`, `check-greenhouse`, `check-intake`.
+`check-price-groups`, `check-client-analytics`, `check-stock-analytics`, `check-finance-analytics`, `check-leads`, `check-kaspi`, `check-payment-status`, `check-talks`, `check-calls`, `check-broadcasts`, `check-point`, `check-wa-automation`, `check-flower-sales`, `check-period-nav`, `check-bot-order`, `check-phone`, `check-bot-photos`, `check-office`, `check-batch-fix`, `check-bot-turn`, `check-wa-lines`, `check-auto-broadcast`, `check-staff-command`, `check-leads-bulk`, `check-payroll`, `check-payroll-work`, `check-greenhouse`, `check-intake`, `check-pickup`.
 
 - `check-planning` — роли РОПа и агронома, изоляция производств, упсерт без дублей, выход высшей;
 - `check-balance` — блоки направлений и целочисленное распределение остатка;

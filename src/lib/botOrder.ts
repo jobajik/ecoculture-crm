@@ -2,6 +2,7 @@ import { FLOWER_TYPE_LABELS, formatGrade, getGradesFor, isChrysanthemum } from "
 import { prettyKaspiPhone } from "./kaspiInvoice";
 import { plainTyping } from "./humanStyle";
 import { packFor, roundUpToPack } from "./packing";
+import { pickupPointFor } from "./pickupPoints";
 
 // ---------------------------------------------------------------------------
 // Заказ, который бот принял в WhatsApp, — полный цикл (владелец, 01.10.2026:
@@ -271,6 +272,17 @@ export function newClientName(shopName: string, senderName: string, phone: strin
 /** Город по умолчанию, если в разговоре не назван: офис и почти все клиенты — в Алматы. */
 export const BOT_DEFAULT_CITY = "Алматы";
 
+/**
+ * Строка «куда везти» в подтверждении, когда адреса нет: склад для самовывоза города заказа (16.11.2026, адреса
+ * владельца — `pickupPoints.ts`). Города нет в списке складов — по-старому «из офиса».
+ */
+export function pickupOrAddressLine(city: string | null | undefined): string {
+  const point = pickupPointFor(city);
+  return point
+    ? `Напишите адрес доставки — или заберёте сами со склада: ${point.address}.`
+    : "Напишите адрес доставки — или заберёте сами из офиса.";
+}
+
 /** Подтверждение клиенту: номер заказа, позиции, сумма, счета. */
 export function botOrderText(input: {
   code: string;
@@ -297,9 +309,7 @@ export function botOrderText(input: {
     `Итого: *${money(total)}*`,
     `Доставка: ${dayText(input.deliveryDate)}${input.city ? `, ${input.city}` : ""}`,
     ...(input.office ? ["Отправим такси или inDriver — доставку оплачиваете вы."] : []),
-    ...(input.address !== undefined && !input.address.trim()
-      ? ["Напишите адрес доставки — или заберёте сами из офиса."]
-      : []),
+    ...(input.address !== undefined && !input.address.trim() ? [pickupOrAddressLine(input.city)] : []),
     "",
   ];
   const many = input.invoices.length > 1;
