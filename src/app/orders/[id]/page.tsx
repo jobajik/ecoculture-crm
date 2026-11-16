@@ -54,6 +54,7 @@ import CancelOrder from "@/components/CancelOrder";
 import DeleteOrder from "@/components/DeleteOrder";
 import OrderDirection from "@/components/OrderDirection";
 import { directionEditRefusal, directionForCity } from "@/lib/direction";
+import { pickupPointFor } from "@/lib/pickupPoints";
 import { adminDeleteSummary } from "@/lib/orderDelete";
 import { listPayments } from "@/lib/repo/payments";
 import PaymentPanel from "@/components/PaymentPanel";
@@ -295,6 +296,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   // ничего не записывает, человек видит его до сохранения.
   const suggestedDirection = directionForCity(client?.city);
   const directionHint = client?.city ? `Город клиента — ${client.city}` : "";
+  // Склад для самовывоза в городе клиента (16.11.2026, адреса владельца — `pickupPoints.ts`).
+  const pickup = pickupPointFor(client?.city);
 
   // Цвет денежных разделов — по состоянию: оплачено — зелёный, ждём — жёлтый,
   // долг старше срока — красный (DEBT_OVERDUE_DAYS после доставки).
@@ -514,6 +517,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                   "—"
                 )}
               </Fact>
+              {pickup && (
+                <Fact icon="route" label="Самовывоз">
+                  {pickup.address} <span className="text-ink-muted">· {pickup.city}</span>
+                </Fact>
+              )}
             </>
           )}
           <Fact icon="calendar" label="Дата доставки" tone={!order.deliveryDate ? "warn" : undefined}>
