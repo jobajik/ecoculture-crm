@@ -59,6 +59,9 @@ export const config = {
     "/finance/:path*",
     "/warehouse/:path*",
     "/office/:path*",
+    // Регионы (и старый адрес склада Астаны): без входа — на страницу входа, а не пустая страница «у вас города нет».
+    "/region/:path*",
+    "/astana/:path*",
     "/analytics/:path*",
     "/prices/:path*",
     "/admin/:path*",
