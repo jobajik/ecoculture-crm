@@ -27,6 +27,9 @@ import RegionIncomePanel from "@/components/RegionIncomePanel";
 import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKind";
 import { formatRub, hasRubPrices, rubTotal } from "@/lib/rubShipment";
 import { isRfShipment, rfEditRefusal } from "@/lib/rfEdit";
+import { switchableItems, switchTarget } from "@/lib/farmSwitch";
+import FarmSwitch, { type FarmSwitchGroup } from "@/components/FarmSwitch";
+import { listBatches } from "@/lib/repo/batches";
 import OrderClaims, { type OrderClaimRow } from "@/components/OrderClaims";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import { isCreditTerms, isReadyToShip, notReadyReason } from "@/lib/orderReady";
@@ -298,6 +301,32 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const directionHint = client?.city ? `Город клиента — ${client.city}` : "";
   // Склад для самовывоза в городе клиента (16.11.2026, адреса владельца — `pickupPoints.ts`).
   const pickup = pickupPointFor(client?.city);
+
+  // Склад отгрузки хризантемы: Есентай ⇄ Rose Farm (`farmSwitch.ts`). Зав. складом отдаёт соседу позиции своего
+  // производства, администратор — любые. Остаток соседнего склада цифрой не показываем — только «есть / не хватает».
+  const switchable = switchableItems(loaded, role, role === ROLES.WAREHOUSE ? session?.user?.farm ?? "" : null);
+  let farmSwitchGroups: FarmSwitchGroup[] = [];
+  if (switchable.length > 0) {
+    const stock = new Map<string, number>();
+    for (const b of await listBatches()) {
+      if ((b.store || "").trim() || b.quantityRemaining <= 0) continue;
+      const key = `${b.flowerType}|${b.variety}|${b.grade}`;
+      stock.set(key, (stock.get(key) ?? 0) + b.quantityRemaining);
+    }
+    const byTarget = new Map<string, FarmSwitchGroup>();
+    for (const i of switchable) {
+      const to = switchTarget(i.flowerType);
+      const group: FarmSwitchGroup = byTarget.get(to) ?? { toLabel: farmLabel(getFarmFor(to)), fromLabel: farmLabel(getFarmFor(i.flowerType)), items: [] };
+      group.items.push({
+        itemId: i.itemId,
+        title: `${i.variety} · ${formatGrade(i.grade)}`,
+        quantity: i.quantity,
+        enough: (stock.get(`${to}|${i.variety}|${i.grade}`) ?? 0) >= i.quantity,
+      });
+      byTarget.set(to, group);
+    }
+    farmSwitchGroups = Array.from(byTarget.values());
+  }
 
   // Цвет денежных разделов — по состоянию: оплачено — зелёный, ждём — жёлтый,
   // долг старше срока — красный (DEBT_OVERDUE_DAYS после доставки).
@@ -661,6 +690,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </table>
       </div>
       </Section>
+
+      {farmSwitchGroups.length > 0 && (
+        <Section tone="neutral" icon="box" title="Склад отгрузки хризантемы">
+          <FarmSwitch orderId={order.orderId} groups={farmSwitchGroups} />
+        </Section>
+      )}
 
       {!region && invoice.length > 0 && !canTakeMoney && (
         <Section tone={moneyTone} icon="wallet" title={invoice.length > 1 ? "Счета по компаниям" : "Счёт"}>

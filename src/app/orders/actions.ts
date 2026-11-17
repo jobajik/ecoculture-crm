@@ -71,7 +71,7 @@ import {
   type WarehouseEditedItem,
 } from "@/lib/warehouseOrderEdit";
 import { setOrderDirection, setOrderStore } from "@/lib/repo/orders";
-import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ORDER_PAYMENT_METHODS, ROLES } from "@/lib/constants";
+import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ORDER_PAYMENT_METHODS, ROLES, getFarmFor } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
 import { forgetReads } from "@/lib/sheets";
 import { canChooseOrderStore, normalizeStore, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
@@ -84,6 +84,7 @@ import { listBatches } from "@/lib/repo/batches";
 import { createOrderShipments } from "@/lib/repo/shipments";
 import { RUB_DIRECTION, cleanRub, formatRub, planRubItems, rubNote, rubShipmentRefusal, rubTotal, type RubBatch, type RubLineInput } from "@/lib/rubShipment";
 import { commitRfCancel, commitRfEdit } from "@/lib/repo/rfEdit";
+import { commitFarmSwitch } from "@/lib/repo/farmSwitch";
 import type { RfEditInput } from "@/lib/rfEdit";
 import { PRICE_KINDS } from "@/lib/priceList";
 
@@ -738,6 +739,28 @@ async function cancelRfShipmentActionInner(orderId: string, reason: string) {
 }
 
 /**
+ * Склад отгрузки хризантемы: Есентай ⇄ Rose Farm (17.11.2026, правила — `farmSwitch.ts`). Зав. складом переводит
+ * позиции своего производства соседу, администратор — любые. Роль и производство — из сессии.
+ */
+async function switchItemsFarmActionInner(orderId: string, itemIds: string[]) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const role = session.user.role;
+  const farm = role === ROLES.WAREHOUSE ? session.user.farm ?? "" : null;
+  forgetReads();
+  const { plan } = await commitFarmSwitch({
+    orderId,
+    itemIds: (itemIds ?? []).map((v) => String(v || "")),
+    actor: { email: session.user.email.toLowerCase(), role, farm },
+  });
+  for (const path of ["/orders", `/orders/${orderId}`, "/warehouse", "/warehouse/picklist", "/finance", "/analytics", "/"]) revalidatePath(path);
+  // Зав. складом после перевода может не увидеть заявку вовсе — её цветка в ней не осталось.
+  const after = await getOrderById(orderId);
+  const stillMine = role !== ROLES.WAREHOUSE || Boolean(after?.items.some((i) => getFarmFor(i.flowerType) === farm));
+  return { moved: plan.itemIds.length, toFarm: plan.toFarm, stillMine };
+}
+
+/**
  * Сколько по этой городской заявке поступило денег. Вписывает бухгалтер.
  *
  * Сумма НЕ сверяется с суммой заявки: суммы у заявки нет — цены в позициях
@@ -832,6 +855,10 @@ export async function updateRfShipmentAction(...args: Parameters<typeof updateRf
 
 export async function cancelRfShipmentAction(...args: Parameters<typeof cancelRfShipmentActionInner>) {
   return guard(() => cancelRfShipmentActionInner(...args));
+}
+
+export async function switchItemsFarmAction(...args: Parameters<typeof switchItemsFarmActionInner>) {
+  return guard(() => switchItemsFarmActionInner(...args));
 }
 
 export async function createRegionOrderAction(...args: Parameters<typeof createRegionOrderActionInner>) {
