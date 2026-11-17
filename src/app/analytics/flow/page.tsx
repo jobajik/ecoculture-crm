@@ -247,7 +247,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
     { label: "Отгружено со склада", value: nf(t.shipped), note: r.toRegion ? `в регион ${nf(r.toRegion)}` : undefined },
     { label: "Средняя цена", value: `${nf(avgPrice(t.sold))} ₸`, note: delta(avgPrice(t.sold), avgPrice(t.prev.sold)) || undefined },
     { label: "Выдано сотрудникам", value: nf(t.takeouts), note: r.toOffice ? `в офис ${nf(r.toOffice)}` : undefined },
-    { label: "Остаток склада", value: nf(r.balance.end), note: `на начало ${nf(r.balance.start)}${r.balance.region ? ` · Астана ${nf(r.balance.region)}` : ""}` },
+    { label: "Остаток склада", value: nf(r.balance.end), note: `на начало ${nf(r.balance.start)}${r.balance.region ? ` · склады регионов ${nf(r.balance.region)}` : ""}` },
   ];
   const planDone = s.planTotal ? Math.round((s.money.sum / s.planTotal) * 100) : 0;
   // Колонки плана — только когда план на этот месяц поставлен: пустые «плана нет» в каждой строке — шум.
@@ -558,7 +558,7 @@ export default async function FlowAnalyticsPage({ searchParams }: { searchParams
                     </tbody>
                   </table>
                 </div>
-                {r.regionSold > 0 && <div className="px-4 sm:px-5 py-3 text-xs text-ink-muted border-t border-line-hairline">Со склада Астаны за период продано ещё {nf(r.regionSold)} шт. — в итоги не входит.</div>}
+                {r.regionSold > 0 && <div className="px-4 sm:px-5 py-3 text-xs text-ink-muted border-t border-line-hairline">Со складов регионов за период продано ещё {nf(r.regionSold)} шт. — в итоги не входит.</div>}
               </Card>
 
               <Card title="Направления" hint="Куда везли заявки клиентов (поле «Направление» в заявке; пусто — Алматы).">

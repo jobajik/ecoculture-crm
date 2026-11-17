@@ -71,6 +71,8 @@ export const SHEET_TABS = {
   ASSISTANT_LOG: "AssistantLog",
   // Привычки постоянных клиентов менеджеров и когда им писали (09.11.2026, `clientHabits.ts`).
   CLIENT_HABITS: "ClientHabits",
+  // Приёмка фур в регионах (17.11.2026, `regionTruck.ts`): строка на позицию — сколько отгрузили и сколько принял город.
+  REGION_RECEIPTS: "RegionReceipts",
   // Модуль «Зарплата» (28.10.2026, владелец: «программа, которая ведёт табель учёта зп и считает её»; вместо
   // гугл-книги расчётной ведомости Rose Farm). Справочники постоянные, помесячное — отдельными вкладками;
   // все вкладки с приставкой Payroll, чтобы в таблице их было видно одним блоком. Ставки хранятся с датой начала:
@@ -725,6 +727,22 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "LastSentAt",
     "UpdatedAt",
     "Active",
+  ],
+  // Приёмка фуры директором региона: что склад отгрузил по позиции заявки (с прошлой приёмки) и сколько город принял.
+  // Разница — недостача, причина — в Note. Только дописывается.
+  [SHEET_TABS.REGION_RECEIPTS]: [
+    "ReceiptID",
+    "CreatedAt",
+    "OrderID",
+    "Store",
+    "ItemID",
+    "FlowerType",
+    "Variety",
+    "Grade",
+    "Shipped",
+    "Accepted",
+    "ByEmail",
+    "Note",
   ],
   [SHEET_TABS.STOCK_MOVES]: [
     "MoveID",

@@ -20,7 +20,7 @@ import { formatGrade } from "@/lib/constants";
 import Pill from "./Pill";
 import Icon, { type IconName } from "./Icon";
 import clsx from "clsx";
-import { storeLabel } from "@/lib/officeStore";
+import { storeLabel, storeShort } from "@/lib/officeStore";
 import { isRfShipment, rfSummary } from "@/lib/rfEdit";
 import { formatRub, hasRubPrices, rubTotal } from "@/lib/rubShipment";
 
@@ -362,7 +362,11 @@ export default function OrdersTable({
                     </Link>
                     <span className="text-xs text-ink-muted whitespace-nowrap inline-flex items-center gap-1 ml-2">
                       {formatDay(o.createdAt).slice(0, 5)}
-                      {o.store && <span className="text-section-stock font-medium">· {o.store === "office" ? "офис" : storeLabel(o.store)}</span>}
+                      {o.store && (
+                        <span className="text-section-stock font-medium" title={`Склад: ${storeLabel(o.store)}`}>
+                          · {storeShort(o.store)}
+                        </span>
+                      )}
                       {/* Действия админа — в той же строке, а не отдельной: строки остаются низкими. */}
                       {canAdmin && (
                         <>

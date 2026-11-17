@@ -1071,7 +1071,7 @@ async function setOrderStoreActionInner(orderId: string, to: string) {
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/picklist");
   revalidatePath("/office/ship");
-  revalidatePath("/astana/ship");
+  revalidatePath("/region", "layout");
   return storeLabel(to);
 }
 

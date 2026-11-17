@@ -10,8 +10,10 @@ declare module "next-auth" {
       payrollRole?: string;
       /** Коды подразделений начальника. */
       payrollDepartments?: string[];
-      /** Региональный склад, который ведёт менеджер («astana»); у остальных пусто. */
+      /** Региональный склад, который ведёт менеджер («astana», «karaganda»…); у остальных пусто. */
       store?: string;
+      /** Директор региона — подаёт заказ на фуру, видит деньги города (`regionTruck.ts`). */
+      director?: boolean;
     } & DefaultSession["user"];
   }
 }
@@ -23,5 +25,6 @@ declare module "next-auth/jwt" {
     payrollRole?: string;
     payrollDepartments?: string[];
     store?: string;
+    director?: boolean;
   }
 }

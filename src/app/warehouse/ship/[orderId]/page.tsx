@@ -18,7 +18,7 @@ import { localDayKey } from "@/lib/timezone";
 import { formatDay } from "@/lib/formatDate";
 import { canShipUnpaid, creditNote, isReadyToShip, notReadyReason, unpaidRest } from "@/lib/orderReady";
 import UnpaidShipGate from "@/components/UnpaidShipGate";
-import { inStore, isOfficeRole, normalizeStore, shipStoreRefusal, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
+import { inStore, isOfficeRole, isRegionStore, normalizeStore, shipStoreRefusal, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
 import OrderStoreSwitch from "@/components/OrderStoreSwitch";
 import ConfirmOrderButton from "@/components/ConfirmOrderButton";
 import { confirmRefusal } from "@/lib/orderRules";
@@ -58,7 +58,7 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
     availableBatches: availableBatchesFor(allBatches, item.flowerType, item.variety, item.grade),
   }));
   // Куда вернуться после отгрузки: склад офиса — к своей очереди.
-  const backHref = office || isOfficeRole(role) ? "/office/ship" : store === "astana" && role !== "warehouse" ? "/astana/ship" : "/warehouse";
+  const backHref = office || isOfficeRole(role) ? "/office/ship" : isRegionStore(store) && role !== "warehouse" ? `/region/${store}/ship` : "/warehouse";
   // Своё отгружено целиком: после «Отгрузить» страница перерисовывается, и вместо
   // формы должен стоять понятный итог с дорогой обратно, а не «Отгружать рано».
   const ownShipped =

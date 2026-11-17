@@ -16,6 +16,10 @@ import { settingsMap } from "@/lib/repo/broadcasts";
 import { leadsLine, listWaLines } from "@/lib/repo/waLines";
 import { listWaMessages } from "@/lib/repo/talks";
 import WaLinesAdmin from "@/components/WaLinesAdmin";
+import RegionDirectorsForm from "@/components/RegionDirectorsForm";
+import { REGION_STORES } from "@/lib/officeStore";
+import { regionSeat } from "@/lib/regionTruck";
+import { MANAGER_PROFILES_SETTING, parseManagerProfiles } from "@/lib/managerProfile";
 import { lineHookKey } from "@/lib/secretBox";
 import { DIGEST_SETTING } from "@/lib/morningDigest";
 import { DIGEST_LAST_RUN } from "@/lib/morningDigestRunner";
@@ -104,7 +108,7 @@ const ROLE_GUIDE: { code: string; does: string; farm: string }[] = [
 
 export default async function AdminPage({ searchParams }: { searchParams?: { tab?: string } }) {
   // Настройки вкладками, а не лентой на пять экранов (19.10.2026, владелец: «одностраничный и удобный»).
-  const tab = ["staff", "wa", "farms", "notify"].includes(searchParams?.tab ?? "") ? searchParams!.tab! : "staff";
+  const tab = ["staff", "wa", "regions", "farms", "notify"].includes(searchParams?.tab ?? "") ? searchParams!.tab! : "staff";
   const [session, users, settings, map, waLines, waMessages] = await Promise.all([
     getServerSession(authOptions),
     listUsers(),
@@ -137,6 +141,25 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
     .map((u) => ({ email: u.email.toLowerCase(), name: u.name }))
     .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "ru"));
 
+  // Директора регионов (17.11.2026, `regionTruck.ts`): город → директор и день фуры, из настройки `ManagerProfiles`.
+  const profiles = parseManagerProfiles(map[MANAGER_PROFILES_SETTING]);
+  const regionRows = REGION_STORES.map((r) => {
+    const seat = regionSeat(profiles, r.code);
+    const director = seat.directors[0] ?? "";
+    return {
+      store: r.code as string,
+      city: r.label,
+      director,
+      weekday: seat.truckWeekday,
+      female: director ? profiles[director]?.female === true : false,
+      managers: seat.managers.map((e) => nameOf(e) || e),
+    };
+  });
+  const regionManagers = users
+    .filter((u) => u.active && u.role === "manager")
+    .map((u) => ({ email: u.email.toLowerCase(), name: u.name }))
+    .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "ru"));
+
   return (
     <div className="space-y-6">
       <PageHeader area="admin" title="Настройки" icon="gear" />
@@ -146,6 +169,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
           [
             ["staff", "Сотрудники и роли"],
             ["wa", "WhatsApp менеджеров"],
+            ["regions", "Регионы"],
             ["farms", "Производства и сроки"],
             ["notify", "Сводка и уведомления"],
           ] as const
@@ -229,6 +253,27 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
         className="!mb-0"
       >
         <WaLinesAdmin lines={lineRows} managers={lineManagers} leads={leadsRow} />
+      </Section>
+      )}
+
+      {tab === "regions" && (
+      <Section
+        tone="admin"
+        icon="truck"
+        title={
+          <span className="inline-flex items-center" id="region-directors">
+            Директора регионов
+            <Hint>
+              Директор города — сотрудник с ролью «Менеджер» (сначала заведите его во вкладке «Сотрудники и роли»). Он ведёт склад
+              города, подаёт заказ на фуру, подтверждает приёмку и видит заявки, оплаты и долги своего города. Продаёт клиентам
+              как обычный менеджер.
+            </Hint>
+          </span>
+        }
+        className="!mb-0"
+      >
+        <p className="text-sm text-ink-secondary mb-3">Кто директор города и в какой день туда уходит фура. Сохраняется по каждому городу отдельно.</p>
+        <RegionDirectorsForm rows={regionRows} managers={regionManagers} />
       </Section>
       )}
 

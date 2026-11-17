@@ -4,12 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { setOrderStoreAction } from "@/app/orders/actions";
 import { unwrap } from "@/lib/actionResult";
+import { REGION_STORES } from "@/lib/officeStore";
 
-const LABELS: Record<string, string> = { "": "Основной склад", office: "Офис", astana: "Астана" };
-const ACTION: Record<string, string> = { "": "на основной склад", office: "отгрузить из офиса", astana: "отгрузить со склада Астаны" };
+const regionLabels = Object.fromEntries(REGION_STORES.map((r) => [r.code, r.label]));
+const LABELS: Record<string, string> = { "": "Основной склад", office: "Офис", ...regionLabels };
+const ACTION: Record<string, string> = {
+  "": "на основной склад",
+  office: "отгрузить из офиса",
+  ...Object.fromEntries(REGION_STORES.map((r) => [r.code, `отгрузить со склада ${r.genitive}`])),
+};
 
 /**
- * Склад заявки и перевод на другой склад (основной ⇄ «Офис» ⇄ «Астана», `officeStore.ts`), пока ничего не отгружено.
+ * Склад заявки и перевод на другой склад (основной ⇄ «Офис» ⇄ склад города, `officeStore.ts`), пока ничего не отгружено.
  * Куда можно — решает сервер (`storeChangeRefusal`) и присылает списком `targets`.
  */
 export default function OrderStoreSwitch({

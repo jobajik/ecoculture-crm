@@ -41,7 +41,7 @@ export default function MobileNav() {
   if (!session) return null;
   const area = areaForPath(pathname);
   // Где человек сейчас: раздел и его вкладка — из того же списка, что и боковое меню.
-  const links = navLinksFor(session.user?.role ?? "manager", session.user?.payrollRole, session.user?.payrollDepartments, session.user?.farm ?? undefined, session.user?.store ?? undefined);
+  const links = navLinksFor(session.user?.role ?? "manager", session.user?.payrollRole, session.user?.payrollDepartments, session.user?.farm ?? undefined, session.user?.store ?? undefined, session.user?.director === true);
   const link = links.find((l) => isActive(l, pathname, links, ghFarm));
   const tab = link ? activeSub(link.subs, pathname) : undefined;
   const title = link?.label ?? area.label;

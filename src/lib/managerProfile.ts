@@ -26,6 +26,12 @@ export interface ManagerProfile {
    * (`CLOSER_NUDGE_GAPS_HOURS`). Честность та же: без выдуманного дефицита, скидок и давления.
    */
   closer: boolean;
+  /**
+   * Директор региона (17.11.2026, владелец: «хотим подключить директоров Караганды, Астаны, Семея и Усть-Каменогорска…
+   * каждый директор магазина там будет сидеть»): кроме склада города (его ведёт любой, кто посажен в город) подаёт заказ
+   * на фуру и видит заявки, оплаты и долги города. Правила — `regionTruck.ts`, назначает администратор в «Настройках».
+   */
+  director: boolean;
 }
 
 /** Дожим напористого продавца: через 3 ч и назавтра (у остальных номеров менеджеров — одно касание). */
@@ -82,6 +88,7 @@ export function parseManagerProfiles(raw: string | null | undefined): Record<str
       shipWeekday: Number.isInteger(day) && day >= 1 && day <= 7 ? day : null,
       female: o.female === true,
       closer: o.closer === true,
+      director: o.director === true,
     };
   }
   return out;

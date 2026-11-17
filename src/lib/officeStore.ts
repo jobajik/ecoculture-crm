@@ -30,16 +30,60 @@ export const OFFICE_STORE = "office";
  * Астаны, пока там есть товар; прайс общий.
  */
 export const ASTANA_STORE = "astana";
-export type StoreCode = "" | "office" | "astana";
+/**
+ * Склады регионов (17.11.2026, владелец: «раз в неделю грузим фуры в регионы… хотим подключить директоров Караганды,
+ * Астаны, Семея и Усть-Каменогорска, где будем отслеживать стоки, делать заказ на эти регионы»). К Астане добавлены
+ * три города — правила те же, раздел общий (`/region/<код>`, `regionTruck.ts`). С этого же дня цветок попадает на
+ * склад города не в момент отгрузки, а ПРИЁМКОЙ: директор подтверждает, сколько приехало (`planTruckReceipt`).
+ */
+export type StoreCode = "" | "office" | "astana" | "karaganda" | "semey" | "ust_kamenogorsk";
 
-export const STORE_LABELS: Record<StoreCode, string> = { "": "Основной склад", office: "Офис", astana: "Астана" };
+export const STORE_LABELS: Record<StoreCode, string> = {
+  "": "Основной склад",
+  office: "Офис",
+  astana: "Астана",
+  karaganda: "Караганда",
+  semey: "Семей",
+  ust_kamenogorsk: "Усть-Каменогорск",
+};
 
-/** Региональные склады: код, подпись и как пишут город (карточка клиента, направление заявки, профиль менеджера). */
-export const REGION_STORES: { code: StoreCode; label: string; cities: string[] }[] = [
-  { code: ASTANA_STORE, label: "Астана", cities: ["астана", "нур-султан", "нурсултан", "нур султан", "astana"] },
+/**
+ * Региональные склады: код, подпись (она же направление «объёма на город»), короткая подпись для тесных списков,
+ * родительный падеж («склад Астаны») и как
+ * пишут город (карточка клиента, направление заявки, профиль менеджера). Написания — ЯВНЫМ списком: похожий город не
+ * считается («Семей» — не «Семёновка»).
+ */
+export const REGION_STORES: { code: StoreCode; label: string; short: string; genitive: string; cities: string[] }[] = [
+  { code: ASTANA_STORE, label: "Астана", short: "Астана", genitive: "Астаны", cities: ["астана", "нур-султан", "нурсултан", "нур султан", "акмола", "astana"] },
+  { code: "karaganda", label: "Караганда", short: "Кар-да", genitive: "Караганды", cities: ["караганда", "караганды", "қарағанды", "карағанды", "karaganda", "karagandy"] },
+  { code: "semey", label: "Семей", short: "Семей", genitive: "Семея", cities: ["семей", "семипалатинск", "semey"] },
+  {
+    code: "ust_kamenogorsk",
+    label: "Усть-Каменогорск",
+    short: "У-Ка",
+    genitive: "Усть-Каменогорска",
+    cities: ["усть-каменогорск", "усть каменогорск", "устькаменогорск", "оскемен", "өскемен", "у-ка", "ука", "oskemen", "ust-kamenogorsk"],
+  },
 ];
 
-const cityKey = (city: string | null | undefined) => String(city ?? "").trim().toLowerCase().replace(/ё/g, "е").replace(/^г\.?\s*/, "");
+/** Склад региона по коду; не региональный — undefined. */
+export function regionStoreInfo(store: string | null | undefined) {
+  const code = normalizeStore(store);
+  return REGION_STORES.find((r) => r.code === code);
+}
+
+/** Короткая подпись склада для тесной строки списка: «офис», «Кар-да», «У-Ка». */
+export function storeShort(store: string | null | undefined): string {
+  const code = normalizeStore(store);
+  return code === OFFICE_STORE ? "офис" : regionStoreInfo(code)?.short ?? storeLabel(code);
+}
+
+/** «Астаны», «Караганды» — для «склад …», «из …». */
+export function storeGenitive(store: string | null | undefined): string {
+  return regionStoreInfo(store)?.genitive ?? storeLabel(store);
+}
+
+const cityKey = (city: string | null | undefined) => String(city ?? "").trim().toLowerCase().replace(/ё/g, "е").replace(/^г\.?\s*/, "").replace(/\s+/g, " ");
 
 /** Склад региона по городу; не региональный город — «» (основной). */
 export function regionStoreForCity(city: string | null | undefined): StoreCode {

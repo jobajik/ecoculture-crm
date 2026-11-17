@@ -29,7 +29,7 @@ import { useGhFarm } from "./useGhFarm";
 /** Значок пункта: обычно — значок раздела, «Офис» отличается от «Склада». */
 function iconFor(link: NavLink): IconName {
   if (link.href === "/") return "home";
-  if (link.href.startsWith("/office") || link.href.startsWith("/astana")) return "store";
+  if (link.href.startsWith("/office") || link.href.startsWith("/region")) return "store";
   return areaForPath(link.match[0] ?? link.href).icon;
 }
 
@@ -52,7 +52,7 @@ export default function SidebarMenu({ onNavigate }: { onNavigate?: () => void })
   if (!session) return null;
 
   const role = session.user?.role ?? "manager";
-  const links = navLinksFor(role, session.user?.payrollRole, session.user?.payrollDepartments, session.user?.farm ?? undefined, session.user?.store ?? undefined);
+  const links = navLinksFor(role, session.user?.payrollRole, session.user?.payrollDepartments, session.user?.farm ?? undefined, session.user?.store ?? undefined, session.user?.director === true);
   const work = links.filter((l) => !l.other);
   const other = links.filter((l) => l.other);
   const initials = (session.user?.name ?? "?")

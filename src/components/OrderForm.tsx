@@ -8,7 +8,7 @@ import ClientPicker, { type ClientOption } from "./ClientPicker";
 import OrderItemsEditor, { emptyItem, type DraftItem } from "./OrderItemsEditor";
 import { ORDER_PAYMENT_METHODS, SHIPMENT_DIRECTIONS } from "@/lib/constants";
 import { directionForCity } from "@/lib/direction";
-import { regionStoreForCity } from "@/lib/officeStore";
+import { REGION_STORES, regionStoreForCity } from "@/lib/officeStore";
 import { unwrapValue } from "@/lib/actionResult";
 import { addDaysToKey } from "@/lib/dayKey";
 
@@ -22,7 +22,7 @@ export default function OrderForm({
   initialDirection = "",
   stock,
   officeStock,
-  astanaStock,
+  regionStock,
   initialItems,
   initialNotes = "",
   draftId = "",
@@ -68,10 +68,11 @@ export default function OrderForm({
    */
   officeStock?: Record<string, number>;
   /**
-   * Остаток склада Астаны (02.11.2026). Есть — в выборе склада появляется «Астана»; клиенту из Астаны склад
-   * подставляется сам, пока там что-то лежит (решение владельца: любая заявка клиенту Астаны — оттуда, пока есть товар).
+   * Остатки складов регионов (Астана — 02.11.2026, с 17.11.2026 — все города `REGION_STORES`): код склада → остаток.
+   * Где что-то лежит — город появляется в выборе склада; клиенту из этого города склад подставляется сам, пока там
+   * есть товар (решение владельца: любая заявка клиенту города — оттуда, пока есть товар).
    */
-  astanaStock?: Record<string, number>;
+  regionStock?: Record<string, Record<string, number>>;
   /** Позиции из заказа WhatsApp (`waOrder.ts`) — менеджер проверяет и сохраняет. */
   initialItems?: DraftItem[];
   initialNotes?: string;
@@ -115,8 +116,11 @@ export default function OrderForm({
   // шаг на каждую заявку. Снять — если состав ещё обсуждается.
   const [confirmed, setConfirmed] = useState(true);
   // Склад отгрузки: основной или «Офис» (заказы после 12:00 — `officeStore.ts`).
-  const astanaHas = !!astanaStock && Object.values(astanaStock).some((q) => q > 0);
-  const storeFor = (c: ClientOption | null) => (astanaHas && regionStoreForCity(c?.city) === "astana" ? "astana" : "");
+  const regionsWithStock = REGION_STORES.filter((r) => Object.values(regionStock?.[r.code] ?? {}).some((q) => q > 0));
+  const storeFor = (c: ClientOption | null) => {
+    const own = regionStoreForCity(c?.city);
+    return own && regionsWithStock.some((r) => r.code === own) ? own : "";
+  };
   const [store, setStore] = useState(storeFor(initialClient));
   const [storeTouched, setStoreTouched] = useState(false);
   const managerOf = (c: ClientOption | null) =>
@@ -152,7 +156,7 @@ export default function OrderForm({
         direction,
         paymentMethod,
         confirmed,
-        store: officeStock || astanaHas ? store : "",
+        store: officeStock || regionsWithStock.length > 0 ? store : "",
         draftId: draftId || undefined,
         assignTo: managers ? assignTo : undefined,
         items: items.map((it) => ({
@@ -284,7 +288,7 @@ export default function OrderForm({
             )}
           </div>
         )}
-        {(officeStock || astanaHas) && (
+        {(officeStock || regionsWithStock.length > 0) && (
           <div>
             <label className="label">Склад</label>
             <select
@@ -297,7 +301,11 @@ export default function OrderForm({
             >
               <option value="">Основной склад</option>
               {officeStock && <option value="office">Офис (после 12:00)</option>}
-              {astanaHas && <option value="astana">Астана (уже в Астане)</option>}
+              {regionsWithStock.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {r.label} (уже в городе)
+                </option>
+              ))}
             </select>
           </div>
         )}
@@ -330,7 +338,7 @@ export default function OrderForm({
         prices={prices}
         items={items}
         onChange={setItems}
-        stock={officeStock && store === "office" ? officeStock : astanaStock && store === "astana" ? astanaStock : stock}
+        stock={officeStock && store === "office" ? officeStock : regionStock?.[store] ?? stock}
       />
 
       {error && (

@@ -196,8 +196,7 @@ async function createShipmentActionInner(input: {
   if (unpaid) await logUnpaidShipment(email, order, input.parts.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0));
   revalidatePath("/office");
   revalidatePath("/office/ship");
-  revalidatePath("/astana");
-  revalidatePath("/astana/ship");
+  revalidatePath("/region", "layout");
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
   revalidatePath(`/orders/${input.orderId}`);
@@ -472,8 +471,7 @@ async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal
   revalidatePath("/warehouse/picklist");
   revalidatePath("/office");
   revalidatePath("/office/ship");
-  revalidatePath("/astana");
-  revalidatePath("/astana/ship");
+  revalidatePath("/region", "layout");
   revalidatePath(`/orders/${order.orderId}`);
   revalidatePath("/orders");
   revalidatePath("/");

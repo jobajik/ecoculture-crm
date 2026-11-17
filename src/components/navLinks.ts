@@ -4,7 +4,9 @@ import { WAREHOUSE_TABS } from "@/app/warehouse/tabs";
 import { plansTabsFor } from "@/app/plans/tabs";
 import { salesTabsFor } from "@/app/sales/tabs";
 import { officeTabsFor } from "@/app/office/tabs";
-import { astanaTabsFor } from "@/app/astana/tabs";
+import { regionTabsFor } from "@/lib/regionTabs";
+import { regionAccess } from "@/lib/regionTruck";
+import { isRegionStore, storeLabel } from "@/lib/officeStore";
 import { retailTabsFor } from "@/app/retail/tabs";
 import { analyticsTabsFor } from "@/app/analytics/tabs";
 import { payrollTabsFor } from "@/app/payroll/tabs";
@@ -81,7 +83,7 @@ function grouped(subs: NavSub[], groupOf: (p: string) => string): NavSub[] {
 }
 
 // «Клиенты» и «Деньги» с 12.11.2026 — без групп: вкладок стало пять-шесть, взгляды переехали в переключатели страниц.
-const G_STOCK = (p: string) => (p.startsWith("/office") || p.startsWith("/astana") ? "Другие склады" : p === "/warehouse/analytics" ? "Отчёты" : "Работа склада");
+const G_STOCK = (p: string) => (p.startsWith("/office") || p.startsWith("/region") ? "Другие склады" : p === "/warehouse/analytics" ? "Отчёты" : "Работа склада");
 const G_NUMBERS = (p: string) => (p.startsWith("/analytics") || p.startsWith("/sales") ? "Цифры" : "Планы");
 
 const DAY: NavLink = { href: "/", label: "Мой день", match: ["/"], subs: [] };
@@ -128,10 +130,14 @@ function greenhouseSections(role: string, farm: string | undefined, payrollRole:
 }
 
 /** Разделы роли — в порядке, в котором их открывают каждый день. */
-export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[], farm?: string, store?: string): NavLink[] {
+export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[], farm?: string, store?: string, director?: boolean): NavLink[] {
   const links = baseLinksFor(role);
-  // Менеджер, который ведёт склад региона (Салтанат — Астана, `officeStore.ts`), — раздел своего склада.
-  if (role === "manager" && store === "astana") links.splice(2, 0, section("/astana", "Склад Астаны", astanaTabsFor(role), ["/warehouse/ship"]));
+  // Менеджер, посаженный в город (Салтанат — Астана; с 17.11.2026 — директора регионов, `regionTruck.ts`), — раздел
+  // своего города: остатки, фура, отгрузка, списание; у директора ещё оплаты и долги города.
+  if (role === "manager" && isRegionStore(store)) {
+    const tabs = regionTabsFor(store!, regionAccess({ role, store, director }, store));
+    links.splice(2, 0, section(`/region/${store}`, storeLabel(store), tabs, ["/warehouse/ship", "/region"]));
+  }
   const work = links.filter((l) => !l.other);
   const other = links.filter((l) => l.other);
   work.push(...greenhouseSections(role, farm, payrollRole, payrollDepartments));
@@ -160,7 +166,7 @@ function baseLinksFor(role: string): NavLink[] {
     case "warehouse":
       return [
         DAY,
-        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS, { href: "/astana", label: "Астана" }], G_STOCK), ["/astana"]),
+        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS, { href: "/region", label: "Регионы" }], G_STOCK), ["/region"]),
         ORDERS,
         // Зав. складом производства в «Рознице» ведёт только регионы — пункт ведёт сразу туда.
         section("/retail/regions", "Розница", retailTabsFor(role), ["/retail"]),
@@ -183,7 +189,7 @@ function baseLinksFor(role: string): NavLink[] {
         DAY,
         ORDERS,
         section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
-        section("/office", "Склад", [{ href: "/warehouse/stock", label: "Сорта и ростовки" }, ...officeTabsFor(role), { href: "/astana", label: "Астана" }], ["/warehouse", "/astana"]),
+        section("/office", "Склад", [{ href: "/warehouse/stock", label: "Сорта и ростовки" }, ...officeTabsFor(role), { href: "/region", label: "Регионы" }], ["/warehouse", "/region"]),
         section("/finance", "Деньги", financeTabsFor(role)),
         section(
           "/plans",
@@ -214,7 +220,7 @@ function baseLinksFor(role: string): NavLink[] {
         DAY,
         ORDERS,
         section("/clients", "Клиенты", [...clientsTabsFor(undefined, role), { href: "/retail", label: "Наши магазины" }], ["/retail"]),
-        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS.filter((t) => t.href !== "/warehouse/analytics"), { href: "/office", label: "Офис" }, { href: "/astana", label: "Астана" }], G_STOCK), ["/office", "/astana"]),
+        section("/warehouse", "Склад", grouped([...WAREHOUSE_TABS.filter((t) => t.href !== "/warehouse/analytics"), { href: "/office", label: "Офис" }, { href: "/region", label: "Регионы" }], G_STOCK), ["/office", "/region"]),
         section("/finance", "Деньги", financeTabsFor(role)),
         section(
           "/plans",

@@ -3,7 +3,7 @@ import type { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getUserByEmail } from "./repo/users";
 import { roleForToken, type RoleLookup } from "./authRole";
-import { regionStoreOfEmail } from "./repo/regionStore";
+import { regionSeatOfEmail } from "./repo/regionStore";
 
 export const authOptions: AuthOptions = {
   providers: [
@@ -75,7 +75,10 @@ export const authOptions: AuthOptions = {
       token.payrollRole = next.payrollRole ?? "";
       token.payrollDepartments = next.payrollDepartments ?? [];
       // Склад региона менеджера (Салтанат — «Астана», `officeStore.ts`): для меню и прав склада.
-      token.store = next.role === "manager" ? await regionStoreOfEmail(email) : "";
+      // С 17.11.2026 там же — директор ли он региона (`regionTruck.ts`).
+      const seat = next.role === "manager" ? await regionSeatOfEmail(email) : { store: "", director: false };
+      token.store = seat.store;
+      token.director = seat.director;
       return token;
     },
     async session({ session, token }) {
@@ -89,6 +92,7 @@ export const authOptions: AuthOptions = {
         session.user.payrollRole = (token.payrollRole as string) ?? "";
         session.user.payrollDepartments = (token.payrollDepartments as string[]) ?? [];
         session.user.store = (token.store as string) ?? "";
+        session.user.director = token.director === true;
       }
       return session;
     },

@@ -3,7 +3,7 @@ import { isNotASale } from "../orderKind";
 import { isAssistantOrder, isBotOrder } from "../sellerChannel";
 import { isBotEmail } from "../botIdentity";
 import { isAdsLead } from "../leads";
-import { normalizeStore, storeLabel } from "../officeStore";
+import { REGION_STORES, isRegionStore, normalizeStore, storeLabel } from "../officeStore";
 import { isReadyToShip } from "../orderReady";
 import { deliveryGroup } from "../shipQueue";
 import type { AttentionItem } from "../homeFocus";
@@ -219,9 +219,9 @@ export function buildOwnerDay(input: OwnerDayInput): OwnerDay {
       buckets.set(key, b);
     }
   }
-  const shipToday = [...FARM_ORDER, "office", "astana"]
+  const shipToday = [...FARM_ORDER, "office", ...REGION_STORES.map((r) => r.code as string)]
     .filter((k) => buckets.has(k))
-    .map((k) => ({ label: k === "office" || k === "astana" ? storeLabel(k) : farmLabel(k), orders: buckets.get(k)!.orders.size, stems: buckets.get(k)!.stems }));
+    .map((k) => ({ label: k === "office" || isRegionStore(k) ? storeLabel(k) : farmLabel(k), orders: buckets.get(k)!.orders.size, stems: buckets.get(k)!.stems }));
 
   const overall = input.stock.overall;
   return {

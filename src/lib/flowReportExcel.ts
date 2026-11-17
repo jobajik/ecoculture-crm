@@ -89,7 +89,7 @@ export async function flowReportWorkbook(r: FlowReport): Promise<Buffer> {
   row = flowTable(ws, row, "По цветку", "Цветок", r.byFlower, r.total);
   ws.getCell(row, 1).value = "Остаток склада";
   ws.getCell(row, 1).font = { ...FONT, bold: true };
-  header(ws, row + 1, ["", "На начало", "На конец", "Сейчас", "Склад Астаны", "В офис перемещено", "В регион отгружено"]);
+  header(ws, row + 1, ["", "На начало", "На конец", "Сейчас", "Склады регионов", "В офис перемещено", "В регион отгружено"]);
   put(ws, row + 2, ["Основной и офисный склады", r.balance.start, r.balance.end, r.balance.now, r.balance.region, r.toOffice, r.toRegion]);
   row += 4;
   if (r.insights.length) {
@@ -124,7 +124,7 @@ export async function flowReportWorkbook(r: FlowReport): Promise<Buffer> {
   const soldAll = r.channels.reduce((s, c) => s + c.money.qty, 0);
   for (const c of r.channels) put(wsl, row++, [c.label + (c.byList ? " (часть по прайсу)" : ""), c.orders, c.money.qty, Math.round(c.money.sum), Math.round(avgPrice(c.money)), share(c.money.qty, soldAll)], { fmt: [undefined, NUM, NUM, NUM, NUM, PCT] });
   put(wsl, row++, ["Итого", r.channels.reduce((s, c) => s + c.orders, 0), r.total.sold.qty, Math.round(r.total.sold.sum), Math.round(avgPrice(r.total.sold)), 1], { total: true, fmt: [undefined, NUM, NUM, NUM, NUM, PCT] });
-  if (r.regionSold) put(wsl, row++, [`Со склада Астаны продано ещё ${r.regionSold} шт. — в итоги не входит`]);
+  if (r.regionSold) put(wsl, row++, [`Со складов регионов продано ещё ${r.regionSold} шт. — в итоги не входит`]);
   row += 1;
   wsl.getCell(row, 1).value = "Списания по причинам";
   wsl.getCell(row, 1).font = { ...FONT, bold: true };

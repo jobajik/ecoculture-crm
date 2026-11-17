@@ -36,6 +36,10 @@ const U = [
   ["agro@demo.kz", "Бауржан Нурланов", "agronomist", "rose_farm"],
   ["zemfira@demo.kz", "Земфира Алиева", "leadgen", ""],
   ["marketing@demo.kz", "Назгуль Ермекова", "marketer", ""],
+  // Регионы (17.11.2026): директор Караганды, директор Семея и менеджер Астаны без флага директора.
+  ["arman@demo.kz", "Арман Жумабеков", "manager", ""],
+  ["bolat@demo.kz", "Болат Сериков", "manager", ""],
+  ["saltanat@demo.kz", "Салтанат Абенова", "manager", ""],
 ];
 tab("Users", U.map(([Email, Name, Role, Farm]) => ({ Email, Name, Role, Active: "TRUE", Farm })));
 const managers = ["ilyas@demo.kz", "emil@demo.kz", "ilgar@demo.kz"];
@@ -54,6 +58,8 @@ for (const [f, g] of Object.entries(PRICE)) for (const [grade, p] of Object.entr
   prices.push({ Date: day(-60), FlowerType: f, Variety: "", Grade: grade, Price: Math.round(p * 0.93), Kind: "" });
   prices.push({ Date: day(-12), FlowerType: f, Variety: "", Grade: grade, Price: p, Kind: "" });
 }
+// Внутренний прайс розницы — для заказа директора «в магазины».
+for (const [f, g] of Object.entries(PRICE)) for (const [grade, p] of Object.entries(g)) prices.push({ Date: day(-30), FlowerType: f, Variety: "", Grade: grade, Price: Math.round(p * 0.8), Kind: "retail" });
 tab("PriceHistory", prices);
 
 // --- Клиенты ---
@@ -84,6 +90,17 @@ const clients = SHOPS.map((name, i) => ({
   KaspiPay2: "",
   Retail: "",
 }));
+// Регионы: карточки наших магазинов городов и клиенты директоров.
+const regionCard = (city: string) => ({ ...clients[0], ClientID: "C" + id(6), Name: `Розница, ${city}`, City: city, ClientType: "Сеть магазинов", ContactPerson: "", ManagerEmail: "", Retail: "regions", PaymentTerms: "", PaymentMethod: "", Note: "" });
+const regionCards = ["Астана", "Семей", "Усть-Каменогорск"].map(regionCard);
+const regionClients = [
+  ["Караганда Флора", "Караганда", "arman@demo.kz"],
+  ["Цветы на Бухар-Жырау", "Караганда", "arman@demo.kz"],
+  ["Салон Айгерим", "Караганда", "arman@demo.kz"],
+  ["Семей Гүл", "Семей", "bolat@demo.kz"],
+  ["Букет Семей", "Семей", "bolat@demo.kz"],
+].map(([Name, City, ManagerEmail]) => ({ ...clients[1], ClientID: "C" + id(6), Name, City, ManagerEmail, PaymentTerms: "Отсрочка 7 дней", Phone: phone() }));
+clients.push(...regionCards, ...regionClients);
 tab("Clients", clients);
 
 // --- Партии ---
@@ -104,6 +121,19 @@ for (let off = -45; off <= 0; off++) {
 }
 const live = batches.filter((b) => Number(b.QuantityRemaining) > 0);
 for (const b of live.slice(0, 8)) batches.push({ ...b, BatchID: "B" + id(6), QuantityIn: 0, QuantityRemaining: int(1, 6) * 50, Store: "office", SourceBatchID: b.BatchID });
+// Склад Астаны и Караганды: отрезки основных партий (приход ноль), как после приёмки фуры.
+const regionMoves: Record<string, unknown>[] = [];
+const landIn = (store: string, city: string, list: Record<string, unknown>[], orderId: string) => {
+  for (const b of list) {
+    const q = int(2, 10) * 50;
+    const rb = { ...b, BatchID: "B" + id(6), QuantityIn: 0, QuantityRemaining: q, Location: city, Store: store, SourceBatchID: b.BatchID };
+    batches.push(rb);
+    regionMoves.push({ MoveID: "MV" + id(6), CreatedAt: at(-7, 4), Direction: "to_region", FlowerType: b.FlowerType, Variety: b.Variety, Grade: b.Grade, Quantity: q, FromBatchID: b.BatchID, ToBatchID: rb.BatchID, ByEmail: "raziya@demo.kz", Note: `Объём на город: ${city} · заявка ${orderId}` });
+  }
+};
+landIn("astana", "Астана", live.slice(10, 18), "ASTOLD");
+landIn("karaganda", "Караганда", live.slice(20, 25), "KRGOLD");
+tab("StockMoves", regionMoves);
 tab("Batches", batches);
 
 // --- Заявки ---
@@ -174,6 +204,49 @@ const mkKaspiOrder = (orderId: string, c: Record<string, unknown>, parts: { amou
 };
 mkKaspiOrder("KSPA1", clients[0], [{ amount: 50500, phone: "87015550101" }]);
 mkKaspiOrder("KSPB2", clients[1], [{ amount: 50500, phone: "87015550101" }, { amount: 63000, phone: "87775550202" }]);
+// --- Регионы: заказы на фуру ---
+// Караганда: фура отгружена вчера и ждёт приёмки (опт); заказ на следующую фуру ждёт загрузки. Семей: опт и магазины в
+// пути. Астана: фура недельной давности — «отгружено» до приёмок.
+const truckOrder = (orderId: string, off: number, city: string, by: string, lines: [string, string, string, number][], shipped: boolean, extra: Record<string, unknown> = {}) => {
+  let n = 0;
+  for (const [f, v, g, q] of lines) {
+    const it = { OrderID: orderId, ItemID: `${orderId}-I${++n}`, FlowerType: f, Variety: v, Grade: g, Quantity: q, UnitPrice: extra.Retail ? Math.round(PRICE[f][g] * 0.8) : 0, ShippedQuantity: shipped ? q : 0 };
+    items.push(it);
+    if (shipped) {
+      const b = batches.find((x) => x.FlowerType === f && x.Grade === g && !x.Store) ?? batches[0];
+      shipments.push({ ShipmentID: "S" + id(7), CreatedAt: at(off, 3, 30), OrderID: orderId, ItemID: it.ItemID, BatchID: b.BatchID, Quantity: q, WarehouseEmail: f === "chrysanthemum" ? "diana@demo.kz" : "raziya@demo.kz", Notes: "" });
+    }
+  }
+  orders.push({
+    OrderID: orderId, CreatedAt: at(off - 2), ManagerEmail: by, ClientName: city, ClientPhone: "", DeliveryDate: day(off), Status: shipped ? "shipped" : "new", Notes: `Заказ на фуру от региона ${city}.`,
+    ManagerConfirmed: "TRUE", ManagerConfirmedAt: at(off - 2), Paid: "", PaidAt: "", PaymentMethod: "", AccountantEmail: "", PaidAmount: "", PromisedAt: "", CollectionNote: "", ClientID: "",
+    PaidRoseFarm: "", PaidEsentai: "", Retail: "", Direction: city, Kind: "region", InvoiceSentAt: "", InvoiceNote: "", Realization1C: "", Store: "", ...extra,
+  });
+};
+truckOrder("KRGT1", -1, "Караганда", "arman@demo.kz", [["rose", roseV[0], "60", 600], ["rose", roseV[1], "50", 400], ["chrysanthemum", chrV[0], "Третья", 800]], true);
+truckOrder("KRGN2", 6, "Караганда", "arman@demo.kz", [["rose", roseV[2], "60", 500], ["eustoma", eusV[0], "Стандарт", 200]], false);
+truckOrder("SEMT1", -1, "Семей", "raziya@demo.kz", [["rose", roseV[0], "50", 700], ["chrysanthemum", chrV[1], "Вторая", 500]], true);
+truckOrder("SEMR1", -1, "Семей", "raziya@demo.kz", [["rose", roseV[3], "60", 900], ["eustoma", eusV[1], "Стандарт", 300]], true, { Kind: "", Direction: "", Retail: "regions", ClientID: regionCards[1].ClientID, ClientName: regionCards[1].Name });
+truckOrder("ASTOLD", -7, "Астана", "nina@demo.kz", [["rose", roseV[4], "60", 1200]], true);
+// Клиентские заявки городов: одна со склада Караганды ждёт отгрузки, одна оплачена, одна с просроченным долгом.
+const cityOrder = (orderId: string, off: number, c: Record<string, unknown>, store: string, status: string, paidShare: number, lines: [string, string, string, number][]) => {
+  let sum = 0;
+  let n = 0;
+  for (const [f, v, g, q] of lines) {
+    items.push({ OrderID: orderId, ItemID: `${orderId}-I${++n}`, FlowerType: f, Variety: v, Grade: g, Quantity: q, UnitPrice: PRICE[f][g], ShippedQuantity: status === "shipped" ? q : 0 });
+    sum += q * PRICE[f][g];
+  }
+  orders.push({
+    OrderID: orderId, CreatedAt: at(off), ManagerEmail: c.ManagerEmail, ClientName: c.Name, ClientPhone: c.Phone, DeliveryDate: day(off + 1), Status: status, Notes: "",
+    ManagerConfirmed: "TRUE", ManagerConfirmedAt: at(off), Paid: paidShare === 1 ? "TRUE" : "", PaidAt: paidShare ? at(off + 1) : "", PaymentMethod: "Каспи", AccountantEmail: paidShare ? "yulia@demo.kz" : "", PaidAmount: Math.round(sum * paidShare) || "", PromisedAt: "", CollectionNote: "", ClientID: c.ClientID,
+    PaidRoseFarm: Math.round(sum * paidShare) || "", PaidEsentai: "", Retail: "", Direction: "", Kind: "", InvoiceSentAt: "", InvoiceNote: "", Realization1C: "", Store: store,
+  });
+};
+const krgBatch = batches.filter((b) => b.Store === "karaganda");
+cityOrder("KRGC1", 0, regionClients[0], "karaganda", "new", 1, [[String(krgBatch[0].FlowerType), String(krgBatch[0].Variety), String(krgBatch[0].Grade), 50]]);
+cityOrder("KRGC2", -5, regionClients[1], "", "shipped", 1, [["rose", roseV[0], "60", 200]]);
+cityOrder("KRGC3", -20, regionClients[2], "", "shipped", 0.4, [["rose", roseV[1], "50", 300], ["rose", roseV[2], "60", 100]]);
+cityOrder("SEMC1", -3, regionClients[3], "", "shipped", 0, [["rose", roseV[0], "60", 150]]);
 tab("KaspiInvoices", kaspi);
 tab("Orders", orders);
 tab("OrderItems", items);
@@ -228,7 +301,17 @@ for (let w = 1; w <= 5; w++) {
 }
 tab("HarvestForecast", fc);
 
-tab("Settings", [{ Key: "BotEnabled", Value: "true" }]);
+tab("Settings", [
+  { Key: "BotEnabled", Value: "true" },
+  {
+    Key: "ManagerProfiles",
+    Value: JSON.stringify({
+      "saltanat@demo.kz": { city: "Астана", shipWeekday: 1, female: true },
+      "arman@demo.kz": { city: "Караганда", shipWeekday: 2, director: true },
+      "bolat@demo.kz": { city: "Семей", shipWeekday: 2, director: true },
+    }),
+  },
+]);
 for (const t of Object.keys(SHEET_HEADERS)) if (!out[t]) out[t] = [(SHEET_HEADERS as Record<string, string[]>)[t]];
 
 writeFileSync(process.argv[2], JSON.stringify(out));

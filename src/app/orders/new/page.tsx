@@ -6,7 +6,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { getStockSnapshot } from "@/lib/stock";
-import { canChooseOrderStore } from "@/lib/officeStore";
+import { REGION_STORES, canChooseOrderStore } from "@/lib/officeStore";
 import { buildClientStats } from "@/lib/clientStats";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
@@ -294,10 +294,10 @@ export default async function NewOrderPage({
   // производствам: заявка бывает смешанной.
   // Склад заявки бывает основной или «Офис» (`officeStore.ts`) — подсказка
   // остатка показывает тот, что выбран в форме.
-  const [clientStock, officeStock, astanaStock] = await Promise.all([
+  const [clientStock, officeStock, ...regionStocks] = await Promise.all([
     getStockSnapshot(new Date(), undefined, null, { store: "" }),
     getStockSnapshot(new Date(), undefined, null, { store: "office" }),
-    getStockSnapshot(new Date(), undefined, null, { store: "astana" }),
+    ...REGION_STORES.map((r) => getStockSnapshot(new Date(), undefined, null, { store: r.code })),
   ]);
   const toMap = (snap: typeof clientStock) => {
     const map: Record<string, number> = {};
@@ -308,8 +308,9 @@ export default async function NewOrderPage({
   };
   const clientStockMap = toMap(clientStock);
   const officeStockMap = toMap(officeStock);
-  // Склад Астаны (02.11.2026): клиенту Астаны заявка по умолчанию оттуда, пока там есть товар.
-  const astanaStockMap = toMap(astanaStock);
+  // Склады регионов (Астана — 02.11.2026, остальные города — 17.11.2026): клиенту города заявка по умолчанию оттуда,
+  // пока там есть товар.
+  const regionStockMaps = Object.fromEntries(REGION_STORES.map((r, i) => [r.code, toMap(regionStocks[i])]));
 
   return (
     <div>
@@ -354,7 +355,7 @@ export default async function NewOrderPage({
           initialDirection={presetDirection}
           stock={clientStockMap}
           officeStock={canChooseOrderStore(role) ? officeStockMap : undefined}
-          astanaStock={canChooseOrderStore(role) ? astanaStockMap : undefined}
+          regionStock={canChooseOrderStore(role) ? regionStockMaps : undefined}
           managers={
             role === ROLES.SALES_HEAD
               ? [

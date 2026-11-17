@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { listBatches } from "@/lib/repo/batches";
 import { MISSING_FARM_MESSAGE, missingFarm } from "@/lib/access";
 import { farmLabel, flowerPickLabelPlural, formatGrade, isChrysanthemum } from "@/lib/constants";
-import { STORE_LABELS, type StoreCode } from "@/lib/officeStore";
+import { REGION_STORES, STORE_LABELS, type StoreCode } from "@/lib/officeStore";
 import { localDayKey } from "@/lib/timezone";
 import { EARLIER, NO_DATE, buildStockMatrix, daysAgo, type FlowerMatrix } from "@/lib/stockMatrix";
 import PageHeader from "@/components/PageHeader";
@@ -32,7 +32,7 @@ const ageWord = (n: number) => (n === 0 ? "сегодня" : n === 1 ? "вчер
 const STORES: { code: string; store: StoreCode | "all"; label: string }[] = [
   { code: "", store: "", label: STORE_LABELS[""] },
   { code: "office", store: "office", label: STORE_LABELS.office },
-  { code: "astana", store: "astana", label: STORE_LABELS.astana },
+  ...REGION_STORES.map((r) => ({ code: r.code as string, store: r.code, label: r.label })),
   { code: "all", store: "all", label: "Все склады" },
 ];
 

@@ -38,6 +38,9 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
   { prefix: "/warehouse", roles: ["warehouse", "admin"] },
   { prefix: "/office", roles: ["office", "office_retail", "sales_head", "admin"] },
   { prefix: "/astana", roles: ["manager", "sales_head", "admin", "warehouse"] },
+  // Регионы (17.11.2026): директор и менеджер города — свой город, РОП, админ и зав. складом — все; кого именно пускать
+  // и к чему, решает сама страница (`regionAccess`): роль manager здесь у всех менеджеров, а раздел — только у посаженных.
+  { prefix: "/region", roles: ["manager", "sales_head", "admin", "warehouse"] },
   // Рекламацию заводит менеджер, а решение по ней видит у бухгалтера. Раньше
   // весь /finance был закрыт от менеджера, и он не мог узнать, чем кончилась
   // его же жалоба, хотя страница /finance/claims его пускала.

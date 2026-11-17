@@ -1,4 +1,4 @@
-// TABLES=1 node scripts/ui-demo/crawl.cjs <width> <email…> — обход всех страниц без параметров: статус, переадресация, боковая прокрутка, ошибки
+// TABLES=1 [EXTRA=/a,/b] node scripts/ui-demo/crawl.cjs <width> <email…> — обход всех страниц без параметров (и названных в EXTRA): статус, переадресация, боковая прокрутка, ошибки
 const { chromium } = require("playwright");
 const path = require("path");
 const REPO = path.resolve(__dirname, "../..");
@@ -17,7 +17,9 @@ function routes(dir, base = "") {
 }
 (async () => {
   const [width, ...emails] = process.argv.slice(2);
-  const all = routes(path.join(REPO, "src/app")).filter((r) => r !== "/login" && r !== "/privacy").sort();
+  // Страницы с параметром в адресе (раздел города) обход сам не находит — их передают списком: EXTRA="/region/karaganda,/region/karaganda/truck".
+  const extra = (process.env.EXTRA || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const all = routes(path.join(REPO, "src/app")).filter((r) => r !== "/login" && r !== "/privacy").concat(extra).sort();
   const b = await chromium.launch();
   for (const email of emails) {
     const u = USERS.find((r) => r[0] === email);

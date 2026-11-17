@@ -2,6 +2,7 @@ import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "
 import { normalizeStore, regionStoreForCity } from "../officeStore";
 import { cleanOrderKind } from "../orderKind";
 import { ORDER_KINDS } from "../constants";
+import { toIsoDate } from "../sheetDate";
 
 /**
  * Удаляет заявку вместе со всем, что на ней висит, ОДНИМ атомарным запросом
@@ -55,15 +56,33 @@ export async function deleteOrderFully(
       returned += next - remaining;
       ops.push({ kind: "update", tab: SHEET_TABS.BATCHES, rowNumber: batches.rowNumbers[i], changes: { QuantityRemaining: next } });
     });
-    // «Объём на город» в регион со складом (Астана): отгруженное тогда пришло на склад региона — вернули на основной,
-    // значит с регионального снимаем столько же (сколько там ещё лежит), иначе стебли задвоились бы.
+    // «Объём на город» в регион со складом: то, что по этой заявке ЛЕГЛО на склад города (приёмкой или, у Астаны до
+    // 17.11.2026, сразу при отгрузке — в журнале перемещений строка с номером заявки), вернули на основной — значит с
+    // регионального снимаем столько же (сколько там ещё лежит), иначе стебли задвоились бы. Что в пути и не принято, на
+    // складе города не лежит — снимать нечего.
     const order = orderRows[0].record;
     const region = cleanOrderKind(order.Kind) === ORDER_KINDS.REGION ? regionStoreForCity(order.Direction) : "";
     if (region) {
+      const landed = new Map<string, number>();
+      let anyMove = false;
+      try {
+        const moves = await readTable(SHEET_TABS.STOCK_MOVES, { fresh: true });
+        for (const row of moves.rows) {
+          const m = rowToRecord(SHEET_TABS.STOCK_MOVES, row);
+          if (m.Direction !== "to_region" || !(m.Note || "").includes(orderId)) continue;
+          anyMove = true;
+          landed.set((m.FromBatchID || "").trim(), (landed.get((m.FromBatchID || "").trim()) ?? 0) + (Number(m.Quantity) || 0));
+        }
+      } catch {
+        // Журнал не прочитался — ниже действуем как раньше только для старых заявок.
+      }
+      // Фура Астаны до 02.11.2026 легла на склад региона скриптом, без номера заявки в журнале, — для неё прежнее правило.
+      const legacy = !anyMove && region === "astana" && (toIsoDate(order.DeliveryDate) || "9999") < "2026-11-03";
       batches.rows.forEach((row, i) => {
         const b = rowToRecord(SHEET_TABS.BATCHES, row);
         if (normalizeStore(b.Store) !== region) return;
-        const back = byBatch.get((b.SourceBatchID || "").trim()) ?? 0;
+        const source = (b.SourceBatchID || "").trim();
+        const back = Math.min(byBatch.get(source) ?? 0, legacy ? Infinity : landed.get(source) ?? 0);
         if (back <= 0) return;
         const remaining = Number(b.QuantityRemaining) || 0;
         const take = Math.min(remaining, back);

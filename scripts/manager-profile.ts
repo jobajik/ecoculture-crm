@@ -39,7 +39,7 @@ async function main() {
   const raw = JSON.parse(map[MANAGER_PROFILES_SETTING] || "{}") as Record<string, unknown>;
   // Флаг «напористый продавец» ставит `manager-closer.ts` — здесь его не теряем.
   const prev = (raw[email] && typeof raw[email] === "object" ? raw[email] : {}) as Record<string, unknown>;
-  raw[email] = { city: spec.city || "", shipWeekday: spec.shipWeekday ?? null, female: spec.female === true, closer: prev.closer === true };
+  raw[email] = { city: spec.city || "", shipWeekday: spec.shipWeekday ?? null, female: spec.female === true, closer: prev.closer === true, director: prev.director === true };
   const next = parseManagerProfiles(JSON.stringify(raw));
   Object.assign(profiles, next);
   console.log("Станет:");
