@@ -19,6 +19,10 @@ dotenv.config();
  * (без `unitPrice` цена из прайса). `"remove": true` у позиции — убрать её из заявки (только неотгруженную).
  * Номер заявки можно дать коротким кодом («IIU0D»).
  *
+ * У заявки можно задать и `"deliveryDate": "2026-11-17"` (день доставки; правила шапки — `editHeaderRefusal`) и
+ * `"confirm": true` — поставить подтверждение менеджера (17.11.2026: склад попросил «дату отгрузки на сегодня», дата
+ * уже стояла, а отгрузить было нельзя — подтверждение с заявки сняли). Позиции при этом можно не указывать.
+ *
  *   npx tsx scripts/edit-order-json.ts <файл> [--yes]
  */
 import { readFileSync } from "node:fs";
@@ -29,7 +33,9 @@ import {
   setOrderPaidTotals,
 } from "../src/lib/repo/orders";
 import { logMoney } from "../src/lib/repo/moneyLog";
-import { describeItemChanges, editItemsRefusal, editedItemsRefusal } from "../src/lib/orderEdit";
+import { cleanDeliveryDate, describeItemChanges, editHeaderRefusal, editItemsRefusal, editedItemsRefusal } from "../src/lib/orderEdit";
+import { setOrderManagerConfirmed, updateOrderHeader } from "../src/lib/repo/orders";
+import { confirmRefusal } from "../src/lib/orderRules";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, gradeForVariety } from "../src/lib/constants";
 import { listOrdersWithItems } from "../src/lib/repo/orders";
 import { getCurrentPrices } from "../src/lib/repo/prices";
@@ -66,7 +72,7 @@ async function main() {
   const file = process.argv.slice(2).find((a) => !a.startsWith("--"));
   const apply = process.argv.includes("--yes");
   if (!file) throw new Error("Укажите файл JSON");
-  const spec = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")) as { reason?: string; orders: { orderId: string; items?: Patch[]; add?: Add[] }[] };
+  const spec = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")) as { reason?: string; orders: { orderId: string; items?: Patch[]; add?: Add[]; deliveryDate?: string; confirm?: boolean }[] };
   const prices = await getCurrentPrices(localDayKey());
   const reason = (spec.reason || "правка по факту склада").trim();
 
@@ -79,6 +85,44 @@ async function main() {
     }
     console.log(`  ${order.orderId} · ${order.clientName} · ${money(order.totalAmount)} · получено ${money(order.paidAmount)} · ${order.status}`);
     for (const i of order.items) console.log(`    было: ${i.itemId} · ${i.flowerType} | ${i.variety} | ${i.grade} | ${i.quantity} × ${i.unitPrice} | отгр ${i.shippedQuantity}`);
+    console.log(`    доставка ${order.deliveryDate || "—"} · подтверждена: ${order.managerConfirmed ? "да" : "нет"}`);
+
+    // --- День доставки и подтверждение: не деньги, в журнал денег идёт только подтверждение (как на сайте).
+    if (o.deliveryDate !== undefined) {
+      const day = cleanDeliveryDate(o.deliveryDate);
+      const headRefusal = editHeaderRefusal(order, "admin", OWNER);
+      if (!day) console.log(`  день доставки «${o.deliveryDate}» указан неверно — не меняю`);
+      else if (headRefusal) console.log(`  день доставки менять нельзя: ${headRefusal}`);
+      else if (day === order.deliveryDate) console.log(`  день доставки уже ${day} — менять нечего`);
+      else {
+        console.log(`  день доставки: ${order.deliveryDate || "—"} → ${day}`);
+        if (apply) {
+          await updateOrderHeader(order.orderId, { deliveryDate: day });
+          console.log("  день доставки записан");
+        }
+      }
+    }
+    if (o.confirm) {
+      const cRefusal = confirmRefusal(order, "admin", OWNER, true);
+      if (order.managerConfirmed) console.log("  уже подтверждена — менять нечего");
+      else if (cRefusal) console.log(`  подтвердить нельзя: ${cRefusal}`);
+      else {
+        console.log("  подтверждение: нет → да");
+        if (apply) {
+          await setOrderManagerConfirmed(order.orderId, true);
+          await logMoney({
+            actorEmail: OWNER,
+            orderId: order.orderId,
+            action: MONEY_LOG_ACTIONS.MANAGER_CONFIRMED,
+            details: `Подтверждена администратором · ${reason}`,
+            amountBefore: order.paidAmount,
+            amountAfter: order.paidAmount,
+          });
+          console.log("  подтверждение записано");
+        }
+      }
+    }
+    if (!o.items?.length && !o.add?.length) continue;
     const refusal = editItemsRefusal(order, "admin", OWNER);
     if (refusal) {
       console.log(`  нельзя: ${refusal}`);
