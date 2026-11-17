@@ -10,7 +10,14 @@ dotenv.config();
  * факт: куда клиент заплатил, туда и пришло; скрипт его НЕ меняет, только показывает. Отгруженную хризантему не переносит.
  * Без --yes — показ; с --yes — копия таблицы и одна атомарная запись.
  *
- *   npx tsx scripts/order-to-rose-farm.ts <номер или код заявки> [--yes]
+ *
+ * Не вся хризантема, а отдельные позиции — `--only I4,I5` (хвосты номеров позиций; 17.11.2026, №JKDK8: «Алтай 2 и 4
+ * категория — склад отгрузки на Rose Farm», а Podolsk и Pastella остаются на Есентае). Заявка тогда становится
+ * смешанной. Полученные деньги сначала закрывают то, что осталось у Есентая (деньги пришли на его кассу), остальное
+ * переходит на Rose Farm; строка платежа в журнале при этом делится на две. Остатки хризантемы Rose Farm по этим
+ * позициям скрипт показывает — нет на складе, склад не отгрузит.
+ *
+ *   npx tsx scripts/order-to-rose-farm.ts <номер или код заявки> [--only I4,I5] [--yes]
  */
 import { commitAtomic, prefetchTables, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../src/lib/sheets";
 import { listOrdersWithItems } from "../src/lib/repo/orders";
@@ -30,7 +37,9 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 async function main() {
   const args = process.argv.slice(2);
   const yes = args.includes("--yes");
-  const id = args.find((a) => !a.startsWith("--"));
+  const onlyAt = args.indexOf("--only");
+  const only = onlyAt >= 0 ? (args[onlyAt + 1] || "").split(",").map((v) => v.trim().toUpperCase()).filter(Boolean) : [];
+  const id = args.find((a, n) => !a.startsWith("--") && n !== onlyAt + 1);
   if (!id) throw new Error("Укажите номер заявки");
 
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.PAYMENTS, SHEET_TABS.KASPI_INVOICES]);
@@ -43,17 +52,36 @@ async function main() {
   for (const i of order.items)
     console.log(`  ${i.itemId} · ${flowerPickLabel(i.flowerType)} ${i.variety} ${formatGrade(i.grade)} · ${i.quantity} × ${money(i.unitPrice)} · отгружено ${i.shippedQuantity}`);
 
-  const moving = order.items.filter((i) => i.flowerType === ES);
+  const named = (i: { itemId: string }) => only.some((tail) => i.itemId.toUpperCase().endsWith(`-${tail}`));
+  const moving = order.items.filter((i) => i.flowerType === ES && (only.length === 0 || named(i)));
+  if (only.length && moving.length !== only.length) throw new Error(`Из названных позиций (${only.join(", ")}) хризантемой Есентая оказались ${moving.length} — проверьте номера`);
   if (!moving.length) return console.log("\nХризантемы Есентая в заявке нет — менять нечего.");
+  const staying = order.items.filter((i) => getFarmFor(i.flowerType) === "esentai" && !moving.includes(i));
   const shipped = moving.filter((i) => i.shippedQuantity > 0);
   if (shipped.length) throw new Error(`Хризантема уже отгружена со склада Есентая (${shipped.map((i) => i.itemId).join(", ")}) — переносить нельзя, сначала возврат.`);
-  if (order.items.some((i) => getFarmFor(i.flowerType) === "esentai" && i.flowerType !== ES)) throw new Error("В заявке есть другой цветок Есентая — не понимаю, что переносить.");
+  if (!only.length && order.items.some((i) => getFarmFor(i.flowerType) === "esentai" && i.flowerType !== ES)) throw new Error("В заявке есть другой цветок Есентая — не понимаю, что переносить.");
 
   const movedAmount = r2(moving.reduce((s, i) => s + i.quantity * i.unitPrice, 0));
   const paidEs = r2(order.paidEsentai ?? 0);
   const paidRf = r2(order.paidRoseFarm ?? 0);
-  console.log(`\nПереношу на Rose Farm: ${moving.length} поз., ${money(movedAmount)}.`);
-  console.log(`  Оплата: Есентай ${money(paidEs)} → 0, Rose Farm ${money(paidRf)} → ${money(r2(paidRf + paidEs))}`);
+  // Что остаётся у Есентая, сначала закрывается его же деньгами; на Rose Farm уходит остальное.
+  const stayAmount = r2(staying.reduce((s, i) => s + i.quantity * i.unitPrice, 0));
+  const keepEs = Math.min(paidEs, stayAmount);
+  const movedPaid = r2(paidEs - keepEs);
+  console.log(`\nПереношу на Rose Farm: ${moving.length} поз., ${money(movedAmount)}.${staying.length ? ` У Есентая остаётся ${staying.length} поз., ${money(stayAmount)}.` : ""}`);
+  console.log(`  Оплата: Есентай ${money(paidEs)} → ${money(keepEs)}, Rose Farm ${money(paidRf)} → ${money(r2(paidRf + movedPaid))}`);
+  // Есть ли что отгружать: хризантема Rose Farm на основном складе по этим позициям.
+  const batchT = await readTable(SHEET_TABS.BATCHES, { fresh: true });
+  const rfStock = new Map<string, number>();
+  for (const row of batchT.rows) {
+    const b = rowToRecord(SHEET_TABS.BATCHES, row);
+    if (b.FlowerType !== RF || (b.Store || "").trim()) continue;
+    rfStock.set(`${b.Variety}|${b.Grade}`, (rfStock.get(`${b.Variety}|${b.Grade}`) ?? 0) + sheetNumber(b.QuantityRemaining));
+  }
+  for (const i of moving) {
+    const have = rfStock.get(`${i.variety}|${i.grade}`) ?? 0;
+    console.log(`  на складе Rose Farm: ${i.variety} ${formatGrade(i.grade)} — ${have} шт., нужно ${i.quantity}${have < i.quantity ? " ← НЕ ХВАТАЕТ" : ""}`);
+  }
 
   const invoices = (await listKaspiInvoices({ fresh: true })).filter((k) => k.orderId === order.orderId);
   for (const k of invoices)
@@ -75,20 +103,53 @@ async function main() {
   const orderRow = ordersT.rows.findIndex((row) => rowToRecord(SHEET_TABS.ORDERS, row).OrderID === order.orderId);
   if (orderRow < 0) throw new Error("Строка заявки не найдена");
   if (paidEs > MONEY_EPSILON)
-    ops.push({ kind: "update", tab: SHEET_TABS.ORDERS, rowNumber: ordersT.rowNumbers[orderRow], changes: { PaidRoseFarm: r2(paidRf + paidEs), PaidEsentai: 0 } });
+    ops.push({ kind: "update", tab: SHEET_TABS.ORDERS, rowNumber: ordersT.rowNumbers[orderRow], changes: { PaidRoseFarm: r2(paidRf + movedPaid), PaidEsentai: keepEs } });
   let pays = 0;
+  // Заявка одной компании ведёт журнал без компании в строке — такие строки тоже деньги Есентая.
+  const wasOnlyEsentai = order.items.every((i) => getFarmFor(i.flowerType) === "esentai");
+  let keepLeft = keepEs;
+  const splitRows: Record<string, unknown>[] = [];
   paysT.rows.forEach((row, n) => {
     const rec = rowToRecord(SHEET_TABS.PAYMENTS, row);
-    if (rec.OrderID !== order.orderId || rec.Farm !== "esentai") return;
+    if (rec.OrderID !== order.orderId || !(rec.Farm === "esentai" || (rec.Farm === "" && wasOnlyEsentai))) return;
     pays++;
-    console.log(`  платёж ${rec.PaymentID} · ${rec.Date} · ${money(sheetNumber(rec.Amount))} · ${rec.Method}: Есентай → Rose Farm`);
-    ops.push({
-      kind: "update",
-      tab: SHEET_TABS.PAYMENTS,
-      rowNumber: paysT.rowNumbers[n],
-      changes: { Farm: "rose_farm", ...(rec.Flower === ES || !rec.Flower ? { Flower: RF } : {}) },
+    const amount = r2(sheetNumber(rec.Amount));
+    if (keepLeft >= amount - MONEY_EPSILON) {
+      // Целиком остаётся у Есентая; компанию проставляем — заявка стала смешанной.
+      keepLeft = r2(keepLeft - amount);
+      console.log(`  платёж ${rec.PaymentID} · ${rec.Date} · ${money(amount)} · ${rec.Method}: остаётся у Есентая`);
+      if (rec.Farm !== "esentai") ops.push({ kind: "update", tab: SHEET_TABS.PAYMENTS, rowNumber: paysT.rowNumbers[n], changes: { Farm: "esentai" } });
+      return;
+    }
+    if (keepLeft <= MONEY_EPSILON) {
+      console.log(`  платёж ${rec.PaymentID} · ${rec.Date} · ${money(amount)} · ${rec.Method}: Есентай → Rose Farm`);
+      ops.push({
+        kind: "update",
+        tab: SHEET_TABS.PAYMENTS,
+        rowNumber: paysT.rowNumbers[n],
+        changes: { Farm: "rose_farm", ...(rec.Flower === ES || !rec.Flower ? { Flower: RF } : {}) },
+      });
+      return;
+    }
+    // Часть — Есентаю, остальное — Rose Farm: строка делится на две, сумма журнала прежняя.
+    const rest = r2(amount - keepLeft);
+    console.log(`  платёж ${rec.PaymentID} · ${rec.Date} · ${money(amount)} · ${rec.Method}: ${money(keepLeft)} остаётся у Есентая, ${money(rest)} → Rose Farm (новой строкой)`);
+    ops.push({ kind: "update", tab: SHEET_TABS.PAYMENTS, rowNumber: paysT.rowNumbers[n], changes: { Amount: keepLeft, Farm: "esentai" } });
+    splitRows.push({
+      PaymentID: generateId("PAY"),
+      CreatedAt: rec.CreatedAt,
+      OrderID: rec.OrderID,
+      Date: rec.Date,
+      Amount: rest,
+      Farm: "rose_farm",
+      Method: rec.Method,
+      AccountantEmail: rec.AccountantEmail,
+      Note: `${rec.Note}${rec.Note ? " · " : ""}часть платежа ${rec.PaymentID}: позиции перенесены на Rose Farm`.slice(0, 200),
+      Flower: RF,
     });
+    keepLeft = 0;
   });
+  if (splitRows.length) ops.push({ kind: "append", tab: SHEET_TABS.PAYMENTS, records: splitRows });
   ops.push({
     kind: "append",
     tab: SHEET_TABS.MONEY_LOG,
@@ -99,7 +160,7 @@ async function main() {
         ActorEmail: OWNER,
         OrderID: order.orderId,
         Action: MONEY_LOG_ACTIONS.ORDER_EDITED,
-        Details: `Хризантема с Есентая на Rose Farm (${moving.map((i) => `${i.variety} ${i.grade} ${i.quantity} шт.`).join("; ")}); оплата ${money(paidEs)} — на Rose Farm; платежей перенесено: ${pays}. Просьба Ильгара.`,
+        Details: `Хризантема с Есентая на Rose Farm (${moving.map((i) => `${i.variety} ${i.grade} ${i.quantity} шт.`).join("; ")}); оплата ${money(movedPaid)} — на Rose Farm; платежей перенесено: ${pays}. Просьба Ильгара.`,
         AmountBefore: order.totalAmount,
         AmountAfter: order.totalAmount,
       },
