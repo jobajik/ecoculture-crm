@@ -39,7 +39,7 @@ async function main() {
   const yes = args.includes("--yes");
   const onlyAt = args.indexOf("--only");
   const only = onlyAt >= 0 ? (args[onlyAt + 1] || "").split(",").map((v) => v.trim().toUpperCase()).filter(Boolean) : [];
-  const id = args.find((a, n) => !a.startsWith("--") && n !== onlyAt + 1);
+  const id = args.find((a, n) => !a.startsWith("--") && (onlyAt < 0 || n !== onlyAt + 1));
   if (!id) throw new Error("Укажите номер заявки");
 
   await prefetchTables([SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.PAYMENTS, SHEET_TABS.KASPI_INVOICES]);
