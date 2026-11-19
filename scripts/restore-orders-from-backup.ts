@@ -42,6 +42,14 @@ async function main() {
   });
   const liveOrders = await readTable(SHEET_TABS.ORDERS, { fresh: true });
   const live = new Set(liveOrders.rows.map((r) => rowToRecord(SHEET_TABS.ORDERS, r).OrderID));
+  // Строки, которые удаление оставило в таблице (19.11.2026: `delete-orders.ts` удаляет заявку и позиции, а платежи
+  // оставляет), второй раз не дописываем — иначе платёж задвоится. Сверка по своему номеру строки во вкладке.
+  const ID_COL: Record<string, string> = { [SHEET_TABS.ORDER_ITEMS]: "ItemID", [SHEET_TABS.PAYMENTS]: "PaymentID", [SHEET_TABS.CLAIMS]: "ClaimID" };
+  const liveIds = new Map<string, Set<string>>();
+  for (const [tab, col] of Object.entries(ID_COL)) {
+    const t = await readTable(tab, { fresh: true }).catch(() => null);
+    liveIds.set(tab, new Set((t?.rows ?? []).map((r) => rowToRecord(tab, r)[col]).filter(Boolean)));
+  }
 
   const ops: WriteOp[] = [];
   const restored: string[] = [];
@@ -55,7 +63,12 @@ async function main() {
       const b = backup.get(tab)!;
       const col = b.headers.indexOf("OrderID");
       if (col < 0) continue;
-      const rows = b.rows.filter((r) => (r[col] || "").trim() === id);
+      const idCol = ID_COL[tab] ? b.headers.indexOf(ID_COL[tab]) : -1;
+      const rows = b.rows.filter((r) => (r[col] || "").trim() === id).filter((r) => {
+        if (idCol < 0 || !liveIds.get(tab)?.has((r[idCol] || "").trim())) return true;
+        console.log(`  ${tab}: ${r[idCol]} уже есть в таблице — не дописываю`);
+        return false;
+      });
       if (rows.length === 0) continue;
       found += rows.length;
       const records = rows.map((r) => Object.fromEntries(b.headers.map((h, i) => [h, r[i] ?? ""])));
