@@ -1,51 +1,56 @@
-import { FARM_ORDER, ORDER_STATUSES, farmLabel, getFarmFor } from "../constants";
+import { FARM_ORDER, FLOWER_TYPE_LABELS_PLURAL, MONEY_EPSILON, ORDER_STATUSES, farmLabel, getFarmFor } from "../constants";
 import { isNotASale } from "../orderKind";
-import { isAssistantOrder, isBotOrder } from "../sellerChannel";
 import { isBotEmail } from "../botIdentity";
-import { isAdsLead } from "../leads";
 import { REGION_STORES, isRegionStore, normalizeStore, storeLabel } from "../officeStore";
 import { isReadyToShip } from "../orderReady";
 import { deliveryGroup } from "../shipQueue";
-import type { AttentionItem } from "../homeFocus";
 import type { ManagerSalesRow } from "../salesAnalytics";
-import type { StockCompanyRow } from "../stock";
-import type { RecipientRow } from "../broadcast";
-import type { AssistantLogRow } from "../repo/waLines";
-import type { Lead, OrderWithItems, Payment, WaMessage } from "../types";
+import type { Batch, OrderWithItems, Payment, Shipment, Writeoff } from "../types";
 
 /**
- * «Мой день» владельца и РОПа (19.10.2026, макет принят владельцем): не «как идут дела» (это в аналитике), а
- * что сейчас горит, где стоят продажи против темпа, что сделали ИИ-помощники за сутки и что сегодня уедет со
- * складов. Чистая функция — всё из уже прочитанного, проверка `scripts/check-myday-owner.ts`.
+ * Главная владельца и РОПа — «состояние на сейчас» (18.11.2026).
  *
- * Правила счёта те же, что на соседних страницах: продажи — по дню ОФОРМЛЕНИЯ, без отменённых и не-продаж
- * (`isNotASale`); деньги — по дню ПОСТУПЛЕНИЯ (`Payments.date`), как касса; долги — по всей базе (из `homeFocus`
- * и `getFinanceSnapshot`); «ждут ответа» — чаты номера менеджера, где последним писал клиент не старше трёх дней.
+ * Владелец: «Мне нужно, чтобы главная страничка админа была более информативной. Данные по стоку (сколько дней) — это
+ * очень важно. Но мне нужно убрать всё остальное. Нужно текущие продажи за день, сколько продали, сколько должны. Ещё
+ * какие-то данные, которые будут отражать состояние». Прежняя главная (19.10.2026) отвечала на вопрос «что горит»:
+ * «Требует внимания», менеджеры против темпа, ИИ за сутки, склад по компаниям. Теперь на ней только цифры дня:
+ *
+ * - **продано сегодня** — сумма, заявок, стеблей, по цветкам и по менеджерам; рядом вчера и средний день месяца;
+ * - **получено сегодня** — деньги по дню поступления, по компаниям; рядом вчера и месяц;
+ * - **нам должны** — весь долг, просроченная часть и самые крупные должники;
+ * - **месяц к плану** — где продажи относительно темпа;
+ * - **склад за день** — принято, отгружено, осталось отгрузить сегодня, списано;
+ * - «Сколько дней лежит» — отдельной карточкой (`StockAgeCard`), считается в `getStockSnapshot`.
+ *
+ * Правила счёта те же, что на соседних страницах: продажи — по дню ОФОРМЛЕНИЯ по Алматы, без отменённых и не-продаж
+ * (`isNotASale`); деньги — по дню ПОСТУПЛЕНИЯ (`Payments.date`), как касса; долги — по всей базе (`getFinanceSnapshot`).
+ * Чистая функция — всё из уже прочитанного, проверка `scripts/check-myday-owner.ts`.
  */
+export interface OwnerDebtCall {
+  clientName: string;
+  debt: number;
+  overdue: boolean;
+  /** Сколько дней долгу. */
+  days: number;
+}
+
 export interface OwnerDayInput {
   today: string;
-  /** Сегодняшний месяц «ГГГГ-ММ». */
-  month: string;
   /** Доля месяца, прошедшая к сегодняшнему дню, 0–100 (`paceOf`). */
   pacePercent: number;
   orders: OrderWithItems[];
+  /** Снимок продаж месяца по менеджерам (`getSalesSnapshot`) — в нём же продажи за сегодня. */
   managers: ManagerSalesRow[];
   totals: { amountMonth: number; targetAmount: number };
   payments: Payment[];
-  debts: { total: number; overdue: number; overdueOrders: number; openOrders: number };
-  stock: { overall: StockCompanyRow; companies: StockCompanyRow[] };
-  push: { text: string; sold7: number }[];
-  attention: AttentionItem[];
-  /** Линии менеджеров: код → почта менеджера. */
-  managerLines: { code: string; managerEmail: string }[];
-  messages: WaMessage[];
-  assistantLog: AssistantLogRow[];
-  recipients: RecipientRow[];
-  leads: Lead[];
+  debts: { total: number; overdue: number };
+  /** Неоплаченные заявки по всей базе (`finance.calls`). */
+  calls: OwnerDebtCall[];
+  shipments: Pick<Shipment, "orderId" | "quantity" | "createdAt">[];
+  writeoffs: Pick<Writeoff, "quantity" | "createdAt">[];
+  batches: Pick<Batch, "receivedAt" | "quantityIn" | "store">[];
   /** Имя по почте — для бота и менеджеров без строки в снимке. */
   nameByEmail: Map<string, string>;
-  /** Миллисекунды «сейчас» — для окон «за сутки». */
-  nowMs: number;
   /** День по Алматы для ISO-момента. */
   toDay: (iso: string) => string;
 }
@@ -55,44 +60,57 @@ export type ManagerTone = "good" | "warn" | "bad" | "none";
 export interface OwnerManagerRow {
   email: string;
   name: string;
-  amount: number;
+  todayAmount: number;
+  todayOrders: number;
+  monthAmount: number;
   target: number;
   /** Процент плана; null — плана нет. */
   percent: number | null;
   tone: ManagerTone;
+}
+
+export interface OwnerDebtor {
+  clientName: string;
+  debt: number;
+  /** Просроченная часть долга. */
+  overdue: number;
   orders: number;
-  /** Чатов на номере менеджера, где последним писал клиент. */
-  waiting: number;
+  /** Сколько дней самому старому долгу клиента. */
+  days: number;
 }
 
 export interface OwnerDay {
-  summary: { yesterdayAmount: number; yesterdayOrders: number; yesterdayReceived: number; attentionCount: number };
-  sales: { amount: number; target: number; percent: number | null; pacePercent: number; tone: ManagerTone };
-  money: { week: number; byFarm: { farm: string; label: string; amount: number }[] };
-  debts: { total: number; overdue: number; overdueOrders: number; openOrders: number };
-  stock: { stems: number; criticalStems: number; criticalShare: number; push: string };
-  attention: AttentionItem[];
-  managers: OwnerManagerRow[];
-  ai: {
-    broadcastSent: number;
-    broadcastReplied: number;
-    broadcastOrders: number;
-    assistantReplies: number;
-    assistantOrders: number;
-    assistantNotes: number;
-    botChats: number;
-    botOrders: number;
-    adsLeads: number;
+  sold: {
+    amount: number;
+    orders: number;
+    stems: number;
+    byFlower: { flowerType: string; label: string; stems: number; amount: number }[];
+    yesterdayAmount: number;
+    yesterdayOrders: number;
+    /** Средняя продажа за день в этом месяце по ПРОШЕДШИМ дням (сегодня не в счёт); 0 — первый день месяца. */
+    avgDay: number;
   };
-  companies: { farm: string; label: string; stems: number; okShare: number; warnShare: number; badShare: number; criticalShare: number }[];
-  shipToday: { label: string; orders: number; stems: number }[];
+  received: { today: number; yesterday: number; month: number; byFarm: { farm: string; label: string; amount: number }[] };
+  debts: { total: number; overdue: number; overdueOrders: number; openOrders: number; clients: number; top: OwnerDebtor[] };
+  month: { amount: number; target: number; percent: number | null; pacePercent: number; tone: ManagerTone };
+  managers: OwnerManagerRow[];
+  warehouse: {
+    /** Принято на основной склад сегодня, шт. */
+    received: number;
+    shipped: number;
+    shippedOrders: number;
+    /** Готово и ждёт отгрузки на сегодня. */
+    toShipOrders: number;
+    toShipStems: number;
+    toShip: { label: string; orders: number; stems: number }[];
+    writtenOff: number;
+  };
 }
 
-const DAY_MS = 86_400_000;
-/** Клиент ждёт ответа — пока его сообщение не старше трёх дней; дальше разговор считается законченным. */
-const WAITING_DAYS = 3;
 /** Подняться выше темпа — хорошо; отстать больше чем на 15 п.п. — плохо (как `BEHIND_MARGIN` в обзоре планов). */
 const BEHIND_MARGIN = 15;
+/** Сколько должников показывать на главной. */
+const TOP_DEBTORS = 6;
 
 export function managerTone(percent: number | null, pacePercent: number): ManagerTone {
   if (percent === null) return "none";
@@ -106,109 +124,98 @@ function prevDay(day: string): string {
   return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
 }
 
-function shiftDay(day: string, delta: number): string {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
-}
-
 const stemsLeft = (o: OrderWithItems) => o.items.reduce((s, i) => s + Math.max(0, i.quantity - i.shippedQuantity), 0);
-
-/** Сколько чатов номера менеджера ждут ответа: последнее сообщение — входящее, не старше трёх дней. */
-export function waitingChatsByLine(messages: WaMessage[], nowMs: number): Map<string, number> {
-  const last = new Map<string, WaMessage>();
-  for (const m of messages) {
-    const line = (m.line || "").trim();
-    if (!line.startsWith("m-")) continue;
-    const key = `${line}|${m.phone}`;
-    const prev = last.get(key);
-    if (!prev || m.at > prev.at) last.set(key, m);
-  }
-  const out = new Map<string, number>();
-  for (const [key, m] of last) {
-    if (m.direction !== "in") continue;
-    const at = Date.parse(m.at);
-    if (!Number.isFinite(at) || nowMs - at > WAITING_DAYS * DAY_MS) continue;
-    const line = key.slice(0, key.indexOf("|"));
-    out.set(line, (out.get(line) ?? 0) + 1);
-  }
-  return out;
-}
+const FLOWER_ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
+const flowerRank = (flowerType: string) => (FLOWER_ORDER.includes(flowerType) ? FLOWER_ORDER.indexOf(flowerType) : FLOWER_ORDER.length);
+const clientKey = (name: string) => name.trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
 
 export function buildOwnerDay(input: OwnerDayInput): OwnerDay {
-  const { today, orders, payments, toDay, nowMs } = input;
+  const { today, orders, payments, toDay } = input;
   const yesterday = prevDay(today);
+  const month = today.slice(0, 7);
+  // В таблице дата бывает и чистым днём, и моментом — день берём по Алматы в обоих случаях; непонятное — «не сегодня».
+  const dayOf = (v: string | null | undefined): string => {
+    const raw = String(v ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if (!raw || Number.isNaN(Date.parse(raw))) return "";
+    return toDay(raw);
+  };
+
+  // --- Продано сегодня -----------------------------------------------------------------
   const sales = orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && !isNotASale(o) && o.createdAt);
-  const yesterdayOrders = sales.filter((o) => toDay(o.createdAt) === yesterday);
+  const todayOrders = sales.filter((o) => dayOf(o.createdAt) === today);
+  const yesterdayOrders = sales.filter((o) => dayOf(o.createdAt) === yesterday);
+  const flowers = new Map<string, { stems: number; amount: number }>();
+  for (const o of todayOrders) {
+    for (const i of o.items) {
+      const row = flowers.get(i.flowerType) ?? { stems: 0, amount: 0 };
+      row.stems += i.quantity;
+      row.amount += i.quantity * i.unitPrice;
+      flowers.set(i.flowerType, row);
+    }
+  }
+  const byFlower = Array.from(flowers.entries())
+    .map(([flowerType, v]) => ({ flowerType, label: FLOWER_TYPE_LABELS_PLURAL[flowerType] ?? flowerType, stems: v.stems, amount: v.amount }))
+    .sort((a, b) => flowerRank(a.flowerType) - flowerRank(b.flowerType));
+  const todayAmount = todayOrders.reduce((s, o) => s + o.totalAmount, 0);
+  const daysBefore = Number(today.slice(8, 10)) - 1;
+  const avgDay = daysBefore > 0 ? Math.max(0, input.totals.amountMonth - todayAmount) / daysBefore : 0;
 
-  // Деньги — по дню поступления: вчера и последние 7 дней (сегодня и шесть дней до него), по компаниям.
-  const weekFrom = shiftDay(today, -6);
-  const weekPayments = payments.filter((p) => p.date >= weekFrom && p.date <= today);
-  const byFarm = new Map<string, number>();
-  for (const p of weekPayments) byFarm.set(p.farm || "", (byFarm.get(p.farm || "") ?? 0) + p.amount);
-  const farms = [...FARM_ORDER, ...Array.from(byFarm.keys()).filter((f) => f && !FARM_ORDER.includes(f))];
-  const moneyByFarm = farms
-    .map((farm) => ({ farm, label: farmLabel(farm), amount: byFarm.get(farm) ?? 0 }))
-    .filter((r) => r.amount > 0 || FARM_ORDER.includes(r.farm));
-  const unassigned = byFarm.get("") ?? 0;
-  if (unassigned > 0) moneyByFarm.push({ farm: "", label: "без компании", amount: unassigned });
+  // --- Получено сегодня ----------------------------------------------------------------
+  const todayPayments = payments.filter((p) => p.date === today);
+  const farmMap = new Map<string, number>();
+  for (const p of todayPayments) farmMap.set(p.farm || "", (farmMap.get(p.farm || "") ?? 0) + p.amount);
+  const byFarm = [...FARM_ORDER, ...Array.from(farmMap.keys()).filter((f) => f && !FARM_ORDER.includes(f))]
+    .map((farm) => ({ farm, label: farmLabel(farm), amount: farmMap.get(farm) ?? 0 }))
+    .filter((r) => Math.abs(r.amount) > MONEY_EPSILON);
+  if (Math.abs(farmMap.get("") ?? 0) > MONEY_EPSILON) byFarm.push({ farm: "", label: "без компании", amount: farmMap.get("")! });
 
-  // Продажи против темпа.
+  // --- Нам должны ----------------------------------------------------------------------
+  const open = input.calls.filter((c) => c.debt > MONEY_EPSILON);
+  const debtors = new Map<string, OwnerDebtor>();
+  for (const c of open) {
+    const key = clientKey(c.clientName);
+    const row = debtors.get(key) ?? { clientName: c.clientName.trim() || "без имени", debt: 0, overdue: 0, orders: 0, days: 0 };
+    row.debt += c.debt;
+    if (c.overdue) row.overdue += c.debt;
+    row.orders += 1;
+    row.days = Math.max(row.days, c.days);
+    debtors.set(key, row);
+  }
+  // Сначала те, у кого больше ПРОСРОЧЕНО: это разговор сегодня; дальше — по размеру долга.
+  const top = Array.from(debtors.values())
+    .sort((a, b) => b.overdue - a.overdue || b.debt - a.debt)
+    .slice(0, TOP_DEBTORS);
+
+  // --- Месяц к плану и менеджеры ---------------------------------------------------------
   const percent = input.totals.targetAmount > 0 ? (input.totals.amountMonth / input.totals.targetAmount) * 100 : null;
-
-  // Менеджеры: все, кто в снимке продаж (бот — без плана), плюс «ждут ответа» по номеру менеджера.
-  const waiting = waitingChatsByLine(input.messages, nowMs);
-  const waitingByEmail = new Map<string, number>();
-  for (const l of input.managerLines) waitingByEmail.set(l.managerEmail.toLowerCase(), (waitingByEmail.get(l.managerEmail.toLowerCase()) ?? 0) + (waiting.get(l.code) ?? 0));
   const managers: OwnerManagerRow[] = input.managers
     .map((m) => {
       const pct = m.targetAmount > 0 ? (m.amountMonth / m.targetAmount) * 100 : null;
       return {
         email: m.managerEmail,
-        name: isBotEmail(m.managerEmail) ? "Бот и ИИ" : input.nameByEmail.get(m.managerEmail) || m.name,
-        amount: m.amountMonth,
+        // Заявка без менеджера или на уже удалённого сотрудника — строка не должна остаться без подписи.
+        name: isBotEmail(m.managerEmail) ? "Бот и ИИ" : input.nameByEmail.get(m.managerEmail) || m.name || m.managerEmail || "без менеджера",
+        todayAmount: m.amountToday,
+        todayOrders: m.ordersToday,
+        monthAmount: m.amountMonth,
         target: m.targetAmount,
         percent: pct,
-        tone: isBotEmail(m.managerEmail) ? "none" : managerTone(pct, input.pacePercent),
-        orders: m.ordersMonth,
-        waiting: waitingByEmail.get(m.managerEmail) ?? 0,
+        tone: isBotEmail(m.managerEmail) ? ("none" as ManagerTone) : managerTone(pct, input.pacePercent),
       };
     })
-    .sort((a, b) => b.amount - a.amount);
+    .sort((a, b) => b.todayAmount - a.todayAmount || b.monthAmount - a.monthAmount);
 
-  // ИИ за сутки.
-  const dayAgo = nowMs - DAY_MS;
-  const fresh = (iso: string) => {
-    const t = Date.parse(iso);
-    return Number.isFinite(t) && t >= dayAgo;
-  };
-  const sentRows = input.recipients.filter((r) => r.sentAt && fresh(r.sentAt));
-  const sentPhones = new Set(sentRows.map((r) => r.phone.replace(/\D/g, "").slice(-10)));
-  const repliedPhones = new Set(
-    input.messages
-      .filter((m) => m.direction === "in" && fresh(m.at) && sentPhones.has(m.phone.replace(/\D/g, "").slice(-10)))
-      .map((m) => m.phone.replace(/\D/g, "").slice(-10))
-  );
-  const freshOrders = orders.filter((o) => o.status !== ORDER_STATUSES.CANCELLED && fresh(o.createdAt));
-  const botOrders = freshOrders.filter((o) => isBotOrder(o));
-  const assistantOrders = freshOrders.filter((o) => isAssistantOrder(o));
-  const broadcastOrders = freshOrders.filter((o) => {
-    const key = (o.clientPhone || "").replace(/\D/g, "").slice(-10);
-    return key && sentPhones.has(key) && !isBotOrder(o);
-  });
-  const log = input.assistantLog.filter((r) => fresh(r.at));
-  const mainIncoming = new Set(input.messages.filter((m) => !(m.line || "").trim() && m.direction === "in" && fresh(m.at)).map((m) => m.phone));
-  const adsLeads = input.leads.filter((l) => isAdsLead(l) && fresh(l.createdAt)).length;
-
-  // Склад по компаниям и что уедет сегодня — по складам.
-  const share = (part: number, total: number) => (total > 0 ? Math.round((part / total) * 100) : 0);
-  const companies = input.stock.companies.map((c) => {
-    const bad = share(c.criticalStems, c.stems);
-    const warn = share(c.warningStems, c.stems);
-    return { farm: c.farm, label: farmLabel(c.farm), stems: c.stems, okShare: Math.max(0, 100 - bad - warn), warnShare: warn, badShare: bad, criticalShare: bad };
-  });
-  const todayShip = orders.filter((o) => isReadyToShip(o) && deliveryGroup(o.deliveryDate, today) === "today" && stemsLeft(o) > 0);
+  // --- Склад за день ---------------------------------------------------------------------
+  const shippedRows = input.shipments.filter((s) => dayOf(s.createdAt) === today);
+  const shipped = Math.max(0, shippedRows.reduce((s, r) => s + r.quantity, 0));
+  const shippedOrders = new Set(shippedRows.filter((r) => r.quantity > 0).map((r) => r.orderId)).size;
+  // Приход — только настоящая приёмка: у отрезков для офиса и регионов приход ноль (стебли приняты один раз).
+  const received = input.batches.filter((b) => b.quantityIn > 0 && normalizeStore(b.store) === "" && dayOf(b.receivedAt) === today).reduce((s, b) => s + b.quantityIn, 0);
+  const writtenOff = input.writeoffs.filter((w) => dayOf(w.createdAt) === today).reduce((s, w) => s + w.quantity, 0);
+  const waiting = orders.filter((o) => isReadyToShip(o) && deliveryGroup(o.deliveryDate, today) === "today" && stemsLeft(o) > 0);
   const buckets = new Map<string, { orders: Set<string>; stems: number }>();
-  for (const o of todayShip) {
+  for (const o of waiting) {
     for (const i of o.items) {
       const left = Math.max(0, i.quantity - i.shippedQuantity);
       if (left <= 0) continue;
@@ -219,47 +226,44 @@ export function buildOwnerDay(input: OwnerDayInput): OwnerDay {
       buckets.set(key, b);
     }
   }
-  const shipToday = [...FARM_ORDER, "office", ...REGION_STORES.map((r) => r.code as string)]
+  const toShip = [...FARM_ORDER, "office", ...REGION_STORES.map((r) => r.code as string)]
     .filter((k) => buckets.has(k))
     .map((k) => ({ label: k === "office" || isRegionStore(k) ? storeLabel(k) : farmLabel(k), orders: buckets.get(k)!.orders.size, stems: buckets.get(k)!.stems }));
 
-  const overall = input.stock.overall;
   return {
-    summary: {
+    sold: {
+      amount: todayAmount,
+      orders: todayOrders.length,
+      stems: todayOrders.reduce((s, o) => s + o.items.reduce((x, i) => x + i.quantity, 0), 0),
+      byFlower,
       yesterdayAmount: yesterdayOrders.reduce((s, o) => s + o.totalAmount, 0),
       yesterdayOrders: yesterdayOrders.length,
-      yesterdayReceived: payments.filter((p) => p.date === yesterday).reduce((s, p) => s + p.amount, 0),
-      attentionCount: input.attention.length,
+      avgDay,
     },
-    sales: {
-      amount: input.totals.amountMonth,
-      target: input.totals.targetAmount,
-      percent,
-      pacePercent: input.pacePercent,
-      tone: managerTone(percent, input.pacePercent),
+    received: {
+      today: todayPayments.reduce((s, p) => s + p.amount, 0),
+      yesterday: payments.filter((p) => p.date === yesterday).reduce((s, p) => s + p.amount, 0),
+      month: payments.filter((p) => p.date.slice(0, 7) === month && p.date <= today).reduce((s, p) => s + p.amount, 0),
+      byFarm,
     },
-    money: { week: weekPayments.reduce((s, p) => s + p.amount, 0), byFarm: moneyByFarm },
-    debts: input.debts,
-    stock: {
-      stems: overall.stems,
-      criticalStems: overall.criticalStems,
-      criticalShare: share(overall.criticalStems, overall.stems),
-      push: input.push.map((p) => p.text).join(" · "),
+    debts: {
+      total: input.debts.total,
+      overdue: input.debts.overdue,
+      overdueOrders: open.filter((c) => c.overdue).length,
+      openOrders: open.length,
+      clients: debtors.size,
+      top,
     },
-    attention: input.attention,
+    month: { amount: input.totals.amountMonth, target: input.totals.targetAmount, percent, pacePercent: input.pacePercent, tone: managerTone(percent, input.pacePercent) },
     managers,
-    ai: {
-      broadcastSent: sentRows.length,
-      broadcastReplied: repliedPhones.size,
-      broadcastOrders: broadcastOrders.length,
-      assistantReplies: log.filter((r) => r.kind === "auto" || r.kind === "nudge").length,
-      assistantOrders: assistantOrders.length,
-      assistantNotes: input.assistantLog.filter((r) => r.kind === "note" && !r.doneAt).length,
-      botChats: mainIncoming.size,
-      botOrders: botOrders.length,
-      adsLeads,
+    warehouse: {
+      received,
+      shipped,
+      shippedOrders,
+      toShipOrders: waiting.length,
+      toShipStems: waiting.reduce((s, o) => s + stemsLeft(o), 0),
+      toShip,
+      writtenOff,
     },
-    companies,
-    shipToday,
   };
 }
