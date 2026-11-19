@@ -14,7 +14,8 @@ dotenv.config();
  * Без --yes — только показ. С --yes — сначала копия таблицы.
  *
  *   npx tsx scripts/fix-shipment-batch.ts <json> [--yes]
- *   json: [{ "shipmentId": "SHIP-…", "variety": "…", "grade": "Третья", "store": "office", "batchId": "…", "note": "почему" }]
+ *   json: [{ "shipmentId": "SHIP-…", "variety": "…", "grade": "Третья", "store": "office", "batchId": "…", "note": "почему",
+ *            "orderStore": "astana" }]   («orderStore» — переставить и склад самой заявки)
  */
 import { readFileSync } from "node:fs";
 import { commitAtomic, forgetReads, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../src/lib/sheets";
@@ -31,6 +32,11 @@ interface Fix {
   store?: string;
   batchId?: string;
   note?: string;
+  /**
+   * Переставить и склад самой заявки (19.11.2026, Юлия: «№OT32J — со склада Астаны списан товар, оплата есть»):
+   * отгрузка переезжает на партию города, а заявка становится заявкой этого склада — иначе в отчётах города её нет.
+   */
+  orderStore?: string;
 }
 
 async function rows(tab: string) {
@@ -44,7 +50,7 @@ async function main() {
   if (!file) throw new Error("Укажите файл JSON");
   const fixes = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as Fix[];
   forgetReads();
-  const [ships, batches, items] = await Promise.all([rows(SHEET_TABS.SHIPMENTS), rows(SHEET_TABS.BATCHES), rows(SHEET_TABS.ORDER_ITEMS)]);
+  const [ships, batches, items, orders] = await Promise.all([rows(SHEET_TABS.SHIPMENTS), rows(SHEET_TABS.BATCHES), rows(SHEET_TABS.ORDER_ITEMS), rows(SHEET_TABS.ORDERS)]);
   // Остатки меняются по ходу списка: вторая правка видит то, что забрала первая.
   const left = new Map(batches.map((b) => [b.rec.BatchID, sheetNumber(b.rec.QuantityRemaining)]));
   const ops: WriteOp[] = [];
@@ -118,6 +124,17 @@ async function main() {
         ops.push({ kind: "update", tab: SHEET_TABS.ORDER_ITEMS, rowNumber: item.rowNumber, changes: itemChanges });
       }
     }
+  }
+  for (const f of fixes) {
+    if (f.orderStore === undefined) continue;
+    const ship = ships.find((x) => x.rec.ShipmentID === f.shipmentId);
+    const order = ship ? orders.find((o) => o.rec.OrderID === ship.rec.OrderID) : undefined;
+    if (!order) continue;
+    const want = f.orderStore.trim();
+    if ((order.rec.Store || "") === want) continue;
+    if (ops.some((o) => o.kind === "update" && o.tab === SHEET_TABS.ORDERS && o.rowNumber === order.rowNumber)) continue;
+    console.log(`  склад заявки ${order.rec.OrderID}: «${order.rec.Store || "основной"}» → «${want || "основной"}»`);
+    ops.push({ kind: "update", tab: SHEET_TABS.ORDERS, rowNumber: order.rowNumber, changes: { Store: want } });
   }
   for (const id of batchChanged) {
     const b = batches.find((x) => x.rec.BatchID === id)!;
