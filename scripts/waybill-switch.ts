@@ -13,7 +13,7 @@ dotenv.config();
  */
 import { settingsMap } from "../src/lib/repo/broadcasts";
 import { saveSettings } from "../src/lib/repo/settings";
-import { WAYBILL_AUTO_SETTING, WAYBILL_LAST_RUN, WAYBILL_SINCE_SETTING, waybillAuto } from "../src/lib/waybill";
+import { WAYBILL_AUTO_SETTING, WAYBILL_SINCE_SETTING, waybillAuto } from "../src/lib/waybill";
 
 async function main() {
   const mode = (process.argv[2] || "show").toLowerCase();
@@ -23,7 +23,6 @@ async function main() {
   const map = await settingsMap(true);
   const auto = waybillAuto(map);
   console.log(`Накладная клиенту после отгрузки: ${auto.on ? "ВКЛЮЧЕНА" : "выключена"}${auto.since ? `, по отгрузкам с ${auto.since}` : ""}`);
-  console.log(`Последняя отправка: ${map[WAYBILL_LAST_RUN] || "ещё не было"}`);
 }
 
 main().catch((e) => {

@@ -1,5 +1,5 @@
 import { sheetNumber } from "../sheetCell";
-import { commitAtomic, readTable, rowToRecord, updateWhere, SHEET_TABS } from "../sheets";
+import { commitAtomic, readTable, rowToRecord, updateWhere, SHEET_TABS, type WriteOp } from "../sheets";
 import { toIsoDateTime } from "../sheetDate";
 import { generateId } from "../id";
 import { parseWaybillStatus, type WaybillDoc, type WaybillRow, type WaybillStatus } from "../waybill";
@@ -65,10 +65,16 @@ export async function listWaybills(options: { fresh?: boolean } = {}): Promise<W
   }
 }
 
-/** То же, но сбой чтения — ошибка: перед записью «нет накладных» и «не смогли прочитать» путать нельзя (грабли 1.14). */
-export async function listWaybillsStrict(): Promise<WaybillRow[]> {
-  const table = await readTable(SHEET_TABS.WAYBILLS, { fresh: true });
-  return table.rows.map((row) => toWaybill(rowToRecord(SHEET_TABS.WAYBILLS, row))).filter((w) => w.waybillId);
+export type WaybillStored = WaybillRow & { rowNumber: number };
+
+/**
+ * То же, но сбой чтения — ошибка: перед записью «нет накладных» и «не смогли прочитать» путать нельзя (грабли 1.14).
+ * С номером строки в таблице — по нему итог отправки пишется без повторного чтения вкладки (строки только дописываются).
+ * `fresh: false` — взять прочитанное только что общим пакетом (`prefetchTables`), а не идти в Google второй раз.
+ */
+export async function listWaybillsStrict(options: { fresh?: boolean } = {}): Promise<WaybillStored[]> {
+  const table = await readTable(SHEET_TABS.WAYBILLS, options.fresh === false ? undefined : { fresh: true });
+  return table.rows.map((row, i) => ({ ...toWaybill(rowToRecord(SHEET_TABS.WAYBILLS, row)), rowNumber: table.rowNumbers[i] })).filter((w) => w.waybillId);
 }
 
 export async function getWaybill(waybillId: string): Promise<WaybillRow | null> {
@@ -127,4 +133,21 @@ export async function updateWaybill(waybillId: string, changes: Partial<Record<"
     (r) => r.WaybillID === waybillId,
     () => changes
   );
+}
+
+export type WaybillChanges = Partial<Record<"Status" | "Note" | "MessageID" | "Line" | "SentAt" | "Phone" | "ByEmail", string>>;
+
+/**
+ * Записать итог в строку накладной ОДНИМ запросом вместе с попутными записями (сообщение в переписку, строка журнала
+ * помощника). Номер строки известен — пишем по нему, без чтения вкладки: 19.11.2026, в первый же день, отправка
+ * упиралась в общий лимит чтений Google, пока склад отгружал заявку за заявкой, и каждое лишнее чтение стоило
+ * застрявшей накладной. Номера нет — по старинке, с поиском строки.
+ */
+export async function finishWaybill(row: { waybillId: string; rowNumber?: number }, changes: WaybillChanges, extra: WriteOp[] = []): Promise<void> {
+  if (row.rowNumber) {
+    await commitAtomic([{ kind: "update", tab: SHEET_TABS.WAYBILLS, rowNumber: row.rowNumber, changes }, ...extra]);
+    return;
+  }
+  if (extra.length) await commitAtomic(extra);
+  if (!(await updateWaybill(row.waybillId, changes))) throw new Error("строка накладной не найдена");
 }

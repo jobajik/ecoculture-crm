@@ -1,14 +1,13 @@
-import { forgetReads, prefetchTables, SHEET_TABS } from "./sheets";
+import { forgetReads, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets";
 import { localDayKey } from "./timezone";
 import { listOrdersWithItems } from "./repo/orders";
 import { listShipments } from "./repo/shipments";
 import { listClients } from "./repo/clients";
 import { listUsers } from "./repo/users";
 import { optedOutKeys, settingsMap } from "./repo/broadcasts";
-import { saveSettings } from "./repo/settings";
-import { appendWaMessages, listWaMessages } from "./repo/talks";
-import { appendAssistantLog, lineConfig, listWaLines } from "./repo/waLines";
-import { createWaybill, listWaybills, listWaybillsStrict, updateWaybill } from "./repo/waybills";
+import { listWaMessages, waMessagesAppendOp } from "./repo/talks";
+import { assistantLogAppendOp, lineConfig, listWaLines } from "./repo/waLines";
+import { createWaybill, finishWaybill, listWaybills, listWaybillsStrict, type WaybillChanges } from "./repo/waybills";
 import { ourPhoneKeys } from "./lineNotify";
 import { GreenError, sendFileByUrl } from "./greenApi";
 import { publicWaybillUrl } from "./waFileSign";
@@ -16,7 +15,6 @@ import { phoneKey } from "./leads";
 import { getFarmFor } from "./constants";
 import { siteOrigin } from "./waybillKick";
 import {
-  WAYBILL_LAST_RUN,
   WAYBILL_RETRY_NOTE,
   buildWaybillDoc,
   nextWaybillNumber,
@@ -34,7 +32,7 @@ import {
   type WaybillDoc,
   type WaybillRow,
 } from "./waybill";
-import type { OrderWithItems, Shipment } from "./types";
+import type { OrderWithItems, Shipment, WaMessage } from "./types";
 
 /**
  * Накладная клиенту: собрать, отправить, записать (правила — `waybill.ts`).
@@ -43,6 +41,12 @@ import type { OrderWithItems, Shipment } from "./types";
  * строки журнала отгрузок (второй проход ту же отгрузку не возьмёт), затем файл уходит клиенту ссылкой, затем в строку
  * пишется итог. Отправка не удалась — строка остаётся «не отправлена» с причиной; сама программа её не повторяет
  * (повторять молча — значит однажды прислать клиенту три накладные подряд), повторяет человек кнопкой на заявке.
+ *
+ * ЧТЕНИЙ — КАК МОЖНО МЕНЬШЕ. 19.11.2026, первый день: склад отгружал заявку каждые 15–20 секунд, каждая отгрузка будила
+ * проход, а проход читал таблицу восемь раз и писал пять — и вместе со страницами склада упёрся в общий лимит Google
+ * (грабли 1.17): из девятнадцати накладных три застряли в «отправляется». Теперь всё нужное читается ДО первой записи
+ * двумя пакетами (второй — только если есть что отправлять) и держится в памяти прохода, а на накладную остаётся одно
+ * чтение (проверка «не взял ли ту же отгрузку другой проход») и две записи (строка и итог одним запросом).
  */
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -56,83 +60,110 @@ export interface WaybillOutcome {
   phone: string;
 }
 
+type WaybillRef = Pick<WaybillRow, "waybillId" | "doc" | "phone"> & { rowNumber?: number };
+
 /**
  * Записать итог в строку накладной — с повторами. Одна неудачная запись (таблица не ответила) в первый же день оставила
  * отправленную накладную в «отправляется»; итог отправки терять нельзя, поэтому три попытки с паузами. Не вышло —
  * false: строку позже разберёт проход по следу в переписке (`healStuckWaybills`).
  */
-async function setWaybill(waybillId: string, changes: Parameters<typeof updateWaybill>[1]): Promise<boolean> {
+async function setWaybill(row: { waybillId: string; rowNumber?: number }, changes: WaybillChanges, extra: WriteOp[] = []): Promise<boolean> {
   for (let i = 0; i < 3; i++) {
     try {
-      if (await updateWaybill(waybillId, changes)) return true;
+      await finishWaybill(row, changes, extra);
+      return true;
     } catch {
-      /* ниже — пауза и ещё попытка */
+      await sleep(1500 * (i + 1));
     }
-    await sleep(1500 * (i + 1));
   }
   return false;
+}
+
+/** Что отправке нужно знать о переписке и номерах — прочитано заранее, до первой записи. */
+interface SendCtx {
+  messages: WaMessage[];
+  managerLines: { code: string; managerEmail: string }[];
+}
+
+async function loadSendCtx(): Promise<SendCtx> {
+  const [messages, lines] = await Promise.all([listWaMessages({ lines: "all" }), listWaLines().catch(() => [])]);
+  return { messages, managerLines: lines.filter((l) => l.active).map((l) => ({ code: l.code, managerEmail: l.managerEmail.toLowerCase() })) };
 }
 
 /**
  * Отправить готовую строку накладной клиенту. Пробует номера по порядку (`waybillLineOrder`), пишет итог в строку.
  * После того как сообщение ушло, функция НЕ бросает ошибок: иначе вызывающий принял бы отправленное за неотправленное.
  */
-export async function deliverWaybill(row: Pick<WaybillRow, "waybillId" | "doc" | "phone">, order: Pick<OrderWithItems, "managerEmail">, byEmail: string): Promise<WaybillOutcome> {
+export async function deliverWaybill(row: WaybillRef, order: Pick<OrderWithItems, "managerEmail">, byEmail: string, send: SendCtx): Promise<WaybillOutcome> {
   const doc = row.doc as WaybillDoc;
-  const done = async (status: "sent" | "failed", note: string, extra: Partial<Record<"MessageID" | "Line" | "SentAt", string>> = {}): Promise<WaybillOutcome> => {
-    await setWaybill(row.waybillId, { Status: status, Note: note.slice(0, 300), ByEmail: byEmail, Phone: row.phone, ...extra });
+  const done = async (status: "sent" | "failed", note: string, extra: Partial<Record<"MessageID" | "Line" | "SentAt", string>> = {}, ops: WriteOp[] = []): Promise<WaybillOutcome> => {
+    await setWaybill(row, { Status: status, Note: note.slice(0, 300), ByEmail: byEmail, Phone: row.phone, ...extra }, ops);
     return { status, number: doc.number, note, phone: row.phone };
   };
   const fileName = waybillFileName(doc);
   const url = publicWaybillUrl(siteOrigin(), row.waybillId, fileName);
   // Сначала открываем файл сами: убеждаемся, что он собирается (иначе клиенту уйдёт подпись без накладной), и
-  // прогреваем кэш — Green API скачает его без ожидания.
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(25000) });
-    if (!res.ok) return done("failed", `файл накладной не собрался (ответ ${res.status})`);
-  } catch {
-    return done("failed", "файл накладной не собрался — сайт не ответил");
+  // прогреваем кэш — Green API скачает его без ожидания. Один повтор: файл читает ту же таблицу и мог упереться в лимит.
+  let fileOk = false;
+  let fileNote = "файл накладной не собрался — сайт не ответил";
+  for (let i = 0; i < 2 && !fileOk; i++) {
+    if (i > 0) await sleep(4000);
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(25000) });
+      fileOk = res.ok;
+      if (!res.ok) fileNote = `файл накладной не собрался (ответ ${res.status})`;
+    } catch {
+      /* ниже — повтор или отказ */
+    }
   }
+  if (!fileOk) return done("failed", fileNote);
 
-  const [messages, lines] = await Promise.all([listWaMessages({ lines: "all" }), listWaLines()]);
   const key = phoneKey(row.phone);
-  const chatLines = messages
+  const chatLines = send.messages
     .filter((m) => phoneKey(m.phone) === key)
     .sort((a, b) => (a.at < b.at ? 1 : -1))
     .map((m) => m.line || "");
-  const managerLine = lines.find((l) => l.active && l.managerEmail.toLowerCase() === (order.managerEmail || "").toLowerCase())?.code;
+  const managerLine = send.managerLines.find((l) => l.managerEmail === (order.managerEmail || "").toLowerCase())?.code;
   const caption = waybillCaption(doc);
   let lastError = "ни один номер WhatsApp не подключён";
   for (const code of waybillLineOrder({ chatLines: Array.from(new Set(chatLines)), managerLine: managerLine ?? "" })) {
-    const cfg = await lineConfig(code);
+    const cfg = await lineConfig(code).catch(() => null);
     if (!cfg) continue;
+    let id = "";
     try {
-      const id = await sendFileByUrl(cfg, row.phone, url, fileName, caption);
-      const now = new Date().toISOString();
-      // В переписку и журнал — как любое сообщение из CRM: бот и помощник видят, что накладная ушла, и не считают её
-      // ответом менеджера.
-      await appendWaMessages([
-        { messageId: id, at: now, chatId: `${row.phone}@c.us`, phone: row.phone, direction: "out", type: waybillIsPdf(doc) ? "document" : "image", text: `[накладная № ${doc.number}] ${caption}`, mediaUrl: "", senderName: "", source: "crm", line: code },
-      ]).catch(() => undefined);
-      await appendAssistantLog([{ at: now, line: code, phone: row.phone, kind: "crm", messageId: id, text: caption, note: `накладная № ${doc.number}`, byEmail }]).catch(() => undefined);
-      return done("sent", "", { MessageID: id, Line: code || "main", SentAt: now });
+      id = await sendFileByUrl(cfg, row.phone, url, fileName, caption);
     } catch (err) {
       lastError = err instanceof GreenError || err instanceof Error ? err.message : String(err);
+      continue;
     }
+    const now = new Date().toISOString();
+    // В переписку и журнал — как любое сообщение из CRM: бот и помощник видят, что накладная ушла, и не считают её
+    // ответом менеджера. Вместе с итогом — одной записью: либо всё легло, либо строку разберёт проход по эху WhatsApp.
+    return done("sent", "", { MessageID: id, Line: code || "main", SentAt: now }, [
+      waMessagesAppendOp([
+        { messageId: id, at: now, chatId: `${row.phone}@c.us`, phone: row.phone, direction: "out", type: waybillIsPdf(doc) ? "document" : "image", text: `[накладная № ${doc.number}] ${caption}`, mediaUrl: "", senderName: "", source: "crm", line: code },
+      ]),
+      assistantLogAppendOp([{ at: now, line: code, phone: row.phone, kind: "crm", messageId: id, text: caption, note: `накладная № ${doc.number}`, byEmail }]),
+    ]);
   }
   return done("failed", lastError);
 }
 
-interface Ctx {
+interface Ctx extends SendCtx {
   clients: Awaited<ReturnType<typeof listClients>>;
   users: Awaited<ReturnType<typeof listUsers>>;
   staffKeys: Set<string>;
   optedOut: Set<string>;
 }
 
+/**
+ * Всё, что нужно для отправки, — одним пакетным чтением и ДО первой записи: запись сбрасывает память чтений, и всё,
+ * что спросили бы после неё, ушло бы в Google заново, по вкладке за раз.
+ */
 async function loadCtx(map: Record<string, string>): Promise<Ctx> {
-  const [clients, users, staffKeys, optedOut] = await Promise.all([listClients(), listUsers(), ourPhoneKeys(map), optedOutKeys()]);
-  return { clients, users, staffKeys, optedOut };
+  await prefetchTables([SHEET_TABS.WA_MESSAGES, SHEET_TABS.BOT_CHATS, SHEET_TABS.CLIENTS]).catch(() => undefined);
+  const [clients, users, staffKeys, optedOut, send] = await Promise.all([listClients(), listUsers(), ourPhoneKeys(map), optedOutKeys(), loadSendCtx()]);
+  return { clients, users, staffKeys, optedOut, ...send };
 }
 
 /**
@@ -166,7 +197,9 @@ async function issueWaybill(input: { order: OrderWithItems; shipments: Shipment[
   // вернуть дату не так, как мы её записали, и сравнение «моя из памяти против чужой из таблицы» дало бы двум проходам
   // разные ответы. Строка, которую другой проход уже довёл до конца, старше всегда.
   const fresh = await listWaybillsStrict();
-  const myAt = fresh.find((w) => w.waybillId === row.waybillId)?.createdAt || row.createdAt;
+  const me = fresh.find((w) => w.waybillId === row.waybillId);
+  const ref: WaybillRef = { waybillId: row.waybillId, doc, phone, rowNumber: me?.rowNumber };
+  const myAt = me?.createdAt || row.createdAt;
   const mine = new Set(input.shipmentIds);
   const rival = fresh.find(
     (w) =>
@@ -177,38 +210,35 @@ async function issueWaybill(input: { order: OrderWithItems; shipments: Shipment[
       (w.createdAt < myAt || (w.createdAt === myAt && w.waybillId < row.waybillId) || (w.status !== "sending" && w.status !== "skipped"))
   );
   if (rival) {
-    await updateWaybill(row.waybillId, { Status: "duplicate", Note: `та же отгрузка уже в накладной № ${rival.number}` });
+    await setWaybill(ref, { Status: "duplicate", Note: `та же отгрузка уже в накладной № ${rival.number}` });
     return { status: "duplicate", number: doc.number, note: `уже в накладной № ${rival.number}`, phone };
   }
   if (skip) return { status: "skipped", number: doc.number, note: skip, phone: "" };
-  return deliverWaybill(row, order, input.byEmail);
+  return deliverWaybill(ref, order, input.byEmail, ctx);
 }
 
 /**
  * Накладные, застрявшие в «отправляется» (`stuckWaybillAction`): есть след в переписке — «отправлена»; нет — одна
  * повторная отправка; не вышло и со второй — «не отправлена», дальше кнопка на заявке.
  */
-async function healStuckWaybills(waybills: WaybillRow[], orders: Map<string, OrderWithItems>, result: WaybillRunResult, canSend: () => boolean): Promise<void> {
+async function healStuckWaybills(stuck: (WaybillRow & { rowNumber?: number })[], orders: Map<string, OrderWithItems>, result: WaybillRunResult, canSend: () => boolean, send: SendCtx): Promise<void> {
   const now = new Date();
-  const stuck = waybills.filter((w) => w.doc && stuckWaybillAction(w, false, now));
-  if (stuck.length === 0) return;
-  const messages = await listWaMessages({ lines: "all" });
   for (const w of stuck) {
-    const trace = waybillSentTrace({ number: w.number, phone: w.phone, createdAt: w.createdAt, orderCode: w.doc!.orderCode }, messages);
+    const trace = waybillSentTrace({ number: w.number, phone: w.phone, createdAt: w.createdAt, orderCode: w.doc!.orderCode }, send.messages);
     const action = stuckWaybillAction(w, !!trace, now);
     if (action === "sent" && trace) {
-      await setWaybill(w.waybillId, { Status: "sent", Note: "", MessageID: trace.messageId, Line: trace.line, SentAt: trace.at });
+      await setWaybill(w, { Status: "sent", Note: "", MessageID: trace.messageId, Line: trace.line, SentAt: trace.at });
       result.notes.push(`№ ${w.number}: уже ушла клиенту — отметка восстановлена по переписке`);
     } else if (action === "fail") {
-      await setWaybill(w.waybillId, { Status: "failed", Note: "отправка оборвалась — отправьте кнопкой на заявке" });
+      await setWaybill(w, { Status: "failed", Note: "отправка оборвалась — отправьте кнопкой на заявке" });
       result.failed += 1;
       result.notes.push(`№ ${w.number}: failed — отправка оборвалась`);
     } else if (action === "retry") {
       const order = orders.get(w.orderId);
       if (!order || waybillOrderRefusal(order) || !w.phone || !canSend()) continue;
       // Отметка о повторе пишется ДО отправки: не записалась — не шлём, иначе при новом обрыве повторяли бы без конца.
-      if (!(await setWaybill(w.waybillId, { Note: WAYBILL_RETRY_NOTE }))) continue;
-      const out = await deliverWaybill(w, order, "auto");
+      if (!(await setWaybill(w, { Note: WAYBILL_RETRY_NOTE }))) continue;
+      const out = await deliverWaybill(w, order, "auto", send);
       if (out.status === "sent") result.sent += 1;
       else result.failed += 1;
       result.notes.push(`№ ${out.number}: ${out.status} (повтор после обрыва)${out.note ? ` — ${out.note}` : ""}`);
@@ -233,7 +263,8 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
   const started = Date.now();
   const result: WaybillRunResult = { sent: 0, failed: 0, skipped: 0, waiting: 0, notes: [] };
   forgetReads();
-  await prefetchTables([SHEET_TABS.SETTINGS, SHEET_TABS.SHIPMENTS, SHEET_TABS.WAYBILLS, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS, SHEET_TABS.USERS]).catch(() => undefined);
+  // Первый пакет — то, без чего не решить, есть ли работа. Нет работы — проход стоил таблице одного чтения.
+  await prefetchTables([SHEET_TABS.SETTINGS, SHEET_TABS.SHIPMENTS, SHEET_TABS.WAYBILLS, SHEET_TABS.ORDERS, SHEET_TABS.ORDER_ITEMS, SHEET_TABS.CLIENTS]).catch(() => undefined);
   const map = await settingsMap();
   const auto = waybillAuto(map);
   if (!auto.on) return { ...result, off: "автоотправка накладных выключена" };
@@ -241,58 +272,59 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
   if (!waybillHourOk(almatyHour(now))) return { ...result, off: "ночь — клиентам не пишем" };
 
   const sinceMs = Date.parse(auto.since);
+  // Журнал отгрузок и накладные читаем строго: «не прочиталось» нельзя принять за «нет» — ушли бы повторы.
   const shipments = (await listShipments()).filter((s) => Date.parse(s.createdAt) >= sinceMs);
-  // Вкладку накладных читаем строго: «не прочиталась» нельзя принять за «накладных нет» — ушли бы повторы.
-  const waybills = await listWaybillsStrict();
+  const waybills = await listWaybillsStrict({ fresh: false });
   const orders = new Map((await listOrdersWithItems()).map((o) => [o.orderId, o]));
   // Не больше трёх отправок за проход и ни одной новой после 30-й секунды: функция живёт минуту, и отправка,
   // оборванная на полпути, хуже отправки, отложенной до следующего прохода.
   const limit = opts.limit ?? 3;
   const budget = opts.budgetMs ?? 30000;
   const canSend = () => result.sent + result.failed + result.skipped < limit && Date.now() - started <= budget;
-  // Сначала — то, что только что отгрузили (ради этого нас и разбудили), потом застрявшее с прошлых проходов.
+
+  // Что отправлять: сначала то, что только что отгрузили (ради этого нас и разбудили), потом остальное.
   const orderIds = Array.from(new Set(shipments.map((s) => s.orderId)));
   if (opts.orderId && orderIds.includes(opts.orderId)) orderIds.sort((a, b) => (a === opts.orderId ? -1 : b === opts.orderId ? 1 : 0));
-  let ctx: Ctx | null = null;
-
+  const todo: { order: OrderWithItems; own: Shipment[]; mine: WaybillRow[]; send: string[] }[] = [];
   for (const orderId of orderIds) {
     const order = orders.get(orderId);
     if (!order || waybillOrderRefusal(order)) continue;
     const own = shipments.filter((s) => s.orderId === orderId);
-    const mineWaybills = waybills.filter((w) => w.orderId === orderId);
-    const plan = planWaybill({ order, shipments: own, waybills: mineWaybills, mode: "auto", since: auto.since, now });
+    const mine = waybills.filter((w) => w.orderId === orderId);
+    const plan = planWaybill({ order, shipments: own, waybills: mine, mode: "auto", since: auto.since, now });
     if (!plan) continue;
-    if ("wait" in plan) {
-      result.waiting += 1;
-      continue;
-    }
+    if ("wait" in plan) result.waiting += 1;
+    else todo.push({ order, own, mine, send: plan.send });
+  }
+  const stuck = waybills.filter((w) => w.doc && stuckWaybillAction(w, false, now));
+  if (todo.length === 0 && stuck.length === 0) return result;
+
+  // Второй пакет — переписка, отписавшиеся, клиенты: только когда есть что отправлять, и до первой записи.
+  const ctx = await loadCtx(map);
+  for (const job of todo) {
     if (!canSend()) {
       result.waiting += 1;
       continue;
     }
-    ctx = ctx ?? (await loadCtx(map));
     try {
-      const out = await issueWaybill({ order, shipments: own, shipmentIds: plan.send, waybills: mineWaybills, mode: "auto", byEmail: "auto", ctx });
+      const out = await issueWaybill({ order: job.order, shipments: job.own, shipmentIds: job.send, waybills: job.mine, mode: "auto", byEmail: "auto", ctx });
       if (out.status === "sent") result.sent += 1;
       else if (out.status === "failed") result.failed += 1;
       else result.skipped += 1;
       result.notes.push(`№ ${out.number}: ${out.status}${out.note ? ` — ${out.note}` : ""}`);
     } catch (err) {
+      // Строка могла остаться «отправляется» — её разберёт следующий проход (`healStuckWaybills`).
       result.failed += 1;
-      result.notes.push(`${orderId}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
+      result.notes.push(`${job.order.orderId.slice(-5)}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
     }
   }
   // У застрявших — своя одна отправка за проход сверх предела: в бойкий час новые отгрузки не должны отодвигать
   // оборванную накладную бесконечно.
   let healed = 0;
   const canHeal = () => healed++ < 1 && Date.now() - started <= budget + 5000;
-  await healStuckWaybills(waybills, orders, result, canHeal).catch((err) => {
+  await healStuckWaybills(stuck, orders, result, canHeal, ctx).catch((err) => {
     result.notes.push(`застрявшие: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
   });
-  if (result.sent + result.failed + result.skipped > 0) {
-    const stamp = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(now);
-    await saveSettings({ [WAYBILL_LAST_RUN]: `${stamp} · отправлено ${result.sent}, не отправлено ${result.failed}, пропущено ${result.skipped}` }).catch(() => undefined);
-  }
   return result;
 }
 
@@ -303,11 +335,13 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
 export async function sendOrderWaybill(input: { order: OrderWithItems; farm?: string | null; byEmail: string }): Promise<WaybillOutcome> {
   const { order } = input;
   forgetReads();
+  // Всё нужное — одним пакетом и до первой записи (как у автомата).
+  await prefetchTables([SHEET_TABS.SETTINGS, SHEET_TABS.SHIPMENTS, SHEET_TABS.WAYBILLS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.BOT_CHATS, SHEET_TABS.CLIENTS]).catch(() => undefined);
   const map = await settingsMap();
   const all = (await listShipments()).filter((s) => s.orderId === order.orderId);
   const farmItems = new Set(order.items.filter((i) => !input.farm || getFarmFor(i.flowerType) === input.farm).map((i) => i.itemId));
   const shipments = all.filter((s) => farmItems.has(s.itemId));
-  const waybills = (await listWaybillsStrict()).filter((w) => w.orderId === order.orderId);
+  const waybills = (await listWaybillsStrict({ fresh: false })).filter((w) => w.orderId === order.orderId);
   const plan = planWaybill({ order, shipments, waybills, mode: "manual", now: new Date() });
   if (!plan || "wait" in plan) throw new Error("Всё отгруженное по этой заявке уже есть в накладных — новую собирать не из чего");
   return issueWaybill({ order, shipments, shipmentIds: plan.send, waybills, mode: "manual", byEmail: input.byEmail, ctx: await loadCtx(map) });
@@ -318,21 +352,22 @@ export async function resendWaybill(input: { waybill: WaybillRow; order: OrderWi
   const { waybill, order } = input;
   if (!waybill.doc) throw new Error("У этой накладной не сохранился состав — соберите новую");
   if (waybill.status === "duplicate") throw new Error("Это повтор — отправляйте основную накладную");
+  forgetReads();
+  await prefetchTables([SHEET_TABS.SETTINGS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.BOT_CHATS, SHEET_TABS.CLIENTS]).catch(() => undefined);
+  const ctx = await loadCtx(await settingsMap());
   // Не отмечена отправленной — сначала смотрим переписку: накладная могла уйти, а отметка не записаться
   // (`waybillSentTrace`). Тогда восстанавливаем отметку и второй раз клиенту не шлём.
   if (waybill.status !== "sent") {
-    const trace = waybillSentTrace({ number: waybill.number, phone: waybill.phone, createdAt: waybill.createdAt, orderCode: waybill.doc.orderCode }, await listWaMessages({ lines: "all", fresh: true }));
+    const trace = waybillSentTrace({ number: waybill.number, phone: waybill.phone, createdAt: waybill.createdAt, orderCode: waybill.doc.orderCode }, ctx.messages);
     if (trace) {
-      await setWaybill(waybill.waybillId, { Status: "sent", Note: "", MessageID: trace.messageId, Line: trace.line, SentAt: trace.at });
+      await setWaybill(waybill, { Status: "sent", Note: "", MessageID: trace.messageId, Line: trace.line, SentAt: trace.at });
       return { status: "sent", number: waybill.number, note: "already", phone: waybill.phone };
     }
   }
-  const map = await settingsMap();
-  const ctx = await loadCtx(map);
   const client = ctx.clients.find((c) => c.clientId === order.clientId) ?? null;
   const to = waybillRecipient({ order, client, staffKeys: ctx.staffKeys, optedOut: ctx.optedOut, mode: "manual" });
   if ("skip" in to) throw new Error(`Отправить некуда: ${to.skip}`);
-  return deliverWaybill({ waybillId: waybill.waybillId, doc: waybill.doc, phone: to.phone }, order, input.byEmail);
+  return deliverWaybill({ waybillId: waybill.waybillId, doc: waybill.doc, phone: to.phone }, order, input.byEmail, ctx);
 }
 
 export { listWaybills };

@@ -1,4 +1,4 @@
-import { commitAtomic, readTable, rowToRecord, SHEET_TABS } from "../sheets";
+import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import { greenConfig, greenLeadsConfig, type GreenConfig } from "../greenApi";
@@ -185,24 +185,27 @@ export async function listAssistantLog(options: { fresh?: boolean } = {}): Promi
 
 export async function appendAssistantLog(rows: Omit<AssistantLogRow, "logId" | "rowNumber" | "doneAt">[]): Promise<void> {
   if (rows.length === 0) return;
-  await commitAtomic([
-    {
-      kind: "append",
-      tab: SHEET_TABS.ASSISTANT_LOG,
-      records: rows.map((r) => ({
-        LogID: generateId("AST"),
-        At: r.at,
-        Line: r.line,
-        Phone: r.phone,
-        Kind: r.kind,
-        MessageID: r.messageId,
-        Text: r.text.slice(0, 4000),
-        Note: r.note.slice(0, 500),
-        ByEmail: r.byEmail,
-        DoneAt: "",
-      })),
-    },
-  ]);
+  await commitAtomic([assistantLogAppendOp(rows)]);
+}
+
+/** Та же запись как часть общего атомарного запроса (накладная: сообщение, журнал и итог — одной записью). */
+export function assistantLogAppendOp(rows: Omit<AssistantLogRow, "logId" | "rowNumber" | "doneAt">[]): WriteOp {
+  return {
+    kind: "append",
+    tab: SHEET_TABS.ASSISTANT_LOG,
+    records: rows.map((r) => ({
+      LogID: generateId("AST"),
+      At: r.at,
+      Line: r.line,
+      Phone: r.phone,
+      Kind: r.kind,
+      MessageID: r.messageId,
+      Text: r.text.slice(0, 4000),
+      Note: r.note.slice(0, 500),
+      ByEmail: r.byEmail,
+      DoneAt: "",
+    })),
+  };
 }
 
 /** Записки «нужен менеджер» по номеру — закрыть (менеджер ответил или нажал «Сделано»). */

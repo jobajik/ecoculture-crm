@@ -13,7 +13,7 @@ import { listOrdersWithItems } from "../src/lib/repo/orders";
 import { listShipments } from "../src/lib/repo/shipments";
 import { listWaybills } from "../src/lib/repo/waybills";
 import { settingsMap } from "../src/lib/repo/broadcasts";
-import { WAYBILL_LAST_RUN, planWaybill, uncoveredShipments, waybillAuto, waybillOrderRefusal } from "../src/lib/waybill";
+import { planWaybill, uncoveredShipments, waybillAuto, waybillOrderRefusal } from "../src/lib/waybill";
 import { orderCode } from "../src/lib/paymentStage";
 
 async function main() {
@@ -21,7 +21,7 @@ async function main() {
   const from = Date.now() - days * 86400000;
   const [map, waybills, shipments, orders] = await Promise.all([settingsMap(true), listWaybills({ fresh: true }), listShipments(), listOrdersWithItems()]);
   const auto = waybillAuto(map);
-  console.log(`Автоотправка: ${auto.on ? "включена" : "ВЫКЛЮЧЕНА"}${auto.since ? `, с ${auto.since}` : ""}; последняя отправка: ${map[WAYBILL_LAST_RUN] || "ещё не было"}`);
+  console.log(`Автоотправка: ${auto.on ? "включена" : "ВЫКЛЮЧЕНА"}${auto.since ? `, с ${auto.since}` : ""}`);
   const recent = waybills.filter((w) => Date.parse(w.createdAt) >= from).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   const count = (s: string) => recent.filter((w) => w.status === s).length;
   console.log(`\nНакладных за ${days} дн.: ${recent.length} — отправлено ${count("sent")}, не отправлено ${count("failed")}, не отправлялось ${count("skipped")}, в работе ${count("sending")}, повторов ${count("duplicate")}`);

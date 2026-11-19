@@ -24,7 +24,9 @@ import { lineHookKey } from "@/lib/secretBox";
 import { DIGEST_SETTING } from "@/lib/morningDigest";
 import { formatMoment } from "@/lib/formatDate";
 import WaybillAutoForm from "@/components/WaybillAutoForm";
-import { WAYBILL_LAST_RUN, waybillAuto } from "@/lib/waybill";
+import { waybillAuto } from "@/lib/waybill";
+import { listWaybills } from "@/lib/repo/waybills";
+import { localDayKey } from "@/lib/timezone";
 import { DIGEST_LAST_RUN } from "@/lib/morningDigestRunner";
 import {
   FARM_ORDER,
@@ -120,6 +122,11 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
     listWaLines({ fresh: true }),
     listWaMessages({ lines: "all" }),
   ]);
+  // Накладные клиентам: когда ушла последняя и сколько за сегодня — читаем только на своей вкладке.
+  const waybillRows = tab === "notify" ? await listWaybills() : [];
+  const waybillSent = waybillRows.filter((w) => w.status === "sent" && w.sentAt).sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
+  const waybillToday = waybillSent.filter((w) => localDayKey(new Date(w.sentAt)) === localDayKey()).length;
+  const waybillLast = waybillSent[0] ? `${formatMoment(waybillSent[0].sentAt)} · сегодня отправлено ${waybillToday}` : "";
   const nameOf = (e: string) => users.find((u) => u.email.toLowerCase() === e)?.name || "";
   const lineRows = waLines.map((l) => ({
     code: l.code,
@@ -379,7 +386,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
         }
         className="!mb-0"
       >
-        <WaybillAutoForm on={waybillAuto(map).on} since={formatMoment(waybillAuto(map).since, "")} lastRun={map[WAYBILL_LAST_RUN] || ""} />
+        <WaybillAutoForm on={waybillAuto(map).on} since={formatMoment(waybillAuto(map).since, "")} lastRun={waybillLast} />
       </Section>
       </div>
       )}

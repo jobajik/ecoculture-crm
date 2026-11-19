@@ -1,5 +1,5 @@
 import { sheetNumber } from "../sheetCell";
-import { commitAtomic, readTable, rowToRecord, SHEET_TABS } from "../sheets";
+import { commitAtomic, readTable, rowToRecord, SHEET_TABS, type WriteOp } from "../sheets";
 import { generateId } from "../id";
 import { toIsoDateTime } from "../sheetDate";
 import type { ChecklistMark, LeadAnalysis, TalkObjection, WaMessage } from "../types";
@@ -69,8 +69,13 @@ function messageRecord(m: WaMessage, nowIso: string): Record<string, unknown> {
  */
 export async function appendWaMessages(messages: WaMessage[]): Promise<void> {
   if (messages.length === 0) return;
+  await commitAtomic([waMessagesAppendOp(messages)]);
+}
+
+/** Та же запись как часть общего атомарного запроса (накладная: сообщение, журнал и итог — одной записью). */
+export function waMessagesAppendOp(messages: WaMessage[]): WriteOp {
   const now = new Date().toISOString();
-  await commitAtomic([{ kind: "append", tab: SHEET_TABS.WA_MESSAGES, records: messages.map((m) => messageRecord(m, now)) }]);
+  return { kind: "append", tab: SHEET_TABS.WA_MESSAGES, records: messages.map((m) => messageRecord(m, now)) };
 }
 
 function parseJson<T>(raw: string, fallback: T): T {
