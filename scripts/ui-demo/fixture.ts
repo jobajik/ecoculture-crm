@@ -284,6 +284,32 @@ sold.slice(0, 2).forEach((o, k) => {
     Phone: "77015550101", Line: k === 0 ? "main" : "", Status: k === 0 ? "sent" : "failed", Note: k === 0 ? "" : "номер WhatsApp не подключён", MessageID: k === 0 ? "DEMO1" : "", ByEmail: "auto", SentAt: k === 0 ? at(0) : "",
   });
 });
+// Две накладные, застрявшие в «отправляется» полчаса назад: у первой в переписке есть след отправки (проход должен
+// только восстановить отметку), у второй следа нет (проход должен отправить её один раз).
+const waybillTrace: Record<string, unknown>[] = [];
+const stuckAt = new Date(Date.now() - 30 * 60000).toISOString();
+sold.slice(2, 4).forEach((o, k) => {
+  const own = shipments.filter((x) => x.OrderID === o.OrderID);
+  const doc = buildWaybillDoc({
+    order: {
+      orderId: String(o.OrderID), status: "shipped", clientName: String(o.ClientName), deliveryDate: String(o.DeliveryDate),
+      items: items.filter((i) => i.OrderID === o.OrderID).map((i) => ({ itemId: String(i.ItemID), flowerType: String(i.FlowerType), variety: String(i.Variety), grade: String(i.Grade), quantity: Number(i.Quantity), unitPrice: Number(i.UnitPrice), shippedQuantity: Number(i.ShippedQuantity) })),
+    },
+    shipments: own.map((x) => ({ shipmentId: String(x.ShipmentID), itemId: String(x.ItemID), quantity: Number(x.Quantity), createdAt: String(x.CreatedAt) })),
+    shipmentIds: own.map((x) => String(x.ShipmentID)),
+    number: nextWaybillNumber(String(o.OrderID), []),
+    date: TODAY,
+    city: "Алматы",
+    manager: "Ильяс",
+    shippedBy: "Разия",
+  });
+  const phone = `7700555${String(1000 + k)}`;
+  waybills.push({
+    WaybillID: `WB-STUCK-${k + 1}`, CreatedAt: stuckAt, OrderID: o.OrderID, Number: doc.number, ShipmentIDs: own.map((x) => x.ShipmentID).join(","), Doc: JSON.stringify(doc), Stems: doc.stems, Amount: doc.amount,
+    Phone: phone, Line: "", Status: "sending", Note: "", MessageID: "", ByEmail: "auto", SentAt: "",
+  });
+  if (k === 0) waybillTrace.push({ MessageID: "TRACE1", At: new Date(Date.parse(stuckAt) + 15000).toISOString(), ChatID: phone + "@c.us", Phone: phone, Direction: "out", Type: "image", Text: `[накладная № ${doc.number}] Здравствуйте! Заказ № ${doc.orderCode} отгружен. Накладная на картинке.`, MediaURL: "", SenderName: "", Source: "crm", CreatedAt: stuckAt, Line: "" });
+});
 tab("Waybills", waybills);
 tab("KaspiInvoices", kaspi);
 tab("Orders", orders);
@@ -329,6 +355,7 @@ for (const c of clients.slice(0, 14)) {
   const texts = [["in", "Здравствуйте, что есть на завтра?"], ["out", "Добрый день! В наличии роза 50 и 60 см, хризантема 3 категории"], ["in", "Роза 60 см почём?"], ["out", "245 тг, от 300 шт. — 235"], ["in", "Давайте 200 штук"]];
   texts.slice(0, int(2, 5)).forEach(([d, t], i) => wa.push({ MessageID: "M" + id(10), At: at(-int(0, 2), 4 + i, i * 7), ChatID: p + "@c.us", Phone: p, Direction: d, Type: "text", Text: t, MediaURL: "", SenderName: c.ContactPerson, Source: d === "out" ? "phone" : "", CreatedAt: at(0), Line: "" }));
 }
+wa.push(...waybillTrace);
 tab("WaMessages", wa);
 
 // --- Прогноз срезки ---

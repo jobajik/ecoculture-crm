@@ -17,9 +17,11 @@ import { getFarmFor } from "./constants";
 import { siteOrigin } from "./waybillKick";
 import {
   WAYBILL_LAST_RUN,
+  WAYBILL_RETRY_NOTE,
   buildWaybillDoc,
   nextWaybillNumber,
   planWaybill,
+  stuckWaybillAction,
   waybillAuto,
   waybillCaption,
   waybillFileName,
@@ -28,6 +30,7 @@ import {
   waybillLineOrder,
   waybillOrderRefusal,
   waybillRecipient,
+  waybillSentTrace,
   type WaybillDoc,
   type WaybillRow,
 } from "./waybill";
@@ -53,11 +56,31 @@ export interface WaybillOutcome {
   phone: string;
 }
 
-/** Отправить готовую строку накладной клиенту. Пробует номера по порядку (`waybillLineOrder`), пишет итог в строку. */
+/**
+ * Записать итог в строку накладной — с повторами. Одна неудачная запись (таблица не ответила) в первый же день оставила
+ * отправленную накладную в «отправляется»; итог отправки терять нельзя, поэтому три попытки с паузами. Не вышло —
+ * false: строку позже разберёт проход по следу в переписке (`healStuckWaybills`).
+ */
+async function setWaybill(waybillId: string, changes: Parameters<typeof updateWaybill>[1]): Promise<boolean> {
+  for (let i = 0; i < 3; i++) {
+    try {
+      if (await updateWaybill(waybillId, changes)) return true;
+    } catch {
+      /* ниже — пауза и ещё попытка */
+    }
+    await sleep(1500 * (i + 1));
+  }
+  return false;
+}
+
+/**
+ * Отправить готовую строку накладной клиенту. Пробует номера по порядку (`waybillLineOrder`), пишет итог в строку.
+ * После того как сообщение ушло, функция НЕ бросает ошибок: иначе вызывающий принял бы отправленное за неотправленное.
+ */
 export async function deliverWaybill(row: Pick<WaybillRow, "waybillId" | "doc" | "phone">, order: Pick<OrderWithItems, "managerEmail">, byEmail: string): Promise<WaybillOutcome> {
   const doc = row.doc as WaybillDoc;
   const done = async (status: "sent" | "failed", note: string, extra: Partial<Record<"MessageID" | "Line" | "SentAt", string>> = {}): Promise<WaybillOutcome> => {
-    await updateWaybill(row.waybillId, { Status: status, Note: note.slice(0, 300), ByEmail: byEmail, Phone: row.phone, ...extra });
+    await setWaybill(row.waybillId, { Status: status, Note: note.slice(0, 300), ByEmail: byEmail, Phone: row.phone, ...extra });
     return { status, number: doc.number, note, phone: row.phone };
   };
   const fileName = waybillFileName(doc);
@@ -161,6 +184,38 @@ async function issueWaybill(input: { order: OrderWithItems; shipments: Shipment[
   return deliverWaybill(row, order, input.byEmail);
 }
 
+/**
+ * Накладные, застрявшие в «отправляется» (`stuckWaybillAction`): есть след в переписке — «отправлена»; нет — одна
+ * повторная отправка; не вышло и со второй — «не отправлена», дальше кнопка на заявке.
+ */
+async function healStuckWaybills(waybills: WaybillRow[], orders: Map<string, OrderWithItems>, result: WaybillRunResult, canSend: () => boolean): Promise<void> {
+  const now = new Date();
+  const stuck = waybills.filter((w) => w.doc && stuckWaybillAction(w, false, now));
+  if (stuck.length === 0) return;
+  const messages = await listWaMessages({ lines: "all" });
+  for (const w of stuck) {
+    const trace = waybillSentTrace({ number: w.number, phone: w.phone, createdAt: w.createdAt, orderCode: w.doc!.orderCode }, messages);
+    const action = stuckWaybillAction(w, !!trace, now);
+    if (action === "sent" && trace) {
+      await setWaybill(w.waybillId, { Status: "sent", Note: "", MessageID: trace.messageId, Line: trace.line, SentAt: trace.at });
+      result.notes.push(`№ ${w.number}: уже ушла клиенту — отметка восстановлена по переписке`);
+    } else if (action === "fail") {
+      await setWaybill(w.waybillId, { Status: "failed", Note: "отправка оборвалась — отправьте кнопкой на заявке" });
+      result.failed += 1;
+      result.notes.push(`№ ${w.number}: failed — отправка оборвалась`);
+    } else if (action === "retry") {
+      const order = orders.get(w.orderId);
+      if (!order || waybillOrderRefusal(order) || !w.phone || !canSend()) continue;
+      // Отметка о повторе пишется ДО отправки: не записалась — не шлём, иначе при новом обрыве повторяли бы без конца.
+      if (!(await setWaybill(w.waybillId, { Note: WAYBILL_RETRY_NOTE }))) continue;
+      const out = await deliverWaybill(w, order, "auto");
+      if (out.status === "sent") result.sent += 1;
+      else result.failed += 1;
+      result.notes.push(`№ ${out.number}: ${out.status} (повтор после обрыва)${out.note ? ` — ${out.note}` : ""}`);
+    }
+  }
+}
+
 export interface WaybillRunResult {
   off?: string;
   sent: number;
@@ -187,15 +242,18 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
 
   const sinceMs = Date.parse(auto.since);
   const shipments = (await listShipments()).filter((s) => Date.parse(s.createdAt) >= sinceMs);
-  if (shipments.length === 0) return result;
   // Вкладку накладных читаем строго: «не прочиталась» нельзя принять за «накладных нет» — ушли бы повторы.
   const waybills = await listWaybillsStrict();
+  const orders = new Map((await listOrdersWithItems()).map((o) => [o.orderId, o]));
+  // Не больше трёх отправок за проход и ни одной новой после 30-й секунды: функция живёт минуту, и отправка,
+  // оборванная на полпути, хуже отправки, отложенной до следующего прохода.
+  const limit = opts.limit ?? 3;
+  const budget = opts.budgetMs ?? 30000;
+  const canSend = () => result.sent + result.failed + result.skipped < limit && Date.now() - started <= budget;
+  // Сначала — то, что только что отгрузили (ради этого нас и разбудили), потом застрявшее с прошлых проходов.
   const orderIds = Array.from(new Set(shipments.map((s) => s.orderId)));
   if (opts.orderId && orderIds.includes(opts.orderId)) orderIds.sort((a, b) => (a === opts.orderId ? -1 : b === opts.orderId ? 1 : 0));
-  const orders = new Map((await listOrdersWithItems()).map((o) => [o.orderId, o]));
   let ctx: Ctx | null = null;
-  const limit = opts.limit ?? 5;
-  const budget = opts.budgetMs ?? 40000;
 
   for (const orderId of orderIds) {
     const order = orders.get(orderId);
@@ -208,7 +266,7 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
       result.waiting += 1;
       continue;
     }
-    if (result.sent + result.failed + result.skipped >= limit || Date.now() - started > budget) {
+    if (!canSend()) {
       result.waiting += 1;
       continue;
     }
@@ -224,6 +282,13 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
       result.notes.push(`${orderId}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
     }
   }
+  // У застрявших — своя одна отправка за проход сверх предела: в бойкий час новые отгрузки не должны отодвигать
+  // оборванную накладную бесконечно.
+  let healed = 0;
+  const canHeal = () => healed++ < 1 && Date.now() - started <= budget + 5000;
+  await healStuckWaybills(waybills, orders, result, canHeal).catch((err) => {
+    result.notes.push(`застрявшие: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
+  });
   if (result.sent + result.failed + result.skipped > 0) {
     const stamp = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(now);
     await saveSettings({ [WAYBILL_LAST_RUN]: `${stamp} · отправлено ${result.sent}, не отправлено ${result.failed}, пропущено ${result.skipped}` }).catch(() => undefined);
@@ -253,6 +318,15 @@ export async function resendWaybill(input: { waybill: WaybillRow; order: OrderWi
   const { waybill, order } = input;
   if (!waybill.doc) throw new Error("У этой накладной не сохранился состав — соберите новую");
   if (waybill.status === "duplicate") throw new Error("Это повтор — отправляйте основную накладную");
+  // Не отмечена отправленной — сначала смотрим переписку: накладная могла уйти, а отметка не записаться
+  // (`waybillSentTrace`). Тогда восстанавливаем отметку и второй раз клиенту не шлём.
+  if (waybill.status !== "sent") {
+    const trace = waybillSentTrace({ number: waybill.number, phone: waybill.phone, createdAt: waybill.createdAt, orderCode: waybill.doc.orderCode }, await listWaMessages({ lines: "all", fresh: true }));
+    if (trace) {
+      await setWaybill(waybill.waybillId, { Status: "sent", Note: "", MessageID: trace.messageId, Line: trace.line, SentAt: trace.at });
+      return { status: "sent", number: waybill.number, note: "already", phone: waybill.phone };
+    }
+  }
   const map = await settingsMap();
   const ctx = await loadCtx(map);
   const client = ctx.clients.find((c) => c.clientId === order.clientId) ?? null;

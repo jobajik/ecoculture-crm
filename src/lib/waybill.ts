@@ -303,6 +303,44 @@ export function waybillLineOrder(input: { chatLines: string[]; managerLine: stri
   return out.slice(0, 4);
 }
 
+/** «Отправляется» дольше стольких минут — отправка оборвалась на полпути (сбой таблицы, функцию сняли). */
+export const WAYBILL_STUCK_MINUTES = 3;
+export const WAYBILL_RETRY_NOTE = "повтор после обрыва";
+
+type TraceMessage = { messageId: string; at: string; phone: string; direction: string; type: string; text: string; line?: string };
+
+/**
+ * След накладной в переписке: ушла ли она клиенту на самом деле. 19.11.2026, первый же день: накладная № YOMGH ушла
+ * клиенту, а запись «отправлена» в таблицу не легла — строка осталась «отправляется», и кнопка «Отправить» прислала бы
+ * её второй раз. Ищем исходящее этому номеру после заведения строки: нашу запись с пометкой «[накладная № …]» или эхо
+ * WhatsApp — файл с подписью накладной по этой заявке (эхо приходит уведомлением, пометки в нём нет).
+ */
+export function waybillSentTrace(w: Pick<WaybillRow, "number" | "phone" | "createdAt"> & { orderCode: string }, messages: TraceMessage[]): { messageId: string; line: string; at: string } | null {
+  const key = phoneKey(w.phone);
+  if (!key) return null;
+  const from = Date.parse(w.createdAt) - 60000;
+  const mine = messages
+    .filter((m) => m.direction === "out" && phoneKey(m.phone) === key && Date.parse(m.at) >= from)
+    .filter((m) => m.text.includes(`[накладная № ${w.number}]`) || ((m.type === "image" || m.type === "document") && m.text.includes(`№ ${w.orderCode}`) && /Накладная (на картинке|в файле)/.test(m.text)))
+    .sort((a, b) => (a.at < b.at ? -1 : 1));
+  // Наша запись точнее эха: в ней номер сообщения и линия ровно те, с которыми отправляли.
+  const hit = mine.find((m) => m.text.includes(`[накладная № ${w.number}]`)) ?? mine[0];
+  return hit ? { messageId: hit.messageId, line: hit.line || "main", at: hit.at } : null;
+}
+
+/**
+ * Что делать с накладной, застрявшей в «отправляется»: след в переписке есть — она отправлена; следа нет — одна
+ * повторная попытка; уже повторяли или прошли сутки — «не отправлена», дальше решает человек кнопкой на заявке.
+ */
+export function stuckWaybillAction(w: Pick<WaybillRow, "status" | "createdAt" | "note">, traced: boolean, now: Date): "sent" | "retry" | "fail" | null {
+  if (w.status !== "sending") return null;
+  const age = now.getTime() - Date.parse(w.createdAt);
+  if (!(age >= WAYBILL_STUCK_MINUTES * 60000)) return null;
+  if (traced) return "sent";
+  if (w.note.startsWith(WAYBILL_RETRY_NOTE) || age > 24 * 3600000) return "fail";
+  return "retry";
+}
+
 /** Образец для страницы настроек и проверки после выкладки. Клиент и позиции выдуманы и подписаны как образец. */
 export function sampleWaybillDoc(date: string): WaybillDoc {
   const lines: WaybillLine[] = [

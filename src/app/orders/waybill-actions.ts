@@ -34,6 +34,7 @@ async function actorFor(orderId: string) {
 
 function outcomeText(out: WaybillOutcome): string {
   const tail = out.phone ? ` на …${out.phone.slice(-4)}` : "";
+  if (out.status === "sent" && out.note === "already") return `Накладная № ${out.number} уже ушла клиенту${tail} раньше — отметка восстановлена, второй раз не отправляю`;
   if (out.status === "sent") return `Накладная № ${out.number} отправлена клиенту${tail}`;
   if (out.status === "duplicate") return `Эта отгрузка ${out.note}`;
   throw new Error(`Накладная № ${out.number} не отправлена: ${out.note || "причина неизвестна"}`);

@@ -17,6 +17,7 @@ import {
   parseWaybillStatus,
   planWaybill,
   sampleWaybillDoc,
+  stuckWaybillAction,
   uncoveredShipments,
   waybillAuto,
   waybillCaption,
@@ -28,6 +29,7 @@ import {
   waybillRecipient,
   waybillSections,
   waybillSendRefusal,
+  waybillSentTrace,
 } from "../src/lib/waybill";
 import { jpegSize, jpegToPdf } from "../src/lib/jpegPdf";
 import { trimBottom, waybillCanvasHeight } from "../src/lib/waybillImage";
@@ -162,6 +164,30 @@ check("где переписывался последним → номер ме�
 check("переписки не было — номер менеджера, потом основной", waybillLineOrder({ chatLines: [], managerLine: "m-ilyas" }), ["m-ilyas", ""]);
 check("у менеджера нет номера — основной", waybillLineOrder({ chatLines: [], managerLine: "" }), [""]);
 check("статус из таблицы: незнакомое — «отправляется», а не «отправлена»", [parseWaybillStatus("sent"), parseWaybillStatus(" Failed "), parseWaybillStatus(""), parseWaybillStatus("готово")], ["sent", "failed", "sending", "sending"]);
+
+// --- Застряла в «отправляется» (19.11.2026, первый день: № YOMGH ушла клиенту, а отметка не записалась) --------------
+const wb = { number: "YOMGH", orderCode: "YOMGH", phone: "77015551550", createdAt: ago(120) };
+const msg = (over: Record<string, unknown>) => ({ messageId: "M1", at: ago(119), phone: "77015551550", direction: "out", type: "image", text: "", line: "m-emil", ...over });
+check("след: наша запись с пометкой накладной", waybillSentTrace(wb, [msg({ text: "[накладная № YOMGH] Здравствуйте! Отгрузили часть заказа № YOMGH: 40 шт." })]), { messageId: "M1", line: "m-emil", at: ago(119) });
+check("след: эхо WhatsApp без пометки — файл с подписью накладной по этой заявке", waybillSentTrace(wb, [msg({ messageId: "E1", line: "", text: "Здравствуйте! Заказ № YOMGH отгружен: 40 шт. на 12 775 ₸. Накладная на картинке." })])?.messageId, "E1");
+check("наша запись главнее эха: номер сообщения и линия — из неё", waybillSentTrace(wb, [msg({ messageId: "E1", at: ago(118), text: "Здравствуйте! Заказ № YOMGH отгружен: 40 шт. Накладная на картинке." }), msg({ text: "[накладная № YOMGH] Здравствуйте!" })])?.messageId, "M1");
+check("номер с «8» и номер с «7» — один и тот же клиент", waybillSentTrace({ ...wb, phone: "87015551550" }, [msg({ text: "[накладная № YOMGH] …" })])?.messageId, "M1");
+check("не след: другой клиент, входящее, сообщение ДО накладной, чужая накладная, обычный текст про заказ", [
+  waybillSentTrace(wb, [msg({ phone: "77015550000", text: "[накладная № YOMGH] …" })]),
+  waybillSentTrace(wb, [msg({ direction: "in", text: "[накладная № YOMGH] …" })]),
+  waybillSentTrace(wb, [msg({ at: ago(200), text: "[накладная № YOMGH] …" })]),
+  waybillSentTrace(wb, [msg({ text: "[накладная № YOMGH-2] …" })]),
+  waybillSentTrace(wb, [msg({ type: "text", text: "По заказу № YOMGH всё отгрузили, накладную пришлём" })]),
+], [null, null, null, null, null]);
+check("вторая накладная заявки своим следом не считает первую", waybillSentTrace({ ...wb, number: "YOMGH-2" }, [msg({ text: "[накладная № YOMGH] …" })]), null);
+const st = (status: string, minutes: number, note = "") => ({ status: status as "sending", createdAt: ago(minutes), note });
+check("моложе трёх минут — ещё отправляется, не трогаем", [stuckWaybillAction(st("sending", 2), false, NOW), stuckWaybillAction(st("sending", 2), true, NOW)], [null, null]);
+check("застряла, след есть — отметить отправленной (второй раз не слать)", stuckWaybillAction(st("sending", 10), true, NOW), "sent");
+check("застряла, следа нет — одна повторная отправка", stuckWaybillAction(st("sending", 10), false, NOW), "retry");
+check("уже повторяли — больше не шлём, дальше человек", stuckWaybillAction(st("sending", 10, "повтор после обрыва"), false, NOW), "fail");
+check("уже повторяли, но след появился — отправлена", stuckWaybillAction(st("sending", 10, "повтор после обрыва"), true, NOW), "sent");
+check("старше суток — сама не шлёт", stuckWaybillAction(st("sending", 25 * 60), false, NOW), "fail");
+check("отправленную, неотправленную и пропущенную не трогаем", [stuckWaybillAction(st("sent", 10), false, NOW), stuckWaybillAction(st("failed", 10), false, NOW), stuckWaybillAction(st("skipped", 10), true, NOW)], [null, null, null]);
 
 // --- Ссылка, картинка, PDF ------------------------------------------------------------
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "check-secret";
