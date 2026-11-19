@@ -10,6 +10,7 @@ import { getBatchById, listBatches } from "@/lib/repo/batches";
 import { FLOWER_TYPE_LABELS, TAKEOUT_KINDS, farmLabel, getFarmFor } from "@/lib/constants";
 import { getOrderById } from "@/lib/repo/orders";
 import { isReadyToShip, shipGateRefusal, unpaidRest } from "@/lib/orderReady";
+import { kickWaybills, siteOrigin } from "@/lib/waybillKick";
 import { createOrderShipments, createShipments, type ShipmentPart } from "@/lib/repo/shipments";
 import { planWholeOrderShipment } from "@/lib/shipRules";
 import { forgetReads } from "@/lib/sheets";
@@ -193,7 +194,15 @@ async function createShipmentActionInner(input: {
   assertOwnFlowerType(farm, item.flowerType);
 
   const shipmentIds = await createShipments({ orderId: input.orderId, itemId: input.itemId, parts: input.parts, warehouseEmail: email });
-  if (unpaid) await logUnpaidShipment(email, order, input.parts.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0));
+  const shippedNow = input.parts.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
+  if (unpaid) await logUnpaidShipment(email, order, shippedNow);
+  // Накладная клиенту (`waybill.ts`): весь цветок этой компании по заявке отгружен — будим отправку сразу. Отгружено не
+  // всё — не будим: накладная на каждое нажатие была бы спамом, частичную отгрузку подберёт проход раз в час.
+  const itemFarm = getFarmFor(item.flowerType);
+  const farmDone = order.items
+    .filter((i) => getFarmFor(i.flowerType) === itemFarm && i.quantity > 0)
+    .every((i) => i.shippedQuantity + (i.itemId === item.itemId ? shippedNow : 0) >= i.quantity);
+  if (farmDone) await kickWaybills(siteOrigin(), input.orderId);
   revalidatePath("/office");
   revalidatePath("/office/ship");
   revalidatePath("/region", "layout");
@@ -466,6 +475,8 @@ async function shipWholeOrderActionInner(input: { orderId: string; expectedTotal
   }
   await createOrderShipments({ orderId: order.orderId, warehouseEmail: email, lines: plan.lines });
   if (unpaid) await logUnpaidShipment(email, order, plan.total);
+  // Накладная клиенту: отгрузили всё, что заказано, — отправка сразу; с недостачей — через время тишины (`planWaybill`).
+  if (plan.shortages.length === 0) await kickWaybills(siteOrigin(), order.orderId);
   revalidatePath("/warehouse");
   revalidatePath("/warehouse/batches");
   revalidatePath("/warehouse/picklist");

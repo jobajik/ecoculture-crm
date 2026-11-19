@@ -87,6 +87,15 @@ import { commitRfCancel, commitRfEdit } from "@/lib/repo/rfEdit";
 import { commitFarmSwitch } from "@/lib/repo/farmSwitch";
 import type { RfEditInput } from "@/lib/rfEdit";
 import { PRICE_KINDS } from "@/lib/priceList";
+import { kaspiPhoneEditRefusal, planKaspiPhoneChange } from "@/lib/orderKaspiPhone";
+import { kaspiDueAmount, kaspiPhone, prettyKaspiPhone } from "@/lib/kaspiInvoice";
+import { findKaspiInvoice, updateKaspiInvoiceRow } from "@/lib/repo/kaspiInvoices";
+import { ApiPayError, apiPayConfig, cancelInvoice } from "@/lib/apipay";
+import { issueKaspiInvoice } from "@/lib/kaspiIssue";
+import { farmPayments } from "@/lib/orderMoney";
+import { updateClient } from "@/lib/repo/clients";
+import { setOrderKaspiPhone } from "@/lib/repo/orders";
+import { FARM_LABELS } from "@/lib/constants";
 
 async function createOrderActionInner(
   withDraft: Omit<NewOrderInput, "managerEmail"> & { draftId?: string; assignTo?: string }
@@ -859,6 +868,109 @@ export async function cancelRfShipmentAction(...args: Parameters<typeof cancelRf
 
 export async function switchItemsFarmAction(...args: Parameters<typeof switchItemsFarmActionInner>) {
   return guard(() => switchItemsFarmActionInner(...args));
+}
+
+/**
+ * Номер Kaspi для счёта по заявке (19.11.2026, правила — `orderKaspiPhone.ts`): менеджер вписывает номер, на который
+ * клиент просит выставить счёт. Номер пишется в заявку, по желанию — в карточку клиента; счета, которые ждут оплаты на
+ * прежнем номере, отменяются в ApiPay и выставляются заново на новый (решение владельца: без бухгалтера).
+ *
+ * Порядок важен: сначала номер в заявке (это главное, что просили), потом карточка, потом счета. Не вышло отменить
+ * старый счёт — новый НЕ выставляем: два живых счёта на одну сумму клиент может оплатить дважды.
+ */
+async function setOrderKaspiPhoneActionInner(orderId: string, input: { phone: string; remember?: boolean }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  const role = session.user.role;
+  const email = session.user.email.toLowerCase();
+
+  forgetReads(); // оплата и счета — свежие: по ним решаем, что отменять
+  const order = await getOrderById(String(orderId || ""));
+  if (!order) throw new Error("Заявка не найдена");
+  const client = order.clientId ? await getClientById(order.clientId) : null;
+  const refusal = kaspiPhoneEditRefusal({ role, email, order, cardManagerEmail: client?.managerEmail });
+  if (refusal) throw new Error(refusal);
+
+  const invoices = (await listKaspiInvoices({ fresh: true })).filter((i) => i.orderId === order.orderId);
+  const all = role === ROLES.ADMIN || role === ROLES.SALES_HEAD;
+  const plan = planKaspiPhoneChange({
+    order,
+    phone: input.phone,
+    remember: input.remember === true,
+    client,
+    // Карточку правит её менеджер, РОП и админ — то же правило, что у самой карточки (`updateClientAction`).
+    canEditCard: !!client && (all || client.managerEmail === email),
+    invoices,
+    due: farmPayments(order).map((f) => ({ farm: f.farm, due: kaspiDueAmount(f) })),
+  });
+  if (typeof plan === "string") throw new Error(plan);
+
+  const pretty = plan.phone ? prettyKaspiPhone(plan.phone) : "";
+  const before = kaspiPhone(order.kaspiPhone);
+  const lines: string[] = [];
+  if (plan.phone !== before) {
+    await setOrderKaspiPhone(order.orderId, pretty);
+    lines.push(plan.phone ? `Счёт по этой заявке — на номер ${pretty}.` : "Свой номер заявки убран — счёт пойдёт на номер из карточки клиента.");
+  }
+  if (plan.card && client) {
+    await updateClient(client.clientId, plan.card);
+    lines.push("Номер записан в карточку клиента как основной Kaspi.");
+  } else if (plan.cardNote) {
+    lines.push(`Карточка не изменена: ${plan.cardNote}.`);
+  }
+
+  for (const part of plan.reissue) {
+    const label = FARM_LABELS[part.farm] ?? part.farm;
+    const cfg = apiPayConfig(part.farm);
+    if (!cfg) {
+      lines.push(`Счёт ${label} не перевыставлен: касса не подключена — попросите бухгалтера.`);
+      continue;
+    }
+    let cancelled = true;
+    for (const id of part.cancel) {
+      try {
+        const res = await cancelInvoice(cfg, id);
+        const found = await findKaspiInvoice(id);
+        if (found) await updateKaspiInvoiceRow(found.rowNumber, { Status: String(res?.status || "cancelling"), UpdatedAt: new Date().toISOString() });
+      } catch (err) {
+        cancelled = false;
+        lines.push(`Не удалось отменить прежний счёт ${label} №${id}${err instanceof ApiPayError ? ` (${err.message})` : ""} — новый не выставлен, попросите бухгалтера.`);
+        break;
+      }
+    }
+    if (!cancelled) continue;
+    if (part.amount < 1) {
+      lines.push(`Прежний счёт ${label} отменён; новый не нужен — остатка к оплате нет.`);
+      continue;
+    }
+    try {
+      // Действие менеджера, которое разрешил владелец: право «кто выставляет счёт» здесь — как у бота, системное.
+      await issueKaspiInvoice({ orderId: order.orderId, farm: part.farm, phone: plan.phone, amount: part.amount, email, role: ROLES.ADMIN, replacing: part.cancel });
+      lines.push(`Счёт ${label} на ${part.amount.toLocaleString("ru-RU")} ₸ перевыставлен на ${pretty}; прежний отменён.`);
+    } catch (err) {
+      lines.push(`Прежний счёт ${label} отменён, а новый не ушёл: ${err instanceof Error ? err.message : "ошибка"} — попросите бухгалтера выставить его.`);
+    }
+  }
+  for (const farm of plan.kept) lines.push(`По ${FARM_LABELS[farm] ?? farm} на этом номере счёт уже ждёт оплаты — оставлен как есть.`);
+
+  await logMoney({
+    actorEmail: email,
+    orderId: order.orderId,
+    action: MONEY_LOG_ACTIONS.INVOICE_SENT,
+    details: `Номер Kaspi для счёта: ${before ? prettyKaspiPhone(before) : "из карточки"} → ${pretty || "из карточки"}. ${lines.join(" ")}`.slice(0, 900),
+    amountBefore: order.paidAmount,
+    amountAfter: order.paidAmount,
+  });
+  revalidatePath(`/orders/${order.orderId}`);
+  revalidatePath("/orders");
+  revalidatePath("/finance");
+  revalidatePath("/finance/debts");
+  if (client) revalidatePath(`/clients/${client.clientId}`);
+  return { phone: pretty, lines };
+}
+
+export async function setOrderKaspiPhoneAction(...args: Parameters<typeof setOrderKaspiPhoneActionInner>) {
+  return guard(() => setOrderKaspiPhoneActionInner(...args));
 }
 
 export async function createRegionOrderAction(...args: Parameters<typeof createRegionOrderActionInner>) {

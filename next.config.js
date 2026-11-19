@@ -68,6 +68,13 @@ const nextConfig = {
     // читаются с диска, и без этой строки Vercel их в функцию не положил бы.
     outputFileTracingIncludes: {
       "/api/catalog/[flower]": ["./node_modules/@fontsource/manrope/files/*.woff", "./node_modules/@fontsource/arimo/files/arimo-latin-ext-*.woff"],
+      // Накладная клиенту (`/api/waybill/…`): те же шрифты плюс расширенная кириллица Arimo (казахские заглавные) и логотип.
+      "/api/waybill/[id]/[name]": [
+        "./node_modules/@fontsource/manrope/files/*.woff",
+        "./node_modules/@fontsource/arimo/files/arimo-latin-ext-*.woff",
+        "./node_modules/@fontsource/arimo/files/arimo-cyrillic-ext-*.woff",
+        "./public/logo.png",
+      ],
     },
   },
 };

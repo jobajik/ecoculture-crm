@@ -5,6 +5,7 @@
  */
 import { writeFileSync } from "fs";
 import { SHEET_HEADERS, DEFAULT_VARIETIES } from "../../src/lib/constants";
+import { buildWaybillDoc, nextWaybillNumber } from "../../src/lib/waybill";
 
 const TODAY = process.argv[3] || new Date(Date.now() + 5 * 3600_000).toISOString().slice(0, 10);
 let seed = 42;
@@ -202,6 +203,19 @@ const mkKaspiOrder = (orderId: string, c: Record<string, unknown>, parts: { amou
     kaspi.push({ InvoiceID: String(726230 + kaspi.length), CreatedAt: at(0), OrderID: orderId, Farm: "rose_farm", Amount: part.amount, Phone: part.phone, Status: "pending", KaspiInvoiceID: "", ErrorCode: "", ErrorMessage: "", PaidAt: "", PaymentID: "", CreatedByEmail: "yulia@demo.kz", Sandbox: "", UpdatedAt: at(0) })
   );
 };
+// Оплаченные заявки, которые склад может отгрузить ЦЕЛИКОМ (розы на складе хватает): на них проверяется накладная
+// клиенту сразу после отгрузки — одной кнопкой (WBFUL) и по позиции за нажатие (WBTWO).
+const mkPaidOrder = (orderId: string, c: Record<string, unknown>, rows: { v: string; g: string; q: number; p: number }[]) => {
+  const sum = rows.reduce((a, r) => a + r.q * r.p, 0);
+  for (const r of rows) items.push({ OrderID: orderId, ItemID: `${orderId}-${r.g}`, FlowerType: "rose", Variety: r.v, Grade: r.g, Quantity: r.q, UnitPrice: r.p, ShippedQuantity: 0 });
+  orders.push({
+    OrderID: orderId, CreatedAt: at(0), ManagerEmail: c.ManagerEmail, ClientName: c.Name, ClientPhone: c.Phone, DeliveryDate: day(1), Status: "new", Notes: "",
+    ManagerConfirmed: "TRUE", ManagerConfirmedAt: at(0), Paid: "TRUE", PaidAt: at(0), PaymentMethod: "Каспи", AccountantEmail: "yulia@demo.kz", PaidAmount: sum, PromisedAt: "", CollectionNote: "", ClientID: c.ClientID,
+    PaidRoseFarm: sum, PaidEsentai: "", Retail: "", Direction: "", Kind: "", InvoiceSentAt: at(0), InvoiceNote: "", Realization1C: "", Store: "",
+  });
+};
+mkPaidOrder("WBFUL", clients[2], [{ v: roseV[0], g: "60", q: 100, p: 235 }]);
+mkPaidOrder("WBTWO", clients[3], [{ v: roseV[0], g: "60", q: 60, p: 235 }, { v: roseV[1], g: "50", q: 30, p: 215 }]);
 mkKaspiOrder("KSPA1", clients[0], [{ amount: 50500, phone: "87015550101" }]);
 mkKaspiOrder("KSPB2", clients[1], [{ amount: 50500, phone: "87015550101" }, { amount: 63000, phone: "87775550202" }]);
 // --- Регионы: заказы на фуру ---
@@ -247,6 +261,30 @@ cityOrder("KRGC1", 0, regionClients[0], "karaganda", "new", 1, [[String(krgBatch
 cityOrder("KRGC2", -5, regionClients[1], "", "shipped", 1, [["rose", roseV[0], "60", 200]]);
 cityOrder("KRGC3", -20, regionClients[2], "", "shipped", 0.4, [["rose", roseV[1], "50", 300], ["rose", roseV[2], "60", 100]]);
 cityOrder("SEMC1", -3, regionClients[3], "", "shipped", 0, [["rose", roseV[0], "60", 150]]);
+// --- Накладные клиентам: одна отправлена, одна не ушла; у остальных отгруженных — «отгружено без накладной» ---
+const waybills: Record<string, unknown>[] = [];
+const sold = orders.filter((o) => o.Status === "shipped" && !o.Retail && o.Kind !== "region" && o.ClientID && shipments.some((x) => x.OrderID === o.OrderID));
+sold.slice(0, 2).forEach((o, k) => {
+  const own = shipments.filter((x) => x.OrderID === o.OrderID);
+  const doc = buildWaybillDoc({
+    order: {
+      orderId: String(o.OrderID), status: "shipped", clientName: String(o.ClientName), deliveryDate: String(o.DeliveryDate),
+      items: items.filter((i) => i.OrderID === o.OrderID).map((i) => ({ itemId: String(i.ItemID), flowerType: String(i.FlowerType), variety: String(i.Variety), grade: String(i.Grade), quantity: Number(i.Quantity), unitPrice: Number(i.UnitPrice), shippedQuantity: Number(i.ShippedQuantity) })),
+    },
+    shipments: own.map((x) => ({ shipmentId: String(x.ShipmentID), itemId: String(x.ItemID), quantity: Number(x.Quantity), createdAt: String(x.CreatedAt) })),
+    shipmentIds: own.map((x) => String(x.ShipmentID)),
+    number: nextWaybillNumber(String(o.OrderID), []),
+    date: TODAY,
+    city: "Алматы",
+    manager: "Ильяс",
+    shippedBy: "Разия",
+  });
+  waybills.push({
+    WaybillID: `WB-DEMO-${k + 1}`, CreatedAt: at(0), OrderID: o.OrderID, Number: doc.number, ShipmentIDs: own.map((x) => x.ShipmentID).join(","), Doc: JSON.stringify(doc), Stems: doc.stems, Amount: doc.amount,
+    Phone: "77015550101", Line: k === 0 ? "main" : "", Status: k === 0 ? "sent" : "failed", Note: k === 0 ? "" : "номер WhatsApp не подключён", MessageID: k === 0 ? "DEMO1" : "", ByEmail: "auto", SentAt: k === 0 ? at(0) : "",
+  });
+});
+tab("Waybills", waybills);
 tab("KaspiInvoices", kaspi);
 tab("Orders", orders);
 tab("OrderItems", items);
@@ -303,6 +341,8 @@ tab("HarvestForecast", fc);
 
 tab("Settings", [
   { Key: "BotEnabled", Value: "true" },
+  { Key: "WaybillAuto", Value: "on" },
+  { Key: "WaybillSince", Value: at(-1) },
   {
     Key: "ManagerProfiles",
     Value: JSON.stringify({

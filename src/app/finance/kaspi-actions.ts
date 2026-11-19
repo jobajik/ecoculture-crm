@@ -79,6 +79,8 @@ async function loadKaspiActionInner(orderId: string): Promise<KaspiPanelData> {
   if (!order) throw new Error("Заявка не найдена");
   const client = order.clientId ? await getClientById(order.clientId) : null;
   const phones = kaspiPhoneOptions([
+    // Номер, который менеджер вписал в саму заявку (клиент попросил счёт на другой номер), — первым (`orderKaspiPhone.ts`).
+    [order.kaspiPhone, "номер из заявки"],
     [client?.kaspiPay1, "Kaspi №1"],
     [client?.kaspiPay2, "Kaspi №2"],
     [order.clientPhone, "телефон заявки"],

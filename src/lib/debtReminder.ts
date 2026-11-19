@@ -71,7 +71,7 @@ type ReminderOrder = Pick<
   | "retail"
   | "kind"
   | "direction"
-> & { clientPaymentTerms?: string; managerEmail?: string; paymentMethod?: string };
+> & { clientPaymentTerms?: string; managerEmail?: string; paymentMethod?: string; kaspiPhone?: string };
 
 /** «Отсрочка 7 дней» → 7; «По факту», «Предоплата», пусто → 0. */
 export function termDays(terms: string | null | undefined): number {
@@ -205,7 +205,8 @@ export function planReminders(input: {
         greeting: greetingName(client?.contactPerson ?? "", client?.name || o.clientName),
         managerEmail: (client?.managerEmail || o.managerEmail || "").toLowerCase(),
         waPhone: [o.clientPhone, client?.phone, client?.kaspiPay1, client?.kaspiPay2].map(waPhone).find(Boolean) ?? "",
-        kaspiPhone: suggestedKaspiPhone([client?.kaspiPay1, client?.kaspiPay2, o.clientPhone, client?.phone]),
+        // Свой номер заявки (менеджер вписал по просьбе клиента, `orderKaspiPhone.ts`) — раньше номеров карточки.
+        kaspiPhone: suggestedKaspiPhone([o.kaspiPhone, client?.kaspiPay1, client?.kaspiPay2, o.clientPhone, client?.phone]),
         orders: [],
         total: 0,
         kaspiNew: [],

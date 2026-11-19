@@ -74,6 +74,7 @@ export function toOrder(record: Record<string, string>): Order {
     invoiceNote: (record.InvoiceNote || "").trim(),
     realization1c: (record.Realization1C || "").trim(),
     store: normalizeStore(record.Store),
+    kaspiPhone: (record.KaspiPhone || "").trim(),
   };
 }
 
@@ -802,6 +803,16 @@ export async function clearOrdersPaid(orderIds: string[], accountantEmail: strin
 }
 
 /** Склад отгрузки заявки: пусто — основной, «office» — подсклад «Офис», «astana» — склад Астаны. */
+/** Номер Kaspi для счёта по заявке (`orderKaspiPhone.ts`); пусто — убрать. Пишется как текст «8701…». */
+export async function setOrderKaspiPhone(orderId: string, phone: string): Promise<boolean> {
+  return updateWhere(
+    SHEET_TABS.ORDERS,
+    (record) => record.OrderID === orderId,
+    () => ({ KaspiPhone: phone })
+    // Пишется с пробелами («8 701 555 20 30»): строку из одних цифр таблица приняла бы за число.
+  );
+}
+
 export async function setOrderStore(orderId: string, store: string): Promise<boolean> {
   return updateWhere(
     SHEET_TABS.ORDERS,

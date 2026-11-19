@@ -5,6 +5,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getOrderById } from "@/lib/repo/orders";
 import { listShipments } from "@/lib/repo/shipments";
+import { listWaybills } from "@/lib/repo/waybills";
+import { settingsMap } from "@/lib/repo/broadcasts";
+import { WAYBILL_STATUS_LABELS, planWaybill, uncoveredShipments, waybillAuto, waybillFileName, waybillOrderRefusal, waybillSendRefusal } from "@/lib/waybill";
+import { publicWaybillUrl } from "@/lib/waFileSign";
+import { siteOrigin } from "@/lib/waybillKick";
+import OrderWaybills, { type WaybillView } from "@/components/OrderWaybills";
 import { listClaims } from "@/lib/repo/claims";
 import { listUsers } from "@/lib/repo/users";
 import {
@@ -24,7 +30,11 @@ import { localDayKey } from "@/lib/timezone";
 import { nameIndex, personName } from "@/lib/personName";
 import ReadyChecks from "@/components/ReadyChecks";
 import RegionIncomePanel from "@/components/RegionIncomePanel";
-import { canFillRegionOrders, isConsignment, isRegionOrder } from "@/lib/orderKind";
+import { canFillRegionOrders, isConsignment, isNotASale, isRegionOrder } from "@/lib/orderKind";
+import { listKaspiInvoices } from "@/lib/repo/kaspiInvoices";
+import { isOpenKaspiStatus, kaspiPhone, prettyKaspiPhone } from "@/lib/kaspiInvoice";
+import { kaspiPhoneEditRefusal, kaspiPhoneOfOrder } from "@/lib/orderKaspiPhone";
+import OrderKaspiPhone from "@/components/OrderKaspiPhone";
 import { formatRub, hasRubPrices, rubTotal } from "@/lib/rubShipment";
 import { isRfShipment, rfEditRefusal } from "@/lib/rfEdit";
 import { switchableItems, switchTarget } from "@/lib/farmSwitch";
@@ -141,13 +151,18 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       }
     : loaded;
 
-  const [allShipments, allClaims, users, client, allPayments] = await Promise.all([
+  const [allShipments, allClaims, users, client, allPayments, allKaspiInvoices, allWaybills, settingsNow] = await Promise.all([
     listShipments(),
     listClaims(),
     listUsers(),
     loaded.clientId ? getClientById(loaded.clientId) : Promise.resolve(null),
     // Платежи нужны только тем, кто видит деньги заявки; складу — нет.
     farm || retail ? Promise.resolve([]) : listPayments(),
+    // Счета Kaspi — для блока «на какой номер счёт» (`OrderKaspiPhone`); складу и рознице он не нужен.
+    farm || retail || isNotASale(loaded) ? Promise.resolve([]) : listKaspiInvoices(),
+    // Накладные клиенту (`waybill.ts`) — только у продажи клиенту.
+    waybillOrderRefusal(loaded) ? Promise.resolve([]) : listWaybills(),
+    waybillOrderRefusal(loaded) ? Promise.resolve({} as Record<string, string>) : settingsMap().catch(() => ({} as Record<string, string>)),
   ]);
   const orderPayments = allPayments
     .filter((p) => p.orderId === loaded.orderId)
@@ -176,6 +191,63 @@ export default async function OrderDetailPage({ params }: { params: { id: string
       ? [client.kaspiPay1, client.kaspiPay2].filter(Boolean)
       : [];
   const shipments = allShipments.filter((s) => s.orderId === order.orderId);
+
+  // Накладные клиенту (19.11.2026): что ушло в WhatsApp после отгрузки и что отгружено без накладной. Зав. складом —
+  // только накладные на свой цветок (в `order` у неё и так только её позиции).
+  const orderWaybills = allWaybills
+    .filter((w) => w.orderId === loaded.orderId && w.status !== "duplicate" && w.doc)
+    .filter((w) => !farm || w.doc!.lines.every((l) => l.farm === farm))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const ownItemIds = new Set(order.items.map((i) => i.itemId));
+  const waybillPending = waybillOrderRefusal(loaded)
+    ? 0
+    : uncoveredShipments(shipments, allWaybills.filter((w) => w.orderId === loaded.orderId))
+        .filter((s) => ownItemIds.has(s.itemId))
+        .reduce((sum, s) => sum + s.quantity, 0);
+  // «Отправляется» дольше пяти минут — отправка оборвалась (функцию сняли на полпути): показываем как неотправленную,
+  // с кнопкой, иначе строка держала бы отгрузку за собой вечно.
+  const waybillStuck = (w: { status: string; createdAt: string }) => w.status === "sending" && Date.now() - Date.parse(w.createdAt) > 5 * 60000;
+  const waybillViews: WaybillView[] = orderWaybills.map((w) => ({
+    waybillId: w.waybillId,
+    number: w.number,
+    when: formatMoment(w.sentAt || w.createdAt),
+    stems: w.stems,
+    amountText: moneyExact(w.amount),
+    status: waybillStuck(w) ? "failed" : w.status,
+    statusText: WAYBILL_STATUS_LABELS[waybillStuck(w) ? "failed" : w.status],
+    note: w.status === "sent" ? "" : waybillStuck(w) ? "отправка оборвалась — нажмите «Отправить»" : w.note,
+    sentTo:
+      w.status === "sent" && w.phone
+        ? `на …${w.phone.slice(-4)} · ${w.line === "leads" ? "с номера Земфиры" : w.line.startsWith("m-") ? "с номера менеджера" : "с основного номера"}`
+        : "",
+    url: publicWaybillUrl(siteOrigin(), w.waybillId, waybillFileName(w.doc!)),
+  }));
+  // «Уйдёт сама» пишем, только если автомат эту отгрузку действительно возьмёт: включён, и она не старше его пределов.
+  const waybillAutoNow = waybillAuto(settingsNow);
+  const waybillWillAuto =
+    waybillAutoNow.on &&
+    planWaybill({ order: loaded, shipments, waybills: allWaybills.filter((w) => w.orderId === loaded.orderId), mode: "auto", since: waybillAutoNow.since, now: new Date() }) !== null;
+  const canSendWaybill = !waybillSendRefusal({ role, email: myEmail, order: loaded, cardManagerEmail: client?.managerEmail });
+
+  // Номер Kaspi для счёта по заявке (19.11.2026, `orderKaspiPhone.ts`): на какой номер пойдёт счёт и кто может его
+  // поменять. Блок есть, пока по заявке ждём денег; оплаченной он не нужен.
+  const kaspiNow = kaspiPhoneOfOrder(loaded, client);
+  const kaspiEditRefusal = kaspiPhoneEditRefusal({ role, email: myEmail, order: loaded, cardManagerEmail: client?.managerEmail });
+  const showKaspiPhone =
+    !farm && !retail && !isNotASale(loaded) && loaded.status !== ORDER_STATUSES.CANCELLED && loaded.totalAmount - loaded.paidAmount > 1;
+  const kaspiBlock = showKaspiPhone ? (
+    <OrderKaspiPhone
+      orderId={loaded.orderId}
+      current={kaspiNow.phone ? prettyKaspiPhone(kaspiNow.phone) : ""}
+      source={kaspiNow.source === "order" ? "указан в заявке" : kaspiNow.source === "card" ? "из карточки клиента" : kaspiNow.source === "phone" ? "телефон клиента" : ""}
+      cardNumbers={Array.from(new Set([client?.kaspiPay1, client?.kaspiPay2].map((n) => kaspiPhone(n)).filter(Boolean))).map(prettyKaspiPhone)}
+      waiting={allKaspiInvoices
+        .filter((i) => i.orderId === loaded.orderId && isOpenKaspiStatus(i.status) && i.status !== "cancelling")
+        .map((i) => ({ phone: prettyKaspiPhone(kaspiPhone(i.phone) || i.phone), amount: Math.round(i.amount), farmLabel: farmLabel(i.farm) }))}
+      canEdit={kaspiEditRefusal === ""}
+      canRemember={!!client && (role === ROLES.ADMIN || role === ROLES.SALES_HEAD || client.managerEmail === myEmail)}
+    />
+  ) : null;
 
   // Рекламации показываем всем, кто видит заявку: складу тоже полезно знать,
   // что по этой отгрузке была жалоба. Заводить может только свой менеджер.
@@ -733,6 +805,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               {kaspiOfClient.length > 0 && ` Kaspi клиента: ${kaspiOfClient.join(" / ")}.`}
             </p>
           )}
+          {kaspiBlock && <div className="mt-3">{kaspiBlock}</div>}
           {/* Реализации 1С — по одной на цветок: розу и эустому продаёт одна
               компания, но в 1С это два документа, и у каждого своя сумма
               (просьба бухгалтера). У заявки из одного цветка — одна строка. */}
@@ -820,6 +893,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               </Link>
             </div>
           ) : (
+          <>
+          {kaspiBlock && <div className="mb-4">{kaspiBlock}</div>}
           <PaymentPanel
             orderId={loaded.orderId}
             totalAmount={loaded.totalAmount}
@@ -832,6 +907,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             status={loaded.status}
             consignment={isConsignment(loaded)}
           />
+          </>
           )}
         </Section>
       )}
@@ -879,6 +955,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           showMoney={!farm && !retail && !region}
           save={returnOrderItemsAction}
         />
+      )}
+
+      {(waybillViews.length > 0 || waybillPending > 0) && (
+        <Section tone="stock" icon="order" title="Накладные клиенту" aside={waybillViews.length > 0 && <span className="text-ink-muted">{waybillViews.length}</span>}>
+          <OrderWaybills orderId={loaded.orderId} waybills={waybillViews} pendingStems={waybillPending} canSend={canSendWaybill} autoOn={waybillWillAuto} />
+        </Section>
       )}
 
       <Section

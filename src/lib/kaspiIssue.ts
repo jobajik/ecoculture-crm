@@ -22,6 +22,12 @@ export async function issueKaspiInvoice(input: {
   amount: number;
   email: string;
   role: string | undefined;
+  /**
+   * Счета, которые этот счёт ЗАМЕНЯЕТ (их только что отменили): в боевом режиме отмена асинхронная, строка ещё
+   * «отменяется» и считалась бы ждущей оплаты — новый счёт на ту же сумму упёрся бы в «счета на всю сумму уже
+   * отправлены» (19.11.2026, смена номера Kaspi менеджером — `orderKaspiPhone.ts`).
+   */
+  replacing?: string[];
 }): Promise<{ invoiceId: string; status: string; sandbox: boolean }> {
   const { email, role } = input;
   const order = await getOrderById(input.orderId);
@@ -39,7 +45,7 @@ export async function issueKaspiInvoice(input: {
     noInvoice: isNotASale(order),
     phone,
     amount,
-    existing,
+    existing: input.replacing?.length ? existing.filter((i) => !input.replacing!.includes(i.invoiceId)) : existing,
   });
   if (refusal || !cfg) throw new Error(refusal || "Касса не подключена");
 

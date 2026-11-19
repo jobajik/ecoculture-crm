@@ -22,6 +22,9 @@ import { regionSeat } from "@/lib/regionTruck";
 import { MANAGER_PROFILES_SETTING, parseManagerProfiles } from "@/lib/managerProfile";
 import { lineHookKey } from "@/lib/secretBox";
 import { DIGEST_SETTING } from "@/lib/morningDigest";
+import { formatMoment } from "@/lib/formatDate";
+import WaybillAutoForm from "@/components/WaybillAutoForm";
+import { WAYBILL_LAST_RUN, waybillAuto } from "@/lib/waybill";
 import { DIGEST_LAST_RUN } from "@/lib/morningDigestRunner";
 import {
   FARM_ORDER,
@@ -359,6 +362,24 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
         className="!mb-0"
       >
         <BotSalesPhonesForm initial={map[BOT_SALES_SETTING] ?? ""} />
+      </Section>
+      <Section
+        tone="admin"
+        icon="order"
+        title={
+          <>
+            Накладная клиенту в WhatsApp{" "}
+            <Hint>
+              Склад отгрузил заявку — клиенту в WhatsApp уходит накладная: что отгружено, сколько и на какую сумму.
+              Отгрузили частями — накладная на каждую часть. Уходит с номера, где клиент переписывался (иначе с номера
+              его менеджера или с основного), с 7:00 до 22:00. Заявки в наши магазины, объём на город и точка — без
+              накладной. Что ушло, видно на странице заявки; там же кнопка «Отправить».
+            </Hint>
+          </>
+        }
+        className="!mb-0"
+      >
+        <WaybillAutoForm on={waybillAuto(map).on} since={formatMoment(waybillAuto(map).since, "")} lastRun={map[WAYBILL_LAST_RUN] || ""} />
       </Section>
       </div>
       )}

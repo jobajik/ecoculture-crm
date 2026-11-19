@@ -42,3 +42,12 @@ export function publicCatalogUrl(site: string, flowerType: string, now = new Dat
 export function catalogSignatureOk(flowerType: string, given: string | null): boolean {
   return fileSignatureOk(`catalog-${flowerType}`, given);
 }
+
+/** Ссылка на накладную клиенту (`/api/waybill/<номер строки>/<имя файла>`): по расширению имени — картинка или PDF. */
+export function publicWaybillUrl(site: string, waybillId: string, fileName: string): string {
+  return `${site.replace(/\/+$/, "")}/api/waybill/${encodeURIComponent(waybillId)}/${safeFileName(fileName)}?t=${signFileId(`waybill-${waybillId}`)}`;
+}
+
+export function waybillSignatureOk(waybillId: string, given: string | null): boolean {
+  return fileSignatureOk(`waybill-${waybillId}`, given);
+}

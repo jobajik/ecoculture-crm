@@ -6,6 +6,7 @@ import { saveSettings } from "@/lib/repo/settings";
 import { FOLLOWUP_LAST_RUN, followupRunDue, followupRunText } from "@/lib/botFollowUpRun";
 import { sendDueStaffReminders } from "@/lib/staffCommandRunner";
 import { kickHabits } from "@/lib/habitsKick";
+import { kickWaybills } from "@/lib/waybillKick";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -47,6 +48,8 @@ export async function GET(request: Request) {
   if (!fromWebhook) await kickBroadcast((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
   // И постоянников, которые молчат дольше обычного (09.11.2026): своей функцией `/api/habits?mode=overdue`, 10–18.
   if (!fromWebhook) await kickHabits((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""), "overdue");
+  // И накладные клиентам (19.11.2026): частичные отгрузки, которым вышло время тишины, — своей функцией `/api/waybill/run`.
+  if (!fromWebhook) await kickWaybills((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
   // Отметка ДО работы: второй вебхук через секунду увидит её и не задвоит касания.
   await saveSettings({ [FOLLOWUP_LAST_RUN]: followupRunText(now, source, "идёт") }).catch(() => undefined);
   // Напоминания сотрудникам («напомни мне в 15:00 …», `staffCommand.ts`) — чей час настал.
