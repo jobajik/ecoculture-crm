@@ -6,7 +6,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listOrdersWithItems } from "@/lib/repo/orders";
 import { listUsers } from "@/lib/repo/users";
 import { getStockSnapshot } from "@/lib/stock";
-import { REGION_STORES, canChooseOrderStore } from "@/lib/officeStore";
+import { REGION_STORES, canChooseOrderStore, isRegionStore, normalizeStore, storeLabel } from "@/lib/officeStore";
 import { buildClientStats } from "@/lib/clientStats";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
@@ -280,7 +280,11 @@ export default async function NewOrderPage({
   const today = localDayKey();
   // Региональный менеджер (Салтанат, Астана): заказы уезжают фурой — по умолчанию ближайший день фуры.
   const myProfile = profileOf(parseManagerProfiles((await settingsMap())[MANAGER_PROFILES_SETTING]), myEmail);
-  const shipDay = myProfile?.shipWeekday ? nextShipDay(today, myProfile.shipWeekday, almatyHourOf(new Date())) : "";
+  // Менеджер города (22.11.2026): продаёт только со склада своего города — выбора склада нет, а день доставки обычный
+  // (цветок уже в городе, фуру ждать не надо). День фуры по умолчанию остаётся только у профиля без склада города.
+  const seatStore = role === ROLES.MANAGER ? normalizeStore(session?.user?.store) : "";
+  const lockedStore = isRegionStore(seatStore) ? { code: seatStore as string, label: storeLabel(seatStore) } : undefined;
+  const shipDay = !lockedStore && myProfile?.shipWeekday ? nextShipDay(today, myProfile.shipWeekday, almatyHourOf(new Date())) : "";
   const initialDate = draftHit?.draft.deliveryDate || preselectedDate || shipDay || addDaysToKey(today, 1);
 
   // Направление из адреса — так РОП попадает сюда из раздела «Регионы», нажав
@@ -354,8 +358,10 @@ export default async function NewOrderPage({
           showDirection={canSetDirection(role)}
           initialDirection={presetDirection}
           stock={clientStockMap}
-          officeStock={canChooseOrderStore(role) ? officeStockMap : undefined}
-          regionStock={canChooseOrderStore(role) ? regionStockMaps : undefined}
+          officeStock={!lockedStore && canChooseOrderStore(role) ? officeStockMap : undefined}
+          // Склад города в выборе — только у администратора и РОПа; у менеджера города он закреплён (`newOrderStore`).
+          regionStock={lockedStore ? { [lockedStore.code]: regionStockMaps[lockedStore.code] ?? {} } : role === ROLES.ADMIN || role === ROLES.SALES_HEAD ? regionStockMaps : undefined}
+          lockedStore={lockedStore}
           managers={
             role === ROLES.SALES_HEAD
               ? [

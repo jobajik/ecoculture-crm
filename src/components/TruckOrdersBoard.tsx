@@ -24,7 +24,20 @@ export interface TruckCard {
   accepted: number;
   shortage: number;
   shortageNote: string;
-  items: { itemId: string; name: string; quantity: number; shipped: number; pending: number; accepted: number | null }[];
+  items: {
+    itemId: string;
+    name: string;
+    /** Сколько просил город; позицию дописал склад — ноль. */
+    quantity: number;
+    shipped: number;
+    pending: number;
+    accepted: number | null;
+    /** Сколько склад не отгрузит (позиция закрыта). */
+    missing: number;
+    /** Ответ склада: «нет на складе», «Добавил склад: вместо…». */
+    note: string;
+    extra: boolean;
+  }[];
 }
 
 export interface TruckDay {
@@ -34,7 +47,7 @@ export interface TruckDay {
   cards: TruckCard[];
 }
 
-const TONE: Record<string, PillTone> = { waiting: "muted", loading: "wait", transit: "wait", received: "good", old: "muted", cancelled: "muted" };
+const TONE: Record<string, PillTone> = { waiting: "muted", loading: "wait", transit: "wait", received: "good", old: "muted", refused: "bad", cancelled: "muted" };
 const nf = (n: number) => n.toLocaleString("ru-RU");
 
 /**
@@ -82,6 +95,9 @@ function Card({ store, card, canAccept, canCancel, canOpen }: { store: string; c
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
+  const missingTotal = card.items.reduce((s, i) => s + i.missing, 0);
+  // Часть заказа уже уехала — у непогруженных позиций так и пишем, иначе прочерк в «Отгружено» читается как «не будет».
+  const anyShipped = card.items.some((i) => i.shipped > 0);
   const acceptedNow = pendingItems.reduce((s, i) => s + (Number(got[i.itemId]) || 0), 0);
   const short = card.pending - acceptedNow;
 
@@ -127,6 +143,7 @@ function Card({ store, card, canAccept, canCancel, canOpen }: { store: string; c
   const accepting = mode === "accept";
   return (
     <div className={clsx("card !p-0 overflow-hidden", card.stage === "cancelled" && "opacity-60")}>
+      {/* Отменённый самим городом — приглушён; «склад не отгрузил» — нет: это ответ, который городу надо прочитать. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 sm:px-5 py-3 border-b border-line-hairline">
         <span className="font-medium">{card.kindLabel}</span>
         {canOpen ? (
@@ -161,8 +178,19 @@ function Card({ store, card, canAccept, canCancel, canOpen }: { store: string; c
           <tbody>
             {card.items.map((i) => (
               <tr key={i.itemId} className="border-t border-line-hairline">
-                <td className="px-4 sm:px-5 py-2">{i.name}</td>
-                <td className={clsx("px-2 sm:px-3 py-2 text-right tabular-nums", accepting && "hidden sm:table-cell")}>{nf(i.quantity)}</td>
+                <td className="px-4 sm:px-5 py-2">
+                  {i.name}
+                  {i.missing > 0 && (
+                    <div className="text-xs text-status-critical mt-0.5">
+                      не будет {nf(i.missing)} шт.{i.note ? ` — ${i.note}` : ""}
+                    </div>
+                  )}
+                  {i.extra && <div className="text-xs text-ink-muted mt-0.5">{i.note || "Добавил склад"}</div>}
+                  {!i.extra && i.missing === 0 && i.quantity - i.shipped > 0 && anyShipped && (
+                    <div className="text-xs text-ink-muted mt-0.5">склад ещё не погрузил {i.shipped > 0 ? `${nf(i.quantity - i.shipped)} шт.` : "эту позицию"}</div>
+                  )}
+                </td>
+                <td className={clsx("px-2 sm:px-3 py-2 text-right tabular-nums", accepting && "hidden sm:table-cell")}>{i.extra ? "—" : nf(i.quantity)}</td>
                 <td className={clsx("px-2 sm:px-3 py-2 text-right tabular-nums", i.shipped < i.quantity && i.shipped > 0 && "text-[#8a5a00]")}>{i.shipped > 0 ? nf(i.shipped) : "—"}</td>
                 <td className="px-4 sm:px-5 py-2 text-right tabular-nums">
                   {accepting && i.pending > 0 ? (
@@ -195,6 +223,12 @@ function Card({ store, card, canAccept, canCancel, canOpen }: { store: string; c
           </tbody>
         </table>
       </div>
+
+      {missingTotal > 0 && !accepting && (
+        <div className="px-4 sm:px-5 py-2.5 text-sm border-t border-line-hairline text-[#8a5a00] bg-status-warning/10">
+          Склад не отгрузит {nf(missingTotal)} шт. — причины в позициях. Нужно по-прежнему — закажите на следующую фуру.
+        </div>
+      )}
 
       {card.shortage > 0 && !accepting && (
         <div className="px-4 sm:px-5 py-2.5 text-sm border-t border-line-hairline text-status-critical">

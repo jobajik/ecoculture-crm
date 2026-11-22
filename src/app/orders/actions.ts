@@ -74,7 +74,8 @@ import { setOrderDirection, setOrderStore } from "@/lib/repo/orders";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ORDER_PAYMENT_METHODS, ROLES, getFarmFor } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
 import { forgetReads } from "@/lib/sheets";
-import { canChooseOrderStore, normalizeStore, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
+import { newOrderStore, normalizeStore, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
+import { regionStoreOfEmail } from "@/lib/repo/regionStore";
 import { listUsers } from "@/lib/repo/users";
 import { commitReturn } from "@/lib/repo/orderReturn";
 import type { ReturnLineInput } from "@/lib/orderReturn";
@@ -174,6 +175,15 @@ async function createOrderActionInner(
     ? (input.paymentMethod as string)
     : "";
 
+  // Склад: менеджер города продаёт только со склада своего города, со склада города — только он (`newOrderStore`).
+  let orderStore: ReturnType<typeof normalizeStore> = "";
+  if (!shop) {
+    const seatStore = role === ROLES.MANAGER ? await regionStoreOfEmail(session.user.email) : "";
+    const picked = newOrderStore({ role, seatStore, requested: input.store });
+    if (picked.refusal) throw new Error(picked.refusal);
+    orderStore = picked.store;
+  }
+
   const orderId = await createOrder({
     ...input,
     // Имя — из карточки, а не из браузера: это снимок на момент оформления.
@@ -184,8 +194,8 @@ async function createOrderActionInner(
     direction,
     paymentMethod: shop ? "" : paymentMethod,
     // Склад отгрузки — только у клиентской заявки и только у тех, кто его выбирает
-    // (подсклад «Офис», `officeStore.ts`); чужое значение — основной склад.
-    store: !shop && canChooseOrderStore(role) ? normalizeStore(input.store) : "",
+    // (подсклад «Офис», `officeStore.ts`); чужое значение — основной склад. Менеджер города — только склад своего города.
+    store: orderStore,
     managerEmail,
   });
   if (input.confirmed === true) {
@@ -1175,6 +1185,7 @@ async function setOrderStoreActionInner(orderId: string, to: string) {
     isOwner: order.managerEmail.toLowerCase() === session.user.email.toLowerCase(),
     order,
     to,
+    actorStore: session.user.role === ROLES.MANAGER ? await regionStoreOfEmail(session.user.email) : "",
   });
   if (refusal) throw new Error(refusal);
   await setOrderStore(order.orderId, normalizeStore(to));

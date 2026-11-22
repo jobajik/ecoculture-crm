@@ -242,6 +242,12 @@ truckOrder("KRGN2", 6, "Караганда", "arman@demo.kz", [["rose", roseV[2]
 truckOrder("SEMT1", -1, "Семей", "raziya@demo.kz", [["rose", roseV[0], "50", 700], ["chrysanthemum", chrV[1], "Вторая", 500]], true);
 truckOrder("SEMR1", -1, "Семей", "raziya@demo.kz", [["rose", roseV[3], "60", 900], ["eustoma", eusV[1], "Стандарт", 300]], true, { Kind: "", Direction: "", Retail: "regions", ClientID: regionCards[1].ClientID, ClientName: regionCards[1].Name });
 truckOrder("ASTOLD", -7, "Астана", "nina@demo.kz", [["rose", roseV[4], "60", 1200]], true);
+// Заказы городов, которые ждут погрузки (экран «Фуры в регионы»): позиция, которой хватает, позиция, которой на складе
+// меньше, чем просят, и позиция, которой нет вовсе.
+const mainLive = batches.filter((b) => !b.Store && Number(b.QuantityRemaining) >= 100);
+const ml = (k: number, q: number): [string, string, string, number] => [String(mainLive[k].FlowerType), String(mainLive[k].Variety), String(mainLive[k].Grade), q];
+truckOrder("ASTN1", 2, "Астана", "saltanat@demo.kz", [ml(0, 100), ml(2, 20000), ml(5, 150), ["rose", "Нет на складе", "90", 200], ["chrysanthemum", chrV[0], "Третья", 400]], false);
+truckOrder("UKKN1", 3, "Усть-Каменогорск", "raziya@demo.kz", [ml(1, 200), ml(4, 100)], false);
 // Клиентские заявки городов: одна со склада Караганды ждёт отгрузки, одна оплачена, одна с просроченным долгом.
 const cityOrder = (orderId: string, off: number, c: Record<string, unknown>, store: string, status: string, paidShare: number, lines: [string, string, string, number][]) => {
   let sum = 0;

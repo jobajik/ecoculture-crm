@@ -151,7 +151,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
     .map((u) => ({ email: u.email.toLowerCase(), name: u.name }))
     .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "ru"));
 
-  // Директора регионов (17.11.2026, `regionTruck.ts`): город → директор и день фуры, из настройки `ManagerProfiles`.
+  // Менеджеры городов (17.11.2026, `regionTruck.ts`; в данных — флаг `director`): город → менеджер и день фуры, из настройки `ManagerProfiles`.
   const profiles = parseManagerProfiles(map[MANAGER_PROFILES_SETTING]);
   const regionRows = REGION_STORES.map((r) => {
     const seat = regionSeat(profiles, r.code);
@@ -163,6 +163,8 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
       weekday: seat.truckWeekday,
       female: director ? profiles[director]?.female === true : false,
       managers: seat.managers.map((e) => nameOf(e) || e),
+      // Подключён ли номер WhatsApp менеджера города к CRM («Настройки → WhatsApp менеджеров»).
+      wa: !director ? ("" as const) : waLines.some((l) => l.managerEmail.toLowerCase() === director && l.active && !!l.tokenEnc) ? ("on" as const) : ("off" as const),
     };
   });
   const regionManagers = users
@@ -272,17 +274,17 @@ export default async function AdminPage({ searchParams }: { searchParams?: { tab
         icon="truck"
         title={
           <span className="inline-flex items-center" id="region-directors">
-            Директора регионов
+            Менеджеры городов
             <Hint>
-              Директор города — сотрудник с ролью «Менеджер» (сначала заведите его во вкладке «Сотрудники и роли»). Он ведёт склад
-              города, подаёт заказ на фуру, подтверждает приёмку и видит заявки, оплаты и долги своего города. Продаёт клиентам
-              как обычный менеджер.
+              Менеджер города — сотрудник с ролью «Менеджер», посаженный в город. Продаёт клиентам только со склада своего
+              города, заказывает фуру у зав. складом, подтверждает приёмку и видит заявки, оплаты и долги города. Нового
+              человека можно завести прямо здесь; его номер WhatsApp подключается во вкладке «WhatsApp менеджеров».
             </Hint>
           </span>
         }
         className="!mb-0"
       >
-        <p className="text-sm text-ink-secondary mb-3">Кто директор города и в какой день туда уходит фура. Сохраняется по каждому городу отдельно.</p>
+        <p className="text-sm text-ink-secondary mb-3">Кто менеджер города и в какой день туда уходит фура. Сохраняется по каждому городу отдельно.</p>
         <RegionDirectorsForm rows={regionRows} managers={regionManagers} />
       </Section>
       )}

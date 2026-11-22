@@ -36,7 +36,7 @@ export default async function RegionMoneyPage({ params }: { params: { store: str
       <div>
         <PageHeader area="stock" title={`Оплаты и долги — ${r.info.label}`} icon="wallet" tabs={r.headerTabs} />
         {r.home.all && <RegionNav store={r.store} tabs={r.tabs} current={`${base}/money`} />}
-        <p className="card text-sm text-ink-secondary">Оплаты и долги города видит директор региона, РОП и администратор.</p>
+        <p className="card text-sm text-ink-secondary">Оплаты и долги города видит менеджер города, РОП и администратор.</p>
       </div>
     );
   }

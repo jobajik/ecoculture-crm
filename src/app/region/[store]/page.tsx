@@ -63,7 +63,7 @@ export default async function RegionStockPage({ params }: { params: { store: str
     oldest: x.oldest,
     status: x.status,
   }));
-  const people = [...r.seat.directors.map((e) => `директор — ${r.nameOf(e)}`), ...r.seat.managers.map((e) => `менеджер — ${r.nameOf(e)}`)];
+  const people = [...r.seat.directors.map((e) => `менеджер города — ${r.nameOf(e)}`), ...r.seat.managers.map((e) => `ещё — ${r.nameOf(e)}`)];
   const base = `/region/${r.store}`;
 
   return (
@@ -71,7 +71,7 @@ export default async function RegionStockPage({ params }: { params: { store: str
       <PageHeader
         area="stock"
         title={`Склад ${r.info.genitive}`}
-        subtitle={`${people.length ? people.join(", ") : "директор не назначен"} · фура — ${WEEKDAY_FULL[r.seat.truckWeekday]}`}
+        subtitle={`${people.length ? people.join(", ") : "менеджер города не назначен"} · фура — ${WEEKDAY_FULL[r.seat.truckWeekday]}`}
         icon="store"
         tabs={r.headerTabs}
         actions={
@@ -127,8 +127,8 @@ export default async function RegionStockPage({ params }: { params: { store: str
           </span>
           <span className="ml-auto py-3">
             <Hint>
-              Цветок приходит сюда приёмкой фуры: склад отгружает заказ «на опт», директор региона подтверждает, сколько приехало. Отсюда отгружаются заявки
-              клиентам города («Склад: {r.info.label}») — их оформляет директор, менеджер города, бот или помощник. Цифры расходятся с полкой — «Пересчёт».
+              Цветок приходит сюда приёмкой фуры: склад отгружает заказ «на опт», менеджер города подтверждает, сколько приехало. Отсюда отгружаются заявки
+              клиентам города («Склад: {r.info.label}») — их оформляет менеджер города, бот или помощник его номера. Цифры расходятся с полкой — «Пересчёт».
             </Hint>
           </span>
         </div>

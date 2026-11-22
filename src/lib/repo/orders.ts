@@ -92,6 +92,8 @@ export function toOrderItem(record: Record<string, string>): OrderItem {
     unitPrice: sheetNumber(record.UnitPrice),
     shippedQuantity: sheetNumber(record.ShippedQuantity),
     ...(sheetNumber(record.PriceRub) > 0 ? { priceRub: sheetNumber(record.PriceRub) } : {}),
+    ...(sheetNumber(record.AskedQuantity) > 0 ? { askedQuantity: sheetNumber(record.AskedQuantity) } : {}),
+    ...((record.StockNote || "").trim() ? { stockNote: (record.StockNote || "").trim() } : {}),
   };
 }
 

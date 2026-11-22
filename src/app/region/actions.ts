@@ -22,11 +22,14 @@ import { updateManagerProfiles } from "@/lib/repo/regionStore";
 import { buildNewOrder, getOrderById, updateOrderNotes, updateOrderStatus, type NewOrderInput } from "@/lib/repo/orders";
 import { listClients } from "@/lib/repo/clients";
 import { getCurrentPrices } from "@/lib/repo/prices";
-import { listUsers } from "@/lib/repo/users";
+import { listUsers, saveUser } from "@/lib/repo/users";
+import { cleanStaff, staffSaveRefusal, type StaffDraft } from "@/lib/staffRules";
 import { PRICE_KINDS, priceFor } from "@/lib/priceList";
 import { commitAtomic, forgetReads, SHEET_TABS } from "@/lib/sheets";
 import { localDayKey } from "@/lib/timezone";
 import { orderCode } from "@/lib/paymentStage";
+import { notifyWarehouseOfTruckOrder } from "@/lib/truckNotify";
+import { siteOrigin } from "@/lib/waybillKick";
 
 /**
  * Действия раздела «Регион» (17.11.2026, правила — `src/lib/regionTruck.ts`): заказ на фуру, его отмена, приёмка фуры и
@@ -44,6 +47,7 @@ async function actorFor(storeRaw: string) {
 }
 
 function touch(store: string) {
+  revalidatePath("/warehouse/trucks");
   revalidatePath("/region", "layout");
   revalidatePath(`/region/${store}`);
   revalidatePath("/orders");
@@ -118,6 +122,17 @@ async function createTruckOrderActionInner(input: { store: string; deliveryDate:
     { kind: "append", tab: SHEET_TABS.ORDER_ITEMS, records: built.flatMap((b) => b.itemRecords) },
   ]);
   touch(me.store);
+  revalidatePath("/warehouse/trucks");
+  // Склад узнаёт о заказе сразу — сообщением в WhatsApp (номер из карточки сотрудника). Не ушло — заказ всё равно лежит
+  // на экране «Фуры в регионы».
+  const byName = (await listUsers().catch(() => [])).find((u) => u.email.toLowerCase() === me.email)?.name ?? "";
+  await notifyWarehouseOfTruckOrder({
+    city: me.info.label,
+    day: input.deliveryDate,
+    byName: byName.split(/\s+/)[0] ?? "",
+    items: [...split.wholesale, ...split.retail].map((i) => ({ flowerType: i.flowerType, quantity: i.quantity })),
+    origin: siteOrigin(),
+  });
   return { orders: built.map((b) => orderCode(b.orderId)) };
 }
 
@@ -154,14 +169,14 @@ async function acceptTruckActionInner(input: { store: string; orderId: string; l
 async function setRegionDirectorActionInner(input: { store: string; email: string; weekday: number; female?: boolean }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Не авторизован");
-  if (session.user.role !== ROLES.ADMIN) throw new Error("Директоров регионов назначает администратор");
+  if (session.user.role !== ROLES.ADMIN) throw new Error("Менеджеров городов назначает администратор");
   const store = normalizeStore(input.store);
   if (!isRegionStore(store)) throw new Error("Город не из списка регионов");
   const email = String(input.email || "").trim().toLowerCase();
   if (email) {
     // Почта — из списка сотрудников, а не из браузера (грабли 1.11): директор — действующий менеджер.
     const user = (await listUsers()).find((u) => u.email.toLowerCase() === email);
-    if (!user || !user.active || user.role !== ROLES.MANAGER) throw new Error("Директором можно назначить действующего сотрудника с ролью «Менеджер»");
+    if (!user || !user.active || user.role !== ROLES.MANAGER) throw new Error("Менеджером города можно назначить действующего сотрудника с ролью «Менеджер»");
   }
   const weekday = Number(input.weekday);
   if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) throw new Error("Выберите день недели, когда уходит фура");
@@ -175,6 +190,46 @@ async function setRegionDirectorActionInner(input: { store: string; email: strin
   });
   revalidatePath("/admin");
   touch(store);
+}
+
+/**
+ * Завести менеджера города одним шагом (22.11.2026, владелец: «завести 4 менеджеров (номеров) по этим городам»):
+ * сотрудник с ролью «Менеджер» (имя, почта Google, номер WhatsApp) и сразу посадка в город. Те же запреты, что у
+ * «Сотрудников» (`staffSaveRefusal`) и у назначения (`setRegionDirector`). Существующего сотрудника сюда не вписывают —
+ * его выбирают из списка: иначе по опечатке в почте чужому человеку сменили бы роль.
+ */
+async function addCityManagerActionInner(input: { store: string; name: string; email: string; phone: string; weekday: number; female?: boolean }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+  if (session.user.role !== ROLES.ADMIN) throw new Error("Менеджеров городов заводит администратор");
+  const store = normalizeStore(input.store);
+  const info = regionStoreInfo(store);
+  if (!isRegionStore(store) || !info) throw new Error("Город не из списка регионов");
+  const weekday = Number(input.weekday);
+  if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) throw new Error("Выберите день недели, когда уходит фура");
+  const draft: StaffDraft = { email: String(input.email || ""), name: String(input.name || ""), role: ROLES.MANAGER, farm: "", active: true, phone: String(input.phone || "") };
+  if (!draft.name.trim()) throw new Error("Впишите имя менеджера");
+  const users = await listUsers();
+  const clean = cleanStaff(draft);
+  if (users.some((u) => u.email.toLowerCase() === clean.email.toLowerCase())) throw new Error("Сотрудник с такой почтой уже есть — выберите его в списке «Менеджер города»");
+  const refusal = staffSaveRefusal({ actorRole: session.user.role, actorEmail: session.user.email, users }, draft);
+  if (refusal) throw new Error(refusal);
+  await saveUser(clean);
+  const email = clean.email.toLowerCase();
+  await updateManagerProfiles((raw) => {
+    const next = setRegionDirector(raw, { store, email, weekday });
+    const key = Object.keys(next).find((k) => k.trim().toLowerCase() === email)!;
+    next[key] = { ...next[key], female: input.female === true };
+    return next;
+  });
+  revalidatePath("/admin");
+  revalidatePath("/orders");
+  touch(store);
+  return { name: clean.name, city: info.label };
+}
+
+export async function addCityManagerAction(...args: Parameters<typeof addCityManagerActionInner>) {
+  return guard(() => addCityManagerActionInner(...args));
 }
 
 export async function createTruckOrderAction(...args: Parameters<typeof createTruckOrderActionInner>) {

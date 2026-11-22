@@ -7,13 +7,13 @@ import { listBatches } from "@/lib/repo/batches";
 import { getSettings } from "@/lib/repo/settings";
 import { computeBatchStorageInfo } from "@/lib/shelfLife";
 import { localDayKey } from "@/lib/timezone";
-import { farmLabel, getFarmFor } from "@/lib/constants";
+import { ORDER_KINDS, ORDER_STATUSES, farmLabel, getFarmFor } from "@/lib/constants";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 import PageHeader from "@/components/PageHeader";
 import { WAREHOUSE_TABS } from "./tabs";
-import { isMainStore } from "@/lib/officeStore";
+import { isMainStore, isRegionStore, regionStoreForCity } from "@/lib/officeStore";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +41,10 @@ export default async function WarehousePage() {
   // `buildQueue`). Новый вид (19.10.2026): цифры сверху, ниже одна карточка с вкладками и страницами.
   const today = localDayKey();
   const { ready, waiting } = buildQueue(scoped, today);
+  // Заказы городов на фуру лежат и здесь, но грузить их удобнее на своём экране (22.11.2026, `truckLoad.ts`).
+  const truckOrders = scoped.filter(
+    (o) => o.kind === ORDER_KINDS.REGION && isRegionStore(regionStoreForCity(o.direction)) && o.status !== ORDER_STATUSES.CANCELLED && o.status !== ORDER_STATUSES.SHIPPED && o.items.some((i) => i.quantity - i.shippedQuantity > 0)
+  ).length;
   const lateCount = ready.filter((r) => r.stage.lateDays > 0).length;
   const todayCount = ready.filter((r) => r.group === "today").length;
   const alerts = queueAlerts(
@@ -96,6 +100,17 @@ export default async function WarehousePage() {
           tone={alerts.some((a) => a.critical) ? "bad" : alerts.length > 0 ? "warn" : "good"}
         />
       </div>
+
+      {truckOrders > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-line-hairline bg-surface px-4 py-2.5 text-sm">
+          <span>
+            Заказов городов на фуру: <b className="font-semibold">{truckOrders}</b>. Удобнее грузить их одним экраном — там видно, что просили, что есть на складе, и можно ответить «нет на складе».
+          </span>
+          <Link href="/warehouse/trucks" className="btn-secondary !py-1.5 ml-auto">
+            Фуры в регионы
+          </Link>
+        </div>
+      )}
 
       <ShipQueueBoard
         ready={ready}

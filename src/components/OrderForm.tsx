@@ -23,6 +23,7 @@ export default function OrderForm({
   stock,
   officeStock,
   regionStock,
+  lockedStore,
   initialItems,
   initialNotes = "",
   draftId = "",
@@ -73,6 +74,11 @@ export default function OrderForm({
    * есть товар (решение владельца: любая заявка клиенту города — оттуда, пока есть товар).
    */
   regionStock?: Record<string, Record<string, number>>;
+  /**
+   * Склад закреплён: менеджер города продаёт только со склада своего города (22.11.2026, `newOrderStore`). Выбора склада
+   * в форме нет, остаток у позиций — склада города, а чего там нет — заказывается на фуру.
+   */
+  lockedStore?: { code: string; label: string };
   /** Позиции из заказа WhatsApp (`waOrder.ts`) — менеджер проверяет и сохраняет. */
   initialItems?: DraftItem[];
   initialNotes?: string;
@@ -118,6 +124,7 @@ export default function OrderForm({
   // Склад отгрузки: основной или «Офис» (заказы после 12:00 — `officeStore.ts`).
   const regionsWithStock = REGION_STORES.filter((r) => Object.values(regionStock?.[r.code] ?? {}).some((q) => q > 0));
   const storeFor = (c: ClientOption | null) => {
+    if (lockedStore) return lockedStore.code;
     const own = regionStoreForCity(c?.city);
     return own && regionsWithStock.some((r) => r.code === own) ? own : "";
   };
@@ -156,7 +163,7 @@ export default function OrderForm({
         direction,
         paymentMethod,
         confirmed,
-        store: officeStock || regionsWithStock.length > 0 ? store : "",
+        store: lockedStore ? lockedStore.code : officeStock || regionsWithStock.length > 0 ? store : "",
         draftId: draftId || undefined,
         assignTo: managers ? assignTo : undefined,
         items: items.map((it) => ({
@@ -288,7 +295,20 @@ export default function OrderForm({
             )}
           </div>
         )}
-        {(officeStock || regionsWithStock.length > 0) && (
+        {lockedStore && (
+          <div>
+            <span className="label">Склад</span>
+            <div className="input bg-surface-plane text-ink-secondary cursor-default">{lockedStore.label}</div>
+            <span className="block text-xs text-ink-muted mt-1">
+              Продаёте со склада города. Чего там нет —{" "}
+              <a href={`/region/${lockedStore.code}/truck/new`} className="text-accent hover:underline">
+                закажите на фуру
+              </a>
+              .
+            </span>
+          </div>
+        )}
+        {!lockedStore && (officeStock || regionsWithStock.length > 0) && (
           <div>
             <label className="label">Склад</label>
             <select

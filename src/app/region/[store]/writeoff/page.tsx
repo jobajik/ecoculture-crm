@@ -19,7 +19,7 @@ export default async function RegionWriteoffPage({ params, searchParams }: { par
       <PageHeader area="stock" title={`Списание — ${r.info.label}`} subtitle="Снимается с самых старых партий позиции." icon="alert" tabs={r.headerTabs} />
       {r.home.all && <RegionNav store={r.store} tabs={r.tabs} current={`/region/${r.store}/writeoff`} />}
       {!r.access.keeper ? (
-        <p className="card text-sm text-ink-secondary">Списывает тот, кто ведёт склад города, — директор региона.</p>
+        <p className="card text-sm text-ink-secondary">Списывает тот, кто ведёт склад города, — менеджер города.</p>
       ) : (
         <WriteoffBulkForm positions={positions} store={r.store} initialMode={searchParams?.mode === "recount" ? "recount" : "writeoff"} />
       )}

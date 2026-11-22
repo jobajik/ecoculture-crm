@@ -14,8 +14,8 @@ import { loadRegion, loadTruckOrders } from "../../load";
 export const dynamic = "force-dynamic";
 
 /**
- * «Фура» города (17.11.2026): заказы на фуру по дням — что заказано, что склад отгрузил, что принято. Директор подаёт
- * заказ и подтверждает приёмку; владелец, РОП и зав. складом видят то же самое по каждому городу.
+ * «Фура» города (17.11.2026): заказы на фуру по дням — что заказано, что склад отгрузил и чего не будет, что принято.
+ * Менеджер города подаёт заказ и подтверждает приёмку; владелец, РОП и зав. складом видят то же самое по каждому городу.
  */
 export default async function RegionTruckPage({ params, searchParams }: { params: { store: string }; searchParams?: { sent?: string } }) {
   const r = await loadRegion(params.store);
@@ -24,7 +24,7 @@ export default async function RegionTruckPage({ params, searchParams }: { params
   const nf = (n: number) => n.toLocaleString("ru-RU");
   const base = `/region/${r.store}`;
 
-  const live = orders.filter((o) => o.stage !== "cancelled");
+  const live = orders.filter((o) => o.stage !== "cancelled" && o.stage !== "refused");
   const next = live.filter((o) => o.deliveryDate >= r.today && (o.stage === "waiting" || o.stage === "loading"));
   const transit = live.filter((o) => o.stage === "transit");
   const shortage = live.reduce((s, o) => s + o.shortage, 0);
@@ -54,10 +54,14 @@ export default async function RegionTruckPage({ params, searchParams }: { params
       items: o.items.map((i) => ({
         itemId: i.itemId,
         name: `${FLOWER_TYPE_LABELS[i.flowerType] ?? i.flowerType} ${i.variety} · ${formatGrade(i.grade)}`,
-        quantity: i.quantity,
+        quantity: i.asked,
         shipped: i.shipped,
         pending: i.pending,
         accepted: i.accepted,
+        // Ответ склада (`truckLoad.ts`): чего не будет и что склад добавил сам.
+        missing: i.extra ? 0 : Math.max(0, i.asked - i.quantity),
+        note: i.note,
+        extra: i.extra,
       })),
     });
   }
@@ -81,7 +85,7 @@ export default async function RegionTruckPage({ params, searchParams }: { params
       {r.home.all && <RegionNav store={r.store} tabs={r.tabs} current={`${base}/truck`} />}
 
       {searchParams?.sent === "1" && (
-        <div className="mb-5 text-sm text-[#12733a] bg-status-good/10 rounded-lg px-3 py-2">Заказ отправлен складу — он уже в очереди на отгрузку.</div>
+        <div className="mb-5 text-sm text-[#12733a] bg-status-good/10 rounded-lg px-3 py-2">Заказ отправлен. Зав. складом видит его в «Фурах в регионы» и ответит по каждой позиции: грузит, нет на складе или замена — ответ появится здесь же.</div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">

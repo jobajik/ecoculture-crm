@@ -83,6 +83,13 @@ export function storeGenitive(store: string | null | undefined): string {
   return regionStoreInfo(store)?.genitive ?? storeLabel(store);
 }
 
+/** «в Астану», «в Караганду» — куда везём (винительный): «Отгрузить в …». */
+export function storeInto(store: string | null | undefined): string {
+  const info = regionStoreInfo(store);
+  if (!info) return storeLabel(store);
+  return info.label.endsWith("а") ? `${info.label.slice(0, -1)}у` : info.label;
+}
+
 const cityKey = (city: string | null | undefined) => String(city ?? "").trim().toLowerCase().replace(/ё/g, "е").replace(/^г\.?\s*/, "").replace(/\s+/g, " ");
 
 /** Склад региона по городу; не региональный город — «» (основной). */
@@ -173,6 +180,27 @@ export const canSeeOffice = (role: string | null | undefined) =>
 export const canChooseOrderStore = (role: string | null | undefined) =>
   role === "manager" || role === "sales_head" || role === "admin";
 
+/**
+ * Склад новой клиентской заявки (22.11.2026, владелец: «с производства перемещение делали зав. склады… и уже оттуда
+ * менеджера Астаны только могли продавать»). Цветок в город попадает перемещением с производства, и продаётся там только
+ * со склада города:
+ * - менеджер, посаженный в город (`seatStore`), продаёт ТОЛЬКО со склада своего города — что бы ни прислала форма. Чего
+ *   в городе нет — он заказывает на фуру (`regionTruck.ts`), а не продаёт с производства в обход склада города;
+ * - со склада города продаёт только менеджер этого города. Администратор и РОП выбирают любой склад; остальным, кто
+ *   выбирает склад (менеджер без города), склад города — отказ словами, а не молчаливая подмена: иначе заявка «со склада
+ *   Астаны» тихо стала бы заявкой с основного.
+ */
+export function newOrderStore(input: { role: string | null | undefined; seatStore?: string | null; requested: unknown }): { store: StoreCode; refusal: string } {
+  const seat = normalizeStore(input.seatStore);
+  if (input.role === "manager" && isRegionStore(seat)) return { store: seat, refusal: "" };
+  if (!canChooseOrderStore(input.role)) return { store: "", refusal: "" };
+  const requested = normalizeStore(input.requested);
+  if (isRegionStore(requested) && input.role !== "admin" && input.role !== "sales_head") {
+    return { store: "", refusal: `Со склада «${storeLabel(requested)}» продаёт менеджер этого города. Выберите основной склад — заказ уедет ближайшей фурой` };
+  }
+  return { store: requested, refusal: "" };
+}
+
 /** Может ли этот человек отгружать заявку этого склада. Пусто — может. */
 export function shipStoreRefusal(role: string | null | undefined, orderStore: string | null | undefined, regionStore: StoreCode = ""): string {
   const own = storeOfRole(role, regionStore);
@@ -244,12 +272,20 @@ export function storeChangeRefusal(input: {
   isOwner: boolean;
   order: { status: string; kind: string; retail: string; store: string; items: { shippedQuantity: number }[] };
   to: string;
+  /** Склад города, куда посажен тот, кто меняет (менеджер города); пусто — не посажен. */
+  actorStore?: string | null;
 }): string {
   const { role, isOwner, order } = input;
   const to = normalizeStore(input.to);
   if (normalizeStore(order.store) === to) return "Заявка уже на этом складе";
   if (!(role === "admin" || role === "sales_head" || isOfficeRole(role) || (role === "manager" && isOwner))) {
     return "Склад заявки меняет её менеджер, РОП или склад офиса";
+  }
+  // Склад города — только у менеджера этого города, и только он у него (22.11.2026, `newOrderStore`).
+  if (role === "manager") {
+    const seat = normalizeStore(input.actorStore);
+    if (isRegionStore(seat) && to !== seat) return `Менеджер города продаёт только со склада своего города («${storeLabel(seat)}»)`;
+    if (isRegionStore(to) && to !== seat) return `Со склада «${storeLabel(to)}» продаёт менеджер этого города`;
   }
   // Склад офиса только ОТДАЁТ свою заявку на основной (в офисе не хватило) —
   // забрать себе чужую основную заявку он не может.

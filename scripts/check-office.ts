@@ -208,7 +208,10 @@ async function main() {
   check("менеджер Астаны ведёт склад Астаны, другой менеджер — никакой", [storeOfRole("manager", "astana"), storeOfRole("manager"), storeOfRole("warehouse", "astana")], ["astana", null, ""]);
   check("заявку Астаны отгружает менеджер Астаны, не основной склад", [shipStoreRefusal("manager", "astana", "astana"), shipStoreRefusal("warehouse", "astana") !== "", shipStoreRefusal("manager", "", "astana") !== ""], ["", true, true]);
   check("партия основного склада не идёт в заявку Астаны", batchStoreRefusal("", "astana"), "партия лежит на основном складе, а заявка — со склада «Астана»");
-  check("основную заявку можно перевести в Астану", storeChangeRefusal({ role: "manager", isOwner: true, order: { status: "new", kind: "", retail: "", store: "", items: [{ shippedQuantity: 0 }] }, to: "astana" }), "");
+  // С 22.11.2026 со склада города продаёт только менеджер этого города (и переносит на него — только он, РОП или админ).
+  const mainOrder = { status: "new", kind: "", retail: "", store: "", items: [{ shippedQuantity: 0 }] };
+  check("основную заявку в Астану переводит менеджер Астаны, РОП и админ", [storeChangeRefusal({ role: "manager", isOwner: true, actorStore: "astana", order: mainOrder, to: "astana" }), storeChangeRefusal({ role: "sales_head", isOwner: false, order: mainOrder, to: "astana" }), storeChangeRefusal({ role: "admin", isOwner: false, order: mainOrder, to: "astana" })], ["", "", ""]);
+  check("…а менеджер без города — нет", storeChangeRefusal({ role: "manager", isOwner: true, order: mainOrder, to: "astana" }), "Со склада «Астана» продаёт менеджер этого города");
   const rowsA = [
     { rowNumber: 2, batchId: "M1", receivedAt: "2026-10-30", harvestDate: "2026-10-30", flowerType: "chrysanthemum", variety: "Altaj", grade: "Третья", quantityRemaining: 500, store: "", sourceBatchId: "" },
     { rowNumber: 3, batchId: "M2", receivedAt: "2026-10-31", harvestDate: "2026-10-31", flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", quantityRemaining: 300, store: "", sourceBatchId: "" },

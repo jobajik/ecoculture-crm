@@ -205,6 +205,10 @@ export interface OrderItem {
   shippedQuantity: number;
   /** Цена стебля в рублях — только у отгрузок в РФ (`rubShipment.ts`); у остальных нет. */
   priceRub?: number;
+  /** Сколько просил город в заказе на фуру, если склад отгрузил меньше и закрыл позицию (`truckLoad.ts`). */
+  askedQuantity?: number;
+  /** Ответ склада по позиции заказа на фуру: «нет на складе», «замена…», «добавлено складом». */
+  stockNote?: string;
 }
 
 export interface OrderWithItems extends Order {

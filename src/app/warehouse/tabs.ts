@@ -9,6 +9,8 @@ import { tabOfViews, type SectionTab } from "@/lib/sectionViews";
  */
 export const WAREHOUSE_TABS: SectionTab[] = [
   { href: "/warehouse", label: "Очередь на отгрузку" },
+  // Заказы городов на фуру одной таблицей: что просили, что есть, что гружу (22.11.2026, `truckLoad.ts`).
+  { href: "/warehouse/trucks", label: "Фуры в регионы" },
   { href: "/warehouse/picklist", label: "Лист сборки" },
   { href: "/warehouse/receive", label: "Приёмка" },
   // Что лежит: сорт × ростовка и по дням срезки (12.11.2026, владелец: «срочно — какие сорта и ростовки по складу»).

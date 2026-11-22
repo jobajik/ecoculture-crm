@@ -81,7 +81,8 @@ const A = (actor: { role: string; store?: string; director?: boolean }, store: s
 };
 check("директор в своём городе: склад, заказ, приёмка, деньги", A(director, "karaganda"), "111110");
 check("директор в чужом городе — ничего", A(director, "semey"), "000000");
-check("менеджер города без флага директора: склад и приёмка, без заказа и денег", A(keeper, "astana"), "110100");
+// С 22.11.2026 заказ на фуру подаёт любой менеджер города (владелец: «интерфейс, где они могут делать заказ на следующую фуру»).
+check("менеджер города без флага главного: склад, заказ и приёмка, без денег", A(keeper, "astana"), "111100");
 check("менеджер без города — ничего", A(plain, "astana"), "000000");
 check("флаг директора без города ничего не даёт", A({ role: "manager", store: "", director: true }, "karaganda"), "000000");
 check("администратор — всё, во всех городах", [A({ role: "admin" }, "astana"), A({ role: "admin" }, "ust_kamenogorsk")], ["111111", "111111"]);
@@ -158,7 +159,7 @@ try {
 } catch (e) {
   threw = e instanceof Error ? e.message : "";
 }
-check("день фуры без директора и менеджера города хранить негде — отказ", has(threw, "Сначала выберите директора"), true);
+check("день фуры без директора и менеджера города хранить негде — отказ", has(threw, "Сначала выберите менеджера города"), true);
 threw = "";
 try {
   setRegionDirector(raw, { store: "office" as never, email: "a@x.kz", weekday: 1 });
@@ -179,8 +180,9 @@ check("минус, дробь, слишком много", [has(order([L(-5)]), 
 check("выдуманный цветок и длина не из списка", [has(order([L(10, 0, { flowerType: "tulip" })]), "цветок"), has(order([L(10, 0, { grade: "65" })]), "длину или категорию")], [true, true]);
 check("в магазины, когда карточки розницы в городе нет", has(order([L(100, 50)], { hasRetailCard: false }), "нет карточки"), true);
 check("только опт без карточки розницы — можно", order([L(100, 0)], { hasRetailCard: false }), "");
-check("менеджер города без флага директора заказ не подаёт", has(truckOrderRefusal({ access: regionAccess(keeper, "astana"), deliveryDate: "2026-11-24", today: "2026-11-17", lines: [L(100)], hasRetailCard: true }), "директор"), true);
-check("зав. складом через эту форму заказ не подаёт", has(truckOrderRefusal({ access: regionAccess({ role: "warehouse" }, "astana"), deliveryDate: "2026-11-24", today: "2026-11-17", lines: [L(100)], hasRetailCard: true }), "директор"), true);
+check("менеджер города без флага главного заказ подаёт", truckOrderRefusal({ access: regionAccess(keeper, "astana"), deliveryDate: "2026-11-24", today: "2026-11-17", lines: [L(100)], hasRetailCard: true }), "");
+check("менеджер без города заказ не подаёт", has(truckOrderRefusal({ access: regionAccess(plain, "astana"), deliveryDate: "2026-11-24", today: "2026-11-17", lines: [L(100)], hasRetailCard: true }), "менеджер города"), true);
+check("зав. складом через эту форму заказ не подаёт", has(truckOrderRefusal({ access: regionAccess({ role: "warehouse" }, "astana"), deliveryDate: "2026-11-24", today: "2026-11-17", lines: [L(100)], hasRetailCard: true }), "менеджер города"), true);
 const split = splitTruckLines([L(300, 150), L(200, 0), { flowerType: "chrysanthemum", variety: "Altaj", grade: "Третья", wholesale: 0, retail: 400 }, L(0, 0, { variety: "Lola" })]);
 check("строки → две заявки, одинаковые позиции сложены", split, {
   wholesale: [{ flowerType: "rose", variety: "Jana", grade: "60", quantity: 500 }],
@@ -214,10 +216,10 @@ check("клиентская заявка в Семей — не заказ на 
 const cancelOk = { status: "new", items: [{ shippedQuantity: 0 }, { shippedQuantity: 0 }] };
 check("отмена: пока не грузили — можно", truckCancelRefusal({ access: dirAccess, order: cancelOk, kind: "wholesale" }), "");
 check("отмена: уже грузят — нельзя", has(truckCancelRefusal({ access: dirAccess, order: { status: "in_progress", items: [{ shippedQuantity: 10 }] }, kind: "wholesale" }), "начал грузить"), true);
-check("отмена: не заказ на фуру этого города, уже отменён, не директор", [
+check("отмена: не заказ на фуру этого города, уже отменён, не менеджер города", [
   has(truckCancelRefusal({ access: dirAccess, order: cancelOk, kind: null }), "не заказ на фуру"),
   has(truckCancelRefusal({ access: dirAccess, order: { ...cancelOk, status: "cancelled" }, kind: "retail" }), "уже отменён"),
-  has(truckCancelRefusal({ access: regionAccess(keeper, "astana"), order: cancelOk, kind: "wholesale" }), "директор"),
+  has(truckCancelRefusal({ access: regionAccess({ role: "warehouse" }, "astana"), order: cancelOk, kind: "wholesale" }), "менеджер города"),
 ], [true, true, true]);
 
 // --- Приёмка ----------------------------------------------------------------------------

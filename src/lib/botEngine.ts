@@ -148,17 +148,18 @@ async function stockText(mainOnly = false, region?: { store: StoreCode; city: st
     const office = inStore(batches, "office");
     const main = inStore(batches, "");
     // Склад в городе региона (Астана, 02.11.2026): что уже приехало — первым списком, основной — «следующей фурой».
+    // С 22.11.2026 клиент города покупает только со склада города: список города — всегда (пусто — так и сказано), а
+    // производство — справочно, «можно привезти следующей фурой» (`regionPromptBlock`, `placeBotOrder`).
     if (region?.store) {
       const local = inStore(batches, region.store);
-      if (stockMap(local, settings, now).size > 0) {
-        return {
-          text:
-            `Сейчас на складе в городе (${region.city}) — отгрузим сразу:\n${stockForBot(local, settings, now)}\n\n` +
-            `Следующей фурой${region.shipDay ? ` (${region.shipDay})` : ""}, основной склад:\n${stockForBot(main, settings, now)}`,
-          storeNote: "",
-          inCity: true,
-        };
-      }
+      const has = stockMap(local, settings, now).size > 0;
+      return {
+        text:
+          `Сейчас на складе в городе (${region.city}) — отгрузим сразу:\n${has ? stockForBot(local, settings, now) : "сейчас пусто"}\n\n` +
+          `Можно привезти следующей фурой${region.shipDay ? ` (${region.shipDay})` : ""} — сейчас на производстве, заказ из этого списка не оформляется:\n${stockForBot(main, settings, now)}`,
+        storeNote: "",
+        inCity: has,
+      };
     }
     // Региональный менеджер: в регион уезжает только основной склад (фура), офис не предлагаем.
     if (mainOnly) return { text: stockForBot(main, settings, now), storeNote: "", inCity: false };
@@ -610,7 +611,7 @@ export async function botPrompt(
       harvest,
       push,
       managerName: channel.line ? channel.managerName || "менеджер" : "",
-      region: profile ? regionPromptBlock(profile, shipDay, stockInfo.inCity) : "",
+      region: profile ? regionPromptBlock(profile, shipDay, stockInfo.inCity, !!regionStore) : "",
       female: !!profile?.female,
       closer: !!profile?.closer,
     }),

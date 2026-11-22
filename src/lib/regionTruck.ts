@@ -4,6 +4,7 @@ import { isNotASale, isRegionOrder } from "./orderKind";
 import { isRegionStore, normalizeStore, regionStoreForCity, regionStoreInfo, type StoreCode } from "./officeStore";
 import { isoWeekday, nextShipDay, type ManagerProfile } from "./managerProfile";
 import { isRegionShop, isRetailOrder } from "./retail";
+import { stockKey, warehouseReply } from "./truckLoad";
 
 /**
  * Регионы: директор города, заказ на фуру, приёмка (17.11.2026).
@@ -76,7 +77,9 @@ export function regionAccess(actor: RegionActor, pageStore: string | null | unde
   if (actor.role === ROLES.WAREHOUSE) return { ...NOTHING, view: true, all: true };
   if (actor.role === ROLES.MANAGER && normalizeStore(actor.store) === store) {
     const director = actor.director === true;
-    return { view: true, keeper: true, order: director, accept: true, money: director, all: false };
+    // Заказ на фуру подаёт любой менеджер города (22.11.2026, владелец: «интерфейс, где они [менеджеры городов] могут
+    // делать заказ на следующую фуру»); раньше — только директор. Деньги города по-прежнему видит главный менеджер.
+    return { view: true, keeper: true, order: true, accept: true, money: director, all: false };
   }
   return NOTHING;
 }
@@ -129,7 +132,7 @@ export function setRegionDirector(
   const weekday = Number.isInteger(input.weekday) && input.weekday >= 1 && input.weekday <= 7 ? input.weekday : DEFAULT_TRUCK_WEEKDAY;
   const email = input.email.trim().toLowerCase();
   const seatedHere = Object.values(raw).some((v) => v && typeof v === "object" && regionStoreForCity(typeof v.city === "string" ? v.city : "") === input.store);
-  if (!email && !seatedHere) throw new Error("Сначала выберите директора: день фуры хранится в его профиле");
+  if (!email && !seatedHere) throw new Error("Сначала выберите менеджера города: день фуры хранится в его профиле");
   const out: Record<string, Record<string, unknown>> = {};
   for (const [key, value] of Object.entries(raw)) {
     const p = { ...(value && typeof value === "object" ? value : {}) };
@@ -182,7 +185,7 @@ export function truckOrderRefusal(input: {
   /** Есть ли у города действующая карточка розницы. */
   hasRetailCard: boolean;
 }): string {
-  if (!input.access.order) return "Заказ на фуру подаёт директор региона";
+  if (!input.access.order) return "Заказ на фуру подаёт менеджер города";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.deliveryDate) || Number.isNaN(Date.parse(`${input.deliveryDate}T00:00:00Z`))) return "Укажите день, когда уходит фура";
   if (input.deliveryDate < input.today) return "День фуры уже прошёл";
   const lines = input.lines ?? [];
@@ -249,7 +252,7 @@ export function retailCardsOf<T extends { clientId: string; retail?: string | nu
 
 /** Отменить заказ на фуру можно, пока склад ничего по нему не отгрузил. Пусто — можно. */
 export function truckCancelRefusal(input: { access: RegionAccess; order: { status: string; items: { shippedQuantity: number }[] } | null; kind: TruckKind | null }): string {
-  if (!input.access.order) return "Заказ на фуру отменяет директор региона";
+  if (!input.access.order) return "Заказ на фуру отменяет менеджер города";
   if (!input.order || !input.kind) return "Это не заказ на фуру этого города";
   if (input.order.status === ORDER_STATUSES.CANCELLED) return "Заказ уже отменён";
   if (input.order.items.some((i) => i.shippedQuantity > 0)) return "Склад уже начал грузить этот заказ — отменить его нельзя, позвоните на склад";
@@ -434,7 +437,7 @@ export function planTruckReceipt(input: {
 
 // --- Список заказов на фуру ------------------------------------------------------------
 
-export type TruckStage = "waiting" | "loading" | "transit" | "received" | "old" | "cancelled";
+export type TruckStage = "waiting" | "loading" | "transit" | "received" | "old" | "refused" | "cancelled";
 
 export const TRUCK_STAGE_LABELS: Record<TruckStage, string> = {
   waiting: "Ждёт загрузки",
@@ -443,6 +446,8 @@ export const TRUCK_STAGE_LABELS: Record<TruckStage, string> = {
   received: "Принято",
   // Отгружено до 16.11.2026: приёмка тогда не велась, на остаток города это не ложилось (кроме Астаны со 02.11).
   old: "Отгружено",
+  // Склад закрыл все позиции без отгрузки (`truckLoad.ts`): причины — в позициях.
+  refused: "Склад не отгрузил",
   cancelled: "Отменён",
 };
 
@@ -466,17 +471,24 @@ export interface TruckOrderView {
     flowerType: string;
     variety: string;
     grade: string;
+    /** Сколько просил город (позицию дописал склад — ноль). */
+    asked: number;
+    /** Сколько едет по заявке сейчас: после ответа склада «остального нет» — это факт отгрузки. */
     quantity: number;
     shipped: number;
     pending: number;
     accepted: number | null;
+    /** Ответ склада: «нет на складе», «Добавил склад…». */
+    note: string;
+    /** Позицию дописал склад (замена или свой цветок). */
+    extra: boolean;
   }[];
 }
 
 interface TruckOrderFull extends TruckOrderLike {
   createdAt: string;
   managerEmail: string;
-  items: { itemId: string; flowerType: string; variety: string; grade: string; quantity: number; shippedQuantity: number }[];
+  items: { itemId: string; flowerType: string; variety: string; grade: string; quantity: number; shippedQuantity: number; askedQuantity?: number; stockNote?: string }[];
 }
 
 /** Заказы на фуру города: что заказано, что отгружено, что ждёт приёмки, что принято. Свежие — первыми. */
@@ -499,12 +511,16 @@ export function buildTruckOrders(input: {
     const receipts = input.receipts.filter((r) => r.orderId === o.orderId);
     const acceptedBy = new Map<string, number>();
     for (const r of receipts) acceptedBy.set(r.itemId, (acceptedBy.get(r.itemId) ?? 0) + r.accepted);
-    const ordered = o.items.reduce((s, i) => s + i.quantity, 0);
+    const replies = new Map(o.items.map((i) => [i.itemId, warehouseReply(i)]));
+    // «Заказано» — сколько просил город, а не сколько осталось в заявке после ответа склада.
+    const ordered = o.items.reduce((s, i) => s + replies.get(i.itemId)!.asked, 0);
     const shipped = o.items.reduce((s, i) => s + i.shippedQuantity, 0);
     const pendingTotal = pending.reduce((s, p) => s + p.quantity, 0);
     const stage: TruckStage =
       o.status === ORDER_STATUSES.CANCELLED
-        ? "cancelled"
+        ? o.items.some((i) => (i.askedQuantity ?? 0) > 0 && i.stockNote)
+          ? "refused"
+          : "cancelled"
         : pendingTotal > 0
           ? "transit"
           : shipped <= 0
@@ -532,18 +548,109 @@ export function buildTruckOrders(input: {
         flowerType: i.flowerType,
         variety: i.variety,
         grade: i.grade,
+        asked: replies.get(i.itemId)!.asked,
         quantity: i.quantity,
         shipped: i.shippedQuantity,
         pending: pendingBy.get(i.itemId) ?? 0,
         accepted: acceptedBy.has(i.itemId) ? acceptedBy.get(i.itemId)! : null,
+        note: replies.get(i.itemId)!.note,
+        extra: replies.get(i.itemId)!.extra,
       })),
     });
   }
   // Свежая фура — первой; внутри дня отменённые — в конце, остальные — по времени заказа (новые выше).
-  const cancelled = (v: TruckOrderView) => (v.stage === "cancelled" ? 1 : 0);
+  const cancelled = (v: TruckOrderView) => (v.stage === "cancelled" || v.stage === "refused" ? 1 : 0);
   return out.sort(
     (a, b) => (a.deliveryDate === b.deliveryDate ? cancelled(a) - cancelled(b) || (a.createdAt === b.createdAt ? 0 : a.createdAt < b.createdAt ? 1 : -1) : a.deliveryDate < b.deliveryDate ? 1 : -1)
   );
+}
+
+// --- Погрузка фуры складом и остатки по городам (22.11.2026) --------------------------
+
+/** Фуры в города грузит зав. складом (свой цветок) и администратор — экран `/warehouse/trucks`, правила — `truckLoad.ts`. */
+export const canLoadTrucks = (role: string | null | undefined) => role === ROLES.WAREHOUSE || role === ROLES.ADMIN;
+
+export interface CityStockRow {
+  key: string;
+  flowerType: string;
+  variety: string;
+  grade: string;
+  /** Основной склад (производство). */
+  main: number;
+  /** Склад города → шт. */
+  cities: Record<string, number>;
+  /** В пути в город (отгружено, не принято) → шт. */
+  transit: Record<string, number>;
+}
+
+/**
+ * Остатки по городам одной таблицей — владельцу (22.11.2026: «чтобы… я видел стоки их по городам»): позиция × основной
+ * склад и склады городов, плюс то, что едет. В таблицу идут позиции, которые лежат или едут хотя бы в один город;
+ * `withMain` — ещё и те, что есть только на производстве.
+ */
+export function cityStockMatrix(input: {
+  batches: { flowerType: string; variety: string; grade: string; quantityRemaining: number; store?: string | null }[];
+  /** Что в пути: город, позиция, количество (из `buildTruckOrders`, только опт — он ложится на склад города). */
+  transit: { store: StoreCode; flowerType: string; variety: string; grade: string; quantity: number }[];
+  withMain?: boolean;
+}): CityStockRow[] {
+  const rows = new Map<string, CityStockRow>();
+  const rowOf = (flowerType: string, variety: string, grade: string) => {
+    const key = stockKey(flowerType, variety, grade);
+    let row = rows.get(key);
+    if (!row) {
+      row = { key, flowerType, variety: variety.trim(), grade: grade.trim(), main: 0, cities: {}, transit: {} };
+      rows.set(key, row);
+    }
+    return row;
+  };
+  for (const b of input.batches) {
+    if (!(b.quantityRemaining > 0)) continue;
+    const store = normalizeStore(b.store);
+    if (store !== "" && !isRegionStore(store)) continue; // офис — не город
+    const row = rowOf(b.flowerType, b.variety, b.grade);
+    if (store === "") row.main += b.quantityRemaining;
+    else row.cities[store] = (row.cities[store] ?? 0) + b.quantityRemaining;
+  }
+  for (const t of input.transit) {
+    if (!(t.quantity > 0)) continue;
+    const row = rowOf(t.flowerType, t.variety, t.grade);
+    row.transit[t.store] = (row.transit[t.store] ?? 0) + t.quantity;
+  }
+  const ORDER = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
+  const inCity = (r: CityStockRow) => Object.values(r.cities).some((q) => q > 0) || Object.values(r.transit).some((q) => q > 0);
+  return Array.from(rows.values())
+    .filter((r) => inCity(r) || (input.withMain === true && r.main > 0))
+    .sort((a, b) => ORDER.indexOf(a.flowerType) - ORDER.indexOf(b.flowerType) || a.variety.localeCompare(b.variety, "ru") || a.grade.localeCompare(b.grade, "ru", { numeric: true }));
+}
+
+/**
+ * Чего городу не хватает под заявки клиентов: неотгруженное по заявкам со склада города минус то, что лежит в городе и
+ * уже едет или заказано на фуру. «цветок|сорт|длина» → шт. — подсказка в форме заказа на фуру.
+ */
+export function cityShortage(input: {
+  store: StoreCode;
+  orders: { status: string; store?: string; kind?: string; retail?: string; items: { flowerType: string; variety: string; grade: string; quantity: number; shippedQuantity: number }[] }[];
+  /** Остаток склада города по `stockKey`. */
+  cityStock: Record<string, number>;
+  /** Уже заказано на фуру и ещё не принято городом, по `stockKey`. */
+  coming: Record<string, number>;
+}): Record<string, number> {
+  const need: Record<string, number> = {};
+  for (const o of input.orders) {
+    if (o.status === ORDER_STATUSES.CANCELLED || o.status === ORDER_STATUSES.SHIPPED) continue;
+    if (normalizeStore(o.store) !== input.store || isNotASale(o)) continue;
+    for (const i of o.items) {
+      const left = i.quantity - i.shippedQuantity;
+      if (left > 0) need[stockKey(i.flowerType, i.variety, i.grade)] = (need[stockKey(i.flowerType, i.variety, i.grade)] ?? 0) + left;
+    }
+  }
+  const out: Record<string, number> = {};
+  for (const [key, want] of Object.entries(need)) {
+    const short = want - (input.cityStock[key] ?? 0) - (input.coming[key] ?? 0);
+    if (short > 0) out[key] = short;
+  }
+  return out;
 }
 
 // --- Деньги города ---------------------------------------------------------------------

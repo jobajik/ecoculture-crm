@@ -351,7 +351,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     ? (["", "office", ...REGION_STORES.map((r) => r.code)] as StoreCode[])
         .filter(
           (to) =>
-            storeChangeRefusal({ role: role ?? "", isOwner: loaded.managerEmail.toLowerCase() === myEmail, order: loaded, to }) === ""
+            storeChangeRefusal({ role: role ?? "", isOwner: loaded.managerEmail.toLowerCase() === myEmail, order: loaded, to, actorStore: role === "manager" ? session?.user?.store : "" }) === ""
         )
         .map((code) => ({ code, label: STORE_LABELS[code] }))
     : [];

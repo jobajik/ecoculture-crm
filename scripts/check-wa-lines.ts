@@ -304,6 +304,15 @@ const rb = regionPromptBlock(profileOf(profs, "saltanat@x.kz")!, "2026-10-26");
 check("подсказка: город, фура, дата заказа", [rb.includes("Астана"), rb.includes("понедельник, 26.10"), rb.includes("deliveryDate = 2026-10-26")], [true, true, true]);
 const rbCity = regionPromptBlock(profileOf(profs, "saltanat@x.kz")!, "2026-10-26", true);
 check("склад в Астане есть: продаём оттуда сразу, фура — для остального", [rbCity.includes("УЖЕ в городе (Астана)"), rbCity.includes("другой день доставки не обещай"), rbCity.includes("чего нет на складе в городе")], [true, false, true]);
+// Свой склад в городе (22.11.2026): продаём только со склада города, с производства заказ не оформляется.
+const rbStore = regionPromptBlock(profileOf(profs, "saltanat@x.kz")!, "2026-10-26", true, true);
+check("склад города: только из списка города, остальное — фурой через менеджера, без заказа с производства", [
+  rbStore.includes("Продаёшь ТОЛЬКО то, что в списке «Сейчас на складе в городе»"),
+  rbStore.includes("заказ НЕ оформляй"),
+  rbStore.includes("понедельник, 26.10"),
+  rbStore.includes("deliveryDate = 2026-10-26"),
+  rbStore.includes("Склад для фуры — основной"),
+], [true, true, true, false, false]);
 const salP = systemPrompt({ instructions: "", prices: "", stock: "", broadcast: "", client: "", today: "2026-10-21", managerName: "Салтанат", region: rb, female: true });
 check("подсказка Салтанат — женский род, блок региона вместо офиса", [salP.includes("в женском роде («оформила», «передала»)"), salP.includes("в мужском роде"), salP.includes("ТВОИ КЛИЕНТЫ — РЕГИОН"), /(^|[^а-яё])передал(?![а-яё])/i.test(salP)], [true, false, true, false]);
 check("женский род не портит другие слова", feminize("передали, передал. оформил заказ, оформила"), "передали, передала. оформила заказ, оформила");

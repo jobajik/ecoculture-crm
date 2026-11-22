@@ -191,13 +191,23 @@ export async function placeBotOrder(input: {
     const regionStore = regionStoreForCity(regionCity);
     let store: StoreCode = "";
     let plan: ReturnType<typeof planBotOrder> | null = null;
-    if (regionStore && stockMap(inStore(allBatches, regionStore), settings, now).size > 0) {
+    if (regionStore) {
+      // С 22.11.2026 клиент менеджера города покупает ТОЛЬКО со склада города (владелец: «с производства перемещение
+      // делали зав. склады… и уже оттуда менеджера Астаны только могли продавать», `newOrderStore`). Чего в городе нет —
+      // заказ не оформляется с производства в обход склада города: клиенту — честный ответ, менеджеру — записка, что
+      // добавить в заказ на фуру.
       const fromRegion = planOn(draft.deliveryDate ? draft : { ...draft, deliveryDate: today }, regionStore);
-      if (fromRegion.ok) {
-        store = regionStore;
-        plan = fromRegion;
-        if (!draft.deliveryDate) draft = { ...draft, deliveryDate: today };
+      if (!fromRegion.ok) {
+        const wanted = draft.items.map((i) => `${i.variety || FLOWER_TYPE_LABELS[i.flowerType] || "позиция"} ${i.grade || ""} ${i.quantity || ""}`.replace(/\s+/g, " ").trim()).filter(Boolean);
+        return {
+          text: fromRegion.question,
+          orderId: "",
+          note: draft.confirmed && wanted.length > 0 ? `внимание: клиент хочет ${wanted.join(", ")} — на складе города (${regionCity}) этого сейчас нет или мало. Заказ не оформлен; нужно — добавьте в заказ на фуру` : "",
+        };
       }
+      store = regionStore;
+      plan = fromRegion;
+      if (!draft.deliveryDate) draft = { ...draft, deliveryDate: today };
     }
     if (!plan) {
       if (shipDay) draft = { ...draft, deliveryDate: shipDay };
@@ -592,7 +602,14 @@ export async function botClientContext(phone: string, ch: SellerChannel = BOT_CH
     if (!ch.line) {
       const owner = client?.managerEmail || lead?.managerEmail || "";
       const profile = profileOf(parseManagerProfiles((await settingsMap())[MANAGER_PROFILES_SETTING]), owner);
-      if (profile?.shipWeekday) {
+      if (regionStoreForCity(profile?.city)) {
+        // Свой склад в городе (22.11.2026): клиент менеджера города покупает только со склада города, а в списке бота
+        // основного номера его нет — заказ оформит менеджер города.
+        lines.push(
+          `Это клиент менеджера города ${profile!.city}: ему продаём только со склада города, а твой список — производство. Заказ НЕ оформляй: ` +
+            "ответь на вопрос, скажи, что менеджер города уточнит наличие и напишет, и поставь тревогу (alert) — что и сколько нужно клиенту."
+        );
+      } else if (profile?.shipWeekday) {
         const day = nextShipDay(localDayKey(), profile.shipWeekday, almatyHourOf(new Date()));
         lines.push(
           `Это клиент регионального менеджера${profile.city ? ` (${profile.city})` : ""}: доставка — фурой, ближайшая отправка ${shipDayLabel(day)}; ` +
