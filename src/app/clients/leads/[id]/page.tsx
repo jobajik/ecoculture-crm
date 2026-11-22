@@ -42,6 +42,7 @@ import { greenConfig } from "@/lib/greenApi";
 import { openAiConfigured } from "@/lib/openai";
 import { clientsTabsFor } from "../../tabs";
 import { withBotName } from "@/lib/botIdentity";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,6 +53,9 @@ export const maxDuration = 60;
 export default async function LeadPage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   if (!canUseLeads(role)) redirect("/?error=forbidden");
   const email = (session?.user?.email ?? "").toLowerCase();
 
@@ -71,7 +75,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
   ]);
   const lead = leads.find((l) => l.leadId === params.id);
   // Чужой лид не открывается и по прямой ссылке (грабли 1.11).
-  if (!lead || !canSeeLead(role, email, lead)) notFound();
+  if (!lead || !canSeeLead(role, email, lead, scope)) notFound();
 
   const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
   const history = touches
@@ -110,7 +114,7 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
         area="leads"
         eyebrow="Лид"
         title={lead.name}
-        tabs={clientsTabsFor(undefined, role)}
+        tabs={clientsTabsFor(undefined, role, city)}
         subtitle={
           <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-1">
             <LeadStageBadge stage={stage} />

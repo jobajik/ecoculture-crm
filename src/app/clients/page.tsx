@@ -13,23 +13,30 @@ import { clients as clientsWord, orders as ordersWord } from "@/lib/plural";
 import PageHeader from "@/components/PageHeader";
 import { clientsTabsFor } from "./tabs";
 import { withBotName } from "@/lib/botIdentity";
+import { cityScopeOf, clientInScope } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClientsPage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   // Менеджеру розницы клиентская база не нужна: его рабочее место — «Розница».
   if (isRetailRole(role)) redirect("/retail");
   if (role !== ROLES.MANAGER && role !== ROLES.SALES_HEAD && role !== ROLES.ADMIN) {
     redirect("/?error=forbidden");
   }
 
-  const [clients, orders, users] = await Promise.all([
+  const myEmail0 = session?.user?.email?.toLowerCase() ?? "";
+  const [allClients, orders, users] = await Promise.all([
     listClients(),
     listOrdersWithItems(),
     listUsers(),
   ]);
+  // Менеджер города — свои карточки и клиенты своего города; остальной базы для него нет (`cityScope.ts`).
+  const clients = allClients.filter((c) => clientInScope(c, scope, myEmail0));
   const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));
 
   const stats = buildClientStats({
@@ -51,7 +58,7 @@ export default async function ClientsPage() {
       <PageHeader
         area="clients"
         title="Клиенты"
-        tabs={clientsTabsFor(undefined, role)}
+        tabs={clientsTabsFor(undefined, role, city)}
         subtitle={
           t.clients === 0
             ? "Клиентов пока нет."

@@ -1,6 +1,7 @@
 import { CLIENT_SOURCES, CLIENT_TYPES, ROLES } from "./constants";
 import { toIsoDate } from "./sheetDate";
 import type { Lead, LeadTouch } from "./types";
+import { cityScopeOf, leadInScope } from "./cityScope";
 
 // ---------------------------------------------------------------------------
 // Лиды: база тех, кто ещё не покупал, и работа с ней по стадиям.
@@ -85,7 +86,9 @@ export function canManageLeads(role: string | null | undefined): boolean {
 export function canSeeLead(
   role: string | null | undefined,
   email: string,
-  lead: Pick<Lead, "managerEmail"> & Partial<Pick<Lead, "origin" | "createdByEmail" | "handedOverBy">>
+  lead: Pick<Lead, "managerEmail"> & Partial<Pick<Lead, "origin" | "createdByEmail" | "handedOverBy" | "city">>,
+  /** Склад города, куда посажен менеджер (`cityScope.ts`): ему из ничьих видны только лиды его города. */
+  cityStore: string | null = ""
 ): boolean {
   if (canManageLeads(role)) return true;
   const me = email.toLowerCase();
@@ -95,7 +98,9 @@ export function canSeeLead(
     return isAdsLead(lead) && (lead.createdByEmail === me || lead.managerEmail === me || lead.handedOverBy === me);
   }
   if (role !== ROLES.MANAGER) return false;
-  return !lead.managerEmail || lead.managerEmail === me;
+  if (lead.managerEmail) return lead.managerEmail === me;
+  const scope = cityScopeOf({ role, store: cityStore });
+  return !scope || leadInScope({ managerEmail: "", city: lead.city }, scope, me);
 }
 /** Работать с лидом (касание, правка) — его менеджер, РОП и админ; Земфира — свой, пока не передала. */
 export function canWorkLead(

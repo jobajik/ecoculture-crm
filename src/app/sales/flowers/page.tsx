@@ -22,6 +22,7 @@ import Change from "@/components/Change";
 import FlowerSalesBreakdown from "@/components/FlowerSalesBreakdown";
 import { salesTabsFor } from "../tabs";
 import { withBotName } from "@/lib/botIdentity";
+import { cityHomeIfClosed } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,6 +37,9 @@ const FLOWERS = ["rose", "chrysanthemum", "chrysanthemum_rf", "eustoma"];
  */
 export default async function FlowerSalesPage({ searchParams }: { searchParams?: { period?: string; flower?: string } }) {
   const session = await getServerSession(authOptions);
+  // Менеджеру, посаженному в город, эта страница закрыта: цифры всей компании — не его (`cityScope.ts`).
+  const cityHome = cityHomeIfClosed(session?.user);
+  if (cityHome) redirect(cityHome);
   const role = session?.user?.role;
   if (!canOpen(role, "/sales/flowers")) redirect("/?error=forbidden");
 

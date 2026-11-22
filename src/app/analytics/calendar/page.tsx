@@ -9,6 +9,7 @@ import PeriodPicker from "@/components/PeriodPicker";
 import CalendarBoard from "@/components/CalendarBoard";
 import Hint from "@/components/Hint";
 import { analyticsTabsFor } from "../tabs";
+import { cityHomeIfClosed } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,6 +28,9 @@ export default async function CalendarPage({
   searchParams: { period?: string };
 }) {
   const session = await getServerSession(authOptions);
+  // Менеджеру, посаженному в город, эта страница закрыта: цифры всей компании — не его (`cityScope.ts`).
+  const cityHome = cityHomeIfClosed(session?.user);
+  if (cityHome) redirect(cityHome);
   const role = session?.user?.role;
   if (role !== ROLES.ADMIN) redirect("/analytics");
 

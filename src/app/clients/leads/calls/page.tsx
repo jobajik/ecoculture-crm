@@ -17,6 +17,7 @@ import CallDesk from "@/components/CallDesk";
 import CallReport from "@/components/CallReport";
 import { clientsTabsFor } from "../../tabs";
 import { withBotName } from "@/lib/botIdentity";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -34,6 +35,9 @@ const QUEUE_BATCH = 60;
 export default async function CallsPage({ searchParams }: { searchParams?: { c?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   if (isRetailRole(role)) redirect("/retail");
   if (!canUseLeads(role)) redirect("/?error=forbidden");
   const email = (session?.user?.email ?? "").toLowerCase();
@@ -72,7 +76,7 @@ export default async function CallsPage({ searchParams }: { searchParams?: { c?:
 
   return (
     <div>
-      <PageHeader area="leads" title="Обзвон" tabs={clientsTabsFor(undefined, role)} />
+      <PageHeader area="leads" title="Обзвон" tabs={clientsTabsFor(undefined, role, city)} />
 
       {campaigns.length > 0 && (
         <div className="flex gap-2 overflow-x-auto scroll-x-hidden lg:flex-wrap -mx-1 px-1 mb-5">

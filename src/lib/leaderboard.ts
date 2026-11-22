@@ -69,6 +69,29 @@ export interface LeaderboardSnapshot {
   rates: { flowerType: string; percent: number }[];
 }
 
+/**
+ * Рейтинг для менеджера, посаженного в город (22.11.2026, `cityScope.ts`): только его строка и итоги по ней — выручка и
+ * бонусы остальных менеджеров ему не показываются. Его самого в рейтинге нет (ещё не продавал) — пустой список.
+ */
+export function ownLeaderboard(snapshot: LeaderboardSnapshot, email: string): LeaderboardSnapshot {
+  const me = email.trim().toLowerCase();
+  const rows = snapshot.rows.filter((r) => r.managerEmail.trim().toLowerCase() === me).map((r) => ({ ...r, rank: 1 }));
+  const sum = (pick: (r: LeaderboardRow) => number) => rows.reduce((s, r) => s + pick(r), 0);
+  return {
+    ...snapshot,
+    hasPlans: snapshot.hasPlans && rows.some((r) => r.targetAmount > 0),
+    rows,
+    totals: {
+      paidAmount: sum((r) => r.paidAmount),
+      totalAmount: sum((r) => r.totalAmount),
+      pendingAmount: sum((r) => r.pendingAmount),
+      bonus: sum((r) => r.bonus),
+      orders: sum((r) => r.orders),
+      targetAmount: sum((r) => r.targetAmount),
+    },
+  };
+}
+
 function dayKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
     date.getDate()

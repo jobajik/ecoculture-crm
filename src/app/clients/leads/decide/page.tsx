@@ -15,6 +15,7 @@ import PageHeader from "@/components/PageHeader";
 import Hint from "@/components/Hint";
 import LeadDecisionsBoard, { type BoardRow } from "@/components/LeadDecisionsBoard";
 import { clientsTabsFor } from "../../tabs";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,6 +29,9 @@ export const maxDuration = 60;
 export default async function LeadDecisionsPage({ searchParams }: { searchParams?: { m?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   if (role !== ROLES.LEADGEN && role !== ROLES.MANAGER && !canManageLeads(role)) redirect("/clients/leads");
   const email = (session?.user?.email ?? "").toLowerCase();
   const today = localDayKey();
@@ -78,7 +82,7 @@ export default async function LeadDecisionsPage({ searchParams }: { searchParams
           </span>
         }
         subtitle={role === ROLES.LEADGEN ? "Лиды с рекламы: что ИИ советует сделать с каждым" : "Лиды с перепиской в WhatsApp: что ИИ советует сделать с каждым"}
-        tabs={clientsTabsFor(undefined, role)}
+        tabs={clientsTabsFor(undefined, role, city)}
       />
       {manage && managerOptions.length > 0 && (
         <div className="flex gap-2 overflow-x-auto scroll-x-hidden lg:flex-wrap -mx-1 px-1 mb-5">

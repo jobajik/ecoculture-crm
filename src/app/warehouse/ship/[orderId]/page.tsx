@@ -23,6 +23,7 @@ import OrderStoreSwitch from "@/components/OrderStoreSwitch";
 import ConfirmOrderButton from "@/components/ConfirmOrderButton";
 import { confirmRefusal } from "@/lib/orderRules";
 import { orderCode } from "@/lib/paymentStage";
+import { orderOutOfScope } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,8 @@ export default async function ShipOrderPage({ params }: { params: { orderId: str
 
   const order = await getOrderById(params.orderId);
   if (!order) notFound();
+  // Менеджер города чужую заявку не открывает и по прямой ссылке (`cityScope.ts`).
+  if (await orderOutOfScope(order, session?.user)) notFound();
   // Заявку офиса отгружает склад офиса, основную — основной склад (`officeStore.ts`).
   const storeRefusal = shipStoreRefusal(role, order.store, normalizeStore(session?.user?.store));
   const store = normalizeStore(order.store);

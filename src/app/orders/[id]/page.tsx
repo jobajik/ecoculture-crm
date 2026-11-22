@@ -83,6 +83,7 @@ import { canOpen } from "@/lib/access";
 import { paymentHistory, realizationsOf } from "@/lib/payments";
 import { withBotName } from "@/lib/botIdentity";
 import { canRepeatFrom, newClientOrderHref } from "@/lib/repeatOrder";
+import { orderOutOfScope } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +99,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   const session = await getServerSession(authOptions);
   const loaded = await getOrderById(params.id);
   if (!loaded) notFound();
+
+  // Менеджер города чужую заявку не открывает и по прямой ссылке (`cityScope.ts`).
+  if (await orderOutOfScope(loaded, session?.user)) notFound();
 
   const role = session?.user?.role;
   // Карточка клиента открыта не всем, кто видит заявку (склад, маркетолог) — им имя клиента без ссылки.

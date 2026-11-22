@@ -131,7 +131,8 @@ function greenhouseSections(role: string, farm: string | undefined, payrollRole:
 
 /** Разделы роли — в порядке, в котором их открывают каждый день. */
 export function navLinksFor(role: string, payrollRole?: string, payrollDepartments?: string[], farm?: string, store?: string, director?: boolean): NavLink[] {
-  const links = baseLinksFor(role);
+  const city = role === "manager" && isRegionStore(store);
+  const links = baseLinksFor(role, city);
   // Менеджер, посаженный в город (Салтанат — Астана; с 17.11.2026 — директора регионов, `regionTruck.ts`), — раздел
   // своего города: остатки, фура, отгрузка, списание; у директора ещё оплаты и долги города.
   if (role === "manager" && isRegionStore(store)) {
@@ -146,9 +147,11 @@ export function navLinksFor(role: string, payrollRole?: string, payrollDepartmen
   return payroll.other ? [...work, ...other, payroll] : [...work, payroll, ...other];
 }
 
-function baseLinksFor(role: string): NavLink[] {
+function baseLinksFor(role: string, city = false): NavLink[] {
   switch (role) {
     case "manager":
+      // Менеджер города (22.11.2026, `cityScope.ts`): только своё — без аналитики хозяйства и остатков всех складов.
+      if (city) return [DAY, ORDERS, section("/clients", "Клиенты", clientsTabsFor(undefined, role, true)), section("/sales", "Продажи", salesTabsFor(role, true), ["/prices"])];
       return [
         DAY,
         ORDERS,

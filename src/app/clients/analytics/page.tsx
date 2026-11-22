@@ -21,6 +21,7 @@ import PagedList from "@/components/PagedList";
 import ClientBreakdown from "@/components/ClientBreakdown";
 import { clientsTabsFor } from "../tabs";
 import { withBotName } from "@/lib/botIdentity";
+import { cityHomeIfClosed } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -35,6 +36,9 @@ const dec = (n: number) => n.toLocaleString("ru-RU", { maximumFractionDigits: 1,
  */
 export default async function ClientAnalyticsPage({ searchParams }: { searchParams?: { period?: string } }) {
   const session = await getServerSession(authOptions);
+  // Менеджеру, посаженному в город, эта страница закрыта: цифры всей компании — не его (`cityScope.ts`).
+  const cityHome = cityHomeIfClosed(session?.user);
+  if (cityHome) redirect(cityHome);
   const role = session?.user?.role;
   if (isRetailRole(role)) redirect("/retail");
   if (role !== ROLES.MANAGER && role !== ROLES.SALES_HEAD && role !== ROLES.ADMIN) redirect("/?error=forbidden");

@@ -24,8 +24,11 @@ export default function Leaderboard({
   snapshot,
   currentEmail,
   today,
+  solo = false,
 }: {
   snapshot: LeaderboardSnapshot;
+  /** Одна строка — своя (менеджер города, `cityScope.ts`): это не рейтинг, а «мои продажи». */
+  solo?: boolean;
   currentEmail: string;
   /** Сегодня по Алматы — для листания периода. */
   today: string;
@@ -89,7 +92,7 @@ export default function Leaderboard({
           другом — весь отдел виден на одном экране. */}
       <div className="card !p-0 overflow-hidden">
         <div className="flex items-center gap-2 px-4 sm:px-5 py-3.5 border-b border-line-hairline">
-          <h2 className="text-[14px] leading-5 font-semibold">Рейтинг менеджеров</h2>
+          <h2 className="text-[14px] leading-5 font-semibold">{solo ? "Мои продажи" : "Рейтинг менеджеров"}</h2>
           <span className="text-sm text-ink-muted">· по оплаченным заявкам</span>
           {!snapshot.hasPlans && <span className="ml-auto text-xs text-ink-muted">план виден на периоде «месяц»</span>}
         </div>

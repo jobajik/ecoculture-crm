@@ -5,6 +5,7 @@ import { orderStage } from "./orderStage";
 import { formatDay } from "./formatDate";
 import { isOwnShop } from "./retail";
 import type { Client, Lead, OrderWithItems } from "./types";
+import { cityScopeOf, clientInScope } from "./cityScope";
 
 /**
  * Общий поиск по сайту (Ctrl K) — одно поле на клиентов, заявки и лиды (19.10.2026, макет принят владельцем:
@@ -51,7 +52,7 @@ export function canSearchClients(role: string | null | undefined): boolean {
 export function searchEverything(
   query: string,
   data: { clients: Client[]; orders: OrderWithItems[]; leads: Lead[] },
-  user: { role?: string | null; email?: string | null },
+  user: { role?: string | null; email?: string | null; store?: string | null },
   today: string
 ): SearchHit[] {
   const q = norm(query);
@@ -60,6 +61,7 @@ export function searchEverything(
   const role = user.role ?? undefined;
   const email = (user.email ?? "").toLowerCase();
   const hits: { hit: SearchHit; score: number }[] = [];
+  const scope = cityScopeOf(user);
 
   const textScore = (s: string | null | undefined) => {
     const v = norm(s || "");
@@ -73,6 +75,8 @@ export function searchEverything(
   if (canSearchClients(role)) {
     for (const c of data.clients) {
       if (!c.active || isOwnShop(c)) continue;
+      // Менеджер города ищет среди своих клиентов и клиентов своего города (`cityScope.ts`).
+      if (!clientInScope(c, scope, email)) continue;
       const s = Math.max(textScore(c.name), textScore(c.shopName), textScore(c.contactPerson) * 0.8, phoneHit(c.phone, pq) || phoneHit(c.messenger, pq) ? 2.5 : 0);
       if (s === 0) continue;
       hits.push({
@@ -110,7 +114,7 @@ export function searchEverything(
 
   if (canUseLeads(role)) {
     for (const l of data.leads) {
-      if (!canSeeLead(role, email, l)) continue;
+      if (!canSeeLead(role, email, l, user.store)) continue;
       const s = Math.max(textScore(l.name), textScore(l.contactPerson) * 0.8, phoneHit(l.phone, pq) ? 2.5 : 0);
       if (s === 0) continue;
       hits.push({

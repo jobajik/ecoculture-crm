@@ -6,8 +6,9 @@ import { tabOfViews, type SectionTab } from "@/lib/sectionViews";
  * «Клиенты» (список / аналитика), «Постоянники», «Лиды» (доска / решения ИИ / с рекламы / обзвон), «Переписки»
  * (чаты / разбор разговоров), «Рассылки». Кому какой вид виден — правила прежние; у кого вид один, у того вкладка
  * называется как этот вид и переключателя нет. Месяц переносится в аналитику, если он уже выбран.
+ * `city` — менеджер, посаженный в город: без аналитики всей базы.
  */
-export function clientsTabsFor(period?: string, role?: string | null): SectionTab[] {
+export function clientsTabsFor(period?: string, role?: string | null, city = false): SectionTab[] {
   // Маркетолог (12.11.2026): из раздела ему открыты только переписки и отчёт «С рекламы» — на просмотр. Это два
   // отдельных пункта его меню (`navLinks.ts`), поэтому вкладок под шапкой у него нет.
   if (role === "marketer") return [];
@@ -33,7 +34,8 @@ export function clientsTabsFor(period?: string, role?: string | null): SectionTa
   return [
     ...tabOfViews("Клиенты", [
       { href: "/clients", label: "Список" },
-      { href: period ? `/clients/analytics?period=${period}` : "/clients/analytics", label: "Аналитика" },
+      // Менеджеру города аналитика всей базы закрыта (`cityScope.ts`): его клиенты — список, его цифры — раздел города.
+      !city && { href: period ? `/clients/analytics?period=${period}` : "/clients/analytics", label: "Аналитика" },
     ]),
     // Постоянники (09.11.2026): кто заказывает регулярно и как идут напоминания от имени менеджеров; менеджер — своих.
     ...(manage || role === "manager" ? [{ href: "/clients/habits", label: "Постоянники", match: ["/clients/habits"] }] : []),

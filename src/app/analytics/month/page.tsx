@@ -11,6 +11,8 @@ import KpiTile from "@/components/KpiTile";
 import Hint from "@/components/Hint";
 import MonthWeeksChart from "@/components/MonthWeeksChart";
 import { analyticsTabsFor } from "../tabs";
+import { redirect } from "next/navigation";
+import { cityHomeIfClosed } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -61,6 +63,9 @@ function MoneyCells({ m, share }: { m: Money; share?: number }) {
  */
 export default async function MonthAnalyticsPage({ searchParams }: { searchParams?: { month?: string; farm?: string } }) {
   const session = await getServerSession(authOptions);
+  // Менеджеру, посаженному в город, эта страница закрыта: цифры всей компании — не его (`cityScope.ts`).
+  const cityHome = cityHomeIfClosed(session?.user);
+  if (cityHome) redirect(cityHome);
   const role = session?.user?.role ?? "";
   const today = localDayKey();
   const month = cleanMonth(searchParams?.month, today);

@@ -46,6 +46,7 @@ import { almatyHourOf } from "@/lib/officeStore";
 import { settingsMap } from "@/lib/repo/broadcasts";
 import { canRepeatFrom, repeatFormItems } from "@/lib/repeatOrder";
 import { orderCode } from "@/lib/paymentStage";
+import { cityScopeOf, clientInScope } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 
@@ -234,8 +235,10 @@ export default async function NewOrderPage({
   // Отключённые карточки в выбор не идут: снятая галочка означает «больше не
   // работаем», но историю заказов такого клиента она не трогает. Наши магазины
   // сюда не попадают вовсе — они не клиенты.
+  // Менеджер города выбирает из своих клиентов и клиентов своего города (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
   const options = clients
-    .filter((c) => c.active && !isOwnShop(c))
+    .filter((c) => c.active && !isOwnShop(c) && clientInScope(c, scope, myEmail))
     .map((c) => ({
       clientId: c.clientId,
       name: c.name,

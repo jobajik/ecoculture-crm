@@ -24,6 +24,7 @@ import TalksRunButton from "@/components/TalksRunButton";
 import { ScoreChip, TemperatureChip } from "@/components/TalkChips";
 import { clientsTabsFor } from "../../tabs";
 import { withBotName } from "@/lib/botIdentity";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,6 +40,9 @@ const PERIOD_DAYS = 30;
 export default async function TalksPage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   if (!canUseLeads(role)) redirect("/?error=forbidden");
   const email = (session?.user?.email ?? "").toLowerCase();
   const manage = canManageLeads(role);
@@ -46,7 +50,7 @@ export default async function TalksPage() {
   await prefetchTables([SHEET_TABS.LEADS, SHEET_TABS.USERS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.LEAD_ANALYSES]);
   const [leads, users, messages, analyses] = await Promise.all([listLeads(), listUsers(), listWaMessages({ lines: "all" }), listLeadAnalyses()]);
   const nameByEmail = withBotName(new Map(users.map((u) => [u.email.toLowerCase(), u.name || u.email])));
-  const visible = leads.filter((l) => canSeeLead(role, email, l));
+  const visible = leads.filter((l) => canSeeLead(role, email, l, scope));
   const infos = Array.from(talkInfoByLead(visible, messages, analyses).values());
   const now = new Date();
   const report = buildTalkReport(infos, nameByEmail, now, PERIOD_DAYS);
@@ -83,7 +87,7 @@ export default async function TalksPage() {
         area="leads"
         title="Разговоры"
         icon="chart"
-        tabs={clientsTabsFor(undefined, role)}
+        tabs={clientsTabsFor(undefined, role, city)}
         subtitle={
           <>
             Переписка с лидами в рабочем WhatsApp за {PERIOD_DAYS} дней

@@ -24,6 +24,7 @@ import { CLIENT_SOURCES } from "@/lib/constants";
 import { clientsTabsFor } from "../tabs";
 import { withBotName } from "@/lib/botIdentity";
 import { canOpen } from "@/lib/access";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,6 +42,9 @@ export default async function LeadsPage({
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   if (isRetailRole(role)) redirect("/retail");
   if (!canUseLeads(role)) redirect("/?error=forbidden");
   const email = (session?.user?.email ?? "").toLowerCase();
@@ -68,7 +72,7 @@ export default async function LeadsPage({
   const today = localDayKey();
 
   // Менеджеру — свои и ничьи; РОПу и админу — все (`canSeeLead`).
-  const visible = leads.filter((l) => canSeeLead(role, email, l));
+  const visible = leads.filter((l) => canSeeLead(role, email, l, scope));
   // «Что известно» из прошлой CRM в списке не нужно — только лишний вес страницы
   // (у загруженной базы это 3 700 строк по полстраницы текста).
   const rows = buildLeadRows(visible, touches, nameByEmail, today)
@@ -119,7 +123,7 @@ export default async function LeadsPage({
             </Hint>
           </>
         }
-        tabs={clientsTabsFor(undefined, role)}
+        tabs={clientsTabsFor(undefined, role, city)}
       />
 
       <div className="flex flex-wrap items-start gap-2 mb-5">

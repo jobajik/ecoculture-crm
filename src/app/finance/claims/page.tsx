@@ -11,6 +11,8 @@ import ClaimsBoard, { type ClaimView } from "@/components/ClaimsBoard";
 import { financeTabsFor } from "../tabs";
 import { canEditFinance } from "@/lib/financeAccess";
 import { withBotName } from "@/lib/botIdentity";
+import { listClients } from "@/lib/repo/clients";
+import { cityLookup, cityScopeOf, orderInScope } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,11 +29,15 @@ export default async function ClaimsPage() {
   }
   const canDecide = canEditFinance(role);
 
-  const [claims, orders, users] = await Promise.all([
+  const [claims, allOrders, users] = await Promise.all([
     listClaims(),
     listOrdersWithItems(),
     listUsers(),
   ]);
+  // Менеджер города — рекламации только по заявкам своего города (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const cityOf = scope ? cityLookup(await listClients()) : () => undefined;
+  const orders = allOrders.filter((o) => orderInScope(o, scope, session?.user?.email, cityOf));
 
   const orderById = new Map(orders.map((o) => [o.orderId, o]));
   const nameByEmail = withBotName(new Map(users.map((u) => [u.email, u.name || u.email])));

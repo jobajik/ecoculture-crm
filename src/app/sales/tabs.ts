@@ -17,7 +17,10 @@ export const SALES_TABS = [
  * Менеджеру прайс нужен на просмотр — он по нему продаёт, — и для него вкладка
  * остаётся тут. Остальные вкладки одинаковы у всех.
  */
-export function salesTabsFor(role: string | null | undefined): { href: string; label: string; match?: string[] }[] {
+export function salesTabsFor(role: string | null | undefined, city = false): { href: string; label: string; match?: string[] }[] {
+  // Менеджер, посаженный в город (22.11.2026, `cityScope.ts`): свои продажи и бонус и прайс — план и факт, продажи по
+  // цветам и за день считаются по всей компании и ему закрыты; цифры города — в разделе города.
+  if (role === "manager" && city) return [{ href: "/sales", label: "Мои продажи и бонус" }, { href: "/prices", label: "Прайс-лист" }];
   // У владельца и РОПа «Продажи» — часть «Планов и цифр»: вкладки цифр общие (`analyticsTabsFor`), а «План и факт»,
   // «По цветам» и «Продажи за день» лежат в архиве отчётов (12.11.2026).
   if (role === "sales_head" || role === "admin") return analyticsTabsFor(role);

@@ -29,6 +29,7 @@ import { withBotName } from "@/lib/botIdentity";
 import { canCreateClientOrder, canRepeatFrom, newClientOrderHref } from "@/lib/repeatOrder";
 import { dueDateOf } from "@/lib/debtReminder";
 import KpiTile from "@/components/KpiTile";
+import { cityScopeOf, clientInScope } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,8 @@ export default async function ClientDetailPage({
 
   const client = await getClientById(params.id);
   if (!client) notFound();
+  // Менеджер города открывает свои карточки и клиентов своего города (`cityScope.ts`); наши магазины — правила ниже.
+  if (!clientInScope(client, cityScopeOf(session?.user), session?.user?.email)) notFound();
 
   // Карточка магазина открыта только своей рознице, РОПу и админу; менеджеру
   // розницы, наоборот, доступны ТОЛЬКО магазины его направления.

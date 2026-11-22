@@ -5,6 +5,7 @@ import { getStockSnapshot, loadStockExtras } from "@/lib/stock";
 import { stockStoreOfRole } from "@/lib/officeStore";
 import { prefetchTables, SHEET_TABS } from "@/lib/sheets";
 import { isFarmBoundRole } from "@/lib/constants";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,8 @@ export async function GET() {
     await prefetchTables([SHEET_TABS.BATCHES, SHEET_TABS.SETTINGS, SHEET_TABS.PRICE_HISTORY, SHEET_TABS.SHIPMENTS]);
     const snapshot = await getStockSnapshot(new Date(), undefined, farm, {
       ...(await loadStockExtras()),
-      store: stockStoreOfRole(session.user.role),
+      // Менеджер города — только склад своего города (`cityScope.ts`); остальные — как раньше.
+      store: stockStoreOfRole(session.user.role, cityScopeOf(session.user)),
     });
     return Response.json(snapshot, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {

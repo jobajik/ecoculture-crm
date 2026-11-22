@@ -17,6 +17,7 @@ import { listWaOrderDrafts } from "@/lib/repo/waOrders";
 import { draftSummary, freshDrafts, visibleDrafts } from "@/lib/waOrder";
 import { formatDay, formatMoment } from "@/lib/formatDate";
 import WaOrderDrafts, { type WaDraftRow } from "@/components/WaOrderDrafts";
+import { cityLookup, cityScopeOf, clientInScope } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,10 @@ export default async function OrdersPage({
 
   // Кто какие заявки видит — одно правило на список, поиск и «Мой день» (`orderVisibility.ts`).
   const myEmail = session?.user?.email?.toLowerCase() ?? "";
-  const orders = visibleOrdersFor(all, { role, email: myEmail, farm: session?.user?.farm });
+  // Менеджер города — только заявки своего города (`cityScope.ts`); клиенты уже прочитаны вместе с заявками.
+  const scope = cityScopeOf(session?.user);
+  const scopeClients = scope ? await listClients() : [];
+  const orders = visibleOrdersFor(all, { role, email: myEmail, farm: session?.user?.farm, store: session?.user?.store }, cityLookup(scopeClients));
   const territory = retailTerritoryFor(role);
 
   // Имена сотрудников — чтобы в колонке «Менеджер» стояла фамилия, а не
@@ -45,7 +49,10 @@ export default async function OrdersPage({
   let draftRows: WaDraftRow[] = [];
   if (role === ROLES.ADMIN || role === ROLES.MANAGER) {
     const [drafts, clients] = await Promise.all([listWaOrderDrafts(), listClients()]);
-    draftRows = visibleDrafts(freshDrafts(drafts, new Date()), clients, role, myEmail).map(({ draft, client }) => ({
+    draftRows = visibleDrafts(freshDrafts(drafts, new Date()), clients, role, myEmail)
+      // Менеджеру города — заказы из WhatsApp только от своих клиентов: незнакомые номера писали не ему.
+      .filter(({ client }) => !scope || (!!client && clientInScope(client, scope, myEmail)))
+      .map(({ draft, client }) => ({
       draftId: draft.draftId,
       at: formatMoment(draft.createdAt),
       who: client?.name || draft.senderName || `+${draft.phone}`,

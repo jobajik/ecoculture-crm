@@ -161,10 +161,34 @@ export function accessRuleFor(path: string): { prefix: string; roles: string[] }
   return ROLE_ACCESS.find((r) => path.startsWith(r.prefix));
 }
 
-/** Пустит ли middleware эту роль на этот адрес. Админ — везде; без роли — никуда. */
-export function canOpen(role: string | null | undefined, path: string): boolean {
+/**
+ * Общие страницы хозяйства, закрытые менеджеру, посаженному в город (22.11.2026, владелец: «каждый регион должен видеть
+ * остатки только свои, соответственно продажи, заявки и всё остальное»; правило — `cityScope.ts`). Свои цифры у него —
+ * в разделе города. Коды городов продублированы здесь: модуль работает в middleware и ни от чего не зависит
+ * (`check-city-scope` сверяет список с `REGION_STORES`).
+ */
+export const CITY_CLOSED: string[] = ["/analytics", "/warehouse/stock", "/clients/analytics", "/clients/broadcasts", "/sales/plan", "/sales/flowers", "/sales/day"];
+export const CITY_STORE_CODES: string[] = ["astana", "karaganda", "semey", "ust_kamenogorsk"];
+
+const pathUnder = (path: string, prefix: string) => path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
+
+export function cityClosedPath(path: string): boolean {
+  return CITY_CLOSED.some((p) => pathUnder(path, p));
+}
+
+/** Посажен ли менеджер в город (по роли и складу из пропуска). */
+export function isCitySeat(role: string | null | undefined, store: string | null | undefined): boolean {
+  return role === "manager" && CITY_STORE_CODES.includes(String(store ?? "").trim().toLowerCase());
+}
+
+/**
+ * Пустит ли middleware эту роль на этот адрес. Админ — везде; без роли — никуда. `store` — склад города из пропуска:
+ * менеджеру, посаженному в город, общие страницы хозяйства закрыты (`CITY_CLOSED`).
+ */
+export function canOpen(role: string | null | undefined, path: string, store?: string | null): boolean {
   if (!role) return false;
   if (role === "admin") return true;
+  if (isCitySeat(role, store) && cityClosedPath(path)) return false;
   const rule = accessRuleFor(path);
   return !rule || rule.roles.includes(role);
 }

@@ -10,6 +10,8 @@ import { EARLIER, NO_DATE, buildStockMatrix, daysAgo, type FlowerMatrix } from "
 import PageHeader from "@/components/PageHeader";
 import KpiTile from "@/components/KpiTile";
 import { WAREHOUSE_TABS } from "../tabs";
+import { redirect } from "next/navigation";
+import { cityHomeIfClosed } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +46,9 @@ const STORES: { code: string; store: StoreCode | "all"; label: string }[] = [
  */
 export default async function StockMatrixPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const session = await getServerSession(authOptions);
+  // Менеджеру, посаженному в город, эта страница закрыта: цифры всей компании — не его (`cityScope.ts`).
+  const cityHome = cityHomeIfClosed(session?.user);
+  if (cityHome) redirect(cityHome);
   const role = session?.user?.role ?? "";
   const ownFarm = role === "warehouse" ? session?.user?.farm ?? null : null;
   const tabs = role === "admin" || role === "warehouse" ? WAREHOUSE_TABS : undefined;

@@ -22,6 +22,7 @@ import KpiTile from "@/components/KpiTile";
 import Pill from "@/components/Pill";
 import PagedList from "@/components/PagedList";
 import { clientsTabsFor } from "../tabs";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -38,6 +39,9 @@ const DAYS = 30;
 export default async function HabitsPage({ searchParams }: { searchParams?: { manager?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   const manage = role === ROLES.ADMIN || role === ROLES.SALES_HEAD;
   if (!manage && role !== ROLES.MANAGER) redirect("/clients");
   const email = (session?.user?.email ?? "").toLowerCase();
@@ -168,7 +172,7 @@ export default async function HabitsPage({ searchParams }: { searchParams?: { ma
 
   return (
     <div>
-      <PageHeader area="leads" title="Постоянники" subtitle="Кто заказывает регулярно и как идут напоминания от имени менеджеров" tabs={clientsTabsFor(undefined, role)} />
+      <PageHeader area="leads" title="Постоянники" subtitle="Кто заказывает регулярно и как идут напоминания от имени менеджеров" tabs={clientsTabsFor(undefined, role, city)} />
 
       {manage && managers.length > 1 && (
         <div className="flex gap-2 overflow-x-auto scroll-x-hidden lg:flex-wrap -mx-1 px-1 mb-5">

@@ -6,6 +6,8 @@ import AnalyticsReport from "@/components/AnalyticsReport";
 import FlowerSummary from "@/components/FlowerSummary";
 import PageHeader from "@/components/PageHeader";
 import { analyticsTabsFor } from "./tabs";
+import { redirect } from "next/navigation";
+import { cityHomeIfClosed } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,6 +29,9 @@ export const revalidate = 0;
  */
 export default async function AnalyticsPage() {
   const session = await getServerSession(authOptions);
+  // Менеджеру, посаженному в город, эта страница закрыта: цифры всей компании — не его (`cityScope.ts`).
+  const cityHome = cityHomeIfClosed(session?.user);
+  if (cityHome) redirect(cityHome);
   const ownFarm = session?.user?.role === "warehouse" ? session?.user?.farm ?? null : null;
   const { all, byFarm } = await getAnalyticsByFarm(ownFarm);
 

@@ -11,6 +11,7 @@ import { visibleOrdersFor } from "@/lib/orderVisibility";
 import { canSearchClients, searchEverything, SEARCH_MIN_LENGTH, type SearchHit } from "@/lib/globalSearch";
 import { canUseLeads } from "@/lib/leads";
 import { localDayKey } from "@/lib/timezone";
+import { cityLookup, cityScopeOf } from "@/lib/cityScope";
 
 /**
  * Общий поиск по сайту (Ctrl K): клиенты, заявки, лиды — одним запросом. Видимость — те же правила, что у страниц
@@ -31,8 +32,10 @@ async function searchActionInner(query: string): Promise<SearchHit[]> {
     canSearchClients(role) ? listClients() : Promise.resolve([]),
     canUseLeads(role) ? listLeads() : Promise.resolve([]),
   ]);
-  const user = { role, email: session.user.email, farm: session.user.farm };
-  return searchEverything(q, { clients, orders: visibleOrdersFor(orders, user), leads }, user, localDayKey());
+  const user = { role, email: session.user.email, farm: session.user.farm, store: session.user.store };
+  // Город клиента — из всей базы (сам поиск по клиентам у бухгалтера, например, закрыт, а правило города — про заявки).
+  const scoped = cityScopeOf(user) ? cityLookup(canSearchClients(role) ? clients : await listClients()) : undefined;
+  return searchEverything(q, { clients, orders: visibleOrdersFor(orders, user, scoped), leads }, user, localDayKey());
 }
 
 export async function searchAction(query: string) {

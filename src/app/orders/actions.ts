@@ -74,7 +74,7 @@ import { setOrderDirection, setOrderStore } from "@/lib/repo/orders";
 import { MONEY_EPSILON, MONEY_LOG_ACTIONS, ORDER_KINDS, ORDER_STATUSES, ORDER_PAYMENT_METHODS, ROLES, getFarmFor } from "@/lib/constants";
 import { guard } from "@/lib/actionResult";
 import { forgetReads } from "@/lib/sheets";
-import { newOrderStore, normalizeStore, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
+import { isRegionStore, newOrderStore, normalizeStore, storeChangeRefusal, storeLabel } from "@/lib/officeStore";
 import { regionStoreOfEmail } from "@/lib/repo/regionStore";
 import { listUsers } from "@/lib/repo/users";
 import { commitReturn } from "@/lib/repo/orderReturn";
@@ -97,6 +97,7 @@ import { farmPayments } from "@/lib/orderMoney";
 import { updateClient } from "@/lib/repo/clients";
 import { setOrderKaspiPhone } from "@/lib/repo/orders";
 import { FARM_LABELS } from "@/lib/constants";
+import { clientInScope } from "@/lib/cityScope";
 
 async function createOrderActionInner(
   withDraft: Omit<NewOrderInput, "managerEmail"> & { draftId?: string; assignTo?: string }
@@ -182,6 +183,11 @@ async function createOrderActionInner(
     const picked = newOrderStore({ role, seatStore, requested: input.store });
     if (picked.refusal) throw new Error(picked.refusal);
     orderStore = picked.store;
+    // Менеджер города оформляет заявки своим клиентам и клиентам своего города (`cityScope.ts`): чужой базы в его
+    // форме нет, но запрос можно послать и мимо формы (грабли 1.11).
+    if (isRegionStore(seatStore) && !clientInScope(client, seatStore, session.user.email)) {
+      throw new Error("Это клиент другого города — заявку ему оформляет его менеджер");
+    }
   }
 
   const orderId = await createOrder({

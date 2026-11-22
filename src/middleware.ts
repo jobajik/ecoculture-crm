@@ -1,6 +1,6 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
-import { accessRuleFor, missingFarm } from "@/lib/access";
+import { accessRuleFor, cityClosedPath, isCitySeat, missingFarm } from "@/lib/access";
 
 // Кто какие разделы может открывать. "admin" по умолчанию имеет доступ всюду.
 
@@ -27,6 +27,14 @@ export default withAuth(
       const url = req.nextUrl.clone();
       url.pathname = "/";
       url.searchParams.set("error", "nofarm");
+      return NextResponse.redirect(url);
+    }
+    // Менеджер, посаженный в город, общих страниц хозяйства не открывает (`cityScope.ts`): его цифры — в разделе города.
+    const seat = String(req.nextauth.token?.store ?? "");
+    if (isCitySeat(role, seat) && cityClosedPath(path)) {
+      const url = req.nextUrl.clone();
+      url.pathname = `/region/${seat}`;
+      url.search = "";
       return NextResponse.redirect(url);
     }
     const rule = accessRuleFor(path);

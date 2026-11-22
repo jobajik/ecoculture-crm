@@ -16,6 +16,7 @@ import KpiTile from "@/components/KpiTile";
 import Hint from "@/components/Hint";
 import { plansTabsFor } from "../plans/tabs";
 import { salesTabsFor } from "../sales/tabs";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,6 +33,9 @@ export default async function PricesPage({
 }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   // Смотреть прайс полезно и менеджеру — он по нему продаёт. Заносить цену
   // может только РОП и администратор: это решение о деньгах, и владелец прямо
   // отнёс его к зоне ответственности руководителя отдела продаж.
@@ -77,7 +81,7 @@ export default async function PricesPage({
         area={canEdit ? "plans" : "sales"}
         title="Прайс-лист"
         icon="tag"
-        tabs={canEdit ? plansTabsFor(role) : salesTabsFor(role)}
+        tabs={canEdit ? plansTabsFor(role) : salesTabsFor(role, city)}
         actions={
           <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg border border-line-hairline bg-surface-plane p-1" role="tablist">

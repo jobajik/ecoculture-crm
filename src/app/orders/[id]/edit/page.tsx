@@ -23,6 +23,7 @@ import PageHeader from "@/components/PageHeader";
 import { orderCode } from "@/lib/paymentStage";
 import type { DraftItem } from "@/components/OrderItemsEditor";
 import type { FlowerType } from "@/lib/constants";
+import { orderOutOfScope } from "@/lib/repo/cityScopeGate";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,8 @@ export default async function EditOrderPage({ params }: { params: { id: string }
 
   const order = await getOrderById(params.id);
   if (!order) notFound();
+  // Менеджер города чужую заявку не открывает и по прямой ссылке (`cityScope.ts`).
+  if (await orderOutOfScope(order, session?.user)) notFound();
 
   // Те же границы видимости, что и на странице заявки: прямая ссылка не должна
   // обходить разделение направлений розницы (грабли 1.1-ter).

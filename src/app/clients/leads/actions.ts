@@ -9,6 +9,7 @@ import { localDayKey } from "@/lib/timezone";
 import {
   adsManagerTouches,
   canManageLeads,
+  canSeeLead,
   canUseLeads,
   canWorkLead,
   handoverRefusal,
@@ -36,6 +37,7 @@ import { listClients } from "@/lib/repo/clients";
 import { listUsers } from "@/lib/repo/users";
 import { ensureClientForLead } from "@/lib/leadConvert";
 import type { Lead } from "@/lib/types";
+import { regionStoreOfEmail } from "@/lib/repo/regionStore";
 
 /**
  * Лиды ведут продажи. Менеджер работает со своими лидами и может взять
@@ -186,6 +188,8 @@ async function takeLeadActionInner(leadId: string) {
   if (lead.managerEmail) {
     throw new Error(lead.managerEmail === email ? "Лид уже ваш" : "Этот лид уже взял другой менеджер");
   }
+  // Менеджер города берёт ничьи лиды только своего города (`cityScope.ts`) — остальных он и не видит.
+  if (role === ROLES.MANAGER && !canSeeLead(role, email, lead, await regionStoreOfEmail(email))) throw new Error("Это лид другого города");
   await updateLead(leadId, { ManagerEmail: email, NextTouchAt: lead.nextTouchAt || localDayKey() });
   revalidatePath(LEADS_PATH);
   revalidatePath(`${LEADS_PATH}/${leadId}`);

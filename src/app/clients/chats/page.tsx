@@ -21,6 +21,7 @@ import PageHeader from "@/components/PageHeader";
 import Hint from "@/components/Hint";
 import ChatsBoard, { type BoardChat, type BoardDecision, type BoardMessage, type BoardNote } from "@/components/ChatsBoard";
 import { clientsTabsFor } from "../tabs";
+import { cityScopeOf } from "@/lib/cityScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,6 +34,9 @@ export const maxDuration = 60;
 export default async function ChatsPage({ searchParams }: { searchParams?: { line?: string; phone?: string } }) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
+  // Менеджер, посаженный в город, видит только своё (`cityScope.ts`).
+  const scope = cityScopeOf(session?.user);
+  const city = scope !== "";
   const email = (session?.user?.email ?? "").toLowerCase();
   const lines = await visibleLines(role, email);
   if (lines.length === 0) {
@@ -104,7 +108,7 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
   // (`buildDecisionBoard`), только разложены по номерам телефонов.
   const today = localDayKey();
   const board = buildDecisionBoard({
-    leads: leads.filter((l) => canSeeLead(role, email, l)),
+    leads: leads.filter((l) => canSeeLead(role, email, l, scope)),
     messages,
     analyses,
     touches,
@@ -185,7 +189,7 @@ export default async function ChatsPage({ searchParams }: { searchParams?: { lin
           </span>
         }
         subtitle="WhatsApp менеджеров: кто ждёт ответа и что ответил ИИ"
-        tabs={clientsTabsFor(undefined, role)}
+        tabs={clientsTabsFor(undefined, role, city)}
       />
       {current ? (
         <ChatsBoard

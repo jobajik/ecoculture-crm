@@ -12,7 +12,8 @@ export async function GET(request: Request) {
     return Response.json({ error: "Не авторизован" }, { status: 401 });
   }
   // Те же роли, что пускает в раздел middleware, — одна таблица на оба места.
-  if (!canOpen(session.user.role, "/sales")) {
+  // Продажи всей компании за день; менеджеру города закрыты (`cityScope.ts`).
+  if (!canOpen(session.user.role, "/sales/day", session.user.store)) {
     return Response.json({ error: "Недостаточно прав" }, { status: 403 });
   }
 
