@@ -25,6 +25,8 @@ async function main() {
     role,
     farm: isFarmBoundRole(role) ? user.farm || "" : "",
     active: user.active,
+    // Номер WhatsApp переносим как есть: строка пишется целиком, без него смена роли стирала бы номер (24.11.2026).
+    phone: user.phone ?? "",
   });
   const after = await getUserByEmail(email);
   console.log(`Сохранено. Сейчас в таблице: ${after?.role}`);
