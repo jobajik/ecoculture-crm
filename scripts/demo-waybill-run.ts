@@ -179,6 +179,19 @@ async function main() {
   check("ни один номер не подключён — «не отправлена» с причиной, а не ложное «отправлено»", [K.Status, K.Note.includes("не подключён")], ["failed", true]);
   check("…и в отключённые номера ничего не ушло", sent.slice(before6).filter((s) => s.method === "sendFileByUrl").length, 0);
 
+  console.log("\n— Проход 7: два прохода разом (склад отгружает заявку за заявкой) — накладная одна —");
+  state["111"] = "authorized";
+  state["222"] = "notAuthorized";
+  const z1 = mk(9, "WB-RACE1", { Status: "skipped", Note: "клиент просил не писать — отправьте кнопкой, если накладная нужна", Line: "", MessageID: "", SentAt: "", Phone: "" });
+  const z2 = mk(10, "WB-RACE2", {});
+  await appendRows(SHEET_TABS.WAYBILLS, [z1.rec, z2.rec]);
+  const before7 = sent.length;
+  await Promise.all([runWaybills({ limit: 200, budgetMs: 600000 }), runWaybills({ limit: 200, budgetMs: 600000 }), runWaybills({ limit: 200, budgetMs: 600000 })]);
+  const Z1 = await row("WB-RACE1");
+  const Z2 = await row("WB-RACE2");
+  check("обе строки отправлены", [Z1.Status, Z2.Status, Z2.Line], ["sent", "sent", "main"]);
+  check("три прохода разом — каждому клиенту ровно одна накладная", [Z1.Phone, Z2.Phone].map((p) => sent.slice(before7).filter((x) => x.method === "sendFileByUrl" && x.chat.startsWith(p)).length), [1, 1]);
+
   console.log(fails === 0 ? "\nВсе проверки прошли" : `\nПровалено: ${fails}`);
   process.exit(fails === 0 ? 0 : 1);
 }

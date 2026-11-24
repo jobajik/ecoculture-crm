@@ -415,9 +415,16 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
       const client = ctx.clients.find((c) => c.clientId === order.clientId) ?? null;
       const to = waybillRecipient({ order, client, staffKeys: ctx.staffKeys, mode: "auto" });
       if ("skip" in to) continue;
-      // Отметка пишется ДО отправки (как у повтора после обрыва): не записалась — не шлём, иначе повторяли бы без конца.
+      // Строку сначала ЗАНИМАЕМ: склад отгружает заявку за заявкой, каждая отгрузка будит свой проход, и два прохода
+      // увидели бы одну и ту же строку — клиент получил бы две накладные. Пишем в пометку свой знак, ждём, перечитываем:
+      // знак наш — отправляем, чужой — строку взял другой проход. Пометка пишется ДО отправки и остаётся, если отправка
+      // оборвётся: «отправлена повторно» больше не повторяется, «повтор после обрыва» разберёт правило застрявших.
       const mark = dead ? `${WAYBILL_RESEND_NOTE}: номер менеджера был отключён от WhatsApp` : "";
-      if (!(await setWaybill(w, dead ? { Note: mark } : { Status: "sending", Note: WAYBILL_RETRY_NOTE, Phone: to.phone }))) continue;
+      const sign = `[${Math.random().toString(36).slice(2, 10)}]`;
+      if (!(await setWaybill(w, dead ? { Note: `${mark} ${sign}` } : { Status: "sending", Note: `${WAYBILL_RETRY_NOTE} ${sign}`, Phone: to.phone }))) continue;
+      await sleep(1200);
+      const mine = (await listWaybillsStrict()).find((x) => x.waybillId === w.waybillId);
+      if (!mine || !mine.note.includes(sign)) continue;
       const out = await deliverWaybill({ waybillId: w.waybillId, doc: w.doc, phone: to.phone, rowNumber: w.rowNumber }, order, "auto", ctx, mark);
       if (out.status === "sent") result.sent += 1;
       else {
