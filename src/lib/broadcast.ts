@@ -365,6 +365,8 @@ export interface RecipientRow {
   error: string;
   /** Личный текст (автопилот); пусто — текст рассылки. */
   text?: string;
+  /** Метка копирайтера («СЦЕНАРИЙ|СЕГМЕНТ|ОТПРАВИТЕЛЬ»): текст перед отправкой переписывает ИИ; пусто — как есть. */
+  copy?: string;
 }
 
 export interface WaStatusRow {

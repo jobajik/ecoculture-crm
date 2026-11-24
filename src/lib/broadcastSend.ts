@@ -43,6 +43,9 @@ import { getCurrentPrices } from "./repo/prices";
 import { priceMapForClient } from "./priceList";
 import { fillPrices, priceTagFlowers, priceTagsRefusal } from "./broadcastPrices";
 import { ORDER_STATUSES } from "./constants";
+import { copyDone, copyGist, copyOutcome, parseCopySpec } from "./broadcastCopy";
+import { writeCopy } from "./broadcastCopyRunner";
+import { OPT_OUT_LINE } from "./broadcast";
 
 // ---------------------------------------------------------------------------
 // Отправка рассылки — один шаг «следующее сообщение». Зовут страница рассылки
@@ -260,6 +263,25 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
     return result({ waitSeconds: 20, note: "" });
   }
 
+  // Копирайтер (24.11.2026, промпт владельца «для рассылок и бота»): текст программы — черновик с позициями и ценами,
+  // ИИ переписывает его своими словами прямо перед отправкой — так он видит, что ушло предыдущим, и не повторяется.
+  // Не вышло (модель молчит, потеряла цену, назвала остаток) — уходит черновик программы. Делаем ПОСЛЕ метки «шлю я»:
+  // пока модель думает (до 22 с), второй отправитель видит свежую метку и ждёт (`sendTooSoon` — от 35 с).
+  const spec = parseCopySpec(next.copy);
+  const template = next.text || b.text;
+  let copied: Awaited<ReturnType<typeof writeCopy>> | null = null;
+  if (spec && template) {
+    const avoid = sentRows
+      .filter((r) => r.text && copyOutcome(r.copy).by)
+      .sort((x, y) => x.sentAt.localeCompare(y.sentAt))
+      .slice(-3)
+      .map((r) => copyGist(r.text || "", OPT_OUT_LINE));
+    copied = await writeCopy({ spec, name: next.name, template, avoid, now }).catch(() => null);
+    if (copied && copied.by !== "ai") console.error("broadcast copy → черновик программы:", copied.problems.join("; "));
+    // Метка времени — момент отправки, а не начала шага: от неё считается пауза до следующего сообщения.
+    writes[0] = broadcastUpdate(found.rowNumber, { LastSendAt: new Date().toISOString() });
+  }
+
   const channel = await checkGreenChannel(isLeads ? greenLeadsConfig() : isManager ? await lineConfig(b.line) : undefined);
   if (channel.action === "retry") {
     // Разовый сбой: рассылку НЕ останавливаем, этого же получателя — через минуту.
@@ -273,10 +295,20 @@ export async function sendNextBroadcastMessage(broadcastId: string): Promise<Sen
   }
   const cfg = channel.cfg;
 
-  const text = personalize(next.text || b.text, next.name, false);
+  const text = copied ? copied.text : personalize(next.text || b.text, next.name, false);
   try {
     const ids = await deliver(cfg, next.phone, text, b.fileId ? { id: b.fileId, name: b.fileName, mime: mimeOf(b.fileName) } : null);
-    writes.push(recipientUpdate(next.rowNumber, { Status: "sent", MessageID: ids[ids.length - 1], SentAt: now.toISOString(), Error: "" }));
+    // У получателя остаётся то, что РЕАЛЬНО ушло: бот отвечает на это сообщение, а следующий получатель — не его повтор.
+    // В метке — кто написал текст: «…|ai» или «…|program: почему ушёл черновик программы» (`copyOutcome`).
+    writes.push(
+      recipientUpdate(next.rowNumber, {
+        Status: "sent",
+        MessageID: ids[ids.length - 1],
+        SentAt: new Date().toISOString(),
+        Error: "",
+        ...(copied && spec ? { Text: text, Copy: copyDone(spec, copied.by, copied.problems) } : {}),
+      })
+    );
     // Номера наших сообщений — в память чата: бот поймёт, что это не менеджер написал. На номере
     // Земфиры бота нет — память бота не трогаем.
     if (!isLeads && !isManager) {

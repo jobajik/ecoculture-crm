@@ -22,6 +22,7 @@ import { priceFor } from "./priceList";
 import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade, ROLES } from "./constants";
 import { parsePush, pushItemFor, SALES_PUSH_SETTING } from "./salesPush";
 import { pickNudgeOffers, type NudgeOffer } from "./botNudge";
+import { copySpecValue, senderOf } from "./broadcastCopy";
 import { ROTATION_FILE } from "./botPhotos";
 import { SITE } from "./broadcastSend";
 import { kickBroadcast } from "./autoBroadcastRunner";
@@ -159,6 +160,8 @@ export async function bulkMessageLeads(input: {
       refId: p.lead.leadId,
       managerEmail: p.lead.managerEmail,
       text: texts.get(p.lead.leadId) || "",
+      // «Фото и цены» — текст кода, одинаковый у всех: перед отправкой копирайтер перепишет его каждому (24.11.2026).
+      ...(input.mode === "offer" ? { copy: copySpecValue({ scenario: "FRESH_CUT", segment: "COMMON", sender: senderOf(line, false) }) } : {}),
     }));
     const id = await createBroadcast({
       createdByEmail: input.byEmail,

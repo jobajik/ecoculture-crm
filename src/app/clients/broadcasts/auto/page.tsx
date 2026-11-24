@@ -1,3 +1,4 @@
+import { copyOutcome } from "@/lib/broadcastCopy";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
@@ -42,6 +43,14 @@ const hm = (iso: string) => {
  * «Рассылки → Автопилот» (17.10.2026): правила, план на сегодня с текстом каждому, «Остановить сегодня».
  * Правила — `src/lib/autoBroadcast.ts`, работа — `src/lib/autoBroadcastRunner.ts`.
  */
+/** Кто написал текст получателя: до отправки — черновик программы, после — копирайтер или программа. */
+function copyNote(copy: string): string {
+  const o = copyOutcome(copy);
+  if (o.by === "ai") return "текст написал ИИ";
+  if (o.by === "program") return `ушёл текст программы${o.why ? ` (${o.why})` : ""}`;
+  return "черновик — перед отправкой ИИ перепишет своими словами";
+}
+
 export default async function AutoBroadcastsPage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
@@ -142,6 +151,7 @@ export default async function AutoBroadcastsPage() {
                                     <span className="tabular-nums">…{r.phone.slice(-4)}</span>
                                     <span>{RECIPIENT_LABELS[r.status] ?? r.status}</span>
                                     {r.error && <span className="text-ink-muted">{r.error}</span>}
+                                    {r.copy && <span className="text-ink-muted">{copyNote(r.copy)}</span>}
                                   </div>
                                   <pre className="mt-1 whitespace-pre-wrap font-sans text-[13px]">{personalize(r.text || b.text, r.name, false)}</pre>
                                 </div>
@@ -210,7 +220,9 @@ export default async function AutoBroadcastsPage() {
                 сводки. С 10:00 (и не раньше чем через 45 минут после письма) отправляет сам, без компьютера, с теми же
                 паузами, пределами и «сначала тёплым», что и обычные рассылки. Одному человеку — не больше одного сообщения в
                 день и не чаще раза в неделю; кому писали или кто писал нам меньше суток назад — не трогаем. Ответ «ОТМЕНА»
-                останавливает всё на сегодня.
+                останавливает всё на сегодня. Текст в плане — черновик программы: перед отправкой ИИ-копирайтер переписывает
+                его каждому своими словами (другое приветствие, другой вопрос в конце); позиции и цены переносит без
+                изменений, точный остаток не называет. Не справился — уходит черновик.
               </Hint>
             </span>
           }

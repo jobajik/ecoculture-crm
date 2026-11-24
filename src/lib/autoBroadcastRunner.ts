@@ -37,6 +37,10 @@ import { staffPhoneKeys } from "./botSalesAlert";
 import { DIGEST_SETTING, digestPhones } from "./morningDigest";
 import { ROTATION_FILE } from "./botPhotos";
 import { genitiveName, isManagerLine } from "./waLines";
+import { harvestDayOf } from "./stockMatrix";
+import { almatyHourOf } from "./officeStore";
+import { MANAGER_PROFILES_SETTING, nextShipDay, parseManagerProfiles, profileOf, shipDayLabel } from "./managerProfile";
+import { copySpecValue, holidayFacts, segmentByLastOrder, senderOf, type CopyScenario, type CopySegment } from "./broadcastCopy";
 import {
   AUTO_AUTHOR,
   AUTO_CAPS,
@@ -56,9 +60,17 @@ import {
   chainWait,
   chatFacts,
   commonExclusion,
+  cutDayOf,
   freshText,
+  holidayStage,
+  holidayText,
+  introDue,
+  introText,
+  isRunningLow,
   isSleeping,
   leadReminderText,
+  lowText,
+  LOW_SALES_WINDOW_DAYS,
   orderedRecently,
   parseAutoConfig,
   parseChainLock,
@@ -97,6 +109,8 @@ interface Recipient {
   refId: string;
   managerEmail: string;
   text: string;
+  /** Метка копирайтера: какой сценарий, сегмент и отправитель у этого текста (`broadcastCopy.ts`). */
+  copy?: string;
 }
 
 export interface BroadcastSpec {
@@ -182,6 +196,24 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
     });
   const userName = new Map(users.map((u) => [u.email.trim().toLowerCase(), u.name]));
 
+  // Когда срезано: последний день срезки позиции на основном складе. «Сегодня» / «вчера» в тексте — только по факту.
+  const freshest = new Map<string, string>();
+  for (const b of inStore(batches, "")) {
+    if (!(b.quantityRemaining > 0)) continue;
+    const k = `${b.flowerType}|${b.variety}|${b.grade}`;
+    const d = harvestDayOf(b);
+    if (d > (freshest.get(k) ?? "")) freshest.set(k, d);
+  }
+  const cutOf = (list: { flowerType: string; variety: string; grade: string }[]) => cutDayOf(list.map((o) => freshest.get(`${o.flowerType}|${o.variety}|${o.grade}`) ?? ""), today);
+
+  // Региональный формат: у клиента менеджера с днём фуры цветок едет фурой — призыв «записаться на поставку».
+  const profiles = parseManagerProfiles(map[MANAGER_PROFILES_SETTING]);
+  const shipDayOf = (managerEmail: string) => {
+    const profile = managerEmail ? profileOf(profiles, managerEmail) : null;
+    return profile?.shipWeekday ? shipDayLabel(nextShipDay(today, profile.shipWeekday, almatyHourOf(now))) : "";
+  };
+  const copyOf = (scenario: CopyScenario, segment: CopySegment, line: string, regional: boolean) => copySpecValue({ scenario, segment, sender: senderOf(line, regional) });
+
   // --- Лиды: с того номера, где шла переписка --------------------------------------------------------------
   let waiting = 0;
   if (cfg.rules.leads) {
@@ -199,10 +231,22 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
     const byLine = new Map<string, Recipient[]>();
     for (const p of picked.take) {
       const placeholder = /^Клиент WhatsApp/i.test(p.lead.name.trim());
-      const text = leadReminderText({ draft: p.draft, manager: managerOfLine(p.line), offers: p.draft ? [] : offersFor(""), label });
+      const offers = p.draft ? [] : offersFor("");
+      // Номер менеджера с днём фуры — региональный формат; номер Земфиры и остальных менеджеров — «пишет менеджер».
+      const shipDay = isManagerLine(p.line) ? shipDayOf(lineOf.get(p.line)?.managerEmail || "") : "";
+      const text = leadReminderText({ draft: p.draft, manager: managerOfLine(p.line), offers, label, cut: cutOf(offers), shipDay });
       byLine.set(p.line, [
         ...(byLine.get(p.line) ?? []),
-        { phone: p.phone, name: placeholder ? "" : greetingName(p.lead.contactPerson, p.lead.name), kind: "lead", refId: p.lead.leadId, managerEmail: p.lead.managerEmail, text },
+        {
+          phone: p.phone,
+          name: placeholder ? "" : greetingName(p.lead.contactPerson, p.lead.name),
+          kind: "lead",
+          refId: p.lead.leadId,
+          managerEmail: p.lead.managerEmail,
+          text,
+          // Лид ещё не покупал — общая база.
+          copy: copyOf("FRESH_CUT", "COMMON", p.line, !!shipDay),
+        },
       ]);
       taken.add(phoneKey(p.phone));
     }
@@ -234,7 +278,10 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
     if (items.length) h.lastItems = items.map((i) => ({ flowerType: i.flowerType, variety: i.variety, grade: i.grade, quantity: i.quantity }));
     for (const i of items) {
       h.flowers.add(i.flowerType);
-      if (day >= pushFrom) h.recentGrades.add(`${i.flowerType}|${normGrade(i.grade)}`);
+      if (day >= pushFrom) {
+        h.recentGrades.add(`${i.flowerType}|${normGrade(i.grade)}`);
+        (h.recentItems ??= new Set()).add(`${i.flowerType}|${i.variety}|${i.grade}`);
+      }
     }
     history.set(c.clientId, h);
   }
@@ -260,14 +307,46 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
     if (!list.length) return;
     specs.push({ rule, line: "", lineLabel: "", fileId: rotation ? ROTATION_FILE : "", fileName: rotation ? "Фото из ротации" : "", audience, recipients: list });
   };
-  const asRecipient = (h: ClientHistory, text: string): Recipient => ({
+  const asRecipient = (h: ClientHistory, text: string, scenario: CopyScenario, segment?: CopySegment): Recipient => ({
     phone: h.phone,
     name: greetingName(h.contactPerson, h.name),
     kind: "client",
     refId: h.clientId,
     managerEmail: h.managerEmail,
     text,
+    // Сегмент — по последнему заказу: активный за 60 дней — «клиенты менеджеров», иначе общая база.
+    copy: copyOf(scenario, segment ?? segmentByLastOrder(h.days[h.days.length - 1] || "", today), "", !!shipDayOf(h.managerEmail)),
   });
+
+  // --- 16 декабря: предзаказ (9–11 декабря) и последний шанс (13 декабря) ------------------------------------
+  // В эти дни с основного номера идёт только праздник: два разных сообщения одному клиенту в день не уходят, а
+  // предел дня отдан празднику целиком (не 45, как обычно, а дневной предел номера).
+  const stage = cfg.rules.holiday ? holidayStage(today) : null;
+  if (stage) {
+    const list: Recipient[] = [];
+    const dayLimit = Math.min(AUTO_CAPS.holiday, effectiveDailyLimit(map.BroadcastDailyLimit, map.BroadcastWarmupFrom, today));
+    const preorderFrom = `${today.slice(0, 4)}-12-09`;
+    const weekdayName = holidayFacts(Number(today.slice(0, 4))).dayLabel;
+    // Сначала те, кто заказывал недавно; «последний шанс» — только тем, кто с 9 декабря не заказал.
+    const due = clientsList
+      .filter((h) => stage === "preorder" || (h.days[h.days.length - 1] || "") < preorderFrom)
+      .sort((a, b) => (b.days[b.days.length - 1] || "").localeCompare(a.days[a.days.length - 1] || "") || b.revenue - a.revenue);
+    for (const h of due) {
+      if (list.length >= dayLimit) break;
+      const key = phoneKey(h.phone);
+      if (taken.has(key)) continue;
+      // Предзаказ — один раз (рассылка за 7 дней его закрывает); напоминание 13-го — и тем, кто получил предзаказ 9–10-го.
+      const why = commonExclusion(key, ctx, stage === "last" ? 1.5 : undefined);
+      if (why) {
+        skip("holiday", why);
+        continue;
+      }
+      list.push(asRecipient(h, holidayText(stage, weekdayName), stage === "preorder" ? "HOLIDAY_PREORDER" : "HOLIDAY_LAST_CHANCE"));
+      taken.add(key);
+    }
+    mainLeft = 0;
+    mainSpec("holiday", list, stage === "preorder" ? `Автопилот: предзаказ к 16 декабря (${list.length})` : `Автопилот: до 16 декабря 3 дня — кто ещё не заказал (${list.length})`, false);
+  }
 
   // --- Давно не заказывали ----------------------------------------------------------------------------------
   if (cfg.rules.sleeping) {
@@ -291,7 +370,13 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
         skip("sleeping", "нечего предложить со склада");
         continue;
       }
-      list.push(asRecipient(h, sleepingText({ last: last.map((l) => ({ label: label(l), quantity: l.quantity })), offers: finalOffers, label })));
+      list.push(
+        asRecipient(
+          h,
+          sleepingText({ last: last.map((l) => ({ label: label(l), quantity: l.quantity })), offers: finalOffers, label, cut: cutOf(finalOffers), shipDay: shipDayOf(h.managerEmail) }),
+          "FRESH_CUT"
+        )
+      );
       taken.add(phoneKey(h.phone));
     }
     mainLeft -= list.length;
@@ -307,7 +392,8 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
       for (const h of buyers) {
         if (list.length >= Math.min(AUTO_CAPS.push, mainLeft)) break;
         if (!okClient("push", h)) continue;
-        list.push(asRecipient(h, pushText(line)));
+        const shown = line.varieties.filter((v) => v.price > 0 && v.qty >= 50).slice(0, 3).map((v) => ({ flowerType: line.flowerType, variety: v.variety, grade: line.grade }));
+        list.push(asRecipient(h, pushText(line, { cut: cutOf(shown), shipDay: shipDayOf(h.managerEmail) }), "FRESH_CUT"));
         taken.add(phoneKey(h.phone));
       }
     }
@@ -331,11 +417,67 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
         skip("fresh", "нечего предложить со склада");
         continue;
       }
-      list.push(asRecipient(h, freshText(offers, label)));
+      list.push(asRecipient(h, freshText(offers, label, { cut: cutOf(offers), shipDay: shipDayOf(h.managerEmail) }), "FRESH_CUT"));
       taken.add(phoneKey(h.phone));
     }
     mainLeft -= list.length;
     mainSpec("fresh", list, `Автопилот: свежий срез тёплым клиентам (${list.length})`, true);
+  }
+
+  // --- Заканчивается то, что клиент берёт -------------------------------------------------------------------
+  if (cfg.rules.low && mainLeft > 0) {
+    // Сколько уходит: всё, что заказано за неделю (и объём в регионы — он тоже забирает склад), без отменённого.
+    const soldFrom = localDayKey(new Date(now.getTime() - LOW_SALES_WINDOW_DAYS * 86400000));
+    const sold = new Map<string, number>();
+    for (const o of orders) {
+      if (o.status === ORDER_STATUSES.CANCELLED || !o.createdAt || toDay(o.createdAt) < soldFrom) continue;
+      for (const i of o.items) if (i.quantity > 0) sold.set(`${i.flowerType}|${i.variety}|${i.grade}`, (sold.get(`${i.flowerType}|${i.variety}|${i.grade}`) ?? 0) + i.quantity);
+    }
+    const lowNow = stock
+      .filter((s) => priceOf(s.flower, s.variety, s.grade) > 0 && !isPush(s.flower, s.grade) && isRunningLow(s.qty, sold.get(`${s.flower}|${s.variety}|${s.grade}`) ?? 0))
+      .map((s) => ({ flowerType: s.flower, variety: s.variety, grade: s.grade, qty: s.qty, price: priceOf(s.flower, s.variety, s.grade) }));
+    const list: Recipient[] = [];
+    if (lowNow.length) {
+      const buyers = clientsList.filter((h) => lowNow.some((o) => h.recentItems?.has(`${o.flowerType}|${o.variety}|${o.grade}`))).sort((a, b) => b.revenue - a.revenue);
+      for (const h of buyers) {
+        if (list.length >= Math.min(AUTO_CAPS.low, mainLeft)) break;
+        if (!okClient("low", h)) continue;
+        const mine = lowNow.filter((o) => h.recentItems?.has(`${o.flowerType}|${o.variety}|${o.grade}`)).slice(0, 2);
+        list.push(asRecipient(h, lowText(mine, label, { shipDay: shipDayOf(h.managerEmail) }), "ALMOST_GONE", "MANAGERS"));
+        taken.add(phoneKey(h.phone));
+      }
+    }
+    mainLeft -= list.length;
+    mainSpec("low", list, `Автопилот: заканчивается то, что клиент берёт (${list.length})`, true);
+  }
+
+  // --- Знакомство с производством — один раз, тем, кто не покупал или взял один раз давно ---------------------
+  if (cfg.rules.intro && mainLeft > 0) {
+    const list: Recipient[] = [];
+    const cards = clients
+      .filter((c) => c.active && !(c.retail || "").trim() && waPhone(c.phone))
+      .filter((c) => introDue(history.get(c.clientId)?.days ?? [], today))
+      // Сначала те, кто нам уже писал: им сообщение с основного номера не «холодное».
+      .sort((a, b) => Number(!!ctx.facts.get(phoneKey(waPhone(b.phone)))) - Number(!!ctx.facts.get(phoneKey(waPhone(a.phone)))) || (b.createdAt || "").localeCompare(a.createdAt || ""));
+    for (const c of cards) {
+      if (list.length >= Math.min(AUTO_CAPS.intro, mainLeft)) break;
+      const phone = waPhone(c.phone);
+      const key = phoneKey(phone);
+      if (taken.has(key)) continue;
+      if (ctx.sent.get(key)?.intro) {
+        skip("intro", "знакомство уже отправляли");
+        continue;
+      }
+      const why = commonExclusion(key, ctx);
+      if (why) {
+        skip("intro", why);
+        continue;
+      }
+      list.push({ phone, name: greetingName(c.contactPerson, c.name), kind: "client", refId: c.clientId, managerEmail: c.managerEmail, text: introText(), copy: copyOf("WHO_WE_ARE", "COMMON", "", false) });
+      taken.add(key);
+    }
+    mainLeft -= list.length;
+    mainSpec("intro", list, `Автопилот: знакомство с производством (${list.length})`, true);
   }
 
   return { specs, waiting, skipped };

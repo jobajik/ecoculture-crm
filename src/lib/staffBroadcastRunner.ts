@@ -21,6 +21,7 @@ import { pickNudgeOffers, type NudgeOffer } from "./botNudge";
 import { priceFor, type PriceRow } from "./priceList";
 import { parsePush, pushItemFor, SALES_PUSH_SETTING } from "./salesPush";
 import { ROTATION_FILE } from "./botPhotos";
+import { copySpecValue, senderOf } from "./broadcastCopy";
 import { almatyHourOf } from "./officeStore";
 import { MANAGER_PROFILES_SETTING, nextShipDay, parseManagerProfiles, profileOf, shipDayLabel } from "./managerProfile";
 import { FLOWER_TYPE_LABELS, formatGrade, isLiquidGrade, ORDER_STATUSES, ROLES } from "./constants";
@@ -226,7 +227,16 @@ export async function planStaffBroadcast(
     fileId: command.photo ? ROTATION_FILE : "",
     fileName: command.photo ? "Фото из ротации" : "",
     focus: focusTitle,
-    recipients: take.map((c) => ({ phone: c.phone, name: c.name, kind: c.kind, refId: c.refId, managerEmail: c.managerEmail, text })),
+    recipients: take.map((c) => ({
+      phone: c.phone,
+      name: c.name,
+      kind: c.kind,
+      refId: c.refId,
+      managerEmail: c.managerEmail,
+      text,
+      // Свой текст сотрудника уходит дословно; текст, собранный кодом, — черновик для копирайтера (24.11.2026).
+      ...(command.text ? {} : { copy: copySpecValue({ scenario: "FRESH_CUT", segment: c.kind === "client" ? "MANAGERS" : "COMMON", sender: senderOf(line, !!shipDay) }) }),
+    })),
   };
   return { reply: staffBroadcastPlanText({ plan, asked, skipped, withPhoto: command.photo }), plan };
 }

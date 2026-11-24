@@ -25,6 +25,8 @@ export interface StaffBroadcastRecipient {
   refId: string;
   managerEmail: string;
   text: string;
+  /** Метка копирайтера: текст собрал код — перед отправкой ИИ перепишет его каждому своими словами. */
+  copy?: string;
 }
 
 export interface StaffBroadcastPlan {
@@ -183,7 +185,7 @@ const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\
 export function staffBroadcastText(input: { manager: string; offers: NudgeOffer[]; label: (o: NudgeOffer) => string; shipDay?: string }): string {
   const hello = input.manager ? `Здравствуйте, {имя}! Это ${input.manager}, Ecoculture.` : "Здравствуйте, {имя}! Это Ecoculture.";
   const ask = input.shipDay ? `Отправим ближайшей фурой — ${input.shipDay}. Записать вас?` : "Поставить вам на завтра? Для пробы — от 50 шт.";
-  return [hello, "Сегодня свежий срез:", "", ...input.offers.map((o) => `• ${input.label(o)} — *${money(o.price)}*`), "", ask].join("\n");
+  return [hello, "Свежий срез:", "", ...input.offers.map((o) => `• ${input.label(o)} — *${money(o.price)}*`), "", ask].join("\n");
 }
 
 /** Ответ сотруднику: план и «ответьте ДА». */
@@ -212,6 +214,7 @@ export function staffBroadcastPlanText(input: { plan: StaffBroadcastPlan; asked:
     "",
     `Текст${plan.habits ? ` ${plan.recipients[0]?.name || ""}${input.withPhoto ? ", с фото" : ""}` : input.withPhoto ? " (с фото позиции)" : ""}:`,
     sample,
+    ...(plan.recipients[0]?.copy ? ["", "Это черновик: каждому перепишу его своими словами, чтобы сообщения не были одинаковыми. Позиции и цены - те же."] : []),
     "",
     "Ответьте *ДА* — запущу, *НЕТ* — не запускаю. План ждёт 3 часа.",
   ].join("\n");

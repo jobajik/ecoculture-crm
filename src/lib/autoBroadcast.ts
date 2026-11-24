@@ -17,19 +17,28 @@ import type { Lead, LeadAnalysis, WaMessage } from "./types";
 // `autoBroadcastRunner.ts`; проверка — `scripts/check-auto-broadcast.ts`.
 // ---------------------------------------------------------------------------
 
-export type AutoRule = "leads" | "sleeping" | "push" | "fresh";
-export const AUTO_RULES: AutoRule[] = ["leads", "sleeping", "push", "fresh"];
+// 24.11.2026 — промпт владельца «для рассылок и бота» добавил три сценария: «остатков мало», «знакомство с
+// производством» и 16 декабря (предзаказ и последний шанс). Тексты всех правил теперь — черновик для копирайтера
+// (`broadcastCopy.ts`): программа даёт позиции и цены, ИИ переписывает своими словами перед отправкой.
+export type AutoRule = "leads" | "sleeping" | "push" | "fresh" | "low" | "intro" | "holiday";
+export const AUTO_RULES: AutoRule[] = ["leads", "sleeping", "push", "fresh", "low", "intro", "holiday"];
 export const AUTO_RULE_LABELS: Record<AutoRule, string> = {
   leads: "Дожим просроченных лидов",
   sleeping: "Давно не заказывали",
   push: "Распродажа «в первую очередь»",
   fresh: "Свежий срез и наличие",
+  low: "Заканчивается то, что клиент берёт",
+  intro: "Знакомство с производством",
+  holiday: "16 декабря: предзаказ и последний шанс",
 };
 export const AUTO_RULE_HINTS: Record<AutoRule, string> = {
   leads: "лидам, у которых касание сегодня или просрочено, — с того номера, где шла переписка",
   sleeping: "клиентам, которые молчат дольше обычного: что брали в прошлый раз и цены сейчас",
   push: "тем, кто уже брал распродаваемую позицию: склад и цена от объёма",
   fresh: "по понедельникам — тёплым клиентам: что сейчас хорошо в наличии",
+  low: "тем, кто брал позицию за 60 дней, когда её на складе осталось на пару дней продаж; точный остаток не называем",
+  intro: "карточкам, которые не покупали или взяли один раз давно, — один раз: кто мы и чем отличаемся",
+  holiday: "9–11 декабря — предзаказ с доставкой к 13–15 декабря, 13 декабря — напоминание тем, кто не заказал",
 };
 
 /** Настройки автопилота — JSON во вкладке Settings. Нет настройки — все правила включены (выбор владельца). */
@@ -42,7 +51,7 @@ export const CHAIN_SETTING = "BroadcastChain";
 export const AUTO_AUTHOR = "Автопилот";
 
 /** Сколько за день по правилу. Лиды — на каждый номер свои. */
-export const AUTO_CAPS: Record<AutoRule, number> = { leads: 30, sleeping: 15, push: 15, fresh: 25 };
+export const AUTO_CAPS: Record<AutoRule, number> = { leads: 30, sleeping: 15, push: 15, fresh: 25, low: 10, intro: 8, holiday: 80 };
 /** Всего с рабочего номера за день по автопилоту (давно не заказывали + распродажа + срез). */
 export const AUTO_MAIN_MAX = 45;
 
@@ -79,7 +88,7 @@ export interface AutoConfig {
 }
 
 export function parseAutoConfig(raw: string | null | undefined): AutoConfig {
-  const rules: Record<AutoRule, boolean> = { leads: true, sleeping: true, push: true, fresh: true };
+  const rules: Record<AutoRule, boolean> = { leads: true, sleeping: true, push: true, fresh: true, low: true, intro: true, holiday: true };
   try {
     const o = JSON.parse(raw || "{}") as Record<string, unknown>;
     const r = (o.rules && typeof o.rules === "object" ? o.rules : o) as Record<string, unknown>;
@@ -154,10 +163,27 @@ export function almatyParts(d: Date): { day: string; hour: number; minutes: numb
   return { day: `${p.year}-${p.month}-${p.day}`, hour, minutes: hour * 60 + Number(p.minute), weekday };
 }
 
+/**
+ * 16 декабря (сценарии владельца): 9 декабря — предзаказ с доставкой к 13–15 декабря, 13 декабря — последний шанс.
+ * Предзаказ идёт три дня, 9–11 декабря: за один день основной номер всю базу не обойдёт (предел в день), а каждый
+ * получает его один раз. 13 декабря 2026 — воскресенье: в этот день план собирается ради одного этого правила.
+ */
+export type HolidayStage = "preorder" | "last";
+export const HOLIDAY_PREORDER_FROM = "12-09";
+export const HOLIDAY_PREORDER_TO = "12-11";
+export const HOLIDAY_LAST_DAY = "12-13";
+export function holidayStage(day: string): HolidayStage | null {
+  const md = String(day || "").slice(5, 10);
+  if (md >= HOLIDAY_PREORDER_FROM && md <= HOLIDAY_PREORDER_TO) return "preorder";
+  return md === HOLIDAY_LAST_DAY ? "last" : null;
+}
+
 /** Пора ли собирать план: пн–сб, 9:00–16:00, сегодня ещё не собирали, хоть одно правило включено. */
 export function planDue(now: Date, plan: PlanRecord, cfg: AutoConfig): boolean {
   const t = almatyParts(now);
-  if (t.weekday === 0 || !anyRuleOn(cfg)) return false;
+  if (!anyRuleOn(cfg)) return false;
+  // Воскресенье — выходной автопилота, кроме дня «последнего шанса» перед 16 декабря.
+  if (t.weekday === 0 && !(cfg.rules.holiday && holidayStage(t.day))) return false;
   if (t.hour < PLAN_FROM_HOUR || t.hour >= PLAN_TO_HOUR) return false;
   return plan.day !== t.day;
 }
@@ -222,6 +248,8 @@ export interface SentFacts {
   lastSentAt: string;
   /** Напоминания автопилота лидам (время отправки). */
   leadReminders: string[];
+  /** «Знакомство с производством» уже уходило — оно одно на человека. */
+  intro?: boolean;
 }
 
 export function sentFacts(
@@ -233,9 +261,10 @@ export function sentFacts(
     if (r.status !== "sent" || !r.sentAt) continue;
     const k = phoneKey(r.phone);
     if (!k) continue;
-    const cur = out.get(k) ?? { lastSentAt: "", leadReminders: [] };
+    const cur = out.get(k) ?? { lastSentAt: "", leadReminders: [], intro: false };
     if (r.sentAt > cur.lastSentAt) cur.lastSentAt = r.sentAt;
     if (autoOf.get(r.broadcastId) === "leads") cur.leadReminders.push(r.sentAt);
+    if (autoOf.get(r.broadcastId) === "intro") cur.intro = true;
     out.set(k, cur);
   }
   return out;
@@ -384,6 +413,8 @@ export interface ClientHistory {
   lastItems: { flowerType: string; variety: string; grade: string; quantity: number }[];
   /** Позиции за `PUSH_BUYERS_DAYS` дней — цветок|градация. */
   recentGrades: Set<string>;
+  /** Те же позиции с сортом — цветок|сорт|градация: по ним «заканчивается то, что вы берёте». */
+  recentItems?: Set<string>;
   flowers: Set<string>;
 }
 
@@ -414,38 +445,148 @@ const qty = (n: number) => `${Math.round(n).toLocaleString("ru-RU").replace(/\s/
 const offerLine = (o: NudgeOffer, label: (o: NudgeOffer) => string) => `• ${label(o)} — *${money(o.price)}*`;
 const withOptOut = (t: string) => `${t}\n\n${OPT_OUT_LINE}`;
 
-/** Напоминание лиду: свежий черновик разбора или предложение со склада. Без «СТОП» — это личная переписка. */
-export function leadReminderText(input: { draft: string; manager: string; offers: NudgeOffer[]; label: (o: NudgeOffer) => string }): string {
+/**
+ * Когда срезано предлагаемое — программа знает по партиям. Говорим «сегодня» / «вчера», только если это правда; иначе
+ * дня не называем вовсе (копирайтеру тогда запрещено писать «сегодняшний срез» — `checkCopy`).
+ */
+export type CutDay = "today" | "yesterday" | "";
+export const cutLine = (cut: CutDay | undefined) => (cut === "today" ? "Срезка: сегодня." : cut === "yesterday" ? "Срезка: вчера." : "");
+/** Свежесть набора позиций: самая «старая» из них решает. `freshest` — последний день срезки позиции. */
+export function cutDayOf(freshest: string[], today: string): CutDay {
+  if (!freshest.length || freshest.some((d) => !d)) return "";
+  const worst = freshest.reduce((m, d) => (d < m ? d : m));
+  if (worst >= today) return "today";
+  return worst >= addDaysToKey(today, -1) ? "yesterday" : "";
+}
+const withCut = (lines: string[], cut: CutDay | undefined) => (cutLine(cut) ? [...lines, cutLine(cut)] : lines);
+
+/**
+ * Напоминание лиду: свежий черновик разбора или предложение со склада. Без «СТОП» — это личная переписка.
+ * `shipDay` — у регионального менеджера: цветок едет фурой, и призыв — записаться на поставку.
+ */
+export function leadReminderText(input: { draft: string; manager: string; offers: NudgeOffer[]; label: (o: NudgeOffer) => string; cut?: CutDay; shipDay?: string }): string {
   if (input.draft) return input.draft;
   const hello = input.manager ? `Здравствуйте, {имя}! Это ${input.manager}, Ecoculture.` : "Здравствуйте, {имя}! Это Ecoculture.";
+  const ask = input.shipDay ? `Ближайшая фура — ${input.shipDay}. Записать вас на поставку?` : "Поставить вам на завтра? Для пробы — от 50 шт.";
   if (input.offers.length === 0) {
-    return [hello, "", "Напомню о себе: свежий срез каждый день, привезём завтра.", "Подобрать вам что-нибудь?"].join("\n");
+    return [hello, "", input.shipDay ? `Напомню о себе: свежий срез, ближайшая фура — ${input.shipDay}.` : "Напомню о себе: свежий срез каждый день, привезём завтра.", "Подобрать вам что-нибудь?"].join("\n");
   }
-  return [hello, "Напомню о себе — сегодня свежий срез:", "", ...input.offers.map((o) => offerLine(o, input.label)), "", "Поставить вам на завтра? Для пробы — от 50 шт."].join("\n");
+  return [hello, "Напомню о себе — свежий срез:", "", ...withCut(input.offers.map((o) => offerLine(o, input.label)), input.cut), "", ask].join("\n");
 }
 
 /** «Давно не заказывали»: что брали в прошлый раз и что есть сейчас. */
-export function sleepingText(input: { last: { label: string; quantity: number }[]; offers: NudgeOffer[]; label: (o: NudgeOffer) => string }): string {
+export function sleepingText(input: { last: { label: string; quantity: number }[]; offers: NudgeOffer[]; label: (o: NudgeOffer) => string; cut?: CutDay; shipDay?: string }): string {
   const lines = ["Здравствуйте, {имя}!", "Давно от вас не было заказа — повторим?"];
   if (input.last.length) lines.push("", "В прошлый раз вы брали:", ...input.last.map((l) => `• ${l.label} — ${qty(l.quantity)}`));
-  lines.push("", "Сейчас в наличии:", ...input.offers.map((o) => offerLine(o, input.label)), "", "Поставить вам на завтра?");
+  lines.push("", "Сейчас в наличии:", ...withCut(input.offers.map((o) => offerLine(o, input.label)), input.cut), "", input.shipDay ? `Ближайшая фура — ${input.shipDay}. Записать вас на поставку?` : "Поставить вам на завтра?");
   return withOptOut(lines.join("\n"));
 }
 
 /** Распродажа: тем, кто уже брал эту позицию. */
-export function pushText(line: Pick<PushLine, "label" | "varieties" | "bulkFrom" | "bulkPrice">): string {
+export function pushText(line: Pick<PushLine, "label" | "varieties" | "bulkFrom" | "bulkPrice">, opts: { cut?: CutDay; shipDay?: string } = {}): string {
   const vars = line.varieties.filter((v) => v.price > 0 && v.qty >= 50).slice(0, 3);
-  const lines = ["Здравствуйте, {имя}!", `${line.label} — сейчас много на складе, свежий срез:`, "", ...vars.map((v) => `• ${v.variety} — *${money(v.price)}*`)];
+  const lines = ["Здравствуйте, {имя}!", `${line.label} — сейчас много на складе, свежий срез:`, "", ...withCut(vars.map((v) => `• ${v.variety} — *${money(v.price)}*`), opts.cut)];
   if (line.bulkFrom > 0 && line.bulkPrice > 0) lines.push("", `От ${qty(line.bulkFrom)} — *${money(line.bulkPrice)}* за стебель.`);
-  lines.push("", "Вы уже брали эту позицию — поставить на завтра?");
+  lines.push("", opts.shipDay ? `Вы уже брали эту позицию. Ближайшая фура — ${opts.shipDay}. Записать вас на поставку?` : "Вы уже брали эту позицию — поставить на завтра?");
   return withOptOut(lines.join("\n"));
 }
 
 /** Свежий срез: что сейчас хорошо в наличии. */
-export function freshText(offers: NudgeOffer[], label: (o: NudgeOffer) => string): string {
+export function freshText(offers: NudgeOffer[], label: (o: NudgeOffer) => string, opts: { cut?: CutDay; shipDay?: string } = {}): string {
   return withOptOut(
-    ["Здравствуйте, {имя}!", "Свежий срез на этой неделе:", "", ...offers.map((o) => offerLine(o, label)), "", "Поставить вам на завтра? Привезём по Алматы."].join("\n")
+    [
+      "Здравствуйте, {имя}!",
+      "Свежий срез на этой неделе:",
+      "",
+      ...withCut(offers.map((o) => offerLine(o, label)), opts.cut),
+      "",
+      opts.shipDay ? `Ближайшая фура — ${opts.shipDay}. Записать вас на поставку?` : "Поставить вам на завтра? Привезём по Алматы.",
+    ].join("\n")
   );
+}
+
+// --- Правило «заканчивается» ------------------------------------------------------------------------------
+
+/** Остатка — не больше чем на столько дней продаж; продажи считаем за неделю. */
+export const LOW_DAYS_OF_SALES = 2;
+export const LOW_SALES_WINDOW_DAYS = 7;
+/** Меньше этого в день позиция не «ходовая» — про неё не пишем; меньше этого на складе — предлагать уже нечего. */
+export const LOW_MIN_DAILY = 20;
+export const LOW_MIN_STOCK = 50;
+
+/**
+ * Позиция заканчивается: её продают заметно каждый день, а на складе осталось на пару дней. Это факт программы — модель
+ * получает только слова «осталось немного» и цену; сам остаток цифрой клиенту не уходит (правило 2 промпта).
+ */
+export function isRunningLow(stockQty: number, soldInWindow: number): boolean {
+  const daily = soldInWindow / LOW_SALES_WINDOW_DAYS;
+  return stockQty >= LOW_MIN_STOCK && daily >= LOW_MIN_DAILY && stockQty <= daily * LOW_DAYS_OF_SALES;
+}
+
+/** «Заканчивается»: позиции, которые клиент брал, с ценой — без штук остатка и без обещаний про следующую срезку. */
+export function lowText(offers: NudgeOffer[], label: (o: NudgeOffer) => string, opts: { shipDay?: string } = {}): string {
+  return withOptOut(
+    [
+      "Здравствуйте, {имя}!",
+      "Из того, что вы берёте, заканчивается:",
+      "",
+      ...offers.map((o) => offerLine(o, label)),
+      "",
+      "Осталось немного, разбирают быстро.",
+      opts.shipDay ? `Ближайшая фура — ${opts.shipDay}. Забронировать для вас объём?` : "Отложить для вас на завтра?",
+    ].join("\n")
+  );
+}
+
+// --- Правило «знакомство» ---------------------------------------------------------------------------------
+
+/** Один заказ «давно» — старше стольких дней (та же граница, что у сегмента «активный за 60 дней»). */
+export const INTRO_OLD_ORDER_DAYS = 60;
+
+/** Кому знакомство: карточка без заказов или с одним заказом, и тот давно. */
+export function introDue(days: string[], today: string): boolean {
+  if (days.length === 0) return true;
+  return days.length === 1 && dayDiff(days[0], today) > INTRO_OLD_ORDER_DAYS;
+}
+
+/** Факты о производстве — слова владельца из промпта (24.11.2026). Цен и позиций здесь нет нарочно. */
+export function introText(): string {
+  return withOptOut(
+    [
+      "Здравствуйте, {имя}!",
+      "Это Ecoculture — сами выращиваем розы, хризантему и эустому в своих теплицах в Казахстане.",
+      "",
+      "13 лет выращиваем розы.",
+      "Единственные в СНГ выращиваем хризантему в промышленных объёмах.",
+      "Свой срез — свежее, без долгого импорта.",
+      "Биозащита полезными насекомыми: минимум химии, безопасно для людей.",
+      "",
+      "Прислать фото и цены на эту неделю?",
+    ].join("\n")
+  );
+}
+
+// --- Правило «16 декабря» ---------------------------------------------------------------------------------
+
+/** `weekday` — день недели 16 декабря в этом году («среда»): выходной только он, 17-е — рабочий день. */
+export function holidayText(stage: HolidayStage, weekday: string): string {
+  const lines =
+    stage === "preorder"
+      ? [
+          "Здравствуйте, {имя}!",
+          `16 декабря (${weekday}) — День независимости, выходной. Цветы к празднику берут заранее.`,
+          "Принимаем предзаказ уже сейчас: привезём свежий срез к 13–15 декабря.",
+          "",
+          "Какие позиции заложить для вас?",
+        ]
+      : [
+          "Здравствуйте, {имя}!",
+          `До 16 декабря (${weekday}, День независимости) осталось около 3 дней.`,
+          "Ещё успеем поставить свежий срез к празднику.",
+          "",
+          "Что закрепить за вами?",
+        ];
+  return withOptOut(lines.join("\n"));
 }
 
 // --- Письмо с планом ---------------------------------------------------------------------------------------
@@ -468,6 +609,7 @@ export function planMessageText(input: { parts: PlanPart[]; activateAt: string; 
   if (sample) {
     const text = sample.sample.replace(/\{\s*имя\s*\}/gi, "Айгерим").replace(`\n\n${OPT_OUT_LINE}`, "");
     lines.push("", `Пример («${AUTO_RULE_LABELS[sample.rule]}»):`, text.length > 600 ? `${text.slice(0, 600)}…` : text);
+    lines.push("", "Это черновик: перед отправкой ИИ переписывает его каждому своими словами. Позиции и цены — те же, остатки цифрой не называет.");
   }
   if (input.waiting > 0) lines.push("", `Ещё ${input.waiting} лид(ов) ждут живого ответа — им автопилот не пишет.`);
   lines.push("", `Все тексты: ${input.link}`, "Не отправлять сегодня — ответьте *ОТМЕНА*.");

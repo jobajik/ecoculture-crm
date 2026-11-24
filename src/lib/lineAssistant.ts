@@ -1,3 +1,4 @@
+import { botCopyRules } from "./broadcastCopy";
 import { chatJson, openAiConfigured } from "./openai";
 import { salesKnowledge } from "./botEngine";
 import { toWhatsApp } from "./botOrder";
@@ -110,6 +111,7 @@ export function assistantSystemPrompt(p: {
     "Позиции и цены — списком «• …», не больше двух строк. Не используй # и **.",
     "",
     ...humanStylePrompt({ who: leads ? p.managerName || "Земфира" : p.managerName, female: leads, helper: true }),
+    ...botCopyRules(),
     "",
     "Что можно:",
     "- цены и наличие — ТОЛЬКО из списка «Что есть сейчас» ниже; точное число стеблей не называй;",

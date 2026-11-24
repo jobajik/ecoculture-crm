@@ -100,6 +100,7 @@ function toRecipient(r: Record<string, string>): RecipientRow {
     sentAt: r.SentAt || "",
     error: r.Error || "",
     text: r.Text || "",
+    copy: (r.Copy || "").trim(),
   };
 }
 
@@ -117,7 +118,7 @@ export async function createBroadcast(input: {
   fileId: string;
   fileName: string;
   audience: string;
-  recipients: { phone: string; name: string; kind: string; refId: string; managerEmail: string; text?: string }[];
+  recipients: { phone: string; name: string; kind: string; refId: string; managerEmail: string; text?: string; /** Метка копирайтера — `broadcastCopy.ts`. */ copy?: string }[];
   /** "leads" — слать с номера Земфиры; по умолчанию рабочий номер. */
   line?: string;
   /** Сразу «идёт» (скрипт, владелец уже видел текст); по умолчанию черновик. */
@@ -164,6 +165,7 @@ export async function createBroadcast(input: {
         Status: "queued",
         UpdatedAt: now,
         Text: r.text || "",
+        Copy: r.copy || "",
       })),
     },
   ]);

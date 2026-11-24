@@ -651,6 +651,9 @@ export const SHEET_HEADERS: Record<string, string[]> = {
     "UpdatedAt",
     // Личный текст получателя (автопилот: «в прошлый раз брали…»); пусто — текст рассылки. Последней — грабли 1.1.
     "Text",
+    // Копирайтер (24.11.2026): «СЦЕНАРИЙ|СЕГМЕНТ|ОТПРАВИТЕЛЬ» — текст получателя перед отправкой переписывает ИИ
+    // (`broadcastCopy.ts`); пусто — уходит как есть. Последней — грабли 1.1.
+    "Copy",
   ],
   [SHEET_TABS.WA_STATUSES]: ["MessageID", "At", "Status", "Error", "CreatedAt"],
   [SHEET_TABS.WA_FILES]: ["FileID", "CreatedAt", "CreatedByEmail", "Name", "Mime", "Size", "Part", "Data"],

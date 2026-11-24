@@ -14,10 +14,17 @@ import {
   chainWait,
   chatFacts,
   commonExclusion,
+  cutDayOf,
   freshText,
+  holidayStage,
+  holidayText,
+  introDue,
+  introText,
   isCancelText,
+  isRunningLow,
   isSleeping,
   leadReminderText,
+  lowText,
   orderedRecently,
   parseAutoConfig,
   parseChainLock,
@@ -46,7 +53,8 @@ function check(name: string, actual: unknown, expected: unknown) {
 const at = (s: string) => new Date(`${s}+05:00`);
 
 // --- Настройки ---------------------------------------------------------------------------------
-check("нет настройки — всё включено", parseAutoConfig(undefined).rules, { leads: true, sleeping: true, push: true, fresh: true });
+check("нет настройки — всё включено", parseAutoConfig(undefined).rules, { leads: true, sleeping: true, push: true, fresh: true, low: true, intro: true, holiday: true });
+check("старая настройка из четырёх правил — новые включены", parseAutoConfig('{"rules":{"leads":true,"sleeping":false,"push":true,"fresh":true}}').rules, { leads: true, sleeping: false, push: true, fresh: true, low: true, intro: true, holiday: true });
 check("выключено одно", parseAutoConfig('{"rules":{"fresh":false}}').rules.fresh, false);
 check("испорченная — как по умолчанию", parseAutoConfig("{oops").rules.leads, true);
 check("план: туда-обратно", parsePlanRecord(planRecordValue({ ...EMPTY_PLAN, day: "2026-10-17", ids: ["BC-1"], counts: { leads: 3 } })).counts, { leads: 3 });
@@ -58,11 +66,13 @@ check("план: суббота 9:05 — пора", planDue(at("2026-10-17T09:05
 check("план: 8:55 — рано", planDue(at("2026-10-17T08:55:00"), EMPTY_PLAN, cfg), false);
 check("план: 16:10 — поздно", planDue(at("2026-10-17T16:10:00"), EMPTY_PLAN, cfg), false);
 check("план: воскресенье — нет", planDue(at("2026-10-18T09:30:00"), EMPTY_PLAN, cfg), false);
+check("план: воскресенье 13 декабря — последний шанс к празднику, собираем", planDue(at("2026-12-13T09:30:00"), EMPTY_PLAN, cfg), true);
+check("план: воскресенье 13 декабря, правило праздника выключено — нет", planDue(at("2026-12-13T09:30:00"), EMPTY_PLAN, parseAutoConfig('{"rules":{"holiday":false}}')), false);
 check("план: уже собран сегодня — нет", planDue(at("2026-10-17T11:00:00"), { ...EMPTY_PLAN, day: "2026-10-17" }, cfg), false);
 check("план: вчерашний — пора", planDue(at("2026-10-17T11:00:00"), { ...EMPTY_PLAN, day: "2026-10-16" }, cfg), true);
 check(
   "план: все правила выключены — нет",
-  planDue(at("2026-10-17T09:30:00"), EMPTY_PLAN, parseAutoConfig('{"rules":{"leads":false,"sleeping":false,"push":false,"fresh":false}}')),
+  planDue(at("2026-10-17T09:30:00"), EMPTY_PLAN, parseAutoConfig('{"rules":{"leads":false,"sleeping":false,"push":false,"fresh":false,"low":false,"intro":false,"holiday":false}}')),
   false
 );
 check("запуск: собран в 9:05 — в 10:00", activateAtFor(at("2026-10-17T09:05:00")), "2026-10-17T05:00:00.000Z");
@@ -254,6 +264,45 @@ const pushT = pushText({ label: "Хризантема, четвёртая кат
 check("распродажа: сорт с ценой, мелкий остаток не предлагаем", [pushT.includes("• Altaj — *180 ₸*"), pushT.includes("Chik")], [true, false]);
 check("распродажа: цена от объёма", pushT.includes("От 1 000 шт. — *160 ₸* за стебель."), true);
 check("срез: «СТОП»", freshText([offer], lab).endsWith(OPT_OUT_LINE), true);
+
+// --- Сценарии промпта владельца (24.11.2026) ---------------------------------------------------------------
+check("день срезки: все позиции срезаны сегодня", cutDayOf(["2026-11-24", "2026-11-24"], "2026-11-24"), "today");
+check("день срезки: одна вчера — «вчера»", cutDayOf(["2026-11-24", "2026-11-23"], "2026-11-24"), "yesterday");
+check("день срезки: одна три дня назад — не называем", cutDayOf(["2026-11-24", "2026-11-21"], "2026-11-24"), "");
+check("день срезки: дата неизвестна — не называем", cutDayOf(["2026-11-24", ""], "2026-11-24"), "");
+check("день срезки: позиций нет — не называем", cutDayOf([], "2026-11-24"), "");
+check("срез: день срезки строкой, когда известен", freshText([offer], lab, { cut: "yesterday" }).includes("\nСрезка: вчера.\n"), true);
+check("срез: без дня — про «сегодня» ни слова", /сегодня|вчера/i.test(freshText([offer], lab)), false);
+check("лиду: без дня — про «сегодня» ни слова", /сегодня|вчера/i.test(leadT), false);
+check("регион: призыв через фуру", freshText([offer], lab, { shipDay: "понедельник, 30.11" }).includes("Ближайшая фура — понедельник, 30.11. Записать вас на поставку?"), true);
+check("регион: «на завтра» не обещаем", freshText([offer], lab, { shipDay: "понедельник, 30.11" }).includes("на завтра"), false);
+
+check("заканчивается: 300 шт. при 200 в день — да", isRunningLow(300, 1400), true);
+check("заканчивается: 2 000 шт. при 200 в день — нет, запас на 10 дней", isRunningLow(2000, 1400), false);
+check("заканчивается: продаётся по 5 в день — не ходовая, молчим", isRunningLow(8, 35), false);
+check("заканчивается: осталось 30 шт. — предлагать уже нечего", isRunningLow(30, 1400), false);
+check("заканчивается: продаж не было — нет", isRunningLow(100, 0), false);
+const lowT = lowText([offer], lab);
+check("заканчивается: позиция с ценой", lowT.includes("• Хризантема Altaj, Первая — *250 ₸*"), true);
+check("заканчивается: остаток цифрой не пишем", /\d+\s*шт/.test(lowT), false);
+check("заканчивается: про следующую срезку не обещаем", /следующ/i.test(lowT), false);
+check("заканчивается: «СТОП»", lowT.endsWith(OPT_OUT_LINE), true);
+
+check("знакомство: карточка без заказов — да", introDue([], "2026-11-24"), true);
+check("знакомство: один заказ полгода назад — да", introDue(["2026-05-10"], "2026-11-24"), true);
+check("знакомство: один заказ месяц назад — нет", introDue(["2026-10-24"], "2026-11-24"), false);
+check("знакомство: два заказа — нет", introDue(["2026-03-01", "2026-05-10"], "2026-11-24"), false);
+check("знакомство: без цен и позиций", /₸|•/.test(introText()), false);
+check("знакомство: факты владельца", ["13 лет", "Единственные в СНГ", "Биозащита"].every((w) => introText().includes(w)), true);
+check("знакомство: уже отправляли — видно", sentFacts([{ broadcastId: "I", phone: "77011112233", status: "sent", sentAt: "2026-11-20T05:00:00Z" }], new Map([["I", "intro"]])).get("7011112233")?.intro, true);
+
+check("праздник: 9, 10, 11 декабря — предзаказ", ["2026-12-09", "2026-12-10", "2026-12-11"].map(holidayStage), ["preorder", "preorder", "preorder"]);
+check("праздник: 13 декабря — последний шанс", holidayStage("2026-12-13"), "last");
+check("праздник: 8, 12, 14, 16 декабря и ноябрь — нет", ["2026-12-08", "2026-12-12", "2026-12-14", "2026-12-16", "2026-11-24"].map(holidayStage), [null, null, null, null, null]);
+check("праздник: предзаказ — к 13–15 декабря", holidayText("preorder", "среда").includes("к 13–15 декабря"), true);
+check("праздник: выходной только 16-е", /17/.test(holidayText("preorder", "среда") + holidayText("last", "среда")), false);
+check("праздник: без цен", /₸/.test(holidayText("preorder", "среда") + holidayText("last", "среда")), false);
+check("праздник: последний шанс — про 3 дня", holidayText("last", "среда").includes("около 3 дней"), true);
 
 // --- Письмо с планом -----------------------------------------------------------------------------------
 const planT = planMessageText({

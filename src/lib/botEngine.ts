@@ -1,3 +1,4 @@
+import { botCopyRules } from "./broadcastCopy";
 import { listSellableBatches } from "./repo/sellable";
 import { commitAtomic, prefetchTables, SHEET_TABS, type WriteOp } from "./sheets";
 import { localDayKey } from "./timezone";
@@ -335,6 +336,7 @@ export function systemPrompt(p: {
     "Не здоровайся заново, если уже здоровался в переписке.",
     "",
     ...humanStylePrompt({ who: p.managerName || "", female: p.female }),
+    ...botCopyRules(),
     ...(p.closer ? closerPromptBlock() : []),
     "Перерыв в переписке («— перерыв N дн. —») — это НОВЫЙ разговор: на «Здравствуйте» поздоровайся и коротко скажи,",
     "что есть сегодня, с ценой. Старое предложение до перерыва не продолжай так, будто оно сейчас, и не отвечай на него",
