@@ -192,8 +192,18 @@ const CAPS = /(?:^|[^А-ЯЁа-яё])([А-ЯЁ]{4,})(?![а-яё])/u;
 const HOLIDAY = /16\s*декабря|день\S*\s+независимости/iu;
 /** Призыв без вопросительного знака: «Напишите, что поставить», «Жду ваш список». */
 const CALL = /напишите|ответьте|дайте знать|сообщите|пришлите|скажите|жду\s+(?:ваш|от вас)/iu;
+/** Каким приветствием начинается сообщение («доброе утро», «здравствуйте») — чтобы соседние не начинались одинаково. */
+export function greetingOf(text: string): string {
+  const m = /здравствуйте|добр\S+\s+(?:день|утро|вечер)|(?:день|утро|вечер)\s+добр\S+|приветствую|привет(?![а-яё])|сәлеметсіз\s+бе|салем|сәлем/iu.exec(String(text || "").slice(0, 80));
+  if (!m) return "";
+  const g = m[0].toLowerCase().replace(/\s+/g, " ");
+  // «утро доброе» и «доброе утро» — одно приветствие.
+  const part = /(день|утро|вечер)/.exec(g);
+  return part ? `добр. ${part[1]}` : g;
+}
+
 /** Последняя фраза сообщения (без смайликов и звёздочек в хвосте). */
-function lastSentence(text: string): string {
+export function lastSentence(text: string): string {
   const clean = text.replace(/[\p{Extended_Pictographic}\uFE0F*_)\s]+$/gu, "");
   const parts = clean.split(/(?<=[.!?…])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
   return parts[parts.length - 1] ?? "";
@@ -204,7 +214,18 @@ const isHoliday = (s: CopyScenario) => s === "HOLIDAY_PREORDER" || s === "HOLIDA
  * Что не так с текстом модели. Пустой список — можно отправлять. Каждое замечание — фраза, которую можно вернуть
  * модели для второй попытки.
  */
-export function checkCopy(text: string, input: { program: string; name: string; spec: CopySpec; /** Час отправки по Алматы — для «доброе утро» и «добрый вечер». */ hour?: number }): string[] {
+export function checkCopy(
+  text: string,
+  input: {
+    program: string;
+    name: string;
+    spec: CopySpec;
+    /** Час отправки по Алматы — для «доброе утро» и «добрый вечер». */
+    hour?: number;
+    /** Что уже ушло другим (последнее — в конце): приветствие и призыв не должны повторять предыдущее сообщение. */
+    previous?: string[];
+  }
+): string[] {
   const t = String(text || "").trim();
   const out: string[] = [];
   if (!t) return ["пустой текст"];
@@ -261,7 +282,7 @@ export function checkCopy(text: string, input: { program: string; name: string; 
   if (/(?:более|больше|свыше|около|почти|порядка)\s+\d+\s+лет/iu.test(t) && !/(?:более|больше|свыше|около|почти|порядка)\s+\d+\s+лет/iu.test(input.program)) {
     out.push("сроки и цифры — ровно как в данных, без «более» и «около»");
   }
-  if (/доставк\S*\s+(?:не\s+работа|не\s+будет|нет(?![а-яё]))|не\s+(?:возим|доставляем|работаем|отгружаем)/iu.test(t) && !/не\s+(?:работа|возим|доставляем|отгружаем)|доставк\S*\s+не/iu.test(input.program)) {
+  if (/доставк\S*\s+(?:не\s+работа|не\s+будет|нет(?![а-яё]))|не\s+(?:возим|доставляем|работаем|отгружаем)|(?:будем|мы)\s+отдыха/iu.test(t) && !/не\s+(?:работа|возим|доставляем|отгружаем)|доставк\S*\s+не|отдыха/iu.test(input.program)) {
     out.push("что в какой-то день нет доставки или мы не работаем, программа не говорила — убери");
   }
   if (typeof input.hour === "number") {
@@ -269,6 +290,14 @@ export function checkCopy(text: string, input: { program: string; name: string; 
     if (/добр\S+\s+утр/iu.test(t) && input.hour >= 12) out.push("сейчас не утро — поздоровайся иначе");
   }
   if (/(?:доброй|спокойной)\s+ночи/iu.test(t)) out.push("«доброй ночи» — убери");
+  // 4. Анти-повтор: приветствие и призыв — не как в предыдущем сообщении (живая проба: «Доброе утро» у всех подряд).
+  const prev = (input.previous ?? []).filter(Boolean).slice(-1)[0];
+  if (prev) {
+    const g = greetingOf(t);
+    if (g && g === greetingOf(prev)) out.push(`предыдущее сообщение тоже начиналось с «${g}» — поздоровайся иначе`);
+    const key = (s: string) => norm(lastSentence(s)).replace(/[^\p{L}\p{N} ]/gu, "").trim();
+    if (key(t) && key(t) === key(prev)) out.push("призыв в конце слово в слово как в предыдущем сообщении — возьми другой");
+  }
   if (!isHoliday(input.spec.scenario) && HOLIDAY.test(t) && !HOLIDAY.test(input.program)) out.push("про 16 декабря в данных нет — не упоминай");
   if (/17\s*декабря|16\s*[-–—и,]\s*17/iu.test(t) && !/17\s*декабря|16\s*[-–—и,]\s*17/iu.test(input.program)) out.push("выходной только 16 декабря — про 17-е не пиши");
   if (input.spec.sender !== "REGIONAL" && /фур[аоуые]/iu.test(t) && !/фур[аоуые]/iu.test(input.program)) out.push("про фуру в данных нет — не упоминай");
@@ -321,7 +350,8 @@ export function copyUserMessage(input: {
     "Факты и цифры из черновика не усиливай и не обобщай: без «более», «всегда», «только что получили»; что сказано про один цветок, не переноси на остальные.",
     ...(isHoliday(input.spec.scenario) ? ["Уточнение программы: выходной — только 16 декабря, про 17 декабря не пиши. Работает ли в этот день доставка, программа не говорила — не пиши."] : []),
     "Вопрос в сообщении ОДИН, и он (или короткий призыв сразу за ним) — последняя фраза: после него ничего не дописывай.",
-    "Приветствие — по времени из строки «Сегодня». Не длиннее 600 знаков.",
+    "Приветствие — уместное для часа из строки «Сегодня», но не обязательно «доброе утро»: годятся «Здравствуйте», «Добрый день», «Приветствую», можно начать с имени.",
+    "Не длиннее 600 знаков.",
     "---",
     input.program.trim(),
     "---",
@@ -330,6 +360,10 @@ export function copyUserMessage(input: {
   if (avoid.length) {
     lines.push("", "Уже отправлено другим клиентам сегодня — начни иначе и возьми другой призыв в конце:");
     avoid.forEach((a, i) => lines.push(`${i + 1}) ${a.replace(/\s+/g, " ").slice(0, 260)}`));
+    const last = avoid[avoid.length - 1];
+    const g = greetingOf(last);
+    const cta = lastSentence(last);
+    lines.push(`Последнее из них${g ? ` начиналось с приветствия «${g.replace("добр. день", "добрый день").replace("добр. утро", "доброе утро").replace("добр. вечер", "добрый вечер")}»` : ""}${g && cta ? " и" : ""}${cta ? ` заканчивалось «${cta.slice(0, 90)}»` : ""} — возьми ДРУГОЕ приветствие и ДРУГОЙ призыв.`);
   }
   if (input.problems?.length) {
     lines.push("", "В прошлой попытке было не так — исправь:", ...input.problems.slice(0, 6).map((p) => `- ${p}`));
@@ -347,6 +381,8 @@ export function splitOptOut(program: string, optOutLine: string): { body: string
 /** Имя для обращения: в карточке оно бывает капсом («АСАН») — пишем как принято («Асан»). Остальное не трогаем. */
 export function niceName(name: string): string {
   const n = String(name || "").trim();
+  // «Клиент», «Client» — не имя: так записаны безымянные лиды; обращаемся без имени.
+  if (/^(клиент|client|покупатель|без имени)$/iu.test(n)) return "";
   if (n.length < 2 || !/\p{L}/u.test(n) || n !== n.toUpperCase() || n === n.toLowerCase()) return n;
   return n.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (_m, a: string, b: string) => `${a}${b.toUpperCase()}`);
 }

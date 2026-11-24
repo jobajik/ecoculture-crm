@@ -13,6 +13,7 @@ import {
   copyOutcome,
   copySpecValue,
   copyUserMessage,
+  greetingOf,
   holidayFacts,
   niceName,
   parseCopySpec,
@@ -134,6 +135,14 @@ check("«добрый вечер» в 18:00 — можно", checkCopy(good.repl
 check("«доброе утро» в 15:00 — нельзя", has(checkCopy(good.replace("добрый день", "доброе утро"), { ...ctx, hour: 15 }), "не утро"), true);
 check("«только что получили свежий срез» — выдумка", has(checkCopy(good.replace("Айгерим, добрый день! Вчера срезали розу, цветок свежий", "Добрый день! Только что получили свежий срез"), noDay), "день срезки"), true);
 check("имя капсом в карточке — не «капс» копирайтера", checkCopy(good.replace("Айгерим", "АСАН"), { ...ctx, name: "АСАН" }), []);
+const prevMsg = "Доброе утро, Маргарита! Свежий срез розы … Закрепим за вами объём на завтра?";
+check("приветствие как у предыдущего — нельзя", has(checkCopy(good.replace("добрый день", "доброе утро"), { ...ctx, hour: 10, previous: [prevMsg] }), "поздоровайся иначе"), true);
+check("«утро доброе» после «доброе утро» — то же приветствие", [greetingOf("Утро доброе, Акелик!"), greetingOf("Доброе утро, Мира!"), greetingOf("Майра, добрый день!"), greetingOf("Свежий срез розы:")], ["добр. утро", "добр. утро", "добр. день", ""]);
+check("призыв слово в слово как у предыдущего — нельзя", has(checkCopy(good, { ...ctx, previous: [prevMsg] }), "слово в слово"), true);
+check("другое приветствие и другой призыв — можно", checkCopy(good.replace("Закрепим за вами объём на завтра?", "Оформим заказ на завтра?"), { ...ctx, hour: 10, previous: [prevMsg] }), []);
+check("сверяем только с последним ушедшим, не со всеми", checkCopy(good.replace("Закрепим за вами объём на завтра?", "Оформим заказ на завтра?"), { ...ctx, previous: ["Айгерим, добрый день! … Оформим заказ на завтра?", prevMsg] }), []);
+check("запрос: названы приветствие и призыв предыдущего", copyUserMessage({ spec, name: "", program: fresh.body, today: "", avoid: [prevMsg] }).includes("начиналось с приветствия «доброе утро» и заканчивалось «Закрепим за вами объём на завтра?»"), true);
+check("имя: «Клиент» — не имя", [niceName("Клиент"), niceName("клиент")], ["", ""]);
 check("имя: «АСАН» → «Асан», «АЙГЕРИМ-ХАНУМ» → «Айгерим-Ханум», остальное как есть", [niceName("АСАН"), niceName("АЙГЕРИМ-ХАНУМ"), niceName("инна талдык"), niceName("DinNurSuy"), niceName("")], ["Асан", "Айгерим-Ханум", "инна талдык", "DinNurSuy", ""]);
 
 const region = splitOptOut(freshText(offers, lab, { shipDay: "понедельник, 30.11" }), OPT_OUT_LINE).body;
@@ -157,6 +166,7 @@ const holidayGood = "Добрый день! 16 декабря - День нез�
 check("праздник: хороший текст", checkCopy(holidayGood, { program: holiday, name: "", spec: holidaySpec }), []);
 check("праздник: «16–17 декабря выходные» — нельзя, выходной один", has(checkCopy(holidayGood.replace("16 декабря - День независимости", "16-17 декабря - выходные"), { program: holiday, name: "", spec: holidaySpec }), "17"), true);
 check("праздник: «в этот день доставка не работает» — программа не говорила", has(checkCopy(holidayGood.replace("цветы к празднику лучше заказать заранее", "в этот день доставка не работает"), { program: holiday, name: "", spec: holidaySpec }), "нет доставки"), true);
+check("праздник: «16 декабря будем отдыхать» — программа не говорила", has(checkCopy(holidayGood.replace("цветы к празднику лучше заказать заранее", "16 декабря будем отдыхать"), { program: holiday, name: "", spec: holidaySpec }), "нет доставки"), true);
 check("праздник: день недели 16 декабря 2026 — среда", holidayFacts(2026).dayLabel, "среда");
 
 const low = splitOptOut(lowText([offers[0]], lab), OPT_OUT_LINE).body;

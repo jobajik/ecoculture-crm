@@ -82,7 +82,7 @@ export async function writeCopy(input: {
       );
       model = res.model;
       const text = plainTyping(cleanCopy((res.data as { message?: unknown })?.message));
-      problems = checkCopy(text, { program: body, name, spec: input.spec, hour: moment.hour });
+      problems = checkCopy(text, { program: body, name, spec: input.spec, hour: moment.hour, previous: input.avoid });
       if (problems.length === 0) return result(optOut ? `${text}\n\n${OPT_OUT_LINE}` : text, "ai", [], model, attempts);
     } catch (err) {
       problems = [`модель не ответила: ${err instanceof Error ? err.message.slice(0, 120) : "ошибка"}`];
