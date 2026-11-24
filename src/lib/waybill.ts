@@ -260,19 +260,66 @@ export function waybillFileName(doc: Pick<WaybillDoc, "number" | "lines">): stri
  * Кому слать. `auto` не пишет сотрудникам (заявка на своего), без мобильного номера и тем, кто просил не писать;
  * кнопка на заявке «просил не писать» обходит — это решение человека, а не автомата.
  */
+/** Начало пометки «накладная не отправлялась», по которой проход возвращается к строке сам (`waybillRedo`). */
+export const WAYBILL_SKIP_NO_PHONE = "нет мобильного номера клиента";
+export const WAYBILL_SKIP_OPT_OUT = "клиент просил не писать";
+
+/**
+ * Кому слать. Накладная — документ о покупке, а не рассылка: с 24.11.2026 она уходит и тем, кто отписался от рассылок
+ * или кого сотрудник просил «не писать» (владелец: «почему ты реально не отправляешь накладные клиентам, которые
+ * купили? Ты обязан это делать всегда» — за три дня так не ушло 7 накладных из 58). Не шлём только когда слать некуда
+ * (нет мобильного номера) или номер клиента — номер нашего сотрудника.
+ */
 export function waybillRecipient(input: {
   order: Pick<OrderLike, "clientPhone">;
   client: { phone?: string; messenger?: string } | null;
   staffKeys: Set<string>;
-  optedOut: Set<string>;
   mode: "auto" | "manual";
 }): { phone: string } | { skip: string } {
   const phone = waPhone(input.order.clientPhone) || waPhone(input.client?.phone) || waPhone(input.client?.messenger);
-  if (!phone) return { skip: "нет мобильного номера клиента — в заявке и в карточке" };
+  if (!phone) return { skip: `${WAYBILL_SKIP_NO_PHONE} — в заявке и в карточке` };
   const key = phoneKey(phone);
   if (input.staffKeys.has(key)) return { skip: "номер клиента — номер нашего сотрудника" };
-  if (input.mode === "auto" && input.optedOut.has(key)) return { skip: "клиент просил не писать — отправьте кнопкой, если накладная нужна" };
   return { phone };
+}
+
+/**
+ * Что с номером WhatsApp прямо сейчас. `ok` — подключён, через него можно слать. `down` — точно отключён (ключей нет,
+ * Green API ответил «не авторизован», «заблокирован» или отказал по ключу/оплате): через него не шлём, а уже
+ * «отправленное» через него считаем недоставленным. `unknown` — Green API не ответил, номер запускается: через такой
+ * номер не шлём, но и недоставленным ничего не объявляем — «не знаю» не должно стать второй накладной клиенту.
+ */
+export type LineHealth = "ok" | "down" | "unknown";
+export function lineHealth(input: { hasKeys: boolean; state?: string; errorStatus?: number }): LineHealth {
+  if (!input.hasKeys) return "down";
+  if (input.state === "authorized") return "ok";
+  if (input.state === "notAuthorized" || input.state === "blocked") return "down";
+  if (input.state) return "unknown";
+  return input.errorStatus === 400 || input.errorStatus === 401 || input.errorStatus === 403 || input.errorStatus === 466 ? "down" : "unknown";
+}
+
+/** Через столько минут после отправки проверяем, не ушла ли накладная в отключённый номер. */
+export const WAYBILL_RESEND_AFTER_MINUTES = 10;
+export const WAYBILL_RESEND_NOTE = "отправлена повторно";
+
+/**
+ * Накладная, к которой проход должен вернуться сам (24.11.2026, «ты обязан это делать всегда»). Только свежие — не
+ * старше `WAYBILL_MAX_AGE_HOURS`: накладная за прошлую неделю клиента уже только запутает.
+ *
+ * - `skipped` — автомат не отправил, потому что не было мобильного номера или клиент был в списке «не писать»
+ *   (старое правило): номер появился или правило снято — отправляем;
+ * - `dead-line` — отправлена через номер МЕНЕДЖЕРА. Green API принимает сообщение и тогда, когда номер отключён от
+ *   WhatsApp (QR слетел): кладёт в очередь и отвечает «принято», а клиенту ничего не приходит. Так с 4 по 24.11 стоял
+ *   номер Ильгара — накладные его клиентам числились «отправлено». Это только кандидат: проход проверяет, что номер
+ *   и сейчас отключён и что отметки о доставке нет, — и тогда шлёт ещё раз с рабочего номера. Один раз
+ *   (`WAYBILL_RESEND_NOTE`).
+ */
+export function waybillRedo(w: Pick<WaybillRow, "status" | "note" | "createdAt" | "line" | "byEmail">, now: Date): "skipped" | "dead-line" | null {
+  const age = now.getTime() - Date.parse(w.createdAt);
+  if (!(age >= 0) || age > WAYBILL_MAX_AGE_HOURS * 3600000) return null;
+  if (w.status === "skipped" && w.byEmail === "auto" && (w.note.startsWith(WAYBILL_SKIP_NO_PHONE) || w.note.startsWith(WAYBILL_SKIP_OPT_OUT))) return "skipped";
+  if (w.status === "sent" && !!w.line && w.line !== "main" && !w.note.includes(WAYBILL_RESEND_NOTE) && age >= WAYBILL_RESEND_AFTER_MINUTES * 60000) return "dead-line";
+  return null;
 }
 
 /** Можно ли сейчас писать клиенту самой программе (час по Алматы). */

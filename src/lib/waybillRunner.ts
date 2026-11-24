@@ -4,18 +4,24 @@ import { listOrdersWithItems } from "./repo/orders";
 import { listShipments } from "./repo/shipments";
 import { listClients } from "./repo/clients";
 import { listUsers } from "./repo/users";
-import { optedOutKeys, settingsMap } from "./repo/broadcasts";
+import { listWaStatuses, settingsMap } from "./repo/broadcasts";
+import { deliveryByMessage } from "./broadcast";
 import { listWaMessages, waMessagesAppendOp } from "./repo/talks";
 import { assistantLogAppendOp, lineConfig, listWaLines } from "./repo/waLines";
 import { createWaybill, finishWaybill, listWaybills, listWaybillsStrict, type WaybillChanges } from "./repo/waybills";
-import { ourPhoneKeys } from "./lineNotify";
-import { GreenError, sendFileByUrl } from "./greenApi";
+import { notifyLineManager, ourPhoneKeys } from "./lineNotify";
+import { GreenError, getInstanceState, greenConfig, sendFileByUrl, sendText, type GreenConfig } from "./greenApi";
+import { waPhone } from "./broadcast";
+import { orderCode } from "./paymentStage";
 import { publicWaybillUrl } from "./waFileSign";
 import { phoneKey } from "./leads";
 import { getFarmFor } from "./constants";
 import { siteOrigin } from "./waybillKick";
 import {
+  WAYBILL_RESEND_NOTE,
   WAYBILL_RETRY_NOTE,
+  WAYBILL_SKIP_NO_PHONE,
+  WAYBILL_SKIP_OPT_OUT,
   buildWaybillDoc,
   nextWaybillNumber,
   planWaybill,
@@ -28,7 +34,10 @@ import {
   waybillLineOrder,
   waybillOrderRefusal,
   waybillRecipient,
+  waybillRedo,
   waybillSentTrace,
+  lineHealth,
+  type LineHealth,
   type WaybillDoc,
   type WaybillRow,
 } from "./waybill";
@@ -83,18 +92,57 @@ async function setWaybill(row: { waybillId: string; rowNumber?: number }, change
 interface SendCtx {
   messages: WaMessage[];
   managerLines: { code: string; managerEmail: string }[];
+  /** Подключён ли номер к WhatsApp прямо сейчас — спрашиваем Green API один раз на проход (`usableLine`). */
+  lineState: LineStates;
 }
 
-async function loadSendCtx(): Promise<SendCtx> {
+type LineStates = Map<string, { cfg: GreenConfig | null; health: LineHealth }>;
+
+/**
+ * Номер, с которого сейчас действительно можно отправить: ключи есть И номер подключён к WhatsApp. Проверка состояния
+ * обязательна (24.11.2026): Green API принимает сообщение и у отключённого номера — кладёт в очередь и отвечает
+ * «принято», а клиент ничего не получает. Номер Ильгара так простоял с 4 ноября: накладные его клиентам числились
+ * отправленными. Не ответил или не «authorized» — номером не пользуемся, идём к следующему.
+ */
+async function lineNow(code: string, states: LineStates): Promise<{ cfg: GreenConfig | null; health: LineHealth }> {
+  const known = states.get(code);
+  if (known) return known;
+  let cfg: GreenConfig | null = null;
+  let health: LineHealth = "unknown";
+  try {
+    cfg = await lineConfig(code === "main" ? "" : code);
+  } catch {
+    cfg = null; // вкладка номеров не прочиталась — «не знаю», а не «отключён»
+    states.set(code, { cfg, health });
+    return { cfg, health };
+  }
+  if (!cfg) health = lineHealth({ hasKeys: false });
+  else {
+    try {
+      health = lineHealth({ hasKeys: true, state: await getInstanceState(cfg) });
+    } catch (err) {
+      health = lineHealth({ hasKeys: true, errorStatus: err instanceof GreenError ? err.status : 0 });
+    }
+  }
+  const out = { cfg: health === "ok" ? cfg : null, health };
+  states.set(code, out);
+  return out;
+}
+
+async function usableLine(code: string, states: LineStates): Promise<GreenConfig | null> {
+  return (await lineNow(code, states)).cfg;
+}
+
+async function loadSendCtx(lineState: LineStates = new Map()): Promise<SendCtx> {
   const [messages, lines] = await Promise.all([listWaMessages({ lines: "all" }), listWaLines().catch(() => [])]);
-  return { messages, managerLines: lines.filter((l) => l.active).map((l) => ({ code: l.code, managerEmail: l.managerEmail.toLowerCase() })) };
+  return { messages, managerLines: lines.filter((l) => l.active).map((l) => ({ code: l.code, managerEmail: l.managerEmail.toLowerCase() })), lineState };
 }
 
 /**
  * Отправить готовую строку накладной клиенту. Пробует номера по порядку (`waybillLineOrder`), пишет итог в строку.
  * После того как сообщение ушло, функция НЕ бросает ошибок: иначе вызывающий принял бы отправленное за неотправленное.
  */
-export async function deliverWaybill(row: WaybillRef, order: Pick<OrderWithItems, "managerEmail">, byEmail: string, send: SendCtx): Promise<WaybillOutcome> {
+export async function deliverWaybill(row: WaybillRef, order: Pick<OrderWithItems, "managerEmail">, byEmail: string, send: SendCtx, sentNote = ""): Promise<WaybillOutcome> {
   const doc = row.doc as WaybillDoc;
   const done = async (status: "sent" | "failed", note: string, extra: Partial<Record<"MessageID" | "Line" | "SentAt", string>> = {}, ops: WriteOp[] = []): Promise<WaybillOutcome> => {
     await setWaybill(row, { Status: status, Note: note.slice(0, 300), ByEmail: byEmail, Phone: row.phone, ...extra }, ops);
@@ -125,9 +173,10 @@ export async function deliverWaybill(row: WaybillRef, order: Pick<OrderWithItems
     .map((m) => m.line || "");
   const managerLine = send.managerLines.find((l) => l.managerEmail === (order.managerEmail || "").toLowerCase())?.code;
   const caption = waybillCaption(doc);
-  let lastError = "ни один номер WhatsApp не подключён";
+  let lastError = "ни один номер WhatsApp сейчас не подключён — отсканируйте QR в «Настройки → WhatsApp менеджеров»";
   for (const code of waybillLineOrder({ chatLines: Array.from(new Set(chatLines)), managerLine: managerLine ?? "" })) {
-    const cfg = await lineConfig(code).catch(() => null);
+    // Только через номер, который подключён к WhatsApp прямо сейчас: отключённый «принимает» и не доставляет.
+    const cfg = await usableLine(code, send.lineState);
     if (!cfg) continue;
     let id = "";
     try {
@@ -139,7 +188,7 @@ export async function deliverWaybill(row: WaybillRef, order: Pick<OrderWithItems
     const now = new Date().toISOString();
     // В переписку и журнал — как любое сообщение из CRM: бот и помощник видят, что накладная ушла, и не считают её
     // ответом менеджера. Вместе с итогом — одной записью: либо всё легло, либо строку разберёт проход по эху WhatsApp.
-    return done("sent", "", { MessageID: id, Line: code || "main", SentAt: now }, [
+    return done("sent", sentNote, { MessageID: id, Line: code || "main", SentAt: now }, [
       waMessagesAppendOp([
         { messageId: id, at: now, chatId: `${row.phone}@c.us`, phone: row.phone, direction: "out", type: waybillIsPdf(doc) ? "document" : "image", text: `[накладная № ${doc.number}] ${caption}`, mediaUrl: "", senderName: "", source: "crm", line: code },
       ]),
@@ -153,17 +202,16 @@ interface Ctx extends SendCtx {
   clients: Awaited<ReturnType<typeof listClients>>;
   users: Awaited<ReturnType<typeof listUsers>>;
   staffKeys: Set<string>;
-  optedOut: Set<string>;
 }
 
 /**
  * Всё, что нужно для отправки, — одним пакетным чтением и ДО первой записи: запись сбрасывает память чтений, и всё,
  * что спросили бы после неё, ушло бы в Google заново, по вкладке за раз.
  */
-async function loadCtx(map: Record<string, string>): Promise<Ctx> {
-  await prefetchTables([SHEET_TABS.WA_MESSAGES, SHEET_TABS.BOT_CHATS, SHEET_TABS.CLIENTS]).catch(() => undefined);
-  const [clients, users, staffKeys, optedOut, send] = await Promise.all([listClients(), listUsers(), ourPhoneKeys(map), optedOutKeys(), loadSendCtx()]);
-  return { clients, users, staffKeys, optedOut, ...send };
+async function loadCtx(map: Record<string, string>, lineState: LineStates = new Map()): Promise<Ctx> {
+  await prefetchTables([SHEET_TABS.WA_MESSAGES, SHEET_TABS.CLIENTS]).catch(() => undefined);
+  const [clients, users, staffKeys, send] = await Promise.all([listClients(), listUsers(), ourPhoneKeys(map), loadSendCtx(lineState)]);
+  return { clients, users, staffKeys, ...send };
 }
 
 /**
@@ -188,7 +236,7 @@ async function issueWaybill(input: { order: OrderWithItems; shipments: Shipment[
     shippedBy: userName(lastShipper),
   });
   if (doc.lines.length === 0) return { status: "skipped", number: doc.number, note: "в отгрузке нет позиций заявки", phone: "" };
-  const to = waybillRecipient({ order, client, staffKeys: ctx.staffKeys, optedOut: ctx.optedOut, mode: input.mode });
+  const to = waybillRecipient({ order, client, staffKeys: ctx.staffKeys, mode: input.mode });
   const skip = "skip" in to ? to.skip : "";
   const phone = "skip" in to ? "" : to.phone;
   const row = await createWaybill({ orderId: order.orderId, shipmentIds: input.shipmentIds, doc, phone, status: skip ? "skipped" : "sending", note: skip, byEmail: input.byEmail });
@@ -297,10 +345,46 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
     else todo.push({ order, own, mine, send: plan.send });
   }
   const stuck = waybills.filter((w) => w.doc && stuckWaybillAction(w, false, now));
-  if (todo.length === 0 && stuck.length === 0) return result;
 
-  // Второй пакет — переписка, отписавшиеся, клиенты: только когда есть что отправлять, и до первой записи.
-  const ctx = await loadCtx(map);
+  // К чему вернуться (`waybillRedo`): не отправленные из-за номера или списка «не писать» и отправленные через номер
+  // менеджера, который отключён от WhatsApp. Что можно, отсеиваем без чтения таблицы: клиенты уже прочитаны первым
+  // пакетом, состояние номера — один запрос к Green API на номер за проход.
+  const lineState: LineStates = new Map();
+  const clientsNow = await listClients();
+  const hasPhone = (order: OrderWithItems) => {
+    const c = clientsNow.find((x) => x.clientId === order.clientId);
+    return !!(waPhone(order.clientPhone) || waPhone(c?.phone) || waPhone(c?.messenger));
+  };
+  const redoSkipped: (WaybillRow & { rowNumber?: number })[] = [];
+  let redoDead: (WaybillRow & { rowNumber?: number })[] = [];
+  for (const w of waybills) {
+    if (!w.doc) continue;
+    const kind = waybillRedo(w, now);
+    if (!kind) continue;
+    const order = orders.get(w.orderId);
+    if (!order || waybillOrderRefusal(order)) continue;
+    if (kind === "skipped") {
+      // Без мобильного номера слать по-прежнему некуда — строку не берём (и переписку ради неё не читаем).
+      if (hasPhone(order)) redoSkipped.push(w);
+    } else if ((await lineNow(w.line, lineState)).health === "down") redoDead.push(w);
+  }
+  if (redoDead.length > 0) {
+    // Отметка о доставке есть — накладная дошла, пока номер ещё работал; повторять нельзя. Статусы не прочитались —
+    // не повторяем вовсе: «не знаю» не должно превращаться во вторую накладную клиенту (грабли 1.14).
+    try {
+      const delivery = deliveryByMessage(await listWaStatuses());
+      redoDead = redoDead.filter((w) => {
+        const d = w.messageId ? delivery.get(w.messageId) : undefined;
+        return !d || d.status === "error";
+      });
+    } catch {
+      redoDead = [];
+    }
+  }
+  if (todo.length === 0 && stuck.length === 0 && redoSkipped.length === 0 && redoDead.length === 0) return result;
+
+  // Второй пакет — переписка и клиенты: только когда есть что отправлять, и до первой записи.
+  const ctx = await loadCtx(map, lineState);
   for (const job of todo) {
     if (!canSend()) {
       result.waiting += 1;
@@ -312,10 +396,38 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
       else if (out.status === "failed") result.failed += 1;
       else result.skipped += 1;
       result.notes.push(`№ ${out.number}: ${out.status}${out.note ? ` — ${out.note}` : ""}`);
+      if (out.status === "failed" || (out.status === "skipped" && out.note.startsWith(WAYBILL_SKIP_NO_PHONE))) await tellManager(job.order, out, ctx);
     } catch (err) {
       // Строка могла остаться «отправляется» — её разберёт следующий проход (`healStuckWaybills`).
       result.failed += 1;
       result.notes.push(`${job.order.orderId.slice(-5)}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
+    }
+  }
+  // Вернуться к неотправленным и к ушедшим в отключённый номер — в тот же предел отправок за проход.
+  for (const w of [...redoSkipped, ...redoDead]) {
+    if (!canSend()) {
+      result.waiting += 1;
+      continue;
+    }
+    const order = orders.get(w.orderId)!;
+    const dead = w.status === "sent";
+    try {
+      const client = ctx.clients.find((c) => c.clientId === order.clientId) ?? null;
+      const to = waybillRecipient({ order, client, staffKeys: ctx.staffKeys, mode: "auto" });
+      if ("skip" in to) continue;
+      // Отметка пишется ДО отправки (как у повтора после обрыва): не записалась — не шлём, иначе повторяли бы без конца.
+      const mark = dead ? `${WAYBILL_RESEND_NOTE}: номер менеджера был отключён от WhatsApp` : "";
+      if (!(await setWaybill(w, dead ? { Note: mark } : { Status: "sending", Note: WAYBILL_RETRY_NOTE, Phone: to.phone }))) continue;
+      const out = await deliverWaybill({ waybillId: w.waybillId, doc: w.doc, phone: to.phone, rowNumber: w.rowNumber }, order, "auto", ctx, mark);
+      if (out.status === "sent") result.sent += 1;
+      else {
+        result.failed += 1;
+        await tellManager(order, out, ctx);
+      }
+      result.notes.push(`№ ${out.number}: ${out.status} (${dead ? "повторно — прежний номер отключён" : "номер появился"})${out.status === "sent" ? "" : ` — ${out.note}`}`);
+    } catch (err) {
+      result.failed += 1;
+      result.notes.push(`${order.orderId.slice(-5)}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200));
     }
   }
   // У застрявших — своя одна отправка за проход сверх предела: в бойкий час новые отгрузки не должны отодвигать
@@ -329,6 +441,30 @@ export async function runWaybills(opts: { orderId?: string; limit?: number; budg
 }
 
 /**
+ * Накладная клиенту не ушла — менеджер заявки узнаёт об этом сразу, а не от клиента (24.11.2026, владелец: «ты обязан
+ * это делать всегда»): сообщением с основного номера на номер менеджера (его подключённый номер, иначе WhatsApp из
+ * карточки сотрудника). Один раз на накладную — строка после этого «не отправлена» и сама не повторяется. Не ушло и
+ * это сообщение — работа не страдает: причина видна на заявке.
+ */
+async function tellManager(order: OrderWithItems, out: WaybillOutcome, ctx: Ctx): Promise<void> {
+  try {
+    const email = (order.managerEmail || "").toLowerCase();
+    if (!email) return;
+    const text =
+      `Накладная клиенту не ушла: заявка № ${orderCode(order.orderId)}, ${order.clientName || "клиент"}. Причина: ${out.note || "не отправилась"}.\n` +
+      (out.note.startsWith(WAYBILL_SKIP_NO_PHONE) ? "Впишите мобильный номер в карточку клиента или в заявку - накладная уйдёт сама." : "Отправьте её кнопкой «Отправить накладную» на заявке.") +
+      `\n${siteOrigin()}/orders/${encodeURIComponent(order.orderId)}`;
+    const line = ctx.managerLines.find((l) => l.managerEmail === email);
+    if (line && (await notifyLineManager(line.code, text))) return;
+    const phone = waPhone(ctx.users.find((u) => u.email.toLowerCase() === email)?.phone);
+    const cfg = greenConfig();
+    if (phone && cfg) await sendText(cfg, phone, text, { linkPreview: false });
+  } catch (err) {
+    console.error("waybill manager notify:", err instanceof Error ? err.message : err);
+  }
+}
+
+/**
  * Кнопка «Отправить накладную» на заявке: всё отгруженное, что ещё не вошло в накладные (у зав. складом — только её
  * цветок). Не смотрит ни на час, ни на дату включения автомата.
  */
@@ -336,7 +472,7 @@ export async function sendOrderWaybill(input: { order: OrderWithItems; farm?: st
   const { order } = input;
   forgetReads();
   // Всё нужное — одним пакетом и до первой записи (как у автомата).
-  await prefetchTables([SHEET_TABS.SETTINGS, SHEET_TABS.SHIPMENTS, SHEET_TABS.WAYBILLS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.BOT_CHATS, SHEET_TABS.CLIENTS]).catch(() => undefined);
+  await prefetchTables([SHEET_TABS.SETTINGS, SHEET_TABS.SHIPMENTS, SHEET_TABS.WAYBILLS, SHEET_TABS.WA_MESSAGES, SHEET_TABS.CLIENTS]).catch(() => undefined);
   const map = await settingsMap();
   const all = (await listShipments()).filter((s) => s.orderId === order.orderId);
   const farmItems = new Set(order.items.filter((i) => !input.farm || getFarmFor(i.flowerType) === input.farm).map((i) => i.itemId));
@@ -365,7 +501,7 @@ export async function resendWaybill(input: { waybill: WaybillRow; order: OrderWi
     }
   }
   const client = ctx.clients.find((c) => c.clientId === order.clientId) ?? null;
-  const to = waybillRecipient({ order, client, staffKeys: ctx.staffKeys, optedOut: ctx.optedOut, mode: "manual" });
+  const to = waybillRecipient({ order, client, staffKeys: ctx.staffKeys, mode: "manual" });
   if ("skip" in to) throw new Error(`Отправить некуда: ${to.skip}`);
   return deliverWaybill({ waybillId: waybill.waybillId, doc: waybill.doc, phone: to.phone }, order, input.byEmail, ctx);
 }

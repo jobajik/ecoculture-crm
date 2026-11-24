@@ -27,6 +27,11 @@ import {
   waybillLineOrder,
   waybillOrderRefusal,
   waybillRecipient,
+  waybillRedo,
+  lineHealth,
+  WAYBILL_RESEND_NOTE,
+  WAYBILL_SKIP_NO_PHONE,
+  WAYBILL_SKIP_OPT_OUT,
   waybillSections,
   waybillSendRefusal,
   waybillSentTrace,
@@ -141,13 +146,37 @@ check("образец подписан как образец", [sampleWaybillDoc
 
 // --- Кому -----------------------------------------------------------------------------
 const none = new Set<string>();
-const to = (o: { clientPhone?: string }, client: { phone?: string; messenger?: string } | null, over: { staff?: string[]; opted?: string[]; mode?: "auto" | "manual" } = {}) =>
-  waybillRecipient({ order: o, client, staffKeys: new Set(over.staff ?? []), optedOut: new Set(over.opted ?? []), mode: over.mode ?? "auto" });
+const to = (o: { clientPhone?: string }, client: { phone?: string; messenger?: string } | null, over: { staff?: string[]; mode?: "auto" | "manual" } = {}) =>
+  waybillRecipient({ order: o, client, staffKeys: new Set(over.staff ?? []), mode: over.mode ?? "auto" });
 check("телефон заявки", to({ clientPhone: "+7 701 555 20 30" }, null), { phone: "77015552030" });
 check("в заявке пусто — карточка клиента", to({ clientPhone: "" }, { phone: "8 705 222 33 44" }), { phone: "77052223344" });
 check("городской номер и пусто — отправлять некуда", ["skip" in to({ clientPhone: "8 727 222 33 44" }, null), "skip" in to({}, null)], [true, true]);
 check("номер нашего сотрудника", has((to({ clientPhone: "+7 701 555 20 30" }, null, { staff: ["7015552030"] }) as { skip: string }).skip, "сотрудника"), true);
-check("просил не писать: автомат молчит, кнопка отправляет", ["skip" in to({ clientPhone: "+7 701 555 20 30" }, null, { opted: ["7015552030"] }), to({ clientPhone: "+7 701 555 20 30" }, null, { opted: ["7015552030"], mode: "manual" })], [true, { phone: "77015552030" }]);
+// 24.11.2026, владелец: «почему ты реально не отправляешь накладные клиентам, которые купили? Ты обязан это делать
+// всегда». Накладная — документ о покупке: списка «не писать» у неё больше нет вовсе (правило рассылок её не касается).
+check("у получателя накладной нет списка «не писать» — купил, значит получает", to({ clientPhone: "+7 701 555 20 30" }, null), { phone: "77015552030" });
+check("пометки, по которым проход возвращается к строке, начинаются как причины пропуска", [(to({}, null) as { skip: string }).skip.startsWith(WAYBILL_SKIP_NO_PHONE), WAYBILL_SKIP_OPT_OUT], [true, "клиент просил не писать"]);
+
+// --- Вернуться к накладной: не ушла из-за номера, ушла в отключённый номер ------------------------------------------
+const REDO_NOW = new Date("2026-11-24T10:00:00Z");
+const W = (p: Partial<{ status: string; note: string; createdAt: string; line: string; byEmail: string }>) =>
+  waybillRedo({ status: "sent", note: "", createdAt: "2026-11-24T09:00:00Z", line: "m-ilgar", byEmail: "auto", ...p } as never, REDO_NOW);
+check("отправлена через номер менеджера час назад — проверить, жив ли номер", W({}), "dead-line");
+check("только что отправлена — рано", W({ createdAt: "2026-11-24T09:55:00Z" }), null);
+check("с основного номера — не кандидат", [W({ line: "main" }), W({ line: "" })], [null, null]);
+check("уже отправляли повторно — второй раз нет", W({ note: `${WAYBILL_RESEND_NOTE}: номер менеджера был отключён от WhatsApp` }), null);
+check("старше двух суток — не трогаем", W({ createdAt: "2026-11-22T09:00:00Z" }), null);
+check("не было мобильного номера — вернуться, когда появится", W({ status: "skipped", note: `${WAYBILL_SKIP_NO_PHONE} — в заявке и в карточке`, line: "" }), "skipped");
+check("пропущена по списку «не писать» (старое правило) — отправить", W({ status: "skipped", note: "клиент просил не писать — отправьте кнопкой, если накладная нужна", line: "" }), "skipped");
+check("пропуск по другой причине и пропуск кнопкой — не трогаем", [W({ status: "skipped", note: "номер клиента — номер нашего сотрудника" }), W({ status: "skipped", note: `${WAYBILL_SKIP_NO_PHONE} — в заявке и в карточке`, byEmail: "yulia@x.kz" }), W({ status: "skipped", note: "отгрузка записана задним числом — клиенту не отправлялась" })], [null, null, null]);
+check("не отправлена, повтор, в работе — этим занимаются другие правила", [W({ status: "failed" }), W({ status: "duplicate" }), W({ status: "sending" })], [null, null, null]);
+
+console.log("\n— Номер подключён? —");
+check("подключён", lineHealth({ hasKeys: true, state: "authorized" }), "ok");
+check("QR слетел или номер заблокирован — отключён", [lineHealth({ hasKeys: true, state: "notAuthorized" }), lineHealth({ hasKeys: true, state: "blocked" })], ["down", "down"]);
+check("ключей нет или номер выключен — отключён", lineHealth({ hasKeys: false }), "down");
+check("инстанс не оплачен / ключ не принят — отключён", [400, 401, 403, 466].map((errorStatus) => lineHealth({ hasKeys: true, errorStatus })), ["down", "down", "down", "down"]);
+check("Green API не ответил, номер запускается — «не знаю»: не шлём через него, но и повторов не делаем", [lineHealth({ hasKeys: true, errorStatus: 0 }), lineHealth({ hasKeys: true, errorStatus: 502 }), lineHealth({ hasKeys: true, errorStatus: 429 }), lineHealth({ hasKeys: true, state: "starting" }), lineHealth({ hasKeys: true, state: "sleepMode" })], ["unknown", "unknown", "unknown", "unknown", "unknown"]);
 check("часы: с 7 до 22", [6, 7, 12, 21, 22, 23, 0].map(waybillHourOk), [false, true, true, true, false, false, false]);
 void none;
 
