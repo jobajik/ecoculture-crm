@@ -77,6 +77,19 @@ async function main() {
     const o = orderById.get(w.orderId);
     console.log(`  ${almaty(w.createdAt)} № ${w.number} · ${o?.clientName || "?"} · ${w.status} · ${w.note || "без причины"} · менеджер заявки: ${nameOf(o?.managerEmail || "")} · ${w.byEmail === "auto" ? "автомат" : "кнопкой"}`);
   }
+  // Не ушла ли одна накладная клиенту дважды: в переписке каждая отправка — своя запись «[накладная № …]».
+  if (process.argv.includes("--dups")) {
+    const { listWaMessages } = await import("../src/lib/repo/talks");
+    const msgs = (await listWaMessages({ lines: "all" })).filter((m) => m.direction === "out" && m.text.startsWith("[накладная № ") && Date.parse(m.at) >= from);
+    const byNumber = new Map<string, typeof msgs>();
+    for (const m of msgs) {
+      const n = /^\[накладная № ([^\]]+)\]/.exec(m.text)?.[1] ?? "";
+      byNumber.set(n, [...(byNumber.get(n) ?? []), m]);
+    }
+    const twice = Array.from(byNumber.entries()).filter(([, list]) => list.length > 1);
+    console.log(`\nЗаписей об отправке накладных в переписке: ${msgs.length}; накладных, ушедших больше одного раза: ${twice.length}`);
+    for (const [n, list] of twice) console.log(`  № ${n}: ${list.map((m) => `${almaty(m.at)} ${lineName(m.line || "main")}`).join(" → ")}`);
+  }
   const reasons = new Map<string, number>();
   for (const w of not) reasons.set(w.note.split(" — ")[0] || w.status, (reasons.get(w.note.split(" — ")[0] || w.status) ?? 0) + 1);
   console.log(`\nПричины: ${Array.from(reasons.entries()).map(([k, n]) => `${k}: ${n}`).join("; ") || "нет"}`);
