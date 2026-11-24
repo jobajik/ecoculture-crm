@@ -160,13 +160,17 @@ async function main() {
 
   console.log("\n— Проход 5: номер менеджера снова работает — новые накладные идут через него —");
   state["222"] = "authorized";
-  const h = mk(7, "WB-OPT2", { Status: "skipped", Note: "клиент просил не писать — отправьте кнопкой, если накладная нужна", Line: "", MessageID: "", SentAt: "", Phone: "" });
+  // Заявка Ильяса, клиент с его номером не переписывался — накладная всё равно идёт с номера менеджера заявки.
+  const ilyasAt = pool.findIndex((o, i) => i > 10 && o.managerEmail === "ilyas@demo.kz");
+  const h = mk(ilyasAt >= 0 ? ilyasAt : 7, "WB-OPT2", { Status: "skipped", Note: "клиент просил не писать — отправьте кнопкой, если накладная нужна", Line: "", MessageID: "", SentAt: "", Phone: "" });
   await appendRows(SHEET_TABS.WAYBILLS, [h.rec]);
   const before5 = sent.length;
   await runWaybills({ limit: 200, budgetMs: 600000 });
   const H = await row("WB-OPT2");
   console.log("    менеджер заявки:", h.order.managerEmail, "→ линия", H.Line, "· отправок:", JSON.stringify(sent.slice(before5)));
-  check("накладная ушла (через номер менеджера, если заявка его, иначе с основного)", [H.Status, h.order.managerEmail === "ilyas@demo.kz" ? H.Line === "m-ilyas" : H.Line === "main"], ["sent", true]);
+  check("нашлась заявка Ильяса", h.order.managerEmail, "ilyas@demo.kz");
+  check("накладная ушла с номера менеджера заявки", [H.Status, H.Line], ["sent", "m-ilyas"]);
+  check("…и только с него", sent.slice(before5).filter((x) => x.method === "sendFileByUrl").map((x) => x.instance), ["222"]);
 
   console.log("\n— Проход 6: не работает ни один номер —");
   state["111"] = "notAuthorized";

@@ -189,9 +189,13 @@ check("маркетолог, агроном, Земфира, пустая рол
 check("не продажа и отменённая — никому", [who("admin", "o@x.kz", { retail: "almaty" }) !== "", who("admin", "o@x.kz", { status: "cancelled" }) !== ""], [true, true]);
 
 // --- С какого номера ------------------------------------------------------------------
-check("где переписывался последним → номер менеджера → основной", waybillLineOrder({ chatLines: ["m-emil", ""], managerLine: "m-ilyas" }), ["m-emil", "", "m-ilyas"]);
+// 24.11.2026, владелец: «накладные отправляй с номеров менеджера» — номер менеджера заявки первым, остальное — запас.
+check("номер менеджера заявки → где переписывался последним → основной", waybillLineOrder({ chatLines: ["m-emil", ""], managerLine: "m-ilyas" }), ["m-ilyas", "m-emil", ""]);
+check("клиент переписывался только с основным — всё равно сначала номер менеджера", waybillLineOrder({ chatLines: [""], managerLine: "m-ilyas" }), ["m-ilyas", ""]);
+check("клиент переписывался с номером своего менеджера — без повторов", waybillLineOrder({ chatLines: ["m-ilyas", ""], managerLine: "m-ilyas" }), ["m-ilyas", ""]);
 check("переписки не было — номер менеджера, потом основной", waybillLineOrder({ chatLines: [], managerLine: "m-ilyas" }), ["m-ilyas", ""]);
-check("у менеджера нет номера — основной", waybillLineOrder({ chatLines: [], managerLine: "" }), [""]);
+check("у менеджера нет номера — где переписывался, потом основной", [waybillLineOrder({ chatLines: [], managerLine: "" }), waybillLineOrder({ chatLines: ["m-emil"], managerLine: "" })], [[""], ["m-emil", ""]]);
+check("не больше четырёх попыток", waybillLineOrder({ chatLines: ["a", "b", "c", "d"], managerLine: "m" }).length, 4);
 check("статус из таблицы: незнакомое — «отправляется», а не «отправлена»", [parseWaybillStatus("sent"), parseWaybillStatus(" Failed "), parseWaybillStatus(""), parseWaybillStatus("готово")], ["sent", "failed", "sending", "sending"]);
 
 // --- Застряла в «отправляется» (19.11.2026, первый день: № YOMGH ушла клиенту, а отметка не записалась) --------------

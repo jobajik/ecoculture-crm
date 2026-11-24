@@ -343,10 +343,16 @@ export function waybillSendRefusal(input: { role: string | null | undefined; ema
   return mine ? "" : "Это заявка другого менеджера — накладную отправит он, РОП или бухгалтер";
 }
 
-/** Линии, с которых пробуем отправить, по порядку: где клиент переписывался последним → номер менеджера заявки → основной. */
+/**
+ * Номера, с которых пробуем отправить, по порядку. Первым — номер МЕНЕДЖЕРА ЗАЯВКИ (24.11.2026, владелец: «накладные
+ * отправляй с номеров менеджера»): клиент купил у него и получает документ от него же, а не от незнакомого номера.
+ * До этого первым шёл номер, где клиент переписывался последним, — и треть накладных уходила с основного номера, хотя
+ * продал менеджер. У менеджера номера нет или он отключён от WhatsApp (это проверяет отправка) — дальше номер, где
+ * клиент переписывался последним, и в конце основной: накладная обязана дойти.
+ */
 export function waybillLineOrder(input: { chatLines: string[]; managerLine: string }): string[] {
   const out: string[] = [];
-  for (const code of [...input.chatLines, input.managerLine, ""]) if (code !== undefined && code !== null && !out.includes(code)) out.push(code);
+  for (const code of [...(input.managerLine ? [input.managerLine] : []), ...input.chatLines, ""]) if (code !== undefined && code !== null && !out.includes(code)) out.push(code);
   return out.slice(0, 4);
 }
 
