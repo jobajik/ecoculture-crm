@@ -393,7 +393,7 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
         if (list.length >= Math.min(AUTO_CAPS.push, mainLeft)) break;
         if (!okClient("push", h)) continue;
         const shown = line.varieties.filter((v) => v.price > 0 && v.qty >= 50).slice(0, 3).map((v) => ({ flowerType: line.flowerType, variety: v.variety, grade: line.grade }));
-        list.push(asRecipient(h, pushText(line, { cut: cutOf(shown), shipDay: shipDayOf(h.managerEmail) }), "FRESH_CUT"));
+        list.push(asRecipient(h, pushText(line, { cut: cutOf(shown), shipDay: shipDayOf(h.managerEmail), position: (variety) => label({ flowerType: line.flowerType, variety, grade: line.grade }) }), "FRESH_CUT"));
         taken.add(phoneKey(h.phone));
       }
     }

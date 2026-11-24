@@ -477,15 +477,21 @@ export function leadReminderText(input: { draft: string; manager: string; offers
 /** «Давно не заказывали»: что брали в прошлый раз и что есть сейчас. */
 export function sleepingText(input: { last: { label: string; quantity: number }[]; offers: NudgeOffer[]; label: (o: NudgeOffer) => string; cut?: CutDay; shipDay?: string }): string {
   const lines = ["Здравствуйте, {имя}!", "Давно от вас не было заказа — повторим?"];
-  if (input.last.length) lines.push("", "В прошлый раз вы брали:", ...input.last.map((l) => `• ${l.label} — ${qty(l.quantity)}`));
+  // Что брал — без количества и не строкой-позицией (24.11.2026, живая проба копирайтера): «• Altaj, Третья — 6 120 шт.»
+  // модель пересказала как «на складе сейчас 6 120 шт.» — выдала прошлый заказ клиента за наш остаток.
+  if (input.last.length) lines.push("", `В прошлый раз вы брали: ${input.last.map((l) => l.label).join("; ")}.`);
   lines.push("", "Сейчас в наличии:", ...withCut(input.offers.map((o) => offerLine(o, input.label)), input.cut), "", input.shipDay ? `Ближайшая фура — ${input.shipDay}. Записать вас на поставку?` : "Поставить вам на завтра?");
   return withOptOut(lines.join("\n"));
 }
 
 /** Распродажа: тем, кто уже брал эту позицию. */
-export function pushText(line: Pick<PushLine, "label" | "varieties" | "bulkFrom" | "bulkPrice">, opts: { cut?: CutDay; shipDay?: string } = {}): string {
+export function pushText(
+  line: Pick<PushLine, "label" | "varieties" | "bulkFrom" | "bulkPrice">,
+  /** `position` — полное имя позиции («Хризантема Altaj, Четвёртая»): строка обязана нести категорию сама, а не в заголовке. */
+  opts: { cut?: CutDay; shipDay?: string; position?: (variety: string) => string } = {}
+): string {
   const vars = line.varieties.filter((v) => v.price > 0 && v.qty >= 50).slice(0, 3);
-  const lines = ["Здравствуйте, {имя}!", `${line.label} — сейчас много на складе, свежий срез:`, "", ...withCut(vars.map((v) => `• ${v.variety} — *${money(v.price)}*`), opts.cut)];
+  const lines = ["Здравствуйте, {имя}!", `${line.label} — сейчас много на складе, свежий срез:`, "", ...withCut(vars.map((v) => `• ${opts.position ? opts.position(v.variety) : v.variety} — *${money(v.price)}*`), opts.cut)];
   if (line.bulkFrom > 0 && line.bulkPrice > 0) lines.push("", `От ${qty(line.bulkFrom)} — *${money(line.bulkPrice)}* за стебель.`);
   lines.push("", opts.shipDay ? `Вы уже брали эту позицию. Ближайшая фура — ${opts.shipDay}. Записать вас на поставку?` : "Вы уже брали эту позицию — поставить на завтра?");
   return withOptOut(lines.join("\n"));

@@ -14,6 +14,7 @@ import {
   copySpecValue,
   copyUserMessage,
   holidayFacts,
+  niceName,
   parseCopySpec,
   programFacts,
   segmentByLastOrder,
@@ -22,6 +23,7 @@ import {
   type CopySpec,
 } from "../src/lib/broadcastCopy";
 import { OPT_OUT_LINE } from "../src/lib/broadcast";
+import { copyMoment } from "../src/lib/broadcastCopyRunner";
 import { freshText, holidayText, introText, lowText, sleepingText } from "../src/lib/autoBroadcast";
 
 let failed = 0;
@@ -68,7 +70,8 @@ check("сорта латиницей", facts.latin, ["jumilia", "alissa 1 pure w
 check("день срезки назван программой", facts.cutDay, true);
 check("день срезки не назван", programFacts(splitOptOut(freshText(offers, lab), OPT_OUT_LINE).body).cutDay, false);
 const sleeping = splitOptOut(sleepingText({ last: [{ label: "Роза Jumilia, 50 см", quantity: 300 }], offers: [offers[0]], label: lab }), OPT_OUT_LINE).body;
-check("количества из черновика («брали 300 шт.»)", programFacts(sleeping).quantities, ["300"]);
+check("что брал в прошлый раз — в черновике без количества", [programFacts(sleeping).quantities, sleeping.includes("В прошлый раз вы брали: Роза Jumilia, 50 см.")], [[], true]);
+check("количество «от 50 шт.» из черновика — можно повторить", programFacts("Для пробы — от 50 шт.").quantities, ["50"]);
 
 // --- Проверка ответа модели -----------------------------------------------------------------------------
 const good = [
@@ -89,7 +92,7 @@ check("выдуманная позиция — нельзя", has(checkCopy(good
 check("выдуманный сорт в тексте — нельзя", has(checkCopy(good.replace("розу,", "розу Freedom,"), ctx), "freedom"), true);
 check("остаток штуками — нельзя", has(checkCopy(good.replace("уходит быстро", "осталось 300 шт."), ctx), "300 шт."), true);
 check("остаток цифрой без «шт.» — нельзя", has(checkCopy(good.replace("уходит быстро", "на складе всего 300"), ctx), "точный остаток"), true);
-check("без вопроса в конце — нельзя", has(checkCopy(good.replace("Закрепим за вами объём на завтра?", "Хорошего дня."), ctx), "призыва"), true);
+check("без вопроса в конце — нельзя", has(checkCopy(good.replace("Закрепим за вами объём на завтра?", "Хорошего дня."), ctx), "последняя фраза"), true);
 check("призыв без вопросительного знака — можно", checkCopy(good.replace("Закрепим за вами объём на завтра?", "Напишите, сколько поставить на завтра."), ctx), []);
 check("«акция» — нельзя", has(checkCopy(good.replace("цветок свежий", "акция, цветок свежий"), ctx), "спам-слова"), true);
 check("«срочно успейте» — нельзя", has(checkCopy(good.replace("уходит быстро", "срочно успейте"), ctx), "спам-слова"), true);
@@ -114,8 +117,24 @@ check("день срезки не назван — «сегодня свежий
 check("день срезки не назван — «свежий срез» можно", checkCopy(good.replace("Айгерим, добрый день! Вчера срезали розу, цветок свежий", "Добрый день! Свежий срез розы"), noDay), []);
 check("имени нет — «уважаемый» нельзя", has(checkCopy(good.replace("Айгерим, добрый день! Вчера срезали розу, цветок свежий", "Уважаемый клиент! Свежий срез розы"), noDay), "уважаем"), true);
 
-const sleepGood = "Айгерим, здравствуйте! Давно не виделись.\n\nВ прошлый раз брали:\n• Роза Jumilia, 50 см — 300 шт.\n\nСейчас есть:\n• Роза Jumilia, 50 см — *180 ₸*\n\nПовторим на завтра?";
-check("что брали в прошлый раз (300 шт.) — можно: это не остаток", checkCopy(sleepGood, { program: sleeping, name: "Айгерим", spec }), []);
+const sleepGood = "Айгерим, здравствуйте! Давно не виделись, в прошлый раз вы брали розу Jumilia, 50 см.\n\nСейчас есть:\n• Роза Jumilia, 50 см — *180 ₸*\n\nПовторим на завтра?";
+check("давно не заказывали: хороший текст", checkCopy(sleepGood, { program: sleeping, name: "Айгерим", spec }), []);
+check(
+  "прошлый заказ клиента нельзя выдать за наш склад (живая проба: «на складе сейчас 6 120 шт.»)",
+  has(checkCopy(sleepGood.replace("Сейчас есть:", "Сейчас на складе 6 120 шт.:"), { program: sleeping, name: "Айгерим", spec }), "6120 шт."),
+  true
+);
+
+// --- Живая проба 24.11.2026: что модель писала и что теперь не проходит ------------------------------------
+check("вопрос в середине, в конце рассказ — нельзя", has(checkCopy(good.replace("Закрепим за вами объём на завтра?", "Закрепим за вами объём на завтра?\nМожно взять пробную партию - подскажу по всем деталям."), ctx), "последняя фраза"), true);
+check("вопрос и короткий призыв за ним — можно (пример владельца)", checkCopy(good.replace("Закрепим за вами объём на завтра?", "Закрепим за вами объём на завтра? Напишите, что поставить."), ctx), []);
+check("два вопроса — нельзя", has(checkCopy(good.replace("Закрепим за вами объём на завтра?", "Забронируем на завтра? Что поставить в заказ?"), ctx), "вопрос в сообщении должен быть один"), true);
+check("«добрый вечер» в 10 утра — нельзя", has(checkCopy(good.replace("добрый день", "добрый вечер"), { ...ctx, hour: 10 }), "не вечер"), true);
+check("«добрый вечер» в 18:00 — можно", checkCopy(good.replace("добрый день", "добрый вечер"), { ...ctx, hour: 18 }), []);
+check("«доброе утро» в 15:00 — нельзя", has(checkCopy(good.replace("добрый день", "доброе утро"), { ...ctx, hour: 15 }), "не утро"), true);
+check("«только что получили свежий срез» — выдумка", has(checkCopy(good.replace("Айгерим, добрый день! Вчера срезали розу, цветок свежий", "Добрый день! Только что получили свежий срез"), noDay), "день срезки"), true);
+check("имя капсом в карточке — не «капс» копирайтера", checkCopy(good.replace("Айгерим", "АСАН"), { ...ctx, name: "АСАН" }), []);
+check("имя: «АСАН» → «Асан», «АЙГЕРИМ-ХАНУМ» → «Айгерим-Ханум», остальное как есть", [niceName("АСАН"), niceName("АЙГЕРИМ-ХАНУМ"), niceName("инна талдык"), niceName("DinNurSuy"), niceName("")], ["Асан", "Айгерим-Ханум", "инна талдык", "DinNurSuy", ""]);
 
 const region = splitOptOut(freshText(offers, lab, { shipDay: "понедельник, 30.11" }), OPT_OUT_LINE).body;
 const regionSpec: CopySpec = { scenario: "FRESH_CUT", segment: "MANAGERS", sender: "REGIONAL" };
@@ -129,6 +148,7 @@ const intro = splitOptOut(introText(), OPT_OUT_LINE).body;
 const introSpec: CopySpec = { scenario: "WHO_WE_ARE", segment: "COMMON", sender: "MAIN" };
 const introGood = "Здравствуйте! Это Ecoculture: сами выращиваем розы, хризантему и эустому в своих теплицах в Казахстане. Розы растим уже 13 лет, а хризантему в промышленных объёмах в СНГ выращиваем только мы. Защищаем цветок полезными насекомыми, химии минимум.\n\nПрислать фото и цены на эту неделю?";
 check("знакомство: хороший текст", checkCopy(introGood, { program: intro, name: "", spec: introSpec }), []);
+check("знакомство: «более 13 лет» — преувеличение", has(checkCopy(introGood.replace("уже 13 лет", "более 13 лет"), { program: intro, name: "", spec: introSpec }), "без «более»"), true);
 check("знакомство: цену выдумывать нельзя", has(checkCopy(introGood.replace("химии минимум.", "химии минимум. Роза от 180 ₸."), { program: intro, name: "", spec: introSpec }), "180 ₸"), true);
 
 const holiday = splitOptOut(holidayText("preorder", "среда"), OPT_OUT_LINE).body;
@@ -136,6 +156,7 @@ const holidaySpec: CopySpec = { scenario: "HOLIDAY_PREORDER", segment: "MANAGERS
 const holidayGood = "Добрый день! 16 декабря - День независимости, цветы к празднику лучше заказать заранее. Принимаем предзаказ: привезём свежий срез к 13-15 декабря.\n\nНапишите, какие позиции заложить для вас?";
 check("праздник: хороший текст", checkCopy(holidayGood, { program: holiday, name: "", spec: holidaySpec }), []);
 check("праздник: «16–17 декабря выходные» — нельзя, выходной один", has(checkCopy(holidayGood.replace("16 декабря - День независимости", "16-17 декабря - выходные"), { program: holiday, name: "", spec: holidaySpec }), "17"), true);
+check("праздник: «в этот день доставка не работает» — программа не говорила", has(checkCopy(holidayGood.replace("цветы к празднику лучше заказать заранее", "в этот день доставка не работает"), { program: holiday, name: "", spec: holidaySpec }), "нет доставки"), true);
 check("праздник: день недели 16 декабря 2026 — среда", holidayFacts(2026).dayLabel, "среда");
 
 const low = splitOptOut(lowText([offers[0]], lab), OPT_OUT_LINE).body;
@@ -145,6 +166,8 @@ check("заканчивается: хороший текст", checkCopy("Доб
 // --- Что уходит модели -----------------------------------------------------------------------------------
 const user = copyUserMessage({ spec, name: "Айгерим", program: fresh.body, today: "вторник, 24.11.2026", avoid: ["Добрый день! Свежий срез… Поставить вам на завтра?"], problems: ["потеряна цена 180 ₸"] });
 check("запрос: имя, сегмент, отправитель, сценарий, день", ["Имя клиента: Айгерим", "Сегмент: MANAGERS", "Отправитель: MAIN", "Сценарий: FRESH_CUT", "Сегодня: вторник, 24.11.2026"].every((x) => user.includes(x)), true);
+check("запрос: вопрос один и последним; факты не усиливать", user.includes("Вопрос в сообщении ОДИН") && user.includes("не усиливай"), true);
+check("время отправки: утро / день / вечер и час", [copyMoment(new Date("2026-11-24T05:35:00Z")), copyMoment(new Date("2026-11-24T08:00:00Z")).hour, copyMoment(new Date("2026-11-24T13:10:00Z")).label.endsWith("(вечер)")], [{ label: "вторник, 24.11.2026, 10:35 (утро)", hour: 10 }, 13, true]);
 check("запрос: черновик целиком", user.includes(fresh.body), true);
 check("запрос: что уже ушло другим", user.includes("начни иначе") && user.includes("Поставить вам на завтра?"), true);
 check("запрос: замечания к прошлой попытке", user.includes("потеряна цена 180 ₸"), true);

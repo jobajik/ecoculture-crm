@@ -252,7 +252,7 @@ check("заказывал за 3 дня", [orderedRecently(["2026-10-15"], "2026
 const lab = (o: { variety: string; grade: string }) => `Хризантема ${o.variety}, ${o.grade}`;
 const offer = { flowerType: "chrysanthemum", variety: "Altaj", grade: "Первая", price: 250, qty: 900 };
 const sleepT = sleepingText({ last: [{ label: "Хризантема Altaj, Первая", quantity: 300 }], offers: [offer], label: lab });
-check("давно не заказывали: что брали", sleepT.includes("• Хризантема Altaj, Первая — 300 шт."), true);
+check("давно не заказывали: что брали — без количества", [sleepT.includes("В прошлый раз вы брали: Хризантема Altaj, Первая."), /\d+\s*шт/.test(sleepT)], [true, false]);
 check("давно не заказывали: цена жирным", sleepT.includes("*250 ₸*"), true);
 check("давно не заказывали: «СТОП» в конце", sleepT.endsWith(OPT_OUT_LINE), true);
 check("давно не заказывали: обращение по имени", sleepT.startsWith("Здравствуйте, {имя}!"), true);
@@ -262,6 +262,11 @@ check("лиду: представляется", leadT.startsWith("Здравст
 check("лиду: без «СТОП»", leadT.includes("СТОП"), false);
 const pushT = pushText({ label: "Хризантема, четвёртая категория", varieties: [{ variety: "Altaj", qty: 5000, price: 180 }, { variety: "Chik", qty: 20, price: 170 }], bulkFrom: 1000, bulkPrice: 160 });
 check("распродажа: сорт с ценой, мелкий остаток не предлагаем", [pushT.includes("• Altaj — *180 ₸*"), pushT.includes("Chik")], [true, false]);
+check(
+  "распродажа: позиция целиком в строке (категория не теряется)",
+  pushText({ label: "Хризантема, четвёртая категория", varieties: [{ variety: "Altaj", qty: 5000, price: 180 }], bulkFrom: 0, bulkPrice: 0 }, { position: (v) => `Хризантема ${v}, Четвёртая` }).includes("• Хризантема Altaj, Четвёртая — *180 ₸*"),
+  true
+);
 check("распродажа: цена от объёма", pushT.includes("От 1 000 шт. — *160 ₸* за стебель."), true);
 check("срез: «СТОП»", freshText([offer], lab).endsWith(OPT_OUT_LINE), true);
 
