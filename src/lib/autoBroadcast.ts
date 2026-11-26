@@ -549,18 +549,38 @@ export function lowText(offers: NudgeOffer[], label: (o: NudgeOffer) => string, 
 /** Один заказ «давно» — старше стольких дней (та же граница, что у сегмента «активный за 60 дней»). */
 export const INTRO_OLD_ORDER_DAYS = 60;
 
+/**
+ * Общий пул (26.11.2026, решение владельца: нетронутую базу обзвона снять с менеджеров — «им понемногу пишет автопилот
+ * „Знакомство“; кто ответил — уходит менеджеру»). Лид в пуле: без менеджера, без карточки, стадия «Новый», переписки
+ * нет ни на одном номере. Первыми — кто по старой базе у нас покупал (чем больше заказов, тем раньше), потом по
+ * давности заведения. `hasChat` — была ли переписка с этим номером.
+ */
+export function pickPoolLeads<T extends Pick<Lead, "leadId" | "phone" | "managerEmail" | "stage" | "clientId" | "pastOrders" | "createdAt" | "handedOverAt">>(
+  leads: T[],
+  hasChat: (phoneKey: string) => boolean
+): T[] {
+  return leads
+    .filter((l) => !(l.managerEmail || "").trim() && !l.clientId && !l.handedOverAt && cleanStage(l.stage) === "new" && !!waPhone(l.phone) && !hasChat(phoneKey(waPhone(l.phone))))
+    .sort((a, b) => (b.pastOrders || 0) - (a.pastOrders || 0) || (a.createdAt || "").localeCompare(b.createdAt || "") || a.leadId.localeCompare(b.leadId));
+}
+
 /** Кому знакомство: карточка без заказов или с одним заказом, и тот давно. */
 export function introDue(days: string[], today: string): boolean {
   if (days.length === 0) return true;
   return days.length === 1 && dayDiff(days[0], today) > INTRO_OLD_ORDER_DAYS;
 }
 
-/** Факты о производстве — слова владельца из промпта (24.11.2026). Цен и позиций здесь нет нарочно. */
-export function introText(): string {
+/**
+ * Факты о производстве — слова владельца из промпта (24.11.2026). Цен и позиций здесь нет нарочно.
+ * `pastBuyer` — человек из старой базы, который раньше у нас покупал (общий пул, 26.11.2026): ему не «знакомство», а
+ * напоминание — одной фразой.
+ */
+export function introText(opts: { pastBuyer?: boolean } = {}): string {
   return withOptOut(
     [
       "Здравствуйте, {имя}!",
       "Это Ecoculture — сами выращиваем розы, хризантему и эустому в своих теплицах в Казахстане.",
+      ...(opts.pastBuyer ? ["Вы раньше уже заказывали у нас цветы."] : []),
       "",
       "13 лет выращиваем розы.",
       "Единственные в СНГ выращиваем хризантему в промышленных объёмах.",

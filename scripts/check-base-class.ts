@@ -2,7 +2,7 @@
  * Проверка «кто есть кто в базе» (26.11.2026): одна запись на человека, класс из фактов, хозяин и что с ним не так.
  *   npx tsx scripts/check-base-class.ts
  */
-import { buyerClass, classifyBase, prospectClass, type BaseCard, type BaseInput, type BaseLead } from "../src/lib/baseClass";
+import { buyerClass, classifyBase, pickTaker, poolTalkers, prospectClass, workLists, type BaseCard, type BaseInput, type BaseLead } from "../src/lib/baseClass";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -67,6 +67,49 @@ check("две карточки на один номер — одна запис�
 check("выключена — только если выключены все карточки", r2.entries.find((e) => e.key === "7011112233")?.off, false);
 check("лид без телефона — отдельная запись и счётчик", [r2.entries.some((e) => e.key === "l:A"), r2.outside.noPhoneLeads], [true, 1]);
 check("заявка по телефону без номера карточки находит человека", classifyBase(base({ cards: [card({})], orders: [{ clientId: "", clientPhone: "87011112233", managerEmail: "ilyas@x.kz", day: "2026-08-01", amount: 1 }] })).entries[0].cls, "sleeping");
+
+// --- Переносы, пул, списки на день (решения владельца 26.11.2026) -------------------------------------------
+check("перенос: покупателя — тому, кто оформляет его заявки", [by("7011112233").moveTo, by("7011112233").moveWhy], ["emil@x.kz", "последние заявки оформляет"]);
+const mv = (x: Partial<BaseInput>) => classifyBase(base({ leads: [lead({ managerEmail: "ilyas@x.kz" })], messages: [{ phone: "77020000001", at: "2026-11-20T05:00:00Z", direction: "in", line: "m-emil", text: "почём роза?" }], ...x })).entries[0];
+check("перенос: лид Ильяса пишет на номер Эмиля — предлагаем Эмилю", [mv({}).moveTo, mv({}).moveWhy], ["emil@x.kz", "пишет на номер (20.11)"]);
+check("перенос: писал туда два месяца назад — не предлагаем", mv({ messages: [{ phone: "77020000001", at: "2026-09-20T05:00:00Z", direction: "in", line: "m-emil", text: "" }] }).moveTo, "");
+check("перенос: номер Земфиры — не повод (она лидов передаёт сама)", mv({ lineOwner: new Map([["m-emil", "emil@x.kz"]]), takers: new Set(["ilyas@x.kz"]) }).moveTo, "");
+check("перенос: отклонённый второй раз не предлагается", mv({ declined: new Set(["7020000001>emil@x.kz"]) }).moveTo, "");
+check("перенос: тому, кто не работает с клиентами, не предлагаем", mv({ idle: new Set(["emil@x.kz"]) }).moveTo, "");
+check("ничей лид пишет на номер Эмиля — предлагаем записать за ним", classifyBase(base({ leads: [lead({})], messages: [{ phone: "77020000001", at: "2026-11-20T05:00:00Z", direction: "in", line: "m-emil", text: "" }] })).entries[0].moveTo, "emil@x.kz");
+check("человек без карточки и лида — записывать некуда, переноса нет", by("7770000001").moveTo, "");
+check("хозяин не работает с клиентами — видно", classifyBase(base({ cards: [card({})], idle: new Set(["ilyas@x.kz"]) })).entries[0].ownerState, "gone");
+
+const pl = classifyBase(base({ leads: [lead({ campaign: "Обзвон" }), lead({ leadId: "L5", phone: "+7 702 000 00 05", managerEmail: "ilyas@x.kz", campaign: "Обзвон" }), lead({ leadId: "L6", phone: "+7 702 000 00 06" })], messages: [{ phone: "77020000006", at: "2026-11-25T05:00:00Z", direction: "in", line: "", text: "Здравствуйте, пришлите прайс" }] }));
+check("общий пул: нетронутый лид без менеджера; с менеджером — не пул; ответивший — не пул", pl.entries.map((e) => e.pool), [true, false, false]);
+check("ответивший из пула — к раздаче менеджеру", poolTalkers(pl.entries).map((e) => e.leadIds[0]), ["L6"]);
+const T = (email: string, city: string, hasLine: boolean, load: number) => ({ email, city, hasLine, load });
+const takers = [T("ilyas@x.kz", "", true, 12), T("emil@x.kz", "", true, 7), T("saya@x.kz", "", false, 0), T("alex@x.kz", "Астана", true, 30)];
+check("кому отдать: Астана — менеджеру Астаны, сколько бы у него ни было", pickTaker("г. Астана", takers), "alex@x.kz");
+check("кому отдать: Алматы — у кого меньше разговоров среди тех, у кого подключён WhatsApp", pickTaker("Алматы", takers), "emil@x.kz");
+check("кому отдать: город не указан — так же", pickTaker("", takers), "emil@x.kz");
+check("кому отдать: ни у кого нет WhatsApp — просто у кого меньше", pickTaker("", [T("a@x.kz", "", false, 3), T("b@x.kz", "", false, 1)]), "b@x.kz");
+check("кому отдать: некому — пусто", pickTaker("", []), "");
+
+const E = (x: Partial<ReturnType<typeof classifyBase>["entries"][number]>) => ({ ...r1.entries[0], waiting: false, optOut: false, lastInAt: "", revenue: 0, ...x });
+const wl = workLists(
+  [
+    E({ key: "a", cls: "active", waiting: true, lastInAt: "2026-11-25T05:00:00Z" }),
+    E({ key: "b", cls: "talking", waiting: true, lastInAt: "2026-11-22T05:00:00Z" }),
+    E({ key: "c", cls: "warm", waiting: true, lastInAt: "2026-09-01T05:00:00Z" }),
+    E({ key: "d", cls: "cooling", revenue: 10 }),
+    E({ key: "e", cls: "sleeping", revenue: 90 }),
+    E({ key: "f", cls: "talking", lastInAt: "2026-11-20T05:00:00Z" }),
+    E({ key: "g", cls: "warm", lastInAt: "2026-10-20T05:00:00Z" }),
+    E({ key: "h", cls: "refused", waiting: true, lastInAt: "2026-11-25T05:00:00Z" }),
+    E({ key: "i", cls: "cooling", optOut: true, revenue: 500 }),
+  ],
+  today
+);
+check("ответить: ждут не дольше двух недель, первым — кто ждёт дольше; отказавшихся нет", wl.reply.map((e) => e.key), ["b", "a"]);
+check("ждут дольше двух недель — отдельным числом", wl.stale, 1);
+check("вернуть: остывают и спят, первым — кто принёс больше; «СТОП» не трогаем", wl.back.map((e) => e.key), ["e", "d"]);
+check("дожать: разговор и тёплые, где последнее слово за нами; свежие первыми", wl.push.map((e) => e.key), ["f", "g"]);
 
 if (failed) {
   console.log(`\nПРОВАЛЕНО: ${failed}`);

@@ -30,6 +30,7 @@ import {
   parseChainLock,
   parsePlanRecord,
   pickLeadReminders,
+  pickPoolLeads,
   planDue,
   planMessageText,
   planRecordValue,
@@ -301,6 +302,13 @@ check("знакомство: без цен и позиций", /₸|•/.test(in
 check("знакомство: факты владельца", ["13 лет", "Единственные в СНГ", "Биозащита"].every((w) => introText().includes(w)), true);
 check("знакомство: уже отправляли — видно", sentFacts([{ broadcastId: "I", phone: "77011112233", status: "sent", sentAt: "2026-11-20T05:00:00Z" }], new Map([["I", "intro"]])).get("7011112233")?.intro, true);
 
+const PL = (leadId: string, x: Record<string, unknown> = {}) => ({ leadId, phone: `+7 701 000 00 0${leadId.slice(-1)}`, managerEmail: "", stage: "new", clientId: "", pastOrders: 0, createdAt: "2026-10-01T05:00:00Z", handedOverAt: "", ...x });
+check(
+  "общий пул: без менеджера, без карточки, «Новый», без переписки; первыми — кто раньше покупал",
+  pickPoolLeads([PL("L1"), PL("L2", { pastOrders: 3 }), PL("L3", { managerEmail: "a@x.kz" }), PL("L4", { stage: "contact" }), PL("L5", { clientId: "C1" }), PL("L6", { phone: "8 7272 55 55 55" }), PL("L7"), PL("L8", { pastOrders: 1 })], (k) => k === "7010000007").map((l) => l.leadId),
+  ["L2", "L8", "L1"]
+);
+check("знакомство тому, кто раньше покупал, — с напоминанием об этом", [introText({ pastBuyer: true }).includes("Вы раньше уже заказывали у нас цветы."), introText().includes("раньше уже заказывали")], [true, false]);
 check("праздник: 9, 10, 11 декабря — предзаказ", ["2026-12-09", "2026-12-10", "2026-12-11"].map(holidayStage), ["preorder", "preorder", "preorder"]);
 check("праздник: 13 декабря — последний шанс", holidayStage("2026-12-13"), "last");
 check("праздник: 8, 12, 14, 16 декабря и ноябрь — нет", ["2026-12-08", "2026-12-12", "2026-12-14", "2026-12-16", "2026-11-24"].map(holidayStage), [null, null, null, null, null]);

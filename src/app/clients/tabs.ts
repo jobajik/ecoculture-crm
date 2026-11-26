@@ -17,7 +17,9 @@ export function clientsTabsFor(period?: string, role?: string | null, city = fal
   // Переписки WhatsApp и решения ИИ (16.10.2026): владелец и РОП — по всем номерам, менеджер и Земфира — по своему.
   const chats = manage || role === "manager" || leadgen;
   const leads = tabOfViews("Лиды", [
-    { href: "/clients/leads", label: leadgen ? "Лиды" : "Доска лидов" },
+    // Доска лидов со стадиями — архив (26.11.2026, решение владельца: «один экран „База“»): стадии никто не вёл, состояние
+    // человека теперь считается само. Земфире доска остаётся рабочей — она на ней заводит и передаёт лидов.
+    { href: "/clients/leads", label: leadgen ? "Лиды" : "Доска лидов (архив)" },
     // Решения ИИ: продать сейчас, написать позже, отказ (15.10.2026).
     chats && { href: "/clients/leads/decide", label: "Решения ИИ" },
     (manage || leadgen) && { href: "/clients/leads/ads", label: "С рекламы" },
@@ -29,9 +31,12 @@ export function clientsTabsFor(period?: string, role?: string | null, city = fal
     // Разбор переписки WhatsApp с лидами: оценка менеджеров, возражения, кто ждёт ответа.
     !leadgen && { href: "/clients/leads/talks", label: "Разбор разговоров" },
   ]).map((t) => (t.views ? t : { ...t, label: t.href === "/clients/chats" ? "Переписки" : "Разговоры" }));
+  // «База» (26.11.2026): кто есть кто и что сделать сегодня — первая вкладка раздела у владельца, РОПа и менеджеров.
+  const base: SectionTab[] = manage || role === "manager" || leadgen ? [{ href: "/clients/base", label: "База", match: ["/clients/base"] }] : [];
   // Земфира: свои лиды, итог по ним и переписка — больше ей в разделе ничего не нужно.
-  if (leadgen) return [...leads, ...talk];
+  if (leadgen) return [...leads, ...base, ...talk];
   return [
+    ...base,
     ...tabOfViews("Клиенты", [
       { href: "/clients", label: "Список" },
       // Менеджеру города аналитика всей базы закрыта (`cityScope.ts`): его клиенты — список, его цифры — раздел города.
@@ -39,8 +44,8 @@ export function clientsTabsFor(period?: string, role?: string | null, city = fal
     ]),
     // Постоянники (09.11.2026): кто заказывает регулярно и как идут напоминания от имени менеджеров; менеджер — своих.
     ...(manage || role === "manager" ? [{ href: "/clients/habits", label: "Постоянники", match: ["/clients/habits"] }] : []),
-    ...leads,
     ...talk,
+    ...leads,
     // Рассылки WhatsApp запускают только админ и РОП — остальным вкладка ни к чему.
     ...(manage ? [{ href: "/clients/broadcasts", label: "Рассылки" }] : []),
   ];

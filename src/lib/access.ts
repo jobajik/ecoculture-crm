@@ -96,6 +96,9 @@ export const ROLE_ACCESS: { prefix: string; roles: string[] }[] = [
     prefix: "/clients/leads/ads",
     roles: ["manager", "sales_head", "accountant", "admin", "retail_almaty", "office_retail", "retail_regions", "leadgen", "marketer"],
   },
+  // «База» (26.11.2026) — кто есть кто и что с ним делать: владелец и РОП видят всех, менеджер и Земфира — своих
+  // (решает страница). Выше общего «/clients»: Земфире карточки клиентов закрыты, а её люди в базе — нет.
+  { prefix: "/clients/base", roles: ["manager", "sales_head", "admin", "leadgen"] },
   // Переписки WhatsApp по номерам (16.10.2026): какой номер кому виден — `chatAccess.ts`.
   { prefix: "/clients/chats", roles: ["manager", "sales_head", "admin", "leadgen", "marketer"] },
   {

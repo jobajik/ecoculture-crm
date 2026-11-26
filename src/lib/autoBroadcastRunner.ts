@@ -66,6 +66,7 @@ import {
   holidayText,
   introDue,
   introText,
+  pickPoolLeads,
   isRunningLow,
   isSleeping,
   leadReminderText,
@@ -474,6 +475,24 @@ export async function buildAutoPlan(now: Date = new Date()): Promise<BuiltPlan> 
         continue;
       }
       list.push({ phone, name: greetingName(c.contactPerson, c.name), kind: "client", refId: c.clientId, managerEmail: c.managerEmail, text: introText(), copy: copyOf("WHO_WE_ARE", "COMMON", "", false) });
+      taken.add(key);
+    }
+    // Общий пул: нетронутые лиды без менеджера (26.11.2026). Кто ответит — уйдёт менеджеру (`assignPoolTalkers`).
+    for (const l of pickPoolLeads(leads, (k) => ctx.facts.has(k))) {
+      if (list.length >= Math.min(AUTO_CAPS.intro, mainLeft)) break;
+      const phone = waPhone(l.phone);
+      const key = phoneKey(phone);
+      if (taken.has(key) || ctx.sent.get(key)?.intro || commonExclusion(key, ctx)) continue;
+      const placeholder = /^Клиент WhatsApp/i.test(l.name.trim());
+      list.push({
+        phone,
+        name: placeholder ? "" : greetingName(l.contactPerson, l.name),
+        kind: "lead",
+        refId: l.leadId,
+        managerEmail: "",
+        text: introText({ pastBuyer: (l.pastOrders || 0) > 0 }),
+        copy: copyOf("WHO_WE_ARE", "COMMON", "", false),
+      });
       taken.add(key);
     }
     mainLeft -= list.length;

@@ -69,7 +69,9 @@ const INTEREST_OUTCOMES = ["price_sent", "order", "callback", "seasonal"];
 const WARM_STAGES = ["contact", "need", "offer", "trial"];
 
 export type OwnerState = "ok" | "none" | "gone";
-export const OWNER_STATE_LABELS: Record<OwnerState, string> = { ok: "", none: "ничей", gone: "менеджер ушёл" };
+export const OWNER_STATE_LABELS: Record<OwnerState, string> = { ok: "", none: "ничей", gone: "хозяин не работает с клиентами" };
+/** Перенос к тому, с чьим номером идёт переписка, предлагаем, если человек писал туда не раньше стольких дней назад. */
+export const MOVE_CHAT_DAYS = 30;
 
 export interface BaseCard {
   clientId: string;
@@ -146,6 +148,19 @@ export interface BaseEntry {
   /** База обзвона (лид из загруженного файла). */
   callBase: boolean;
   fromAds: boolean;
+  /** Когда человек писал нам в последний раз и когда было последнее сообщение в любую сторону (ISO; пусто — переписки нет). */
+  lastInAt: string;
+  /** Что он написал в последний раз (начало) и на какой номер. */
+  lastInText: string;
+  lastInLine: string;
+  lastAt: string;
+  /** Номер, на котором было последнее сообщение ("" — основной). */
+  lastLine: string;
+  /** Общий пул: лид без менеджера, с которым ещё никто не работал. Ему пишет автопилот; ответит — уйдёт менеджеру. */
+  pool: boolean;
+  /** Кому предлагаем записать (почта) и почему; пусто — хозяин на месте. Переносит человек, не программа. */
+  moveTo: string;
+  moveWhy: string;
 }
 
 export interface BaseInput {
@@ -161,6 +176,12 @@ export interface BaseInput {
   optedOut: Set<string>;
   /** Кто сейчас продаёт: почты действующих менеджеров (нижний регистр). */
   sellers: Set<string>;
+  /** Числится в сотрудниках, но с клиентами не работает (решение владельца): его людей нужно раздать. */
+  idle?: Set<string>;
+  /** Кому можно предлагать перенос: менеджеры (не Земфира — она лидов передаёт сама). Нет — все `sellers`. */
+  takers?: Set<string>;
+  /** Отклонённые переносы: «ключ человека>почта» — второй раз не предлагаем. */
+  declined?: Set<string>;
   /** Чей номер WhatsApp: код линии → почта менеджера. */
   lineOwner: Map<string, string>;
   today: string;
@@ -187,6 +208,7 @@ interface Facts {
   hasIn: boolean;
   hasOut: boolean;
   lastInAt: string;
+  lastInLine: string;
   lastInText: string;
   lastAt: string;
   lastDirection: "in" | "out" | "";
@@ -272,12 +294,13 @@ export function classifyBase(input: BaseInput): BaseResult {
       staffSeen.add(k);
       continue;
     }
-    const f = facts.get(k) ?? { hasIn: false, hasOut: false, lastInAt: "", lastInText: "", lastAt: "", lastDirection: "" as const, lastLine: "", lines: new Set<string>() };
+    const f = facts.get(k) ?? { hasIn: false, hasOut: false, lastInAt: "", lastInLine: "", lastInText: "", lastAt: "", lastDirection: "" as const, lastLine: "", lines: new Set<string>() };
     f.lines.add(m.line || "");
     if (m.direction === "in") {
       f.hasIn = true;
       if (m.at > f.lastInAt) {
         f.lastInAt = m.at;
+        f.lastInLine = m.line || "";
         f.lastInText = m.text || "";
       }
     } else f.hasOut = true;
@@ -300,10 +323,13 @@ export function classifyBase(input: BaseInput): BaseResult {
   const outcomesOf = new Map<string, string[]>();
   for (const t of input.touches) outcomesOf.set(t.leadId, [...(outcomesOf.get(t.leadId) ?? []), t.outcome || "touch"]);
 
-  const sellerState = (email: string): OwnerState => (!email ? "none" : input.sellers.has(low(email)) ? "ok" : "gone");
+  const sellerState = (email: string): OwnerState => (!email ? "none" : input.sellers.has(low(email)) && !input.idle?.has(low(email)) ? "ok" : "gone");
+  const takers = input.takers ?? input.sellers;
+  const canTake = (email: string) => !!email && takers.has(email) && !input.idle?.has(email);
+  const dm = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
   const entries: BaseEntry[] = [];
   for (const u of Array.from(units.values())) {
-    const f = facts.get(u.key) ?? { hasIn: false, hasOut: false, lastInAt: "", lastInText: "", lastAt: "", lastDirection: "" as const, lastLine: "", lines: new Set<string>() };
+    const f = facts.get(u.key) ?? { hasIn: false, hasOut: false, lastInAt: "", lastInLine: "", lastInText: "", lastAt: "", lastDirection: "" as const, lastLine: "", lines: new Set<string>() };
     const orders = (ordersOf.get(u.key) ?? []).sort((a, b) => a.day.localeCompare(b.day));
     const lastOrderDay = orders.length ? orders[orders.length - 1].day : "";
     const card = u.cards.find((c) => c.active) ?? u.cards[0];
@@ -324,6 +350,22 @@ export function classifyBase(input: BaseInput): BaseResult {
     // Кто на самом деле продаёт: последние три заявки — у одного менеджера, и это не хозяин.
     const lastSellers = orders.slice(-3).map((o) => low(o.managerEmail)).filter(Boolean);
     const seller = lastSellers.length >= 2 && lastSellers.every((s) => s === lastSellers[0]) ? lastSellers[0] : "";
+    // Кому предлагаем записать. Покупателя — тому, кто оформляет его заявки; остальных — тому, на чей номер человек
+    // пишет. Записанного менеджера (карточка, лид) программа сама не меняет: это список на подтверждение.
+    const written = cardOwner || leadOwner;
+    const inLine = low(input.lineOwner.get(f.lastInLine) || "");
+    let moveTo = "";
+    let moveWhy = "";
+    if (card || lead) {
+      if (seller && seller !== written && canTake(seller)) {
+        moveTo = seller;
+        moveWhy = "последние заявки оформляет";
+      } else if (inLine && inLine !== written && canTake(inLine) && f.lastInAt && dayDiff(f.lastInAt.slice(0, 10), input.today) <= MOVE_CHAT_DAYS && !(seller && seller === written)) {
+        moveTo = inLine;
+        moveWhy = `пишет на номер (${dm(f.lastInAt)})`;
+      }
+      if (moveTo && input.declined?.has(`${u.key}>${moveTo}`)) moveTo = moveWhy = "";
+    }
     entries.push({
       key: u.key,
       kind,
@@ -348,7 +390,77 @@ export function classifyBase(input: BaseInput): BaseResult {
       duplicates: Math.max(0, u.cards.length - 1) + Math.max(0, u.leads.filter((l) => !l.clientId).length - (u.cards.length ? 0 : 1)),
       callBase: u.leads.some((l) => !!(l.campaign || "").trim()),
       fromAds: u.leads.some((l) => l.origin === "ads"),
+      lastInAt: f.lastInAt,
+      lastInText: (f.lastInText || "").replace(/\s+/g, " ").trim().slice(0, 200),
+      lastInLine: f.lastInLine,
+      lastAt: f.lastAt,
+      lastLine: f.lastLine,
+      pool: !card && !!lead && !written && cls === "untouched",
+      moveTo,
+      moveWhy,
     });
   }
   return { entries, outside };
+}
+
+// --- Что делать менеджеру -----------------------------------------------------------------------------------
+
+/** Ждёт ответа — пока человек писал не раньше стольких дней назад; дальше это уже не «ответить», а «вернуть разговор». */
+export const REPLY_DAYS = 14;
+
+export interface WorkLists {
+  /** Кому ответить: написал последним и ждёт; первым — кто ждёт дольше. */
+  reply: BaseEntry[];
+  /** Кого вернуть: покупал, но остывает или спит; первым — кто принёс больше. */
+  back: BaseEntry[];
+  /** Кого дожать: разговор шёл, последними писали мы; первым — кто писал недавно. */
+  push: BaseEntry[];
+  /** Написали давно и так и не получили ответа — отдельным числом, чтобы не забивать «ответить». */
+  stale: number;
+}
+
+/** Три списка на день из уже посчитанной базы. Отказавшиеся и «не наши» в них не попадают. */
+export function workLists(entries: BaseEntry[], today: string): WorkLists {
+  const alive = entries.filter((e) => e.cls !== "refused" && e.cls !== "not_ours" && !e.optOut);
+  const fresh = (e: BaseEntry) => !!e.lastInAt && dayDiff(e.lastInAt.slice(0, 10), today) <= REPLY_DAYS;
+  const waiting = alive.filter((e) => e.waiting);
+  return {
+    reply: waiting.filter(fresh).sort((a, b) => a.lastInAt.localeCompare(b.lastInAt)),
+    back: alive.filter((e) => e.cls === "cooling" || e.cls === "sleeping").sort((a, b) => b.revenue - a.revenue),
+    push: alive.filter((e) => !e.waiting && (e.cls === "talking" || e.cls === "warm")).sort((a, b) => (b.lastInAt || "").localeCompare(a.lastInAt || "")),
+    stale: waiting.filter((e) => !fresh(e)).length,
+  };
+}
+
+// --- Общий пул: кому отдать того, кто ответил ---------------------------------------------------------------
+
+export interface PoolTaker {
+  email: string;
+  /** Город менеджера, если он ведёт регион (`ManagerProfiles`); пусто — Алматы и все остальные. */
+  city: string;
+  /** Есть ли у него подключённый номер WhatsApp. */
+  hasLine: boolean;
+  /** Сколько у него сейчас людей «идёт разговор» и «тёплый» — чтобы раздавать поровну. */
+  load: number;
+}
+
+const cityKey = (s: string) => (s || "").trim().toLowerCase().replace(/ё/g, "е").replace(/^г\.?\s*/, "").replace(/[\s-]+/g, "");
+
+/**
+ * Кому отдать человека из общего пула, когда он ответил. Клиент из города регионального менеджера — ему; остальные —
+ * менеджеру без города, у кого сейчас меньше разговоров (сначала те, у кого подключён WhatsApp: отвечать придётся там).
+ * Никого подходящего — пусто: человек останется в «Раздать».
+ */
+export function pickTaker(city: string, takers: PoolTaker[]): string {
+  const least = (list: PoolTaker[]) => [...list].sort((a, b) => a.load - b.load || a.email.localeCompare(b.email))[0]?.email ?? "";
+  const here = cityKey(city) ? takers.filter((t) => cityKey(t.city) === cityKey(city)) : [];
+  if (here.length) return least(here);
+  const general = takers.filter((t) => !cityKey(t.city));
+  const withLine = general.filter((t) => t.hasLine);
+  return least(withLine.length ? withLine : general);
+}
+
+/** Кого из пула пора отдать менеджеру: лид без менеджера, который сам написал нам и не отказался. */
+export function poolTalkers(entries: BaseEntry[]): BaseEntry[] {
+  return entries.filter((e) => e.kind === "lead" && e.leadIds.length > 0 && e.ownerFrom !== "card" && e.ownerFrom !== "lead" && e.cls === "talking" && !e.optOut);
 }

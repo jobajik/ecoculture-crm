@@ -23,6 +23,7 @@ import { ORDER_STATUSES, ROLES } from "../src/lib/constants";
 import { LEADS_LINE } from "../src/lib/broadcast";
 import { localDayKey } from "../src/lib/timezone";
 import { messageText } from "../src/lib/whatsapp";
+import { BASE_DECLINED_SETTING, BASE_IDLE_SETTING, parseList } from "../src/lib/baseRunner";
 import { BASE_CLASSES, BASE_CLASS_HINTS, BASE_CLASS_LABELS, BASE_KIND_LABELS, classifyBase, type BaseClass, type BaseEntry, type BaseKind } from "../src/lib/baseClass";
 
 const n = (x: number) => String(x).padStart(6);
@@ -59,6 +60,9 @@ async function main() {
     staff: await ourPhoneKeys(map),
     optedOut,
     sellers,
+    idle: new Set(parseList(map[BASE_IDLE_SETTING]).map((x) => x.toLowerCase())),
+    takers: new Set(users.filter((u) => u.active && u.role === ROLES.MANAGER).map((u) => u.email.trim().toLowerCase())),
+    declined: new Set(parseList(map[BASE_DECLINED_SETTING])),
     lineOwner,
     today,
   });
@@ -105,6 +109,9 @@ async function main() {
   console.log(`Карточка у одного, а последние заявки оформляет другой: ${sold.length} — ${count(sold, (e) => `${nameOf.get(e.owner) ?? e.owner} → ${nameOf.get(e.soldBy) ?? e.soldBy}`).slice(0, 10).map(([k, c]) => `${k}: ${c}`).join("; ")}`);
   const chat = E.filter((e) => e.chatWith);
   console.log(`Записан за одним, а переписывается с номером другого: ${chat.length} — ${count(chat, (e) => `${nameOf.get(e.owner) ?? e.owner} → ${nameOf.get(e.chatWith) ?? e.chatWith}`).slice(0, 10).map(([k, c]) => `${k}: ${c}`).join("; ")}`);
+  const moves = E.filter((e) => e.moveTo);
+  console.log(`Переносы на подтверждение: ${moves.length} — ${count(moves, (e) => `${e.owner ? nameOf.get(e.owner) ?? e.owner : "ничей"} → ${nameOf.get(e.moveTo) ?? e.moveTo}`).slice(0, 14).map(([k, c]) => `${k}: ${c}`).join("; ")}`);
+  console.log(`В общем пуле: ${E.filter((e) => e.pool).length}`);
   console.log(`Несколько карточек или лидов на один номер: ${E.filter((e) => e.duplicates > 0).length} человек`);
   console.log(`Карточка выключена: ${E.filter((e) => e.off).length} (из них покупали за 60 дней: ${E.filter((e) => e.off && (e.cls === "active" || e.cls === "cooling")).length})`);
   console.log(`Просили не писать («СТОП»): ${E.filter((e) => e.optOut).length} (из них покупавших ${E.filter((e) => e.optOut && e.kind === "client").length})`);
