@@ -460,9 +460,11 @@ export function lostPaymentFix(input: {
   ledger: { farm: string; amount: number; createdAt: string }[];
   now: Date;
   recentOnly: boolean;
+  /** Сколько минут назад платёж ещё «недавний» (по умолчанию 10 — проверка сразу после записи; сверка берёт двое суток). */
+  windowMin?: number;
 }): { paidAmount: number; byFarm: Record<string, number>; added: number } | null {
   const mixed = input.farms.length > 1;
-  const since = input.now.getTime() - LOST_PAYMENT_WINDOW_MIN * 60000;
+  const since = input.now.getTime() - (input.windowMin ?? LOST_PAYMENT_WINDOW_MIN) * 60000;
   const fresh = (p: { createdAt: string }) => !input.recentOnly || (Date.parse(p.createdAt) || 0) >= since;
   const byFarm = { ...input.paidByFarm };
   let added = 0;

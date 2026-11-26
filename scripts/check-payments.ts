@@ -470,6 +470,25 @@ async function main() {
       lostPaymentFix({ ...lost, now: new Date("2026-10-12T07:00:00.000Z") }),
       null
     );
+    // 26.11.2026, №VNJMB: счёт Rose Farm на 8 000 ₸ оплачен, платёж в журнале, итог заявки не записался; заметили через
+    // неделю. Часовая сверка Kaspi смотрит платежи за двое суток (`windowMin`), а не за десять минут.
+    const vn = {
+      farms,
+      paidAmount: 36_000,
+      paidByFarm: { rose_farm: 0, esentai: 36_000 },
+      ledger: [
+        { farm: "rose_farm", amount: 8_000, createdAt: "2026-11-19T05:34:23.605Z" },
+        { farm: "esentai", amount: 36_000, createdAt: "2026-11-19T05:35:08.674Z" },
+      ],
+      recentOnly: true,
+    };
+    check("VNJMB: через час проверка «сразу после записи» молчит", lostPaymentFix({ ...vn, now: new Date("2026-11-19T06:40:00.000Z") }), null);
+    check("VNJMB: часовая сверка (двое суток) возвращает 8 000 ₸ в итог", lostPaymentFix({ ...vn, now: new Date("2026-11-19T06:40:00.000Z"), windowMin: 2880 }), {
+      paidAmount: 44_000,
+      byFarm: { rose_farm: 8_000, esentai: 36_000 },
+      added: 8_000,
+    });
+    check("VNJMB: через неделю сама сверка уже не трогает — только по списку человека", lostPaymentFix({ ...vn, now: new Date("2026-11-26T06:40:00.000Z"), windowMin: 2880 }), null);
     check("…а по списку человека — чинит", lostPaymentFix({ ...lost, now: new Date("2026-10-12T07:00:00.000Z"), recentOnly: false })?.paidAmount, 70_900);
     check(
       "«вернули переплату» (итог ниже журнала на старые деньги) — не трогаем",

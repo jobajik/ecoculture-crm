@@ -2,7 +2,7 @@ import type { ApiPayInvoice } from "./apipay";
 import type { KaspiInvoice } from "./types";
 import { appendKaspiInvoice, findKaspiInvoice, updateKaspiInvoiceRow } from "./repo/kaspiInvoices";
 import { getOrderById } from "./repo/orders";
-import { recordPayment } from "./paymentWrite";
+import { recordPayment, repairLostPayments } from "./paymentWrite";
 import { isPaidKaspiStatus, kaspiPhone, kaspiStatusPlan, recordedPaymentId, noteHasInvoice } from "./kaspiInvoice";
 import { listPayments } from "./repo/payments";
 import { ORDER_STATUSES } from "./constants";
@@ -13,6 +13,8 @@ import { onBotInvoiceUpdate } from "./botFollowUp";
 
 /** Кем подписан платёж, проведённый по оплате счёта Kaspi. */
 export const KASPI_ACTOR = "kaspi-pay@apipay";
+/** Сверка итога заявки с журналом после оплаты Kaspi: платежи моложе двух суток считаются «только что внесёнными». */
+export const LOST_KASPI_WINDOW_MIN = 2 * 24 * 60;
 
 const OUR_EXTERNAL_ID = /^([A-Z0-9]{4,8}):(rose_farm|esentai)$/;
 
@@ -99,6 +101,10 @@ export async function applyApiPayInvoice(inv: ApiPayInvoice): Promise<"unknown" 
   const already = (await listPayments({ fresh: true })).find((p) => p.orderId === row.orderId && noteHasInvoice(p.note, row.invoiceId));
   if (already) {
     await updateKaspiInvoiceRow(again.rowNumber, { ...changes, PaymentID: already.paymentId, UpdatedAt: new Date().toISOString() });
+    // «Упала дальше» — значит, платёж в журнале есть, а в итог заявки он мог не попасть (26.11.2026, №VNJMB: счёт на
+    // 8 000 ₸ оплачен, платёж в журнале, а заявка неделю висела с долгом 8 000 ₸). Раньше здесь только связывали счёт
+    // с платежом. Теперь итог сверяется с журналом: чего в нём не хватает из платежей последних двух суток — возвращается.
+    await repairLostPayments(row.orderId, KASPI_ACTOR, true, LOST_KASPI_WINDOW_MIN);
     return isPaidKaspiStatus(status) ? "paid" : "updated";
   }
   const claim = `claim-${Date.now()}`;

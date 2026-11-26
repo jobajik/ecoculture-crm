@@ -8,6 +8,7 @@ import { sendDueStaffReminders } from "@/lib/staffCommandRunner";
 import { kickHabits } from "@/lib/habitsKick";
 import { kickWaybills } from "@/lib/waybillKick";
 import { kickBasePool } from "@/lib/baseRunner";
+import { kickKaspiReconcile } from "@/lib/kaspiReconcile";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -53,6 +54,8 @@ export async function GET(request: Request) {
   if (!fromWebhook) await kickWaybills((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
   // И общий пул «Базы» (26.11.2026): кто из нетронутых сам написал — уходит менеджеру; своей функцией `/api/base/pool`, днём.
   if (!fromWebhook && almatyHour(now) >= 9 && almatyHour(now) < 20) await kickBasePool((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
+  // И сверку Kaspi (26.11.2026): счёт оплачен, а уведомление не дошло или итог заявки не записался — `/api/kaspi/reconcile`.
+  if (!fromWebhook) await kickKaspiReconcile((process.env.NEXTAUTH_URL || new URL(request.url).origin).replace(/\/+$/, ""));
   // Отметка ДО работы: второй вебхук через секунду увидит её и не задвоит касания.
   await saveSettings({ [FOLLOWUP_LAST_RUN]: followupRunText(now, source, "идёт") }).catch(() => undefined);
   // Напоминания сотрудникам («напомни мне в 15:00 …», `staffCommand.ts`) — чей час настал.

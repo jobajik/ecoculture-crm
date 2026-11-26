@@ -123,7 +123,7 @@ export async function recordPayment(input: {
  * итог или null, если всё сходится. `recentOnly` — только платежи последних минут (после записи);
  * без него — любые, для разбора старых заявок по списку человека.
  */
-export async function repairLostPayments(orderId: string, actorEmail: string, recentOnly: boolean): Promise<number | null> {
+export async function repairLostPayments(orderId: string, actorEmail: string, recentOnly: boolean, windowMin?: number): Promise<number | null> {
   try {
     forgetReads();
     const order = await getOrderById(orderId);
@@ -135,7 +135,7 @@ export async function repairLostPayments(orderId: string, actorEmail: string, re
       const field = PAID_FIELD_BY_FARM[f];
       if (field) paidByFarm[f] = Number((order as unknown as Record<string, number>)[field]) || 0;
     }
-    const fix = lostPaymentFix({ farms, paidAmount: order.paidAmount, paidByFarm, ledger, now: new Date(), recentOnly });
+    const fix = lostPaymentFix({ farms, paidAmount: order.paidAmount, paidByFarm, ledger, now: new Date(), recentOnly, windowMin });
     if (!fix) return null;
     const byField: Record<string, number> = {};
     for (const [f, value] of Object.entries(fix.byFarm)) {
