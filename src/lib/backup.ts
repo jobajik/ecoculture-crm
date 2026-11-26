@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { SHEET_TABS } from "./constants";
-import { isPayrollTab, readTable } from "./sheets";
+import { isPayrollTab, isQuotaError, readTable } from "./sheets";
 
 /**
  * Резервная копия таблицы.
@@ -46,9 +46,16 @@ export interface BackupResult {
  */
 export type BackupProgress = (message: string) => void;
 
+/** Google отвечает так, когда листа с таким названием в таблице нет (а не когда чтение не удалось). */
+export function isMissingTabError(err: unknown): boolean {
+  return /unable to parse range/i.test(String((err as { message?: unknown })?.message ?? err ?? ""));
+}
+
 export async function createBackup(
   now: Date = new Date(),
-  onProgress: BackupProgress = () => {}
+  onProgress: BackupProgress = () => {},
+  /** Сколько раз повторить чтение вкладки и сколько ждать между попытками (ночной запуск живёт минуту — ждёт меньше). */
+  options: { retries?: number; retryPauseMs?: number } = {}
 ): Promise<BackupResult> {
   const sheets = client();
   // Зарплата лежит в отдельной таблице и в общую копию не идёт: владелец вынес её, чтобы оклады не было видно
@@ -62,16 +69,30 @@ export async function createBackup(
   let done = 0;
   for (const tab of tabs) {
     done++;
-    try {
-      const table = await readTable(tab);
-      const values = [table.headers, ...table.rows];
-      rows += table.rows.length;
-      data.push({ title: tab, values });
-      onProgress(`  [${done}/${tabs.length}] ${tab} — ${table.rows.length} строк`);
-    } catch {
-      onProgress(`  [${done}/${tabs.length}] ${tab} — вкладки нет, пропускаю`);
-      // Вкладки может не быть — пропускаем, но не молча: в итоге видно, сколько
-      // вкладок попало в копию.
+    // 26.11.2026: копия перед правкой, сделанная в рабочий час, написала «вкладки нет» про LeadTouches, KaspiInvoices,
+    // WaFiles и BotChats — вкладки на месте, это Google ограничил чтения. Любой сбой чтения считался отсутствием
+    // вкладки, и копия без четырёх вкладок выглядела удачной. Теперь «вкладки нет» — только когда Google сам сказал,
+    // что такого листа нет; лимит пережидается и чтение повторяется; не вышло — копия НЕ делается, с объяснением.
+    let attempt = 0;
+    for (;;) {
+      try {
+        const table = await readTable(tab);
+        const values = [table.headers, ...table.rows];
+        rows += table.rows.length;
+        data.push({ title: tab, values });
+        onProgress(`  [${done}/${tabs.length}] ${tab} — ${table.rows.length} строк`);
+        break;
+      } catch (err) {
+        const text = err instanceof Error ? err.message : String(err);
+        if (isMissingTabError(err)) {
+          onProgress(`  [${done}/${tabs.length}] ${tab} — вкладки нет, пропускаю`);
+          break;
+        }
+        attempt += 1;
+        if (attempt > (options.retries ?? 2)) throw new Error(`Копия не сделана: вкладка «${tab}» не прочиталась (${text.slice(0, 140)}). Повторите через минуту.`);
+        onProgress(`  [${done}/${tabs.length}] ${tab} — не прочиталась (${isQuotaError(err) ? "лимит Google" : text.slice(0, 60)}), жду и повторяю…`);
+        await new Promise((r) => setTimeout(r, options.retryPauseMs ?? 25000));
+      }
     }
   }
 

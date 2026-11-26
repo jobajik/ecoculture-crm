@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await createBackup();
+    const result = await createBackup(new Date(), () => {}, { retries: 2, retryPauseMs: 4000 });
     return Response.json({
       ok: true,
       title: result.title,
