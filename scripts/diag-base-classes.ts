@@ -5,8 +5,9 @@ dotenv.config();
  * Кто есть кто в клиентской базе — на живых данных, только цифры (без имён и номеров клиентов). НИЧЕГО НЕ МЕНЯЕТ.
  * Сводит карточки, лиды и переписки всех номеров в одну запись на человека (`src/lib/baseClass.ts`) и печатает: сколько
  * кого, классы, чьи они, что не так с принадлежностью (менеджер ушёл, ничьи, продаёт или переписывается другой).
- *   npx tsx scripts/diag-base-classes.ts
+ *   npx tsx scripts/diag-base-classes.ts [--xlsx <файл>]     с --xlsx пишет полный список (человек, класс, менеджер) в файл
  */
+import ExcelJS from "exceljs";
 import { prefetchTables, SHEET_TABS } from "../src/lib/sheets";
 import { listClients } from "../src/lib/repo/clients";
 import { listLeads, listLeadTouches } from "../src/lib/repo/leads";
@@ -22,7 +23,7 @@ import { ORDER_STATUSES, ROLES } from "../src/lib/constants";
 import { LEADS_LINE } from "../src/lib/broadcast";
 import { localDayKey } from "../src/lib/timezone";
 import { messageText } from "../src/lib/whatsapp";
-import { BASE_CLASSES, BASE_CLASS_LABELS, BASE_KIND_LABELS, classifyBase, type BaseClass, type BaseEntry, type BaseKind } from "../src/lib/baseClass";
+import { BASE_CLASSES, BASE_CLASS_HINTS, BASE_CLASS_LABELS, BASE_KIND_LABELS, classifyBase, type BaseClass, type BaseEntry, type BaseKind } from "../src/lib/baseClass";
 
 const n = (x: number) => String(x).padStart(6);
 const money = (x: number) => `${Math.round(x / 1000).toLocaleString("ru-RU")} тыс. ₸`;
@@ -62,6 +63,7 @@ async function main() {
     today,
   });
   const E = res.entries;
+  const lineName = (l: string) => (l === "" ? "основной" : l === LEADS_LINE ? "Земфира" : nameOf.get(lineOwner.get(l) || "") ?? l);
   const who = (e: BaseEntry) => (e.ownerState === "none" ? "НИЧЕЙ" : `${nameOf.get(e.owner) ?? e.owner.split("@")[0]}${e.ownerState === "gone" ? " (ушёл)" : ""}`);
 
   console.log(`База на ${today}: карточек ${clients.length}, лидов ${leads.length}, сообщений WhatsApp ${messages.length}, заявок ${orders.length}`);
@@ -120,7 +122,6 @@ async function main() {
   console.log(`Всего ${prospects.length}: из базы обзвона ${prospects.filter((e) => e.callBase).length}, с рекламы ${prospects.filter((e) => e.fromAds).length}, только переписка ${prospects.filter((e) => e.kind === "contact").length}`);
   console.log(`База обзвона: ${count(prospects.filter((e) => e.callBase), (e) => BASE_CLASS_LABELS[e.cls]).map(([k, c]) => `${k} ${c}`).join(" · ")}`);
   console.log(`С рекламы: ${count(prospects.filter((e) => e.fromAds), (e) => BASE_CLASS_LABELS[e.cls]).map(([k, c]) => `${k} ${c}`).join(" · ")}`);
-  const lineName = (l: string) => (l === "" ? "основной" : l === LEADS_LINE ? "Земфира" : nameOf.get(lineOwner.get(l) || "") ?? l);
   console.log(`Только переписка, по номерам: ${count(E.filter((e) => e.kind === "contact").flatMap((e) => e.lines.map(lineName)), (x) => x).map(([k, c]) => `${k} ${c}`).join(" · ")}`);
 
   console.log("\n=== КТО РАБОТАЕТ С БАЗОЙ (сотрудники, за которыми кто-то записан) ===");
@@ -139,6 +140,54 @@ async function main() {
     );
   }
   console.log(`Сотрудники с номером WhatsApp, но без единой записи в базе: ${Array.from(lineOwner.entries()).filter(([, email]) => !E.some((e) => e.owner === email)).map(([code, email]) => `${nameOf.get(email) ?? email} (${code})`).join(", ") || "нет"}`);
+
+  console.log(`Все строки сотрудников (имя · роль · работает): ${users.map((u) => `${(u.name || "?").trim()} · ${u.role} · ${u.active ? "да" : "НЕТ"}${lineOf.has(u.email.trim().toLowerCase()) ? " · WhatsApp" : ""}`).join(" | ")}`);
+
+  // Полный список «кто есть кто» — файлом на компьютер владельца (данные клиентов в журнал не печатаем).
+  const csvArg = process.argv.indexOf("--xlsx");
+  if (csvArg > 0 && process.argv[csvArg + 1]) {
+    const note = (e: BaseEntry) =>
+      [
+        e.ownerState === "none" ? "ничей" : e.ownerState === "gone" ? "менеджер выключен в CRM" : "",
+        e.soldBy ? `последние заявки оформляет ${nameOf.get(e.soldBy) ?? e.soldBy}` : "",
+        e.chatWith ? `переписывается с номером: ${nameOf.get(e.chatWith) ?? e.chatWith}` : "",
+        e.waiting ? "написал последним, ждёт ответа" : "",
+        e.optOut ? "просил не писать (СТОП)" : "",
+        e.duplicates ? `дубли: ещё ${e.duplicates}` : "",
+        e.off ? "карточка выключена" : "",
+      ].filter(Boolean).join("; ");
+    const order = (e: BaseEntry) => BASE_CLASSES.indexOf(e.cls);
+    const rows = [...E].sort((a, b) => order(a) - order(b) || b.revenue - a.revenue || a.name.localeCompare(b.name, "ru"));
+    const wb = new ExcelJS.Workbook();
+    const sum = wb.addWorksheet("Сводка");
+    sum.columns = [{ width: 26 }, { width: 12 }, { width: 62 }];
+    sum.addRow([`Клиентская база на ${today}: кто есть кто`]).font = { bold: true, size: 14 };
+    sum.addRow([`Людей (одна строка на номер): ${E.length}`]);
+    sum.addRow([]);
+    sum.addRow(["Состояние", "Людей", "Что это значит"]).font = { bold: true };
+    for (const c of BASE_CLASSES) sum.addRow([BASE_CLASS_LABELS[c], E.filter((e) => e.cls === c).length, BASE_CLASS_HINTS[c]]);
+    sum.addRow([]);
+    sum.addRow(["Менеджер", "Людей", "Из них покупают сейчас / всего покупавших"]).font = { bold: true };
+    for (const [o, total] of owners) sum.addRow([o, total, `${E.filter((e) => who(e) === o && e.cls === "active").length} / ${E.filter((e) => who(e) === o && e.kind === "client").length}`]);
+    const ws = wb.addWorksheet("Все люди", { views: [{ state: "frozen", ySplit: 1 }] });
+    ws.columns = [
+      { header: "Имя", width: 34 }, { header: "Телефон", width: 19 }, { header: "Город", width: 16 }, { header: "Кто", width: 22 }, { header: "Состояние", width: 16 },
+      { header: "Менеджер", width: 14 }, { header: "Что не так", width: 52 }, { header: "Заявок", width: 9 }, { header: "Куплено, ₸", width: 14 }, { header: "Последний заказ", width: 16 },
+      { header: "Откуда", width: 15 }, { header: "Номера переписки", width: 24 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    for (const e of rows) {
+      ws.addRow([
+        e.name, e.phone, e.city, BASE_KIND_LABELS[e.kind], BASE_CLASS_LABELS[e.cls], e.owner ? nameOf.get(e.owner) ?? e.owner : "", note(e), e.orders || null, e.revenue ? Math.round(e.revenue) : null, e.lastOrderDay,
+        e.callBase ? "база обзвона" : e.fromAds ? "реклама" : "", e.lines.map(lineName).join(", "),
+      ]);
+    }
+    ws.getColumn(2).numFmt = "@";
+    ws.getColumn(9).numFmt = "# ##0";
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 12 } };
+    await wb.xlsx.writeFile(process.argv[csvArg + 1]);
+    console.log(`\nСписок записан в файл: строк ${rows.length}`);
+  }
 
   console.log("\n=== ЛИДЫ: стадии и причины отказа ===");
   console.log(`Стадии: ${count(leads, (l) => l.stage || "new").map(([k, c]) => `${k} ${c}`).join(" · ")}`);
