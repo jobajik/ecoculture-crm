@@ -6,7 +6,7 @@
  * Запуск: npx tsx scripts/check-price-bump.ts
  */
 import { currentPrices, priceFor, type PriceRow } from "../src/lib/priceList";
-import { planPriceBump } from "../src/lib/priceBump";
+import { planPriceBump, repriceText } from "../src/lib/priceBump";
 
 let fails = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -40,6 +40,32 @@ const after = currentPrices([...rows, ...plan.lines.map((l) => R(l.flowerType, l
 check("после: общая роза 60 — 245, Red Naomi — 420, неизвестный сорт — общая", [priceFor(after, "rose", "Jana", "60"), priceFor(after, "rose", "Red Naomi", "60"), priceFor(after, "rose", "Новый", "40")], [245, 420, 180]);
 check("после: эустома Стандарт 670 / Alissa White 730 / 50 см как было", [priceFor(after, "eustoma", "Corelli Pink", "Стандарт"), priceFor(after, "eustoma", "Alissa White", "Стандарт"), priceFor(after, "eustoma", "Corelli Pink", "50")], [670, 730, 400]);
 check("вчера цены прежние (история цела)", priceFor(currentPrices([...rows, ...plan.lines.map((l) => R(l.flowerType, l.variety, l.grade, l.after, "2026-11-23"))], "2026-11-22"), "rose", "Jana", "60"), 235);
+
+console.log("\n— Поставить цену (26.11.2026: «эустома 50 см — 250 тенге») —");
+const rows2 = [...rows, R("eustoma", "Corelli Pink", "50", 155), R("eustoma", "Alissa Pink", "50", 250)];
+const set = planPriceBump(currentPrices(rows2, "2026-11-26"), [{ flowerType: "eustoma", grade: "50", set: 250 }]);
+if (typeof set === "string") throw new Error(set);
+check("ставится общей строке и сорту со своей ценой; где уже 250 — не пишем", set.lines.map((l) => `${l.variety || "все"}·${l.grade}:${l.before}→${l.after}`), ["все·50:400→250", "Corelli Pink·50:155→250"]);
+check("Стандарт и мини-микс не тронуты", set.lines.some((l) => l.grade !== "50"), false);
+const same = planPriceBump(currentPrices([R("eustoma", "", "50", 250)], "2026-11-26"), [{ flowerType: "eustoma", grade: "50", set: 250 }]);
+check("цена уже такая — писать нечего, но правило не «пустое»", typeof same === "string" ? same : [same.lines.length, same.empty.length], [0, 0]);
+check("поставить ноль — отказ", typeof planPriceBump(prices, [{ flowerType: "eustoma", grade: "50", set: 0 }]), "string");
+check("и прибавить, и поставить — отказ", typeof planPriceBump(prices, [{ flowerType: "eustoma", grade: "50", set: 250, delta: 10 }]), "string");
+const afterSet = currentPrices([...rows2, ...set.lines.map((l) => R(l.flowerType, l.variety, l.grade, l.after, "2026-11-26"))], "2026-11-26");
+check("после: любой сорт 50 см — 250, Стандарт как был", [priceFor(afterSet, "eustoma", "Corelli Pink", "50"), priceFor(afterSet, "eustoma", "Новый", "50"), priceFor(afterSet, "eustoma", "Corelli Pink", "Стандарт")], [250, 250, 570]);
+
+console.log("\n— Тексты рассылок, которые ещё не ушли —");
+const names = { flower: (f: string) => (f === "eustoma" ? "Эустома" : f === "rose" ? "Роза" : f), grade: (g: string) => (/^\d+$/.test(g) ? `${g} см` : g) };
+const draft = ["Здравствуйте, {имя}!", "Свежий срез:", "", "• Эустома Corelli Pink, 50 см — *155 ₸*", "• Эустома Alissa White, 50 см — *400 ₸*", "• Эустома Alissa White, Стандарт — *630 ₸*", "• Роза Jumilia, 50 см — *155 ₸*", "", "Поставить вам на завтра?"].join("\n");
+const fixed = repriceText(draft, set.lines, names);
+check("сорт со своей ценой — новая цена", fixed.includes("• Эустома Corelli Pink, 50 см — *250 ₸*"), true);
+check("сорт без своей цены шёл по общей — новая цена", fixed.includes("• Эустома Alissa White, 50 см — *250 ₸*"), true);
+check("другая длина и другой цветок с той же цифрой не тронуты", [fixed.includes("• Эустома Alissa White, Стандарт — *630 ₸*"), fixed.includes("• Роза Jumilia, 50 см — *155 ₸*")], [true, true]);
+check("остальной текст слово в слово", fixed.split("\n").filter((l) => !l.includes("Эустома")), draft.split("\n").filter((l) => !l.includes("Эустома")));
+check("в строке не прежняя цена — не трогаем (текст уже переписан или цена своя)", repriceText("• Эустома Corelli Pink, 50 см — *300 ₸*", set.lines, names), "• Эустома Corelli Pink, 50 см — *300 ₸*");
+check("ушедший текст копирайтера (дефис, без звёздочек) тоже понимается", repriceText("• Эустома Corelli Pink, 50 см - 155 ₸", set.lines, names), "• Эустома Corelli Pink, 50 см - 250 ₸");
+check("цена с тысячами", repriceText("• Роза Catalina, 60 см — *1 200 ₸*", [{ flowerType: "rose", variety: "Catalina", grade: "60", before: 1200, after: 1350 }], names), "• Роза Catalina, 60 см — *1 350 ₸*");
+check("текст без цен возвращается как был", repriceText("Здравствуйте!", set.lines, names), "Здравствуйте!");
 
 console.log("\n— Отказы —");
 check("правило без суммы", typeof planPriceBump(prices, [{ flowerType: "rose", delta: 0 }]), "string");
