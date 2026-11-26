@@ -123,6 +123,32 @@ async function main() {
   const lineName = (l: string) => (l === "" ? "основной" : l === LEADS_LINE ? "Земфира" : nameOf.get(lineOwner.get(l) || "") ?? l);
   console.log(`Только переписка, по номерам: ${count(E.filter((e) => e.kind === "contact").flatMap((e) => e.lines.map(lineName)), (x) => x).map(([k, c]) => `${k} ${c}`).join(" · ")}`);
 
+  console.log("\n=== КТО РАБОТАЕТ С БАЗОЙ (сотрудники, за которыми кто-то записан) ===");
+  const day = (iso: string) => (iso ? localDayKey(new Date(iso)) : "");
+  const from30 = localDayKey(new Date(Date.now() - 30 * 86400000));
+  const from7 = localDayKey(new Date(Date.now() - 7 * 86400000));
+  const lineOf = new Map(Array.from(lineOwner.entries()).map(([code, email]) => [email, code]));
+  for (const [email] of count(E.filter((e) => e.owner), (e) => e.owner)) {
+    const u = users.find((x) => x.email.trim().toLowerCase() === email);
+    const mine = touches.filter((t) => t.managerEmail.trim().toLowerCase() === email);
+    const line = lineOf.get(email);
+    const out = line === undefined ? null : messages.filter((m) => (m.line || "") === line && m.direction === "out");
+    const ord = orders.filter((o) => o.managerEmail.trim().toLowerCase() === email && o.status !== ORDER_STATUSES.CANCELLED && day(o.createdAt) >= from30).length;
+    console.log(
+      `${(nameOf.get(email) ?? email.split("@")[0]).padEnd(12)} роль ${(u?.role ?? "нет в Users").padEnd(15)} ${u ? (u.active ? "работает" : "ВЫКЛЮЧЕН") : "—"} · касаний за 30 дн. ${mine.filter((t) => day(t.createdAt) >= from30).length}, за 7 дн. ${mine.filter((t) => day(t.createdAt) >= from7).length}, последнее ${mine.map((t) => day(t.createdAt)).sort().pop() || "никогда"} · заявок за 30 дн. ${ord} · WhatsApp ${out ? `${line}: исходящих за 7 дн. ${out.filter((m) => day(m.at) >= from7).length}` : "не подключён"}`
+    );
+  }
+  console.log(`Сотрудники с номером WhatsApp, но без единой записи в базе: ${Array.from(lineOwner.entries()).filter(([, email]) => !E.some((e) => e.owner === email)).map(([code, email]) => `${nameOf.get(email) ?? email} (${code})`).join(", ") || "нет"}`);
+
+  console.log("\n=== ЛИДЫ: стадии и причины отказа ===");
+  console.log(`Стадии: ${count(leads, (l) => l.stage || "new").map(([k, c]) => `${k} ${c}`).join(" · ")}`);
+  console.log(`Причины отказа: ${count(leads.filter((l) => l.stage === "lost"), (l) => l.lostReason || "(пусто)").map(([k, c]) => `${k} ${c}`).join(" · ") || "нет"}`);
+  console.log(`Итоги звонков (все касания с итогом): ${count(touches.filter((t) => t.outcome), (t) => t.outcome).map(([k, c]) => `${k} ${c}`).join(" · ") || "нет"}`);
+  const refused = E.filter((e) => e.cls === "refused");
+  console.log(`«Отказался» (${refused.length}) — почему: «СТОП» ${refused.filter((e) => e.optOut).length}; лид закрыт отказом ${refused.filter((e) => e.leadIds.some((id) => leads.find((l) => l.leadId === id)?.stage === "lost")).length}; ИИ советует отказ ${refused.filter((e) => e.leadIds.some((id) => decisions.get(id) === "lost")).length}`);
+  console.log(`Лиды с обзвонами: ${count(leads.filter((l) => l.campaign), (l) => l.campaign).map(([k, c]) => `${k} ${c}`).join(" · ")}`);
+  console.log(`Лиды, с которыми нет ни касания, ни переписки, по давности заведения: ${count(E.filter((e) => e.cls === "untouched" && e.kind === "lead"), (e) => (leads.find((l) => l.leadId === e.leadIds[0])?.createdAt || "").slice(0, 7)).map(([k, c]) => `${k}: ${c}`).join(" · ")}`);
+
   console.log("\n=== ГОРОДА (первые 12) ===");
   console.log(count(E.filter((e) => e.city), (e) => e.city).slice(0, 12).map(([k, c]) => `${k} ${c}`).join(" · "));
   console.log(`Город не указан: ${E.filter((e) => !e.city).length}`);
